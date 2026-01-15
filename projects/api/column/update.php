@@ -83,13 +83,11 @@ try {
         error_log("Updating name to: $name");
     }
     
-    // Update width
+    // Update width (clamp 30..150)
     if (isset($_POST['width'])) {
         $width = (int)$_POST['width'];
-        if ($width < 80 || $width > 500) {
-            http_response_code(400);
-            die(json_encode(['ok' => false, 'error' => 'Width must be between 80 and 500']));
-        }
+        if ($width < 30) $width = 30;
+        if ($width > 150) $width = 150;
         $updates[] = "width = ?";
         $params[] = $width;
         error_log("Updating width to: $width");

@@ -460,7 +460,7 @@ Option 3</textarea>
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(loadingToast);
     
-    window.BoardApp.apiCall('/projects/api/column/create.php', data)
+    window.BoardApp.apiCall('/projects/api/column.create.php', data)
       .then(response => {
         console.log('✅ Column created:', response);
         
@@ -1095,4 +1095,248 @@ Option 3</textarea>
 
   console.log('✅ Columns module loaded (COMPLETE)');
 
+})();
+
+// ===== AUTO-SIZE COLUMNS (30..150) =====
+(() => {
+  'use strict';
+
+  console.log('📐 Auto-size columns module loading...');
+
+  // Simple debounce
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  // Create hidden measurement element
+  let measureEl = null;
+  function getMeasureEl() {
+    if (!measureEl) {
+      measureEl = document.createElement('span');
+      measureEl.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-size:12px;font-family:system-ui,-apple-system,sans-serif;';
+      document.body.appendChild(measureEl);
+    }
+    return measureEl;
+  }
+
+  function measureText(text) {
+    const el = getMeasureEl();
+    el.textContent = text || '';
+    return el.offsetWidth;
+  }
+
+  // Auto size custom/data columns only (not checkbox/item/menu)
+  window.BoardApp = window.BoardApp || {};
+  window.BoardApp.autoSizeColumns = function(targetColumnId = null) {
+    console.log('📐 Running autoSizeColumns', targetColumnId ? `for column ${targetColumnId}` : 'for all columns');
+
+    const tables = Array.from(document.querySelectorAll('table.fw-board-table'));
+    if (!tables.length) {
+      console.log('📐 No tables found');
+      return;
+    }
+
+    // Collect column IDs from headers (works for all tables)
+    const allIds = new Set();
+    tables.forEach(tbl => {
+      tbl.querySelectorAll('th[data-column-id]').forEach(th => allIds.add(String(th.dataset.columnId)));
+    });
+
+    const ids = targetColumnId ? [String(targetColumnId)] : Array.from(allIds);
+    if (!ids.length) {
+      console.log('📐 No column IDs found');
+      return;
+    }
+
+    console.log('📐 Processing columns:', ids);
+
+    ids.forEach(id => {
+      // Header text width
+      let maxW = 0;
+      const headerInputs = document.querySelectorAll(`th[data-column-id="${id}"] .fw-col-name-input`);
+      headerInputs.forEach(inp => {
+        const txt = (inp.value || inp.textContent || '').trim();
+        const w = measureText(txt) + 50; // padding + menu button space
+        maxW = Math.max(maxW, w);
+      });
+
+      // Cell text width (sample first 50 rows)
+      const cells = Array.from(document.querySelectorAll(`td.fw-cell[data-column-id="${id}"]`)).slice(0, 50);
+      cells.forEach(td => {
+        const v = (td.dataset.value || td.textContent || '').trim();
+        if (!v) return;
+        const w = measureText(v) + 24; // padding
+        maxW = Math.max(maxW, w);
+      });
+
+      // Clamp 30..150
+      const w = Math.max(30, Math.min(150, Math.ceil(maxW || 60)));
+      console.log(`📐 Column ${id}: maxW=${maxW}, final=${w}px`);
+
+      // Apply width to colgroup col elements
+      document.querySelectorAll(`table.fw-board-table col[data-column-id="${id}"]`)
+        .forEach(col => {
+          col.style.width = `${w}px`;
+          col.style.minWidth = `${w}px`;
+          col.style.maxWidth = `${w}px`;
+        });
+
+      // Apply width to th elements
+      document.querySelectorAll(`table.fw-board-table th[data-column-id="${id}"]`)
+        .forEach(th => {
+          th.style.width = `${w}px`;
+          th.style.minWidth = `${w}px`;
+          th.style.maxWidth = `${w}px`;
+        });
+
+      // Apply width to td cells too
+      document.querySelectorAll(`table.fw-board-table td.fw-cell[data-column-id="${id}"]`)
+        .forEach(td => {
+          td.style.width = `${w}px`;
+          td.style.minWidth = `${w}px`;
+          td.style.maxWidth = `${w}px`;
+        });
+    });
+
+    console.log('📐 Auto-size complete');
+  };
+
+  const runAuto = debounce(() => window.BoardApp.autoSizeColumns(), 200);
+
+  // Run after full page load (including images, styles)
+  window.addEventListener('load', () => {
+    console.log('📐 Window loaded, running auto-size...');
+    setTimeout(runAuto, 100);
+  });
+
+  // Also run on DOMContentLoaded as backup
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('📐 DOM ready, scheduling auto-size...');
+      setTimeout(runAuto, 300);
+    });
+  } else {
+    setTimeout(runAuto, 300);
+  }
+
+  // Rerun on resize
+  window.addEventListener('resize', runAuto);
+
+  // Rerun when a cell changes
+  document.addEventListener('cellUpdated', debounce((e) => {
+    const colId = e?.detail?.columnId;
+    if (colId) window.BoardApp.autoSizeColumns(colId);
+  }, 200));
+
+  console.log('📐 Auto-size columns module loaded');
+})();
+
+// ===== MANUAL COLUMN RESIZE (drag to resize) =====
+(() => {
+  'use strict';
+
+  console.log('↔️ Column resize module loading...');
+
+  let resizing = null; // { columnId, startX, startWidth, th, col, tds }
+
+  function applyWidth(columnId, width) {
+    // Clamp 30..150
+    const w = Math.max(30, Math.min(150, Math.round(width)));
+
+    // Apply to all matching elements
+    document.querySelectorAll(`table.fw-board-table col[data-column-id="${columnId}"]`)
+      .forEach(col => col.style.width = `${w}px`);
+
+    document.querySelectorAll(`table.fw-board-table th[data-column-id="${columnId}"]`)
+      .forEach(th => th.style.width = `${w}px`);
+
+    document.querySelectorAll(`table.fw-board-table td.fw-cell[data-column-id="${columnId}"]`)
+      .forEach(td => td.style.width = `${w}px`);
+
+    return w;
+  }
+
+  function saveWidth(columnId, width) {
+    console.log(`↔️ Saving column ${columnId} width: ${width}px`);
+
+    const formData = new FormData();
+    formData.append('column_id', columnId);
+    formData.append('width', width);
+
+    fetch('/projects/api/column/update.php', {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        console.log(`↔️ Column ${columnId} width saved`);
+      } else {
+        console.error('↔️ Failed to save width:', data.error);
+      }
+    })
+    .catch(err => console.error('↔️ Error saving width:', err));
+  }
+
+  function onMouseDown(e) {
+    const handle = e.target.closest('.fw-col-resize');
+    if (!handle) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const columnId = handle.dataset.columnId;
+    const th = handle.closest('th[data-column-id]');
+    if (!th || !columnId) return;
+
+    handle.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    resizing = {
+      columnId,
+      startX: e.clientX,
+      startWidth: th.offsetWidth,
+      handle
+    };
+
+    console.log(`↔️ Start resize column ${columnId}, startWidth: ${resizing.startWidth}px`);
+  }
+
+  function onMouseMove(e) {
+    if (!resizing) return;
+
+    const delta = e.clientX - resizing.startX;
+    const newWidth = resizing.startWidth + delta;
+    applyWidth(resizing.columnId, newWidth);
+  }
+
+  function onMouseUp(e) {
+    if (!resizing) return;
+
+    const delta = e.clientX - resizing.startX;
+    const finalWidth = applyWidth(resizing.columnId, resizing.startWidth + delta);
+
+    resizing.handle.classList.remove('resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    console.log(`↔️ End resize column ${resizing.columnId}, finalWidth: ${finalWidth}px`);
+
+    // Save to database
+    saveWidth(resizing.columnId, finalWidth);
+
+    resizing = null;
+  }
+
+  // Event listeners
+  document.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+
+  console.log('↔️ Column resize module loaded');
 })();

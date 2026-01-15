@@ -155,6 +155,7 @@
   min-width: max-content;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 
 /* ========== TABLE HEADER ========== */
@@ -178,7 +179,7 @@
   background: var(--bg-elevated);
   border-bottom: 2px solid var(--border-strong);
   white-space: nowrap;
-  min-width: 120px;
+  min-width: 30px;
 }
 
 .fw-col-checkbox {
@@ -217,20 +218,50 @@
 }
 
 th[data-column-id] {
-  min-width: 120px !important;
+  min-width: 30px !important;
+  max-width: 150px !important;
   cursor: grab;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 th[data-column-id]:active {
   cursor: grabbing;
 }
 
+/* Column resize handle */
+.fw-col-resize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 15;
+  transition: background 0.15s;
+}
+
+.fw-col-resize:hover,
+.fw-col-resize.resizing {
+  background: var(--accent-primary);
+}
+
+th[data-column-id] {
+  position: relative;
+}
+
 .fw-col-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--spacing-xs);
   width: 100%;
+  padding-right: 8px; /* space for resize handle */
+}
+
+.fw-col-menu-btn {
+  flex-shrink: 0;
 }
 
 .fw-col-name-input {
@@ -290,7 +321,10 @@ th[data-column-id]:active {
   vertical-align: middle;
   background: var(--bg-base);
   white-space: nowrap;
-  min-width: 120px;
+  min-width: 30px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--font-sm);
   color: var(--text-primary);
 }
