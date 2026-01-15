@@ -1101,6 +1101,8 @@ Option 3</textarea>
 (() => {
   'use strict';
 
+  console.log('📐 Auto-size columns module loading...');
+
   // Simple debounce
   function debounce(fn, ms) {
     let t;
@@ -1110,18 +1112,33 @@ Option 3</textarea>
     };
   }
 
-  function measureText(text, font) {
-    const canvas = measureText._c || (measureText._c = document.createElement('canvas'));
-    const ctx = canvas.getContext('2d');
-    ctx.font = font || '12px system-ui';
-    return ctx.measureText(text || '').width;
+  // Create hidden measurement element
+  let measureEl = null;
+  function getMeasureEl() {
+    if (!measureEl) {
+      measureEl = document.createElement('span');
+      measureEl.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-size:12px;font-family:system-ui,-apple-system,sans-serif;';
+      document.body.appendChild(measureEl);
+    }
+    return measureEl;
+  }
+
+  function measureText(text) {
+    const el = getMeasureEl();
+    el.textContent = text || '';
+    return el.offsetWidth;
   }
 
   // Auto size custom/data columns only (not checkbox/item/menu)
   window.BoardApp = window.BoardApp || {};
   window.BoardApp.autoSizeColumns = function(targetColumnId = null) {
+    console.log('📐 Running autoSizeColumns', targetColumnId ? `for column ${targetColumnId}` : 'for all columns');
+
     const tables = Array.from(document.querySelectorAll('table.fw-board-table'));
-    if (!tables.length) return;
+    if (!tables.length) {
+      console.log('📐 No tables found');
+      return;
+    }
 
     // Collect column IDs from headers (works for all tables)
     const allIds = new Set();
@@ -1130,56 +1147,90 @@ Option 3</textarea>
     });
 
     const ids = targetColumnId ? [String(targetColumnId)] : Array.from(allIds);
-    if (!ids.length) return;
+    if (!ids.length) {
+      console.log('📐 No column IDs found');
+      return;
+    }
 
-    // Use the first table to read font styles
-    const sampleTh = tables[0].querySelector('th[data-column-id] .fw-col-name-input');
-    const font = sampleTh ? getComputedStyle(sampleTh).font : '12px system-ui';
+    console.log('📐 Processing columns:', ids);
 
     ids.forEach(id => {
       // Header text width
       let maxW = 0;
       const headerInputs = document.querySelectorAll(`th[data-column-id="${id}"] .fw-col-name-input`);
       headerInputs.forEach(inp => {
-        const txt = (inp.value || '').trim();
-        maxW = Math.max(maxW, measureText(txt, font) + 36); // padding + menu space
+        const txt = (inp.value || inp.textContent || '').trim();
+        const w = measureText(txt) + 50; // padding + menu button space
+        maxW = Math.max(maxW, w);
       });
 
-      // Cell text width (sample to keep it fast)
-      const cells = Array.from(document.querySelectorAll(`td.fw-cell[data-column-id="${id}"]`)).slice(0, 40);
+      // Cell text width (sample first 50 rows)
+      const cells = Array.from(document.querySelectorAll(`td.fw-cell[data-column-id="${id}"]`)).slice(0, 50);
       cells.forEach(td => {
         const v = (td.dataset.value || td.textContent || '').trim();
         if (!v) return;
-        maxW = Math.max(maxW, measureText(v, font) + 32); // padding
+        const w = measureText(v) + 24; // padding
+        maxW = Math.max(maxW, w);
       });
 
       // Clamp 30..150
-      const w = Math.max(30, Math.min(150, Math.ceil(maxW || 30)));
+      const w = Math.max(30, Math.min(150, Math.ceil(maxW || 60)));
+      console.log(`📐 Column ${id}: maxW=${maxW}, final=${w}px`);
 
-      // Apply width to all tables (col + th)
+      // Apply width to colgroup col elements
       document.querySelectorAll(`table.fw-board-table col[data-column-id="${id}"]`)
-        .forEach(col => col.style.width = `${w}px`);
+        .forEach(col => {
+          col.style.width = `${w}px`;
+          col.style.minWidth = `${w}px`;
+          col.style.maxWidth = `${w}px`;
+        });
 
+      // Apply width to th elements
       document.querySelectorAll(`table.fw-board-table th[data-column-id="${id}"]`)
-        .forEach(th => th.style.width = `${w}px`);
+        .forEach(th => {
+          th.style.width = `${w}px`;
+          th.style.minWidth = `${w}px`;
+          th.style.maxWidth = `${w}px`;
+        });
+
+      // Apply width to td cells too
+      document.querySelectorAll(`table.fw-board-table td.fw-cell[data-column-id="${id}"]`)
+        .forEach(td => {
+          td.style.width = `${w}px`;
+          td.style.minWidth = `${w}px`;
+          td.style.maxWidth = `${w}px`;
+        });
     });
+
+    console.log('📐 Auto-size complete');
   };
 
-  const runAuto = debounce(() => window.BoardApp.autoSizeColumns(), 120);
+  const runAuto = debounce(() => window.BoardApp.autoSizeColumns(), 200);
 
-  // Run once on load
+  // Run after full page load (including images, styles)
+  window.addEventListener('load', () => {
+    console.log('📐 Window loaded, running auto-size...');
+    setTimeout(runAuto, 100);
+  });
+
+  // Also run on DOMContentLoaded as backup
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', runAuto, { once: true });
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('📐 DOM ready, scheduling auto-size...');
+      setTimeout(runAuto, 300);
+    });
   } else {
-    runAuto();
+    setTimeout(runAuto, 300);
   }
 
   // Rerun on resize
   window.addEventListener('resize', runAuto);
 
-  // Rerun when a cell changes (already dispatched in cells.js)
+  // Rerun when a cell changes
   document.addEventListener('cellUpdated', debounce((e) => {
     const colId = e?.detail?.columnId;
     if (colId) window.BoardApp.autoSizeColumns(colId);
-  }, 120));
+  }, 200));
+
+  console.log('📐 Auto-size columns module loaded');
 })();
