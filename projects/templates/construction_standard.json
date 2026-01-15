@@ -1,0 +1,54 @@
+{
+  "name": "Construction (Standard)",
+  "description": "Default boards for construction projects including schedule, costing and procurement boards.",
+  "boards": [
+    {
+      "title": "Schedule",
+      "type": "schedule",
+      "default_view": "table",
+      "columns": [
+        {"id":"Task","name":"Task","type":"text","width":200},
+        {"id":"Timeline","name":"Timeline","type":"timeline","width":180},
+        {"id":"Status","name":"Status","type":"status","width":120}
+      ],
+      "groups": [
+        {"name":"Phase 1","color":"#8b5cf6"},
+        {"name":"Phase 2","color":"#10b981"},
+        {"name":"Phase 3","color":"#ef4444"}
+      ]
+    },
+    {
+      "title": "Costing",
+      "type": "costing",
+      "default_view": "table",
+      "columns": [
+        {"id":"Item","name":"Item","type":"text","width":200},
+        {"id":"Qty","name":"Qty","type":"number","width":100},
+        {"id":"Rate","name":"Rate","type":"number","width":100},
+        {"id":"Total","name":"Total","type":"formula","width":120,
+         "config":{"agg":"sum","precision":2,"formula":"[Qty]*[Rate]"}}
+      ],
+      "groups": [
+        {"name":"Phase 1","color":"#8b5cf6"},
+        {"name":"Phase 2","color":"#10b981"},
+        {"name":"Phase 3","color":"#ef4444"}
+      ]
+    },
+    {
+      "title": "Procurement",
+      "type": "procurement",
+      "default_view": "table",
+      "columns": [
+        {"id":"Item","name":"Item","type":"text","width":200},
+        {"id":"Supplier","name":"Supplier","type":"text","width":150},
+        {"id":"Qty","name":"Qty","type":"number","width":100},
+        {"id":"Status","name":"Status","type":"status","width":120}
+      ],
+      "groups": [
+        {"name":"Phase 1","color":"#8b5cf6"},
+        {"name":"Phase 2","color":"#10b981"},
+        {"name":"Phase 3","color":"#ef4444"}
+      ]
+    }
+  ]
+}

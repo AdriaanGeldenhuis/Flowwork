@@ -1,0 +1,84 @@
+/* Styles specific to the Sales Pipeline (opportunities) module */
+
+.fw-opps__toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.fw-opps__title {
+    font-size: 1.5rem;
+    margin: 0;
+}
+.fw-opps__summary {
+    margin-bottom: 1rem;
+    font-weight: bold;
+}
+.fw-opps__board {
+    display: flex;
+    overflow-x: auto;
+    gap: 1rem;
+    padding-bottom: 1rem;
+}
+.fw-opps__column {
+    flex: 1 1 0;
+    min-width: 220px;
+    background-color: #f9f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+}
+.fw-opps__column-header {
+    padding: 0.5rem;
+    background-color: #f1f1f2;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+.fw-opps__column-title {
+    margin-bottom: 0.2rem;
+}
+.fw-opps__column-count,
+.fw-opps__column-total {
+    font-size: 0.75rem;
+    color: #666;
+}
+.fw-opps__items {
+    padding: 0.5rem;
+    flex-grow: 1;
+    min-height: 40px;
+}
+.fw-opps__card {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    cursor: grab;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.fw-opps__card-title a {
+    font-weight: 600;
+    color: #333;
+    text-decoration: none;
+}
+.fw-opps__card-title a:hover {
+    text-decoration: underline;
+}
+.fw-opps__card-info {
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+.fw-opps__card-meta {
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 0.25rem;
+}
+
+/* While dragging */
+.fw-opps__card.dragging {
+    opacity: 0.5;
+}

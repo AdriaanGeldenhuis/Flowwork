@@ -1,0 +1,225 @@
+/* Finance Overview styles
+   This file provides styling for the finance overview dashboard on /finances/index.php.
+   It uses the same design tokens defined in finance.css to ensure consistency.
+*/
+
+.fw-finance-overview {
+  margin-top: var(--fw-spacing-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-lg);
+}
+
+.fw-finance-overview__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-spacing-sm);
+  align-items: center;
+}
+
+.fw-finance-overview__select,
+.fw-finance-overview__date {
+  padding: var(--fw-spacing-sm);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-sm);
+  background: var(--fw-panel-bg);
+  color: var(--fw-text-primary);
+  font-size: 14px;
+  min-width: 140px;
+}
+
+.fw-finance-overview__row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--fw-spacing-lg);
+}
+
+/* KPI cards row has four columns on larger screens */
+.fw-finance-overview__kpi-cards {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .fw-finance-overview__kpi-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .fw-finance-overview__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fw-finance-overview__kpi-card {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-md);
+  padding: var(--fw-spacing-lg);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  backdrop-filter: blur(12px);
+  transition: transform 0.2s ease;
+}
+
+.fw-finance-overview__kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--fw-shadow-md);
+}
+
+.fw-finance-overview__kpi-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--fw-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--accent-finance);
+  background: var(--accent-finance-light);
+}
+
+.fw-finance-overview__kpi-content {
+  flex: 1;
+}
+
+.fw-finance-overview__kpi-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+}
+
+.fw-finance-overview__kpi-label {
+  font-size: 14px;
+  color: var(--fw-text-muted);
+}
+
+.fw-finance-overview__badge {
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 4px;
+  color: var(--accent-warning);
+}
+
+.fw-finance-overview__card {
+  padding: var(--fw-spacing-lg);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  backdrop-filter: blur(12px);
+  min-height: 200px;
+}
+
+/* Small cards (Bank & VAT) can shrink */
+.fw-finance-overview__small-cards .fw-finance-overview__card {
+  min-height: auto;
+}
+
+/* Headings inside cards and worklists */
+.fw-finance-overview__card h3,
+.fw-finance-overview__worklist-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin-bottom: var(--fw-spacing-sm);
+  border-bottom: 1px solid var(--fw-border);
+  padding-bottom: var(--fw-spacing-xs);
+}
+
+/* Bank list styling */
+.fw-finance-overview__bank-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fw-finance-overview__bank-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--fw-spacing-xs) 0;
+  border-bottom: 1px solid var(--fw-border);
+  font-size: 14px;
+}
+
+/* VAT detail rows */
+.fw-finance-overview__vat-detail > div {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--fw-spacing-xs) 0;
+  font-size: 14px;
+}
+
+/* Worklists grid */
+.fw-finance-overview__worklists {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (max-width: 768px) {
+  .fw-finance-overview__worklists {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Table styling */
+.fw-finance-overview__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.fw-finance-overview__table thead th {
+  text-align: left;
+  font-weight: 600;
+  padding: var(--fw-spacing-xs);
+  border-bottom: 2px solid var(--fw-border);
+  color: var(--fw-text-primary);
+  background: var(--fw-highlight);
+}
+
+.fw-finance-overview__table tbody td {
+  padding: var(--fw-spacing-xs);
+  border-bottom: 1px solid var(--fw-border);
+  color: var(--fw-text-primary);
+}
+
+.fw-finance-overview__table tbody tr:nth-child(even) td {
+  background: var(--fw-highlight);
+}
+
+/* Simple bar chart styling */
+.fw-finance-overview__chart-bar-group {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--fw-spacing-xs);
+  height: 160px;
+}
+
+.fw-finance-overview__bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 40px;
+}
+
+.fw-finance-overview__bar {
+  width: 20px;
+  border-radius: var(--fw-radius-sm);
+}
+
+.fw-finance-overview__bar--rev {
+  background: var(--accent-success);
+}
+
+.fw-finance-overview__bar--exp {
+  background: var(--accent-danger);
+}
+
+.fw-finance-overview__bar--aging {
+  background: var(--accent-info);
+}
+
+.fw-finance-overview__bar-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--fw-text-muted);
+  text-align: center;
+}

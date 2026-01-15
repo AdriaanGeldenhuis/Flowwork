@@ -1,0 +1,16 @@
+# Allow all PHP files to be executed
+<Files "*.php">
+    Order Allow,Deny
+    Allow from all
+</Files>
+
+# Set proper headers for JSON responses
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
+</IfModule>
+
+# Enable error reporting for debugging (remove in production)
+php_flag display_errors On
+php_value error_reporting E_ALL

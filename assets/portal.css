@@ -1,0 +1,56 @@
+/*
+ * Basic styles for the client and supplier portals.
+ * These rules provide a neutral look consistent with the rest of the application
+ * while allowing inline overrides where necessary. Keep this file minimal to
+ * avoid interfering with other modules.
+ */
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f9fafb;
+    color: #111827;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    margin-top: 0;
+    font-size: 1.5rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+th, td {
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    text-align: left;
+    font-size: 0.875rem;
+}
+
+th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+
+.btn {
+    display: inline-block;
+    padding: 6px 12px;
+    margin-right: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    border-radius: 4px;
+    color: #fff;
+}
+
+.btn-view { background: #3b82f6; }
+.btn-pay  { background: #10b981; }
+.btn-pay.disabled {
+    background: #d1d5db;
+    pointer-events: none;
+    color: #6b7280;
+}

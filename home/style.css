@@ -1,0 +1,389 @@
+/* ========================================
+   HOME PAGE STYLES – SCOPED TO .fw-home
+   ======================================== */
+
+/* ===== DESIGN TOKENS & ACCENTS (unchanged except where noted) ===== */
+.fw-home {
+  --fw-radius-sm: 8px;
+  --fw-radius-md: 12px;
+  --fw-radius-lg: 16px;
+  --fw-spacing-xs: 8px;
+  --fw-spacing-sm: 12px;
+  --fw-spacing-md: 16px;
+  --fw-spacing-lg: 24px;
+  --fw-spacing-xl: 32px;
+
+  /* Light */
+  --fw-bg-base: #f5f6f8;
+  --fw-bg-radial:
+    radial-gradient(circle at 20% 20%, rgba(139, 92, 246, 0.06), transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.04), transparent 50%);
+  --fw-text-primary: #1a1d29;
+  --fw-text-muted: #6b7280;
+  --fw-border: rgba(0, 0, 0, 0.08);
+  --fw-panel-bg: rgba(255, 255, 255, 0.7);
+  --fw-panel-border: rgba(255, 255, 255, 0.9);
+  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --fw-glow: rgba(139, 92, 246, 0.15);
+  --fw-highlight: rgba(255, 255, 255, 0.6);
+  --fw-rim-light: rgba(255, 255, 255, 0.5);
+
+  /* Neon accent colours per department (as supplied) */
+  --accent-projects: #8b5cf6;
+  --accent-suppliers: #06b6d4;
+  --accent-quotes: #ffff00;
+  --accent-finance: #38ff12;
+  --accent-receipts: #ff1dce;
+  --accent-payroll: #ff9900;
+  --accent-suppliers-ai: #f472b6;
+  --accent-shopping: #00ffff;
+  --accent-mail: #ff0000;
+  --accent-calendar: #00ffb5;
+  --accent-pos: #ff00ff;
+  --accent-admin: #00f0ff;
+}
+
+.fw-home[data-theme="dark"] {
+  --fw-bg-base: #0a0c12;
+  --fw-bg-radial:
+    radial-gradient(circle at 20% 20%, rgba(139, 92, 246, 0.08), transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.06), transparent 50%);
+  --fw-text-primary: #f3f4f6;
+  --fw-text-muted: #9ca3af;
+  --fw-border: rgba(255, 255, 255, 0.08);
+  --fw-panel-bg: rgba(20, 24, 35, 0.8);
+  --fw-panel-border: rgba(255, 255, 255, 0.1);
+  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --fw-glow: rgba(139, 92, 246, 0.25);
+  --fw-highlight: rgba(255, 255, 255, 0.15);
+  --fw-rim-light: rgba(255, 255, 255, 0.2);
+}
+
+/* ===== BASE ===== */
+.fw-home {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fw-text-primary);
+  background: var(--fw-bg-base);
+  background-image: var(--fw-bg-radial);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+.fw-home *, .fw-home *::before, .fw-home *::after { box-sizing: inherit; }
+
+.fw-home__container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--fw-spacing-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ===== HEADER ===== */
+.fw-home__header {
+  position: relative; /* needed for gloss overlay */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-spacing-lg);
+  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: 0px 0px 20px #8b5cf6;
+  backdrop-filter: blur(12px);
+  margin-bottom: var(--fw-spacing-xl);
+  z-index: 2;
+}
+/* Slightly stronger gloss so it's more visible */
+.fw-home__header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), transparent 40%);
+  pointer-events: none;
+}
+
+.fw-home__brand { display: flex; align-items: center; gap: var(--fw-spacing-md); }
+
+.fw-home__logo-tile {
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--accent-projects), var(--accent-suppliers));
+  border-radius: var(--fw-radius-md);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3), inset 0 1px 2px rgba(255,255,255,.3);
+  position: relative; overflow: hidden;
+}
+.fw-home__logo-tile::before {
+  content: "";
+  position: absolute; top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent); /* stronger than 0.3 */
+  animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer { to { left: 100%; } }
+
+.fw-home__logo-tile svg { width: 28px; height: 28px; color: #fff; filter: drop-shadow(0 2px 4px rgba(0,0,0,.2)); }
+.fw-home__company-logo { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+
+.fw-home__brand-text { display: flex; flex-direction: column; gap: 2px; }
+.fw-home__company-name { font-size: 16px; font-weight: 700; color: var(--fw-text-primary); line-height: 1.2; }
+.fw-home__app-name { font-size: 12px; font-weight: 500; color: var(--fw-text-muted); text-transform: uppercase; letter-spacing: .5px; }
+
+.fw-home__greeting { font-size: 18px; font-weight: 600; color: var(--fw-text-primary); flex: 1; text-align: center; }
+.fw-home__greeting-name { color: var(--accent-projects); }
+
+.fw-home__controls { display: flex; align-items: center; gap: var(--fw-spacing-sm); }
+.fw-home__theme-toggle, .fw-home__kebab-toggle {
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  background: var(--fw-panel-bg); border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md); cursor: pointer; transition: all .2s ease;
+  color: var(--fw-text-primary); position: relative;
+}
+.fw-home__theme-toggle:hover, .fw-home__kebab-toggle:hover { background: var(--fw-highlight); box-shadow: var(--fw-shadow-sm); transform: translateY(-1px); }
+.fw-home__theme-toggle:focus, .fw-home__kebab-toggle:focus { outline: 2px solid var(--accent-projects); outline-offset: 2px; }
+
+.fw-home__theme-icon { width: 20px; height: 20px; transition: opacity .2s ease; }
+.fw-home__theme-icon--light { opacity: 1; }
+.fw-home__theme-icon--dark  { opacity: 0; position: absolute; }
+.fw-home[data-theme="dark"] .fw-home__theme-icon--light { opacity: 0; }
+.fw-home[data-theme="dark"] .fw-home__theme-icon--dark  { opacity: 1; }
+
+.fw-home__menu-wrapper { position: relative; }
+.fw-home__kebab-menu {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  background: var(--fw-panel-bg); border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-md); box-shadow: var(--fw-shadow-lg); backdrop-filter: blur(12px);
+  min-width: 180px; padding: var(--fw-spacing-xs); opacity: 0; visibility: hidden; transform: translateY(-8px);
+  transition: all .2s ease; z-index: 100;
+}
+.fw-home__kebab-menu[aria-hidden="false"] { opacity: 1; visibility: visible; transform: translateY(0); }
+.fw-home__kebab-item {
+  display: block; padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  color: var(--fw-text-primary); text-decoration: none; border-radius: var(--fw-radius-sm);
+  transition: all .15s ease; font-size: 14px; font-weight: 500;
+}
+.fw-home__kebab-item:hover, .fw-home__kebab-item:focus { background: var(--fw-highlight); color: var(--accent-projects); outline: none; }
+
+/* ===== GRID ===== */
+.fw-home__main { flex: 1; }
+.fw-home__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--fw-spacing-lg); }
+@media (max-width: 768px) { .fw-home__grid { grid-template-columns: 1fr; } }
+
+/* ===== TILES (Back to original feel: thin border, glow on hover) ===== */
+.fw-home__tile {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  perspective: 1000px;
+  transition: transform 0.3s ease;
+}
+
+.fw-home__tile-inner {
+  position: relative;
+  padding: var(--fw-spacing-xl);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border); /* thin, subtle border */
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-shadow-md);
+  backdrop-filter: blur(12px);
+  transition: all 0.3s ease;
+  transform-style: preserve-3d;
+  overflow: hidden;
+}
+
+/* Rim light + gloss band (keep subtle) */
+.fw-home__tile-inner::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  opacity: 0; transition: opacity 0.3s ease;
+}
+.fw-home__tile-inner::after {
+  content: '';
+  position: absolute; top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: linear-gradient(135deg, transparent 40%, var(--fw-highlight) 50%, transparent 60%);
+  opacity: 0; transition: all 0.5s ease; pointer-events: none;
+}
+.fw-home__tile:hover .fw-home__tile-inner::before { opacity: 1; }
+.fw-home__tile:hover .fw-home__tile-inner::after  { opacity: 1; transform: translate(25%, 25%); }
+.fw-home__tile:hover .fw-home__tile-inner { box-shadow: var(--fw-shadow-lg), 0 0 40px var(--fw-glow); transform: translateY(-4px) translateZ(20px); }
+.fw-home__tile:focus { outline: 2px solid var(--accent-projects); outline-offset: 4px; border-radius: var(--fw-radius-lg); }
+
+/* ===== ICON BADGE + silver sheen for ALL icons ===== */
+.fw-home__tile-icon {
+  width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--fw-radius-md); margin-bottom: var(--fw-spacing-md);
+  box-shadow: var(--fw-shadow-sm), inset 0 1px 2px rgba(255,255,255,.2);
+  position: relative; overflow: hidden;
+}
+.fw-home__tile-icon::before {
+  content: '';
+  position: absolute; top: 0; left: -120%;
+  width: 120%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  animation: shimmer 3s infinite;
+  pointer-events: none;
+}
+.fw-home__tile-icon svg { width: 28px; height: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.15)); position: relative; z-index: 1; }
+
+/* Per-department icon background with gradient (fixed typos + aliases) */
+.fw-home__tile[data-accent="projects"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-projects), rgba(139, 92, 246, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="suppliers"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-suppliers), rgba(6, 182, 212, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="quotes"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-quotes), rgba(255, 255, 0, 0.65));
+  color: #111;
+}
+/* support both finance & finances */
+.fw-home__tile[data-accent="finance"] .fw-home__tile-icon,
+.fw-home__tile[data-accent="finances"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-finance), rgba(56, 255, 18, 0.7));
+  color: #0a0c12;
+}
+.fw-home__tile[data-accent="receipts"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-receipts), rgba(255, 29, 206, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="payroll"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-payroll), rgba(255, 153, 0, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="suppliers-ai"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-suppliers-ai), rgba(244, 114, 182, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="shopping"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-shopping), rgba(0, 255, 255, 0.7));
+  color: #0a0c12;
+}
+.fw-home__tile[data-accent="mail"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-mail), rgba(255, 0, 0, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="calendar"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-calendar), rgba(0, 255, 181, 0.7));
+  color: #0a0c12;
+}
+/* treat settings like pos */
+.fw-home__tile[data-accent="pos"] .fw-home__tile-icon,
+.fw-home__tile[data-accent="settings"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-pos), rgba(255, 0, 255, 0.7));
+  color: #fff;
+}
+.fw-home__tile[data-accent="admin"] .fw-home__tile-icon {
+  background: linear-gradient(135deg, var(--accent-admin), rgba(0, 240, 255, 0.7));
+  color: #0a0c12;
+}
+
+.fw-home__tile-title { margin: 0 0 var(--fw-spacing-xs) 0; font-size: 20px; font-weight: 700; color: var(--fw-text-primary); }
+.fw-home__tile-subtitle { margin: 0; font-size: 14px; font-weight: 500; color: var(--fw-text-muted); }
+
+/* ===== FOOTER ===== */
+.fw-home__footer {
+  margin-top: var(--fw-spacing-xl);
+  padding: var(--fw-spacing-md);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--fw-text-muted);
+  border-top: 1px solid var(--fw-border);
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  .fw-home *, .fw-home *::before, .fw-home *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .fw-home__tile:hover .fw-home__tile-inner { transform: none; }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .fw-home__header { flex-direction: column; gap: var(--fw-spacing-md); }
+  .fw-home__greeting { order: -1; text-align: left; }
+  .fw-home__controls { width: 100%; justify-content: flex-end; }
+  .fw-home__container { padding: var(--fw-spacing-md); }
+  .fw-home__tile-inner { padding: var(--fw-spacing-lg); }
+}
+
+/* ===== GLOW ON HOVER PER DEPARTMENT (using exact colours you gave) ===== */
+.fw-home__tile[data-accent="projects"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(139, 92, 246, 0.5),
+              0 0 80px rgba(139, 92, 246, 0.2);
+}
+.fw-home__tile[data-accent="suppliers"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(6, 182, 212, 0.5),
+              0 0 80px rgba(6, 182, 212, 0.2);
+}
+.fw-home__tile[data-accent="quotes"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(255, 255, 0, 0.5),
+              0 0 80px rgba(255, 255, 0, 0.2);
+}
+.fw-home__tile[data-accent="finance"]:hover .fw-home__tile-inner,
+.fw-home__tile[data-accent="finances"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(56, 255, 18, 0.5),
+              0 0 80px rgba(56, 255, 18, 0.2);
+}
+.fw-home__tile[data-accent="receipts"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(255, 29, 206, 0.5),
+              0 0 80px rgba(255, 29, 206, 0.2);
+}
+.fw-home__tile[data-accent="payroll"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(255, 153, 0, 0.5),
+              0 0 80px rgba(255, 153, 0, 0.2);
+}
+.fw-home__tile[data-accent="suppliers-ai"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(244, 114, 182, 0.5),
+              0 0 80px rgba(244, 114, 182, 0.2);
+}
+.fw-home__tile[data-accent="shopping"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(0, 255, 255, 0.5),
+              0 0 80px rgba(0, 255, 255, 0.2);
+}
+.fw-home__tile[data-accent="mail"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(255, 0, 0, 0.5),
+              0 0 80px rgba(255, 0, 0, 0.2);
+}
+.fw-home__tile[data-accent="calendar"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(0, 255, 181, 0.5),
+              0 0 80px rgba(0, 255, 181, 0.2);
+}
+.fw-home__tile[data-accent="pos"]:hover .fw-home__tile-inner,
+.fw-home__tile[data-accent="settings"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(255, 0, 255, 0.5),
+              0 0 80px rgba(255, 0, 255, 0.2);
+}
+.fw-home__tile[data-accent="admin"]:hover .fw-home__tile-inner {
+  box-shadow: var(--fw-shadow-lg),
+              0 0 50px rgba(0, 240, 255, 0.5),
+              0 0 80px rgba(0, 240, 255, 0.2);
+}

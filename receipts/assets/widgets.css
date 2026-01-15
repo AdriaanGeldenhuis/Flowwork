@@ -1,0 +1,69 @@
+/* Grid */
+.fw-receipts__widgets{
+  display:grid; gap: var(--fw-spacing-lg);
+  grid-template-columns: repeat(12, minmax(0,1fr));
+}
+.fw-wslot{ position:relative; }
+.fw-wslot--sm{ grid-column: span 3; }
+.fw-wslot--md{ grid-column: span 6; }
+.fw-wslot--lg{ grid-column: span 12; }
+@media (max-width:1100px){ .fw-wslot--sm{grid-column:span 6;} .fw-wslot--md{grid-column:span 12;} }
+@media (max-width:700px){ .fw-wslot--sm,.fw-wslot--md,.fw-wslot--lg{grid-column:span 12;} }
+
+/* Widget container */
+.fw-widget{
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border, var(--accent-silver));
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-md);
+  height: 100%;
+  display:flex; flex-direction:column;
+}
+
+/* Header */
+.fw-whead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.fw-wtitle-wrap{ display:flex; align-items:center; gap:8px; }
+.fw-wicon{
+  width:32px; height:32px; border-radius:10px;
+  display:grid; place-items:center; font-size:18px;
+  background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+  border:1px solid var(--fw-panel-border, var(--accent-silver));
+}
+.fw-wtitle{ font-weight:700; color: var(--fw-text-primary); }
+
+/* 3-dot menu */
+.fw-wmenu-wrap{ position:relative; }
+.fw-wmenu-btn{
+  width:32px; height:32px; border-radius:8px; border:1px solid var(--fw-panel-border, var(--accent-silver));
+  background: var(--fw-panel-bg); display:grid; place-items:center; cursor:pointer;
+}
+.fw-wmenu{ position:absolute; right:0; top:36px; min-width:160px;
+  background: var(--fw-panel-bg); border:1px solid var(--fw-panel-border, var(--accent-silver));
+  border-radius:10px; padding:6px; display:none; z-index:3;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}
+.fw-wmenu.open{ display:block; }
+.fw-wmenu-item{
+  padding:8px 10px; border-radius:8px; cursor:pointer;
+}
+.fw-wmenu-item:hover{ background: rgba(255,255,255,.06); }
+
+/* Body (ensure enough space for charts) */
+.fw-wbody{ flex:1; min-height:180px; display:block; }
+
+/* Card metric */
+.fw-wcard{ height:100%; display:flex; align-items:center; justify-content:center; }
+.fw-wcard-value{ font-size:28px; font-weight:800; }
+
+/* Table */
+.fw-wtable{ display:flex; flex-direction:column; gap:8px; }
+.fw-wtable-head, .fw-wrow{ display:flex; gap:8px; }
+.fw-wcell{ flex:1 1 0; padding:6px 8px; border-bottom:1px solid var(--fw-panel-border, var(--accent-silver)); }
+.fw-wcell--head{ font-weight:700; }
+.fw-wcell--right{ text-align:right; }
+.fw-wempty{ padding:12px; opacity:.8; }
+
+/* Chart */
+.fw-chart{ width:100%; height:160px; display:block; }
+.fw-bar{ fill: var(--accent-receipts, #8a4bff); opacity:.9; }
+.fw-bar:hover{ opacity:1; }

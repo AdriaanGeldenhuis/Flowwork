@@ -1,0 +1,575 @@
+/* ============================================
+   TABLE - BOARD TABLE, GROUPS, ITEMS
+   ============================================ */
+
+/* ========== GROUP ========== */
+.fw-group {
+  margin-bottom: var(--spacing-xl);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
+}
+
+.fw-group:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.fw-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-left: 3px solid var(--accent-primary);
+  border-bottom: 1px solid var(--border-default);
+  cursor: grab;
+  background: var(--bg-elevated);
+}
+
+.fw-group-header:active {
+  cursor: grabbing;
+}
+
+.fw-group-toggle {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  background: var(--interactive-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+}
+
+.fw-group-toggle:hover {
+  background: var(--interactive-hover);
+  border-color: var(--accent-primary);
+}
+
+.fw-group-toggle svg {
+  width: 10px;
+  height: 10px;
+  transition: transform var(--transition-base);
+}
+
+.fw-group[data-collapsed="true"] .fw-group-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.fw-group-name {
+  flex: 1;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: var(--font-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+  max-width: 250px;
+  min-width: 100px;
+}
+
+.fw-group-name:hover {
+  background: var(--interactive-hover);
+  border-color: var(--border-default);
+}
+
+.fw-group-name:focus {
+  outline: none;
+  background: var(--input-focus);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+.fw-group-count {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 2px var(--spacing-sm);
+  background: var(--interactive-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.fw-icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.fw-icon-btn:hover {
+  background: var(--interactive-hover);
+  border-color: var(--border-default);
+  color: var(--accent-primary);
+}
+
+.fw-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fw-group[data-collapsed="true"] .fw-group-content {
+  display: none;
+}
+
+/* ========== TABLE WRAPPER ========== */
+.fw-table-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto;
+  position: relative;
+}
+
+.fw-table-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+.fw-table-wrapper {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ========== TABLE ========== */
+.fw-board-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* ========== TABLE HEADER ========== */
+.fw-board-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.fw-board-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: var(--spacing-sm);
+  text-align: left;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-bottom: 2px solid var(--border-strong);
+  white-space: nowrap;
+  min-width: 120px;
+}
+
+.fw-col-checkbox {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 20 !important;
+  background: var(--bg-elevated) !important;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.fw-col-item {
+  width: min(25vw, 300px) !important;
+  min-width: 120px !important;
+  max-width: 25vw !important;
+  position: sticky !important;
+  left: 40px !important;
+  z-index: 20 !important;
+  background: var(--bg-leftcolumn) !important;
+  box-shadow: 4px 0 6px rgba(0, 0, 0, 0.15);
+}
+
+.fw-col-add {
+  width: 50px !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+  text-align: center;
+}
+
+.fw-col-menu {
+  width: 50px !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+}
+
+th[data-column-id] {
+  min-width: 120px !important;
+  cursor: grab;
+}
+
+th[data-column-id]:active {
+  cursor: grabbing;
+}
+
+.fw-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+
+.fw-col-name-input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+  min-width: 60px;
+}
+
+.fw-col-name-input:hover {
+  background: var(--interactive-hover);
+  border-color: var(--border-default);
+}
+
+.fw-col-name-input:focus {
+  outline: none;
+  background: var(--input-focus);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+.fw-col-add-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-size: var(--font-lg);
+  font-weight: 700;
+}
+
+.fw-col-add-btn:hover {
+  background: var(--interactive-hover);
+  border-color: var(--accent-primary);
+  border-style: solid;
+  color: var(--accent-primary);
+}
+
+/* ========== TABLE BODY ========== */
+.fw-board-table tbody td {
+  padding: var(--spacing-xs);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+  background: var(--bg-base);
+  white-space: nowrap;
+  min-width: 120px;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+}
+
+.fw-board-table tbody td.fw-col-checkbox {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 5 !important;
+  background: var(--bg-base) !important;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.fw-board-table tbody td.fw-col-item {
+  width: min(25vw, 300px) !important;
+  min-width: 120px !important;
+  max-width: 25vw !important;
+  position: sticky !important;
+  left: 40px !important;
+  z-index: 5 !important;
+  background: var(--bg-leftcolumn) !important;
+  box-shadow: 4px 0 6px rgba(0, 0, 0, 0.15);
+}
+
+.fw-item-row {
+  transition: all var(--transition-fast);
+  cursor: grab;
+}
+
+.fw-item-row:hover {
+  background: var(--interactive-hover) !important;
+}
+
+.fw-item-row:hover td {
+  background: var(--interactive-hover) !important;
+}
+
+.fw-item-row:active {
+  cursor: grabbing;
+}
+
+.fw-item-title {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+  min-width: 80px;
+}
+
+.fw-item-title:hover {
+  background: var(--interactive-hover);
+  border-color: var(--border-default);
+}
+
+.fw-item-title:focus {
+  outline: none;
+  background: var(--input-focus);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+.fw-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+.fw-cell {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.fw-cell:hover {
+  background: var(--interactive-hover);
+}
+
+.fw-cell-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 4px 10px;
+  border: 1px dashed var(--border-default);
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: all var(--transition-base);
+}
+
+.fw-cell-empty:hover {
+  background: var(--interactive-hover);
+  border-color: var(--accent-primary);
+  border-style: solid;
+  color: var(--accent-primary);
+}
+
+/* ========== AGGREGATION ROWS ========== */
+.fw-agg-row {
+  background: var(--bg-elevated) !important;
+  border-top: 2px solid var(--border-strong) !important;
+}
+
+.fw-agg-row td {
+  background: var(--bg-elevated) !important;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: var(--spacing-sm) var(--spacing-xs) !important;
+}
+
+.fw-agg-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.fw-agg-cell {
+  text-align: left;
+}
+
+.fw-agg-value {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fw-agg-type {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  background: var(--interactive-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
+
+.fw-agg-empty {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ========== QUICK ADD ========== */
+.fw-quick-add-input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid transparent;
+  background: var(--input-bg);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  color: var(--input-text);
+  transition: all var(--transition-base);
+}
+
+.fw-quick-add-input::placeholder {
+  color: var(--input-placeholder);
+}
+
+.fw-quick-add-input:hover {
+  background: var(--input-hover);
+  border-color: var(--input-border);
+}
+
+.fw-quick-add-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background: var(--input-focus);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* ========== EMPTY STATE ========== */
+.fw-empty-state {
+  padding: var(--spacing-3xl);
+  text-align: center;
+}
+
+.fw-empty-icon {
+  font-size: 48px;
+  margin-bottom: var(--spacing-lg);
+  opacity: 0.3;
+}
+
+.fw-empty-title {
+  font-size: var(--font-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.fw-empty-text {
+  font-size: var(--font-md);
+  color: var(--text-muted);
+}
+
+/* ========== ADD GROUP ========== */
+.fw-add-group-section {
+  margin-top: var(--spacing-xl);
+  text-align: center;
+  padding: var(--spacing-xl);
+}
+
+/* ========== DRAG & DROP ========== */
+.fw-dragging {
+  opacity: 0.5;
+  cursor: grabbing !important;
+}
+
+.fw-drag-over-top {
+  border-top: 3px solid var(--accent-primary) !important;
+}
+
+.fw-drag-over-bottom {
+  border-bottom: 3px solid var(--accent-primary) !important;
+}
+
+/* ========== BOARD TOTALS GROUP ========== */
+.fw-board-totals-group {
+  margin-top: var(--spacing-2xl);
+  margin-bottom: var(--spacing-xl);
+  border: 2px solid var(--accent-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.fw-board-totals-group .fw-group-header {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05));
+  border-left-width: 4px;
+  cursor: default;
+}
+
+.fw-board-totals-group .fw-group-name {
+  font-size: var(--font-lg);
+  cursor: default;
+}
+
+.fw-board-totals-group .fw-col-checkbox {
+  background: var(--bg-elevated) !important;
+}
+
+.fw-board-totals-group .fw-col-item {
+  width: min(25vw, 300px) !important;
+  min-width: 120px !important;
+  max-width: 25vw !important;
+  background: var(--bg-leftcolumn) !important;
+}
+
+.fw-board-totals-group .fw-board-table tbody td.fw-col-item {
+  background: var(--bg-leftcolumn) !important;
+}
+
+.fw-board-totals-group .fw-board-agg-row {
+  background: var(--bg-elevated) !important;
+}
+
+.fw-board-totals-group .fw-board-agg-row td {
+  padding: var(--spacing-md) var(--spacing-xs) !important;
+  font-size: var(--font-md);
+  font-weight: 700;
+  background: var(--bg-elevated) !important;
+}
+
+.fw-board-totals-group .fw-board-agg-value {
+  font-size: var(--font-lg);
+  color: var(--accent-primary);
+}

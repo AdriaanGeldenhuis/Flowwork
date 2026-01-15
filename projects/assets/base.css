@@ -1,0 +1,169 @@
+/* ============================================
+   BASE STYLES & CSS RESET
+   ============================================ */
+
+/* ========== RESET ========== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ========== CSS VARIABLES ========== */
+:root {
+  /* Spacing System (Consistent) */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  --spacing-3xl: 48px;
+
+  /* Border Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Font Sizes (Smaller for more data) */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-base: 13px;
+  --font-md: 14px;
+  --font-lg: 16px;
+  --font-xl: 18px;
+  --font-2xl: 20px;
+
+  /* Transitions */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.25);
+
+  /* Z-Index Scale */
+  --z-base: 1;
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-modal: 2000;
+  --z-toast: 3000;
+
+  /* Status Colors */
+  --status-todo: #64748b;
+  --status-working: #fdab3d;
+  --status-stuck: #e2445c;
+  --status-done: #00c875;
+
+  /* Priority Colors */
+  --priority-low: #00c875;
+  --priority-medium: #fdab3d;
+  --priority-high: #ff6b6b;
+  --priority-extreme: #e2445c;
+
+  /* Accent Colors */
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #06b6d4;
+}
+
+/* ========== BASE ========== */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
+               "Helvetica Neue", Arial, sans-serif;
+  font-size: var(--font-base);
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* ========== SCROLLBAR ========== */
+* {
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-full);
+  transition: background var(--transition-base);
+}
+
+/* ========== FOCUS VISIBLE ========== */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ========== ANIMATIONS ========== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shimmer {
+  to { 
+    transform: translateX(100%);
+  }
+}
+
+/* ========== UTILITY CLASSES ========== */
+.fw-hidden {
+  display: none !important;
+}
+
+.fw-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
