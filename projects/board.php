@@ -583,12 +583,12 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                     </th>
 
                                     <?php foreach ($columns as $col): ?>
-                                        <th data-column-id="<?= $col['column_id'] ?>" 
+                                        <th data-column-id="<?= $col['column_id'] ?>"
                                             data-type="<?= htmlspecialchars($col['type']) ?>">
                                             <div class="fw-col-header">
-                                                <input type="text" 
-                                                       class="fw-col-name-input" 
-                                                       value="<?= htmlspecialchars($col['name']) ?>" 
+                                                <input type="text"
+                                                       class="fw-col-name-input"
+                                                       value="<?= htmlspecialchars($col['name']) ?>"
                                                        onblur="BoardApp.updateColumnName(<?= $col['column_id'] ?>, this.value)" />
                                                 <button class="fw-icon-btn" onclick="BoardApp.showColumnMenu(<?= $col['column_id'] ?>, event)">
                                                     <svg width="14" height="14" fill="currentColor">
@@ -598,6 +598,7 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                                     </svg>
                                                 </button>
                                             </div>
+                                            <div class="fw-col-resize" data-column-id="<?= $col['column_id'] ?>"></div>
                                         </th>
                                     <?php endforeach; ?>
 

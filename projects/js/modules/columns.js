@@ -1234,3 +1234,109 @@ Option 3</textarea>
 
   console.log('📐 Auto-size columns module loaded');
 })();
+
+// ===== MANUAL COLUMN RESIZE (drag to resize) =====
+(() => {
+  'use strict';
+
+  console.log('↔️ Column resize module loading...');
+
+  let resizing = null; // { columnId, startX, startWidth, th, col, tds }
+
+  function applyWidth(columnId, width) {
+    // Clamp 30..150
+    const w = Math.max(30, Math.min(150, Math.round(width)));
+
+    // Apply to all matching elements
+    document.querySelectorAll(`table.fw-board-table col[data-column-id="${columnId}"]`)
+      .forEach(col => col.style.width = `${w}px`);
+
+    document.querySelectorAll(`table.fw-board-table th[data-column-id="${columnId}"]`)
+      .forEach(th => th.style.width = `${w}px`);
+
+    document.querySelectorAll(`table.fw-board-table td.fw-cell[data-column-id="${columnId}"]`)
+      .forEach(td => td.style.width = `${w}px`);
+
+    return w;
+  }
+
+  function saveWidth(columnId, width) {
+    console.log(`↔️ Saving column ${columnId} width: ${width}px`);
+
+    const formData = new FormData();
+    formData.append('column_id', columnId);
+    formData.append('width', width);
+
+    fetch('/projects/api/column/update.php', {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        console.log(`↔️ Column ${columnId} width saved`);
+      } else {
+        console.error('↔️ Failed to save width:', data.error);
+      }
+    })
+    .catch(err => console.error('↔️ Error saving width:', err));
+  }
+
+  function onMouseDown(e) {
+    const handle = e.target.closest('.fw-col-resize');
+    if (!handle) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const columnId = handle.dataset.columnId;
+    const th = handle.closest('th[data-column-id]');
+    if (!th || !columnId) return;
+
+    handle.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    resizing = {
+      columnId,
+      startX: e.clientX,
+      startWidth: th.offsetWidth,
+      handle
+    };
+
+    console.log(`↔️ Start resize column ${columnId}, startWidth: ${resizing.startWidth}px`);
+  }
+
+  function onMouseMove(e) {
+    if (!resizing) return;
+
+    const delta = e.clientX - resizing.startX;
+    const newWidth = resizing.startWidth + delta;
+    applyWidth(resizing.columnId, newWidth);
+  }
+
+  function onMouseUp(e) {
+    if (!resizing) return;
+
+    const delta = e.clientX - resizing.startX;
+    const finalWidth = applyWidth(resizing.columnId, resizing.startWidth + delta);
+
+    resizing.handle.classList.remove('resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    console.log(`↔️ End resize column ${resizing.columnId}, finalWidth: ${finalWidth}px`);
+
+    // Save to database
+    saveWidth(resizing.columnId, finalWidth);
+
+    resizing = null;
+  }
+
+  // Event listeners
+  document.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+
+  console.log('↔️ Column resize module loaded');
+})();

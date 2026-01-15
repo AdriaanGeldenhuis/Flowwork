@@ -229,6 +229,28 @@ th[data-column-id]:active {
   cursor: grabbing;
 }
 
+/* Column resize handle */
+.fw-col-resize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 15;
+  transition: background 0.15s;
+}
+
+.fw-col-resize:hover,
+.fw-col-resize.resizing {
+  background: var(--accent-primary);
+}
+
+th[data-column-id] {
+  position: relative;
+}
+
 .fw-col-header {
   display: flex;
   align-items: center;
