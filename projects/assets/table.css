@@ -254,9 +254,14 @@ th[data-column-id] {
 .fw-col-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--spacing-xs);
   width: 100%;
+  padding-right: 8px; /* space for resize handle */
+}
+
+.fw-col-menu-btn {
+  flex-shrink: 0;
 }
 
 .fw-col-name-input {
