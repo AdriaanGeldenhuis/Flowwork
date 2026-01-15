@@ -178,7 +178,7 @@
   background: var(--bg-elevated);
   border-bottom: 2px solid var(--border-strong);
   white-space: nowrap;
-  min-width: 120px;
+  min-width: 30px;
 }
 
 .fw-col-checkbox {
@@ -217,8 +217,11 @@
 }
 
 th[data-column-id] {
-  min-width: 120px !important;
+  min-width: 30px !important;
+  max-width: 150px !important;
   cursor: grab;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 th[data-column-id]:active {
@@ -290,7 +293,10 @@ th[data-column-id]:active {
   vertical-align: middle;
   background: var(--bg-base);
   white-space: nowrap;
-  min-width: 120px;
+  min-width: 30px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--font-sm);
   color: var(--text-primary);
 }

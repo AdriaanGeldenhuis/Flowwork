@@ -460,7 +460,7 @@ Option 3</textarea>
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(loadingToast);
     
-    window.BoardApp.apiCall('/projects/api/column/create.php', data)
+    window.BoardApp.apiCall('/projects/api/column.create.php', data)
       .then(response => {
         console.log('✅ Column created:', response);
         
@@ -1095,4 +1095,91 @@ Option 3</textarea>
 
   console.log('✅ Columns module loaded (COMPLETE)');
 
+})();
+
+// ===== AUTO-SIZE COLUMNS (30..150) =====
+(() => {
+  'use strict';
+
+  // Simple debounce
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  function measureText(text, font) {
+    const canvas = measureText._c || (measureText._c = document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    ctx.font = font || '12px system-ui';
+    return ctx.measureText(text || '').width;
+  }
+
+  // Auto size custom/data columns only (not checkbox/item/menu)
+  window.BoardApp = window.BoardApp || {};
+  window.BoardApp.autoSizeColumns = function(targetColumnId = null) {
+    const tables = Array.from(document.querySelectorAll('table.fw-board-table'));
+    if (!tables.length) return;
+
+    // Collect column IDs from headers (works for all tables)
+    const allIds = new Set();
+    tables.forEach(tbl => {
+      tbl.querySelectorAll('th[data-column-id]').forEach(th => allIds.add(String(th.dataset.columnId)));
+    });
+
+    const ids = targetColumnId ? [String(targetColumnId)] : Array.from(allIds);
+    if (!ids.length) return;
+
+    // Use the first table to read font styles
+    const sampleTh = tables[0].querySelector('th[data-column-id] .fw-col-name-input');
+    const font = sampleTh ? getComputedStyle(sampleTh).font : '12px system-ui';
+
+    ids.forEach(id => {
+      // Header text width
+      let maxW = 0;
+      const headerInputs = document.querySelectorAll(`th[data-column-id="${id}"] .fw-col-name-input`);
+      headerInputs.forEach(inp => {
+        const txt = (inp.value || '').trim();
+        maxW = Math.max(maxW, measureText(txt, font) + 36); // padding + menu space
+      });
+
+      // Cell text width (sample to keep it fast)
+      const cells = Array.from(document.querySelectorAll(`td.fw-cell[data-column-id="${id}"]`)).slice(0, 40);
+      cells.forEach(td => {
+        const v = (td.dataset.value || td.textContent || '').trim();
+        if (!v) return;
+        maxW = Math.max(maxW, measureText(v, font) + 32); // padding
+      });
+
+      // Clamp 30..150
+      const w = Math.max(30, Math.min(150, Math.ceil(maxW || 30)));
+
+      // Apply width to all tables (col + th)
+      document.querySelectorAll(`table.fw-board-table col[data-column-id="${id}"]`)
+        .forEach(col => col.style.width = `${w}px`);
+
+      document.querySelectorAll(`table.fw-board-table th[data-column-id="${id}"]`)
+        .forEach(th => th.style.width = `${w}px`);
+    });
+  };
+
+  const runAuto = debounce(() => window.BoardApp.autoSizeColumns(), 120);
+
+  // Run once on load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runAuto, { once: true });
+  } else {
+    runAuto();
+  }
+
+  // Rerun on resize
+  window.addEventListener('resize', runAuto);
+
+  // Rerun when a cell changes (already dispatched in cells.js)
+  document.addEventListener('cellUpdated', debounce((e) => {
+    const colId = e?.detail?.columnId;
+    if (colId) window.BoardApp.autoSizeColumns(colId);
+  }, 120));
 })();

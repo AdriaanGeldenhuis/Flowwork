@@ -566,7 +566,7 @@ define('ASSET_VERSION', '2025-01-21-v8');
     					<col style="width: 40px;">
     					<col style="width: min(25vw, 300px); min-width: 120px;">
     					<?php foreach ($columns as $col): ?>
-       			 		  <col style="width: <?= (int)$col['width'] ?>px;">
+       			 		  <col data-column-id="<?= (int)$col['column_id'] ?>" style="width: <?= (int)$col['width'] ?>px;">
     					<?php endforeach; ?>
     					<col style="width: 50px;">
 				</colgroup>
@@ -789,7 +789,7 @@ define('ASSET_VERSION', '2025-01-21-v8');
                             <col style="width: 50px;">
                             <col style="min-width: 200px; max-width: 25vw;">
                             <?php foreach ($columns as $col): ?>
-                                <col style="width: <?= (int)$col['width'] ?>px;">
+                                <col data-column-id="<?= (int)$col['column_id'] ?>" style="width: <?= (int)$col['width'] ?>px;">
                             <?php endforeach; ?>
                             <col style="width: 50px;">
                         </colgroup>
