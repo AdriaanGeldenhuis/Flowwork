@@ -40,6 +40,8 @@ try {
     $DB->prepare("DELETE FROM board_saved_views WHERE board_id = ?")->execute([$boardId]);
     $DB->prepare("DELETE FROM board_automations WHERE board_id = ?")->execute([$boardId]);
     $DB->prepare("DELETE FROM board_dependencies WHERE board_id = ?")->execute([$boardId]);
+    $DB->prepare("DELETE FROM board_column_settings WHERE board_id = ?")->execute([$boardId]);
+    $DB->prepare("DELETE FROM board_audit_log WHERE board_id = ?")->execute([$boardId]);
     $DB->prepare("DELETE FROM project_boards WHERE board_id = ? AND company_id = ?")->execute([$boardId, $COMPANY_ID]);
     
     $DB->commit();

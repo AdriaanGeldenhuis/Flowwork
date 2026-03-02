@@ -23,9 +23,10 @@ if ($status) {
 }
 
 if ($search) {
+    $escaped = str_replace(['%', '_'], ['\\%', '\\_'], $search);
     $where[] = "(p.name LIKE ? OR p.description LIKE ?)";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
+    $params[] = "%$escaped%";
+    $params[] = "%$escaped%";
 }
 
 $whereClause = implode(' AND ', $where);
