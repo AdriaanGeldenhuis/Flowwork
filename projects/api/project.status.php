@@ -22,12 +22,12 @@ try {
     if (!$stmt->fetch()) respond_error('Project not found', 404);
 
     // Update status
-    $stmt = $DB->prepare("UPDATE projects SET status = ? WHERE project_id = ? AND company_id = ?");
+    $stmt = $DB->prepare("UPDATE projects SET status = ?, updated_at = NOW() WHERE project_id = ? AND company_id = ?");
     $stmt->execute([$status, $projectId, $COMPANY_ID]);
 
     respond_ok();
 
 } catch (Exception $e) {
     error_log("Project status error: " . $e->getMessage());
-    respond_error('Failed to update status', 500);
+    respond_error('Failed to update project status', 500);
 }
