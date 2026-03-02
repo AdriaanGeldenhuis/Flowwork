@@ -142,8 +142,6 @@ $pageTitle = 'All Projects';
         <div id="projectsPagination" class="fw-proj__pagination"></div>
     </div>
 
-</div>
-
 <!-- New Project Modal -->
 <div id="modalNewProject" class="fw-cell-picker-overlay">
     <div class="fw-cell-picker">
