@@ -18,7 +18,7 @@ try {
     // Default behaviour: create a basic work board with standard columns and a single group
     $stmt = $DB->prepare("
         INSERT INTO project_boards (company_id, project_id, title, board_type, default_view, is_active, created_at)
-        VALUES (?, ?, ?, 'work', ?, 1, NOW())
+        VALUES (?, ?, ?, 'general', ?, 1, NOW())
     ");
     $stmt->execute([$COMPANY_ID, $projectId, $title, $defaultView]);
     $boardId = $DB->lastInsertId();

@@ -58,7 +58,7 @@ try {
                     // "procurement" are not recognised and may cause boards to be
                     // hidden.  Default to 'work' (same as board.create) so that
                     // all boards show up consistently in the project view.
-                    $bType  = 'work';
+                    $bType  = 'general';
                     $bView  = $boardDef['default_view'] ?? 'table';
                     // Insert board
                     $stmt = $DB->prepare("INSERT INTO project_boards (company_id, project_id, title, board_type, default_view, created_at) VALUES (?, ?, ?, ?, ?, NOW())");

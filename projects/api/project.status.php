@@ -1,40 +1,31 @@
 <?php
-require_once __DIR__ . '/../../init.php';
-require_once __DIR__ . '/../../auth_gate.php';
-
-header('Content-Type: application/json');
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
-    exit;
-}
+require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/_guard.php';
+require_once __DIR__ . '/_respond.php';
 
 $projectId = (int)($_POST['project_id'] ?? 0);
 $status = $_POST['status'] ?? '';
 
-$USER_ID = $_SESSION['user_id'];
-$COMPANY_ID = $_SESSION['company_id'];
-
-$allowedStatuses = ['active', 'completed', 'on_hold', 'cancelled'];
+$allowedStatuses = ['draft', 'active', 'completed', 'on_hold', 'cancelled'];
 if (!$projectId || !in_array($status, $allowedStatuses)) {
-    echo json_encode(['ok' => false, 'error' => 'Invalid input']);
-    exit;
+    respond_error('Invalid input');
 }
 
-// Verify project belongs to company
-$stmt = $DB->prepare("SELECT id FROM projects WHERE id = ? AND company_id = ?");
-$stmt->execute([$projectId, $COMPANY_ID]);
-if (!$stmt->fetch()) {
-    echo json_encode(['ok' => false, 'error' => 'Project not found']);
-    exit;
-}
-
-// Update status
-$stmt = $DB->prepare("UPDATE projects SET status = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
+require_project_role($projectId, 'manager');
 
 try {
+    // Verify project belongs to company
+    $stmt = $DB->prepare("SELECT project_id FROM projects WHERE project_id = ? AND company_id = ?");
+    $stmt->execute([$projectId, $COMPANY_ID]);
+    if (!$stmt->fetch()) respond_error('Project not found', 404);
+
+    // Update status
+    $stmt = $DB->prepare("UPDATE projects SET status = ?, updated_at = NOW() WHERE project_id = ? AND company_id = ?");
     $stmt->execute([$status, $projectId, $COMPANY_ID]);
-    echo json_encode(['ok' => true]);
+
+    respond_ok();
+
 } catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+    error_log("Project status error: " . $e->getMessage());
+    respond_error('Failed to update project status', 500);
 }
