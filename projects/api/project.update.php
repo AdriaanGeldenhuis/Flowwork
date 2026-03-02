@@ -23,7 +23,7 @@ try {
     // Update project
     $stmt = $DB->prepare("
         UPDATE projects
-        SET name = ?, start_date = ?, end_date = ?, budget = ?, project_manager_id = ?
+        SET name = ?, start_date = ?, end_date = ?, budget = ?, project_manager_id = ?, updated_at = NOW()
         WHERE project_id = ? AND company_id = ?
     ");
     $stmt->execute([
