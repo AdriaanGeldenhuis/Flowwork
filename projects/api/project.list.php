@@ -8,7 +8,7 @@ $page = max(1, (int)($_GET['page'] ?? 1));
 $per = min(100, max(10, (int)($_GET['per'] ?? 50)));
 $offset = ($page - 1) * $per;
 
-$where = ["p.company_id = ?"];
+$where = ["p.company_id = ?", "p.archived = 0"];
 $params = [$COMPANY_ID];
 
 // Filter by user access (non-admins)

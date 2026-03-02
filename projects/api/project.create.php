@@ -52,13 +52,9 @@ try {
                 foreach ($tpl['boards'] as $boardDef) {
                     // Prepare defaults
                     $bTitle = $boardDef['title'] ?? 'Untitled Board';
-                    // Use a generic board type for all template boards.  The board_type
-                    // value is used to determine the icon and behaviour in the
-                    // front‑end.  Custom values such as "schedule", "costing" or
-                    // "procurement" are not recognised and may cause boards to be
-                    // hidden.  Default to 'work' (same as board.create) so that
-                    // all boards show up consistently in the project view.
-                    $bType  = 'work';
+                    // Use 'general' board type for template boards.  The DB enum
+                    // allows: schedule, costing, procurement, quality, safety, general.
+                    $bType  = 'general';
                     $bView  = $boardDef['default_view'] ?? 'table';
                     // Insert board
                     $stmt = $DB->prepare("INSERT INTO project_boards (company_id, project_id, title, board_type, default_view, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
