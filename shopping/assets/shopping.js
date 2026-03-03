@@ -53,11 +53,18 @@
     }, 3000);
   }
 
+  function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
+
   async function apiCall(endpoint, data = {}) {
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': getCsrfToken()
+        },
         body: JSON.stringify(data)
       });
       return await response.json();
