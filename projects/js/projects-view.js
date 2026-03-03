@@ -1040,6 +1040,76 @@
     });
   }
 
+  // ===== CREATE BOARD MODAL =====
+  function initCreateBoardModal() {
+    const form = document.getElementById('formNewBoard');
+    const message = document.getElementById('newBoardMessage');
+
+    if (!form) return;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const formData = new FormData(form);
+      formData.append('csrf', getCSRF());
+
+      if (message) {
+        message.style.display = 'none';
+      }
+
+      const submitBtn = document.querySelector('button[form="formNewBoard"][type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+      }
+
+      fetch('/projects/api/board.create.php', {
+        method: 'POST',
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          if (message) {
+            message.className = 'fw-form-message fw-form-message--success';
+            message.textContent = 'Board created successfully!';
+            message.style.display = 'block';
+          }
+          setTimeout(() => {
+            if (data.board_id) {
+              window.location.href = '/projects/board.php?board_id=' + data.board_id;
+            } else {
+              window.location.reload();
+            }
+          }, 500);
+        } else {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Board';
+          }
+          if (message) {
+            message.className = 'fw-form-message fw-form-message--error';
+            message.textContent = data.error || 'Failed to create board';
+            message.style.display = 'block';
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Create board error:', err);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Board';
+        }
+        if (message) {
+          message.className = 'fw-form-message fw-form-message--error';
+          message.textContent = 'Network error';
+          message.style.display = 'block';
+        }
+      });
+    });
+  }
+
   // ===== RENAME BOARD MODAL =====
   function initRenameBoardModal() {
     const form = document.getElementById('formRenameBoard');
@@ -1532,6 +1602,7 @@
       loadProjectData();
     } else if (ACTIVE_TAB === 'boards') {
       loadBoardsList();
+      initCreateBoardModal();
       initRenameBoardModal();
       setTimeout(init3DTiltBoards, 500);
     } else if (ACTIVE_TAB === 'files') {
