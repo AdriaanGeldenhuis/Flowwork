@@ -13,6 +13,10 @@
   let searchInProgress = false;
   let allCandidates = [];
 
+  function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
+
   // ========== UTILITIES ==========
   function getCookie(name) {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -184,6 +188,7 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
           },
           body: JSON.stringify({
             query: query,
@@ -398,7 +403,7 @@
     try {
       await fetch('/suppliers_ai/ajax/log_action.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
         body: JSON.stringify({
           query_id: currentQuery,
           candidate_id: candidateId,
@@ -440,7 +445,7 @@ async function generateEmail(supplierName, supplierEmail) {
   try {
     const response = await fetch('/suppliers_ai/ajax/generate_rfq_email.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
       body: JSON.stringify({
         supplier_name: supplierName,
         supplier_email: supplierEmail,
@@ -548,7 +553,7 @@ document.addEventListener('keydown', (e) => {
     try {
       const response = await fetch('/suppliers_ai/ajax/add_to_crm.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
         body: JSON.stringify({
           query_id: currentQuery,
           candidate_id: candidateId
@@ -676,7 +681,7 @@ document.addEventListener('keydown', (e) => {
       // Use the bulk RFQ endpoint which generates separate RFQs for each supplier
       const response = await fetch('/suppliers_ai/ajax/generate_rfq_bulk.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
         body: JSON.stringify({
           query_id: currentQuery,
           candidate_ids: Array.from(shortlist)
