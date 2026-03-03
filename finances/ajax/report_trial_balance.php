@@ -29,13 +29,13 @@ try {
             COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.credit ELSE 0 END), 0) AS total_credit
         FROM gl_accounts a
         LEFT JOIN journal_lines jl ON a.account_code = jl.account_code
-        LEFT JOIN journal_entries je ON jl.journal_id = je.id
-        WHERE a.company_id = ? 
+        LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+        WHERE a.company_id = ?
         AND a.is_active = 1
         GROUP BY a.account_id, a.account_code, a.account_name, a.account_type
         ORDER BY a.account_code ASC
     ");
-    $stmt->execute([$date, $date, $companyId]);
+    $stmt->execute([$date, $date, $companyId, $companyId]);
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Format accounts based on normal balance

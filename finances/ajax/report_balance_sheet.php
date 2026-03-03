@@ -24,13 +24,13 @@ try {
             COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.credit - jl.debit ELSE 0 END), 0) AS balance_credit
             FROM gl_accounts a
             LEFT JOIN journal_lines jl ON a.account_code = jl.account_code
-            LEFT JOIN journal_entries je ON jl.journal_id = je.id
+            LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
             WHERE a.company_id = ?
             AND a.account_type = ?
             AND a.is_active = 1
             GROUP BY a.account_id, a.account_code, a.account_name
             ORDER BY a.account_code ASC");
-        $stmt->execute([$date, $date, $companyId, $type]);
+        $stmt->execute([$date, $date, $companyId, $companyId, $type]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     };
 
@@ -85,9 +85,9 @@ try {
             COALESCE(SUM(CASE WHEN a.account_type = 'expense' AND je.entry_date <= ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS expenses
         FROM gl_accounts a
         LEFT JOIN journal_lines jl ON a.account_code = jl.account_code
-        LEFT JOIN journal_entries je ON jl.journal_id = je.id
+        LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
         WHERE a.company_id = ? AND a.account_type IN ('revenue','expense')");
-    $stmt->execute([$date, $date, $companyId]);
+    $stmt->execute([$date, $date, $companyId, $companyId]);
     $plData = $stmt->fetch(PDO::FETCH_ASSOC);
     $netIncomeCents = (int) round((floatval($plData['revenue']) - floatval($plData['expenses'])) * 100);
 

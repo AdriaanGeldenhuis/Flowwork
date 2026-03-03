@@ -70,7 +70,15 @@ class InventoryService
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         $totalQty = floatval($row['total_qty']);
         if (abs($totalQty) < 0.0001) {
-            return 0.0;
+            // Fallback to the most recent receipt's unit cost
+            $fallback = $this->db->prepare(
+                "SELECT unit_cost FROM inventory_movements
+                 WHERE company_id = ? AND item_id = ? AND qty > 0
+                 ORDER BY movement_date DESC, id DESC LIMIT 1"
+            );
+            $fallback->execute([$this->companyId, $itemId]);
+            $lastCost = $fallback->fetchColumn();
+            return $lastCost !== false ? floatval($lastCost) : 0.0;
         }
         $totalCost = floatval($row['total_cost']);
         return $totalCost / $totalQty;

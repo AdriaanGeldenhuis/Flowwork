@@ -10,16 +10,16 @@ $companyId = $_SESSION['company_id'];
 try {
     // Get recent journal entries
     $stmt = $DB->prepare("
-        SELECT 
-            je.journal_id,
+        SELECT
+            je.id AS journal_id,
             je.entry_date,
-            je.memo,
+            je.description AS memo,
             je.module,
             je.created_at,
             u.first_name,
             u.last_name,
-            (SELECT COUNT(*) FROM journal_lines WHERE journal_id = je.journal_id) as line_count,
-            (SELECT SUM(debit_cents) FROM journal_lines WHERE journal_id = je.journal_id) as total_cents
+            (SELECT COUNT(*) FROM journal_lines WHERE journal_id = je.id) as line_count,
+            (SELECT SUM(debit) FROM journal_lines WHERE journal_id = je.id) as total_cents
         FROM journal_entries je
         LEFT JOIN users u ON je.created_by = u.id
         WHERE je.company_id = ?

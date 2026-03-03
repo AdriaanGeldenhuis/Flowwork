@@ -58,17 +58,16 @@ try {
         case 'tb':
             // Trial balance as of a date
             $date = $_GET['date'] ?? date('Y-m-d');
-            // Fetch account balances
             $stmt = $DB->prepare(
-                "SELECT ga.account_id, ga.account_code, ga.account_name,\n" .
-                "       COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.debit_cents ELSE 0 END),0) AS debit_cents,\n" .
-                "       COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.credit_cents ELSE 0 END),0) AS credit_cents\n" .
-                "FROM gl_accounts ga\n" .
-                "LEFT JOIN journal_lines jl ON (ga.account_id = jl.account_id OR ga.account_code = jl.account_code)\n" .
-                "LEFT JOIN journal_entries je ON jl.journal_id = je.id\n" .
-                "WHERE ga.company_id = ? AND (je.company_id IS NULL OR je.company_id = ?)\n" .
-                "GROUP BY ga.account_id, ga.account_code, ga.account_name\n" .
-                "ORDER BY ga.account_code"
+                "SELECT ga.account_id, ga.account_code, ga.account_name,
+                       COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.debit ELSE 0 END),0) * 100 AS debit_cents,
+                       COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.credit ELSE 0 END),0) * 100 AS credit_cents
+                FROM gl_accounts ga
+                LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
+                LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                WHERE ga.company_id = ?
+                GROUP BY ga.account_id, ga.account_code, ga.account_name
+                ORDER BY ga.account_code"
             );
             $stmt->execute([$date, $date, $companyId, $companyId]);
             $accounts = [];
@@ -109,14 +108,14 @@ try {
             $date = $_GET['date'] ?? date('Y-m-d');
             // Revenue
             $stmtR = $DB->prepare(
-                "SELECT ga.account_id, ga.account_code, ga.account_name,\n" .
-                "COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.credit_cents - jl.debit_cents ELSE 0 END),0) AS balance\n" .
-                "FROM gl_accounts ga\n" .
-                "LEFT JOIN journal_lines jl ON (ga.account_id = jl.account_id OR ga.account_code = jl.account_code)\n" .
-                "LEFT JOIN journal_entries je ON jl.journal_id = je.id\n" .
-                "WHERE ga.company_id = ? AND ga.account_type = 'revenue' AND (je.company_id IS NULL OR je.company_id = ?)\n" .
-                "GROUP BY ga.account_id, ga.account_code, ga.account_name\n" .
-                "ORDER BY ga.account_code"
+                "SELECT ga.account_id, ga.account_code, ga.account_name,
+                COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (jl.credit - jl.debit) ELSE 0 END),0) * 100 AS balance
+                FROM gl_accounts ga
+                LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
+                LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                WHERE ga.company_id = ? AND ga.account_type = 'revenue'
+                GROUP BY ga.account_id, ga.account_code, ga.account_name
+                ORDER BY ga.account_code"
             );
             $stmtR->execute([$date, $companyId, $companyId]);
             $revenue = [];
@@ -135,14 +134,14 @@ try {
             }
             // Expenses
             $stmtE = $DB->prepare(
-                "SELECT ga.account_id, ga.account_code, ga.account_name,\n" .
-                "COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.debit_cents - jl.credit_cents ELSE 0 END),0) AS balance\n" .
-                "FROM gl_accounts ga\n" .
-                "LEFT JOIN journal_lines jl ON (ga.account_id = jl.account_id OR ga.account_code = jl.account_code)\n" .
-                "LEFT JOIN journal_entries je ON jl.journal_id = je.id\n" .
-                "WHERE ga.company_id = ? AND ga.account_type = 'expense' AND (je.company_id IS NULL OR je.company_id = ?)\n" .
-                "GROUP BY ga.account_id, ga.account_code, ga.account_name\n" .
-                "ORDER BY ga.account_code"
+                "SELECT ga.account_id, ga.account_code, ga.account_name,
+                COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (jl.debit - jl.credit) ELSE 0 END),0) * 100 AS balance
+                FROM gl_accounts ga
+                LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
+                LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                WHERE ga.company_id = ? AND ga.account_type = 'expense'
+                GROUP BY ga.account_id, ga.account_code, ga.account_name
+                ORDER BY ga.account_code"
             );
             $stmtE->execute([$date, $companyId, $companyId]);
             $expenses = [];
@@ -186,21 +185,20 @@ try {
         case 'bs':
             // Balance sheet as of date
             $date = $_GET['date'] ?? date('Y-m-d');
-            // Query per account type
             $types = ['asset', 'liability', 'equity'];
             $results = [];
             foreach ($types as $type) {
                 $stmtBS = $DB->prepare(
-                    "SELECT ga.account_id, ga.account_code, ga.account_name,\n" .
-                    "COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN jl.debit_cents - jl.credit_cents ELSE 0 END),0) AS balance\n" .
-                    "FROM gl_accounts ga\n" .
-                    "LEFT JOIN journal_lines jl ON (ga.account_id = jl.account_id OR ga.account_code = jl.account_code)\n" .
-                    "LEFT JOIN journal_entries je ON jl.journal_id = je.id\n" .
-                    "WHERE ga.company_id = ? AND ga.account_type = ? AND (je.company_id IS NULL OR je.company_id = ?)\n" .
-                    "GROUP BY ga.account_id, ga.account_code, ga.account_name\n" .
-                    "ORDER BY ga.account_code"
+                    "SELECT ga.account_id, ga.account_code, ga.account_name,
+                    COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (jl.debit - jl.credit) ELSE 0 END),0) * 100 AS balance
+                    FROM gl_accounts ga
+                    LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
+                    LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                    WHERE ga.company_id = ? AND ga.account_type = ?
+                    GROUP BY ga.account_id, ga.account_code, ga.account_name
+                    ORDER BY ga.account_code"
                 );
-                $stmtBS->execute([$date, $companyId, $type, $companyId]);
+                $stmtBS->execute([$date, $companyId, $companyId, $type]);
                 $list = [];
                 while ($row = $stmtBS->fetch(PDO::FETCH_ASSOC)) {
                     $bal = (int)$row['balance'];
@@ -246,18 +244,17 @@ try {
                 exit;
             }
             $params = [$companyId, $startDate, $endDate];
-            $sql = "SELECT je.entry_date, je.id AS journal_id,\n" .
-                   "       COALESCE(jl.account_code, ga.account_code) AS account_code,\n" .
-                   "       ga.account_name,\n" .
-                   "       jl.debit_cents, jl.credit_cents,\n" .
-                   "       je.memo AS description\n" .
-                   "FROM journal_entries je\n" .
-                   "JOIN journal_lines jl ON jl.journal_id = je.id\n" .
-                   "LEFT JOIN gl_accounts ga ON (ga.account_id = jl.account_id OR ga.account_code = jl.account_code) AND ga.company_id = je.company_id\n" .
-                   "WHERE je.company_id = ? AND je.entry_date BETWEEN ? AND ?";
+            $sql = "SELECT je.entry_date, je.id AS journal_id,
+                   jl.account_code,
+                   ga.account_name,
+                   (jl.debit * 100) AS debit_cents, (jl.credit * 100) AS credit_cents,
+                   je.description
+                FROM journal_entries je
+                JOIN journal_lines jl ON jl.journal_id = je.id
+                LEFT JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+                WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?";
             if ($accountCode) {
-                $sql .= " AND (jl.account_code = ? OR ga.account_code = ?)";
-                $params[] = $accountCode;
+                $sql .= " AND jl.account_code = ?";
                 $params[] = $accountCode;
             }
             $sql .= " ORDER BY je.entry_date, je.id";
@@ -307,7 +304,6 @@ try {
     }
 } catch (Exception $e) {
     error_log('Report error: ' . $e->getMessage());
-    // If export, we cannot output JSON properly; just show error.
     if ($export) {
         header('Content-Type: text/plain');
         echo 'Error generating report: ' . $e->getMessage();

@@ -78,8 +78,8 @@ try {
     $stmt = $DB->prepare(
         "INSERT INTO journal_entries (
             company_id, entry_date, reference, description, module, ref_type, ref_id,
-            source_type, source_id, created_by, created_at
-         ) VALUES (?, ?, ?, ?, 'fin', 'bank_tx', ?, 'bank_tx', ?, ?, NOW())"
+            source_type, source_id, created_by, created_at, status, posted_by, posted_at
+         ) VALUES (?, ?, ?, ?, 'fin', 'bank_tx', ?, 'bank_tx', ?, ?, NOW(), 'posted', ?, NOW())"
     );
     $reference = 'BANKTX' . $bankTxId;
     $description = $tx['description'] ?: 'Bank transaction';
@@ -90,6 +90,7 @@ try {
         $description,
         $bankTxId,
         $bankTxId,
+        $userId,
         $userId
     ]);
     $journalId = (int)$DB->lastInsertId();
@@ -102,22 +103,22 @@ try {
         $lookup->execute([$tx['bank_gl_account_id'], $companyId]);
         $bankAccountCode = $lookup->fetchColumn() ?: null;
     }
+    // Reject match if bank GL account can't be resolved — would create unbalanced journal
+    if (!$bankAccountCode) {
+        throw new Exception('Bank GL account not configured for this bank account');
+    }
     // Insert journal lines (debits/credits)
     $lineStmt = $DB->prepare(
         "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)"
     );
     if (intval($tx['amount_cents']) > 0) {
         // Money IN: Dr bank, Cr other
-        if ($bankAccountCode) {
-            $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
-        }
+        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
         $lineStmt->execute([$journalId, $validatedAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
     } else {
         // Money OUT: Dr other, Cr bank
         $lineStmt->execute([$journalId, $validatedAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
-        if ($bankAccountCode) {
-            $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
-        }
+        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
     }
     // Mark the bank transaction as matched and store journal id
     $stmt = $DB->prepare(

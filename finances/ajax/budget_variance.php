@@ -102,14 +102,14 @@ try {
         // Determine project filtering for journal lines
         $sql = "SELECT ga.account_id, MONTH(je.entry_date) AS m,\n" .
                "SUM( CASE\n" .
-               "      WHEN ga.account_type = 'income' THEN COALESCE(jl.credit_cents, jl.credit*100) - COALESCE(jl.debit_cents, jl.debit*100)\n" .
-               "      WHEN ga.account_type = 'expense' THEN COALESCE(jl.debit_cents, jl.debit*100) - COALESCE(jl.credit_cents, jl.credit*100)\n" .
-               "      ELSE COALESCE(jl.debit_cents, jl.debit*100) - COALESCE(jl.credit_cents, jl.credit*100)\n" .
+               "      WHEN ga.account_type = 'income' THEN (jl.credit - jl.debit) * 100\n" .
+               "      WHEN ga.account_type = 'expense' THEN (jl.debit - jl.credit) * 100\n" .
+               "      ELSE (jl.debit - jl.credit) * 100\n" .
                "    END ) AS actual_cents\n" .
                "FROM journal_lines jl\n" .
                "JOIN journal_entries je ON je.id = jl.journal_id\n" .
-               "JOIN gl_accounts ga ON (ga.account_code = jl.account_code OR ga.account_id = jl.account_id) AND ga.company_id = ?\n" .
-               "WHERE je.company_id = ? AND YEAR(je.entry_date) = ?";
+               "JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = ?\n" .
+               "WHERE je.company_id = ? AND je.status = 'posted' AND YEAR(je.entry_date) = ?";
         $params = [$companyId, $companyId, $year];
         if ($projectId !== null) {
             // Only include lines for matching project_id; if journal_lines.project_id exists

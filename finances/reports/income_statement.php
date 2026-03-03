@@ -24,15 +24,22 @@ while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
 // Range sum helper
 function sumRange(PDO $db, int $cid, array $accounts, string $from, string $to): float {
   if (!$accounts) return 0.0;
+  // Look up account_codes for the given account IDs
   $ph = implode(',', array_fill(0, count($accounts), '?'));
-  $sql = "SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents),0) FROM journal_lines jl
+  $codeSql = "SELECT account_code FROM gl_accounts WHERE account_id IN ($ph) AND company_id = ?";
+  $codeStmt = $db->prepare($codeSql);
+  $codeStmt->execute(array_merge($accounts, [$cid]));
+  $codes = $codeStmt->fetchAll(PDO::FETCH_COLUMN);
+  if (!$codes) return 0.0;
+  $ph2 = implode(',', array_fill(0, count($codes), '?'));
+  $sql = "SELECT COALESCE(SUM(jl.debit - jl.credit),0) FROM journal_lines jl
           JOIN journal_entries je ON je.id = jl.journal_id
-          WHERE je.company_id = ? AND jl.gl_account_id IN ($ph)
+          WHERE je.company_id = ? AND jl.account_code IN ($ph2)
             AND je.entry_date BETWEEN ? AND ? AND je.status = 'posted'";
-  $params = array_merge([$cid], $accounts, [$from, $to]);
+  $params = array_merge([$cid], $codes, [$from, $to]);
   $stmt = $db->prepare($sql);
   $stmt->execute($params);
-  return round(((int)$stmt->fetchColumn())/100.0, 2);
+  return round(floatval($stmt->fetchColumn()), 2);
 }
 
 $rev  = sumRange($DB, $companyId, $map['REVENUE'] ?? [], $from, $to) * -1; // revenue usually credit

@@ -18,16 +18,17 @@ $search = $_GET['search'] ?? '';
 
 try {
     $sql = "
-        SELECT 
-            je.journal_id,
+        SELECT
+            je.id AS journal_id,
             je.entry_date,
-            je.memo,
+            je.description AS memo,
             je.module,
             je.ref_type,
             je.ref_id,
+            je.status,
             je.created_at,
-            (SELECT COUNT(*) FROM journal_lines WHERE journal_id = je.journal_id) as line_count,
-            (SELECT SUM(debit_cents) FROM journal_lines WHERE journal_id = je.journal_id) as total_debits
+            (SELECT COUNT(*) FROM journal_lines WHERE journal_id = je.id) as line_count,
+            (SELECT SUM(debit) FROM journal_lines WHERE journal_id = je.id) as total_debits
         FROM journal_entries je
         WHERE je.company_id = ?
     ";
@@ -50,12 +51,12 @@ try {
     }
 
     if ($search) {
-        $sql .= " AND (je.memo LIKE ? OR je.reference LIKE ?)";
+        $sql .= " AND (je.description LIKE ? OR je.reference LIKE ?)";
         $params[] = "%$search%";
         $params[] = "%$search%";
     }
 
-    $sql .= " ORDER BY je.entry_date DESC, je.journal_id DESC LIMIT 100";
+    $sql .= " ORDER BY je.entry_date DESC, je.id DESC LIMIT 100";
 
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);

@@ -64,13 +64,13 @@ try {
     // Sum revenue and expense accounts using journal_lines
     $stmt = $DB->prepare("
         SELECT
-            COALESCE(SUM(CASE WHEN ga.account_type = 'revenue' THEN (COALESCE(jl.credit, jl.credit_cents/100) - COALESCE(jl.debit, jl.debit_cents/100)) ELSE 0 END),0)
-            + COALESCE(SUM(CASE WHEN ga.account_type = 'expense' THEN (COALESCE(jl.debit, jl.debit_cents/100) - COALESCE(jl.credit, jl.credit_cents/100)) ELSE 0 END),0)
+            COALESCE(SUM(CASE WHEN ga.account_type = 'revenue' THEN (jl.credit - jl.debit) ELSE 0 END),0)
+            + COALESCE(SUM(CASE WHEN ga.account_type = 'expense' THEN (jl.debit - jl.credit) ELSE 0 END),0)
             AS net_income
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_id
-        JOIN gl_accounts ga ON ga.company_id = je.company_id AND (ga.account_code = jl.account_code OR ga.account_id = jl.account_id)
-        WHERE je.company_id = ? AND je.entry_date BETWEEN ? AND ?
+        JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
+        WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?
     ");
     $stmt->execute([$companyId, $monthStart, $monthEnd]);
     $net_income = (float)$stmt->fetchColumn();
@@ -79,12 +79,12 @@ try {
     // 5. VAT Due – Output VAT minus Input VAT across all transactions
     $stmt = $DB->prepare("
         SELECT
-            COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (COALESCE(jl.credit, jl.credit_cents/100) - COALESCE(jl.debit, jl.debit_cents/100)) ELSE 0 END),0) AS output_vat,
-            COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (COALESCE(jl.debit, jl.debit_cents/100) - COALESCE(jl.credit, jl.credit_cents/100)) ELSE 0 END),0) AS input_vat
+            COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.credit - jl.debit) ELSE 0 END),0) AS output_vat,
+            COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.debit - jl.credit) ELSE 0 END),0) AS input_vat
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_id
-        JOIN gl_accounts ga ON ga.company_id = je.company_id AND (ga.account_code = jl.account_code OR ga.account_id = jl.account_id)
-        WHERE je.company_id = ?
+        JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
+        WHERE je.company_id = ? AND je.status = 'posted'
     ");
     $stmt->execute([$vatOutCode, $vatInCode, $companyId]);
     $vatRow = $stmt->fetch(PDO::FETCH_ASSOC);
