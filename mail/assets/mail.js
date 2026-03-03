@@ -6,6 +6,10 @@
   const THEME_LIGHT = 'light';
 
   // ========== UTILITIES ==========
+  function getCsrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
+
   function getCookie(name) {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
     return match ? match[2] : null;
@@ -332,7 +336,7 @@
     markAsRead: function(threadId) {
       fetch('/mail/ajax/message_mark_read.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
         body: JSON.stringify({ thread_id: threadId })
       }).catch(err => console.error(err));
     },
@@ -359,7 +363,7 @@
       btn.disabled = true;
       btn.textContent = 'Syncing...';
 
-      fetch('/mail/ajax/sync_run.php', { method: 'POST' })
+      fetch('/mail/ajax/sync_run.php', { method: 'POST', headers: { 'X-CSRF-TOKEN': getCsrfToken() } })
         .then(res => res.json())
         .then(data => {
           if (data.ok) {
@@ -522,7 +526,7 @@
 
         fetch('/mail/ajax/account_save.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
           body: JSON.stringify(data)
         })
         .then(res => res.json())
@@ -556,7 +560,7 @@
 
       fetch('/mail/ajax/account_test.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
         body: JSON.stringify({ account_id: accountId })
       })
       .then(res => res.json())
@@ -582,7 +586,7 @@
 
       fetch('/mail/ajax/account_delete.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
         body: JSON.stringify({ account_id: accountId })
       })
       .then(res => res.json())
@@ -703,7 +707,7 @@
 
         fetch('/mail/ajax/signature_save.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
           body: JSON.stringify(data)
         })
         .then(res => res.json())
@@ -738,7 +742,7 @@
 
       fetch('/mail/ajax/signature_delete.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
         body: JSON.stringify({ signature_id: id })
       })
       .then(res => res.json())
@@ -940,7 +944,7 @@
 
         fetch('/mail/ajax/rule_save.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
           body: JSON.stringify(data)
         })
         .then(res => res.json())
@@ -975,7 +979,7 @@
 
       fetch('/mail/ajax/rule_delete.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
         body: JSON.stringify({ rule_id: id })
       })
       .then(res => res.json())
@@ -1006,7 +1010,7 @@
 
         fetch('/mail/ajax/prefs_save.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
           body: JSON.stringify(data)
         })
         .then(res => res.json())
@@ -1091,7 +1095,7 @@
 
       fetch('/mail/ajax/template_delete.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
         body: JSON.stringify({ template_id: templateId })
       })
       .then(res => res.json())
@@ -1183,6 +1187,7 @@
 
         fetch('/mail/ajax/compose_send.php', {
           method: 'POST',
+          headers: { 'X-CSRF-TOKEN': getCsrfToken() },
           body: formData
         })
         .then(res => res.json())
