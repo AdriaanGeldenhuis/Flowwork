@@ -5,7 +5,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-10-07-CRM-8');
+// CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -68,8 +68,8 @@ $companyName = $company['name'] ?? 'Company';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Opportunity – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
-    <link rel="stylesheet" href="/crm/opps/opps.css?v=<?= ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/crm/opps/opps.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>
 <body class="fw-crm fw-opps">
     <div class="fw-crm__container">
@@ -104,6 +104,37 @@ $companyName = $company['name'] ?? 'Company';
                         <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </a>
+
+                <button class="fw-crm__theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <svg class="fw-crm__theme-icon fw-crm__theme-icon--light" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
+                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <svg class="fw-crm__theme-icon fw-crm__theme-icon--dark" viewBox="0 0 24 24" fill="none">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+
+                <div class="fw-crm__menu-wrapper">
+                    <button class="fw-crm__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <nav class="fw-crm__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="/crm/opps_list.php" class="fw-crm__kebab-item">Back to Pipeline</a>
+                        <a href="/crm/" class="fw-crm__kebab-item">Back to CRM</a>
+                    </nav>
+                </div>
             </div>
         </header>
         <!-- Main content -->
@@ -191,6 +222,7 @@ $companyName = $company['name'] ?? 'Company';
             <div id="oppEditMessage" class="fw-crm__alert" style="display:none"></div>
         </main>
     </div>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script>
     (function() {
         const canEdit = <?= $canEdit ? 'true' : 'false' ?>;

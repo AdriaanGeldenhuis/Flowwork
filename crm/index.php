@@ -3,8 +3,6 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-CRM-5');
-
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
 
@@ -118,7 +116,7 @@ if ($activeTab === 'overview') {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body class="fw-crm">
@@ -208,6 +206,9 @@ if ($activeTab === 'overview') {
                 <a href="/crm/?tab=customers" class="fw-crm__view-tab <?= $activeTab === 'customers' ? 'fw-crm__view-tab--active' : '' ?>">
                     Customers (<?= $totalCustomers ?? 0 ?>)
                 </a>
+                <a href="/crm/opps_list.php" class="fw-crm__view-tab">
+                    Pipeline
+                </a>
             </div>
 
             <!-- Tab Content -->
@@ -293,13 +294,13 @@ if ($activeTab === 'overview') {
 
         <!-- Footer -->
         <footer class="fw-crm__footer">
-            <span>CRM v<?= ASSET_VERSION ?></span>
+            <span>CRM v<?= CRM_ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Light</span>
         </footer>
 
     </div>
 
-    <script src="/crm/assets/crm.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script>
     // Playground chart definitions matching landing page
     const playgroundCharts = [

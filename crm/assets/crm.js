@@ -27,6 +27,12 @@
     };
   }
 
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
   // ========== THEME TOGGLE ==========
   function initTheme() {
     const toggle = document.getElementById('themeToggle');
@@ -142,20 +148,21 @@
       }
 
       const html = accounts.map(acc => {
+        const safeName = escapeHtml(acc.name || '?');
         const initials = (acc.name || '?').substring(0, 2).toUpperCase();
         const avatarClass = accountType === 'supplier' ? 'fw-crm__account-avatar--supplier' : 'fw-crm__account-avatar--customer';
-        
-        const tags = (acc.tags || []).map(tag => 
-          '<span class="fw-crm__tag" style="background:' + (tag.color || '#06b6d4') + '">' + tag.name + '</span>'
+
+        const tags = (acc.tags || []).map(tag =>
+          '<span class="fw-crm__tag" style="background:' + escapeHtml(tag.color || '#06b6d4') + '">' + escapeHtml(tag.name) + '</span>'
         ).join('');
 
         return `
-          <a href="/crm/account_view.php?id=${acc.id}" class="fw-crm__account-card">
-            <div class="fw-crm__account-avatar ${avatarClass}">${initials}</div>
+          <a href="/crm/account_view.php?id=${parseInt(acc.id, 10)}" class="fw-crm__account-card">
+            <div class="fw-crm__account-avatar ${avatarClass}">${escapeHtml(initials)}</div>
             <div class="fw-crm__account-info">
-              <div class="fw-crm__account-name">${acc.name}</div>
+              <div class="fw-crm__account-name">${safeName}</div>
               <div class="fw-crm__account-meta">
-                ${acc.primary_contact || 'No contact'} • ${acc.email || 'No email'}
+                ${escapeHtml(acc.primary_contact || 'No contact')} • ${escapeHtml(acc.email || 'No email')}
               </div>
               <div class="fw-crm__account-tags">${tags}</div>
             </div>

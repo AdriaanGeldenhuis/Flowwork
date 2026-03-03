@@ -22,6 +22,7 @@ try {
     $DB->beginTransaction();
 
     $typeId = !empty($_POST['id']) ? (int)$_POST['id'] : null;
+    $isEdit = $typeId !== null;
     $code = strtoupper(trim($_POST['code'] ?? ''));
     $name = trim($_POST['name'] ?? '');
 
@@ -94,7 +95,7 @@ try {
     $stmt->execute([
         $companyId,
         $userId,
-        $typeId ? 'update' : 'create',
+        $isEdit ? 'update' : 'create',
         $typeId,
         json_encode(['code' => $code, 'name' => $name])
     ]);

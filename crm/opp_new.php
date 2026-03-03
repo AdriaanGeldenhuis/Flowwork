@@ -7,7 +7,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-10-07-CRM-8');
+// CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -50,8 +50,8 @@ $companyName = $company['name'] ?? 'Company';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Opportunity – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
-    <link rel="stylesheet" href="/crm/opps/opps.css?v=<?= ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/crm/opps/opps.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>
 <body class="fw-crm fw-opps">
     <div class="fw-crm__container">

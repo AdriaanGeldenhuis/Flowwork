@@ -60,6 +60,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!draggedCard) return;
                 // If dropping into same column, ignore
                 if (this.contains(draggedCard)) return;
+                // Save original position for rollback on failure
+                const originalContainer = draggedCard.parentElement;
+                const originalNextSibling = draggedCard.nextElementSibling;
                 // Append card to new column
                 this.appendChild(draggedCard);
                 const newStage = this.parentElement.getAttribute('data-stage');
@@ -75,12 +78,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then(data => {
                     if (!data.ok) {
                         alert(data.error || 'Failed to update stage');
+                        // Revert card to original column
+                        if (originalNextSibling) {
+                            originalContainer.insertBefore(draggedCard, originalNextSibling);
+                        } else {
+                            originalContainer.appendChild(draggedCard);
+                        }
                     }
-                    // Regardless, re‑init cards and recalc totals
                     initCardDragHandlers();
                     recalcStageTotals();
                 }).catch(() => {
                     alert('Error communicating with server');
+                    // Revert card to original column
+                    if (originalNextSibling) {
+                        originalContainer.insertBefore(draggedCard, originalNextSibling);
+                    } else {
+                        originalContainer.appendChild(draggedCard);
+                    }
                     initCardDragHandlers();
                     recalcStageTotals();
                 });

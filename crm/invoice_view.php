@@ -7,7 +7,7 @@ ini_set('display_errors', 1);
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-FINAL');
+// CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -89,8 +89,8 @@ function format_currency($amount) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
-    <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
-    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= CRM_ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= CRM_ASSET_VERSION ?>">
 
     <style>
         :root {
@@ -378,7 +378,7 @@ function format_currency($amount) {
         </main>
 
         <footer class="fw-qi__footer">
-            <span>Q&I v<?= ASSET_VERSION ?></span>
+            <span>Q&I v<?= CRM_ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Light</span>
         </footer>
 
@@ -429,8 +429,8 @@ function format_currency($amount) {
         </div>
     </div>
 
-    <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
-    <script src="/qi/assets/qi.invoice.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.js?v=<?= CRM_ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.invoice.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script>
         // Initialize InvoiceView with necessary data
         InvoiceView.init({

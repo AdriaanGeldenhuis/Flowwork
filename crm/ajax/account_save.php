@@ -100,12 +100,13 @@ try {
 
         // Audit log
         $stmt = $DB->prepare("
-            INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-            VALUES (?, ?, 'crm_account_update', ?, NOW())
+            INSERT INTO audit_log (company_id, user_id, action, entity_type, entity_id, details, created_at)
+            VALUES (?, ?, 'crm_account_update', 'crm_account', ?, ?, NOW())
         ");
         $stmt->execute([
             $companyId,
             $userId,
+            $accountId,
             json_encode(['id' => $accountId, 'name' => $name, 'type' => $type])
         ]);
 
@@ -208,12 +209,13 @@ try {
 
         // Audit log
         $stmt = $DB->prepare("
-            INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-            VALUES (?, ?, 'crm_account_create', ?, NOW())
+            INSERT INTO audit_log (company_id, user_id, action, entity_type, entity_id, details, created_at)
+            VALUES (?, ?, 'crm_account_create', 'crm_account', ?, ?, NOW())
         ");
         $stmt->execute([
             $companyId,
             $userId,
+            $accountId,
             json_encode(['id' => $accountId, 'name' => $name, 'type' => $type])
         ]);
     }

@@ -64,16 +64,24 @@ try {
     $stmt->execute($params);
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch tags for each account
-    foreach ($accounts as &$acc) {
+    // Fetch tags for all accounts in a single query (avoids N+1)
+    $accountIds = array_column($accounts, 'id');
+    $tagsByAccount = [];
+    if (!empty($accountIds)) {
+        $placeholders = implode(',', array_fill(0, count($accountIds), '?'));
         $tagStmt = $DB->prepare("
-            SELECT t.name, t.color 
+            SELECT at.account_id, t.name, t.color
             FROM crm_tags t
             JOIN crm_account_tags at ON at.tag_id = t.id
-            WHERE at.account_id = ?
+            WHERE at.account_id IN ($placeholders)
         ");
-        $tagStmt->execute([$acc['id']]);
-        $acc['tags'] = $tagStmt->fetchAll(PDO::FETCH_ASSOC);
+        $tagStmt->execute($accountIds);
+        while ($row = $tagStmt->fetch(PDO::FETCH_ASSOC)) {
+            $tagsByAccount[$row['account_id']][] = ['name' => $row['name'], 'color' => $row['color']];
+        }
+    }
+    foreach ($accounts as &$acc) {
+        $acc['tags'] = $tagsByAccount[$acc['id']] ?? [];
     }
 
     echo json_encode(['ok' => true, 'accounts' => $accounts]);
