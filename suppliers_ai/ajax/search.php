@@ -63,7 +63,8 @@ $parsed = parseQuery($queryText, $rules);
 
 $location = $parsed['location'] ?? 'South Africa';
 $categories = $parsed['categories'] ?? [];
-$category = !empty($categories) ? $categories[0] : 'suppliers';
+// Use the raw query for external searches so specific terms like "19mm rock" are preserved
+$category = !empty($categories) ? $categories[0] : $queryText;
 
 try {
     $candidates = [];
@@ -210,32 +211,31 @@ try {
 // ========== SOURCE FUNCTIONS ==========
 
 function searchCRM($DB, $companyId, $categories, $location, $rules, &$seenKeys) {
+    // If no categories detected, skip CRM — we can't meaningfully filter
+    if (empty($categories)) return [];
+
     // Build category filter via industry matching
     $industryFilter = '';
     $params = [$companyId];
 
-    // If categories detected, try to match to CRM industries
-    if (!empty($categories)) {
-        $industryKeywords = [];
-        foreach ($categories as $cat) {
-            $industryKeywords[] = '%' . $cat . '%';
-            // Add synonyms from rules if available
-            $synonyms = $rules['synonyms'][$cat] ?? [];
-            foreach ($synonyms as $syn) {
-                $industryKeywords[] = '%' . $syn . '%';
-            }
-        }
-
-        if (!empty($industryKeywords)) {
-            // Search by industry name or account name/notes matching category keywords
-            $nameLikes = array_map(function() { return 'a.name LIKE ?'; }, $industryKeywords);
-            $notesLikes = array_map(function() { return 'a.notes LIKE ?'; }, $industryKeywords);
-            $industryLikes = array_map(function() { return 'ind.name LIKE ?'; }, $industryKeywords);
-
-            $industryFilter = ' AND (' . implode(' OR ', array_merge($nameLikes, $notesLikes, $industryLikes)) . ')';
-            $params = array_merge($params, $industryKeywords, $industryKeywords, $industryKeywords);
+    // Match CRM industries using detected categories
+    $industryKeywords = [];
+    foreach ($categories as $cat) {
+        $industryKeywords[] = '%' . $cat . '%';
+        // Add synonyms from rules if available
+        $synonyms = $rules['synonyms'][$cat] ?? [];
+        foreach ($synonyms as $syn) {
+            $industryKeywords[] = '%' . $syn . '%';
         }
     }
+
+    // Search by industry name or account name/notes matching category keywords
+    $nameLikes = array_map(function() { return 'a.name LIKE ?'; }, $industryKeywords);
+    $notesLikes = array_map(function() { return 'a.notes LIKE ?'; }, $industryKeywords);
+    $industryLikes = array_map(function() { return 'ind.name LIKE ?'; }, $industryKeywords);
+
+    $industryFilter = ' AND (' . implode(' OR ', array_merge($nameLikes, $notesLikes, $industryLikes)) . ')';
+    $params = array_merge($params, $industryKeywords, $industryKeywords, $industryKeywords);
 
     $sql = "
         SELECT
@@ -267,27 +267,6 @@ function searchCRM($DB, $companyId, $categories, $location, $rules, &$seenKeys) 
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // If no category-matched results, fall back to all active suppliers
-    if (empty($accounts) && !empty($categories)) {
-        $stmt = $DB->prepare("
-            SELECT
-                a.id, a.name, a.phone, a.email, a.website, a.preferred,
-                a.on_time_percent, a.avg_response_hours, a.defect_rate_percent, a.notes,
-                ind.name as industry_name,
-                CONCAT_WS(', ', addr.line1, addr.line2, addr.city, addr.region, addr.postal_code) as address,
-                addr.city
-            FROM crm_accounts a
-            LEFT JOIN crm_industries ind ON a.industry_id = ind.id
-            LEFT JOIN crm_addresses addr ON addr.account_id = a.id AND addr.company_id = a.company_id
-            WHERE a.company_id = ? AND a.type = 'supplier' AND a.status = 'active'
-            GROUP BY a.id
-            ORDER BY a.preferred DESC, a.name
-            LIMIT 10
-        ");
-        $stmt->execute([$companyId]);
-        $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
 
     $candidates = [];
     foreach ($accounts as $acc) {
@@ -727,7 +706,13 @@ function parseQuery($text, $rules = []) {
         'catering' => ['cater', 'food', 'kitchen', 'chef'],
         'it' => ['it ', 'computer', 'software', 'network', 'server'],
         'welding' => ['weld', 'fabricat', 'steel', 'metal work'],
-        'flooring' => ['floor', 'carpet', 'vinyl', 'laminate', 'tiling']
+        'flooring' => ['floor', 'carpet', 'vinyl', 'laminate', 'tiling'],
+        'aggregates' => ['rock', 'stone', 'aggregate', 'gravel', 'sand', 'crusher', 'quarry', 'crushed stone', 'building sand', 'river sand', 'fill'],
+        'concrete' => ['concrete', 'cement', 'ready-mix', 'readymix', 'ready mix', 'screed', 'mortar'],
+        'bricks' => ['brick', 'block', 'paver', 'maxi brick', 'stock brick', 'cement block'],
+        'timber' => ['timber', 'lumber', 'wood', 'planks', 'poles', 'shutterboard'],
+        'plumbing_supplies' => ['pvc pipe', 'fitting', 'valve', 'cistern', 'toilet', 'basin', 'bath'],
+        'earthworks' => ['earthwork', 'excavat', 'tipper', 'tlb', 'bobcat', 'bulldozer', 'plant hire']
     ];
 
     // Merge synonyms from rules
