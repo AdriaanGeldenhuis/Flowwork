@@ -109,6 +109,7 @@ try {
         } else {
             $sourcesTried[] = 'openai';
             $openaiResult = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys);
+            error_log("OpenAI result type: " . gettype($openaiResult) . " count: " . (is_array($openaiResult) ? count($openaiResult) : 'N/A') . " has error key: " . (is_array($openaiResult) && isset($openaiResult['error']) ? 'YES' : 'NO'));
             if (is_array($openaiResult) && isset($openaiResult['error'])) {
                 $sourceErrors[] = 'OpenAI error: ' . $openaiResult['error'];
             } elseif (is_array($openaiResult)) {
@@ -128,8 +129,11 @@ try {
         exit;
     }
 
+    error_log("Pre-scoring candidates: " . count($candidates));
+
     // Score, rank and filter
     $candidates = scoreAndRank($candidates, $filterMinScore, $filterCompliance, $rules);
+    error_log("Post-scoring candidates: " . count($candidates) . " (minScore=$filterMinScore, compliance=$filterCompliance)");
 
     // Limit to top 10
     $candidates = array_slice($candidates, 0, 10);
@@ -150,7 +154,8 @@ try {
             'took_ms' => $tookMs,
             'parsed' => $parsed,
             'source' => 'multi',
-            'sources_tried' => $sourcesTried
+            'sources_tried' => $sourcesTried,
+            'source_errors' => $sourceErrors
         ]);
         exit;
     }
@@ -536,6 +541,8 @@ PROMPT;
     $data = json_decode($response, true);
     $content = $data['choices'][0]['message']['content'] ?? '';
 
+    error_log("OpenAI raw content: " . substr($content, 0, 1000));
+
     // Clean markdown code blocks
     $content = preg_replace('/```json\s*/', '', $content);
     $content = preg_replace('/```\s*/', '', $content);
@@ -543,18 +550,20 @@ PROMPT;
 
     $result = json_decode($content, true);
     if (!is_array($result)) {
-        error_log("OpenAI response not valid JSON: " . substr($content, 0, 500));
-        return ['error' => 'Could not parse AI response'];
+        error_log("OpenAI JSON parse failed. Cleaned content: " . substr($content, 0, 500));
+        return ['error' => 'Could not parse AI response. Raw: ' . substr($content, 0, 200)];
     }
+
     $suppliers = $result['companies'] ?? [];
+    error_log("OpenAI returned " . count($suppliers) . " companies");
 
     $candidates = [];
     foreach ($suppliers as $s) {
-        if (empty($s['name'])) continue;
+        if (empty($s['name'])) { error_log("OpenAI skip: empty name"); continue; }
 
         $dedupKey = strtolower(trim($s['name']));
-        if (isset($seenKeys[$dedupKey])) continue;
-        if (!empty($s['phone']) && isset($seenKeys[preg_replace('/[^0-9]/', '', $s['phone'])])) continue;
+        if (isset($seenKeys[$dedupKey])) { error_log("OpenAI skip dedup name: " . $s['name']); continue; }
+        if (!empty($s['phone']) && isset($seenKeys[preg_replace('/[^0-9]/', '', $s['phone'])])) { error_log("OpenAI skip dedup phone: " . $s['name']); continue; }
 
         $seenKeys[$dedupKey] = true;
         if (!empty($s['phone'])) $seenKeys[preg_replace('/[^0-9]/', '', $s['phone'])] = true;
@@ -576,6 +585,7 @@ PROMPT;
         ];
     }
 
+    error_log("OpenAI final candidates: " . count($candidates));
     return $candidates;
 }
 

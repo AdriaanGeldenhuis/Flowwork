@@ -197,6 +197,7 @@
         });
 
         const data = await response.json();
+        console.log('Search response:', data);
 
         if (data.ok) {
           currentQuery = data.query_id;
