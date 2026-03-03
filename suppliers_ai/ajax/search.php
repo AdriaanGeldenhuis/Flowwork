@@ -83,6 +83,7 @@ try {
     }
 
     $sourcesTried = [];
+    $sourceErrors = [];
 
     // SOURCE 3: Google Places API (if key configured and not CRM-only)
     if ($filterSource !== 'crm' && $filterSource !== 'history') {
@@ -101,19 +102,28 @@ try {
         $openaiModel = $apiKeys['openai_model'] ?? 'gpt-4o-mini';
         $openaiMaxTokens = intval($apiKeys['openai_max_tokens'] ?? 500);
 
-        if ($openaiEnabled && !empty($openaiKey) && $openaiKey !== 'OPENAI_KEY_REMOVED') {
+        if (!$openaiEnabled) {
+            $sourceErrors[] = 'OpenAI is disabled. Enable it in Settings → OpenAI Configuration.';
+        } elseif (empty($openaiKey) || $openaiKey === 'OPENAI_KEY_REMOVED') {
+            $sourceErrors[] = 'OpenAI API key not set. Add your key in Settings → OpenAI Configuration.';
+        } else {
             $sourcesTried[] = 'openai';
-            $aiCandidates = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys);
-            $candidates = array_merge($candidates, $aiCandidates);
+            $openaiResult = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys);
+            if (is_array($openaiResult) && isset($openaiResult['error'])) {
+                $sourceErrors[] = 'OpenAI error: ' . $openaiResult['error'];
+            } elseif (is_array($openaiResult)) {
+                $candidates = array_merge($candidates, $openaiResult);
+            }
         }
     }
 
-    // If no external sources were available and no CRM results, inform the user
-    $externalAvailable = !empty($sourcesTried);
-    if (empty($candidates) && !$externalAvailable && $filterSource !== 'crm' && $filterSource !== 'history') {
+    // If no candidates found and there were errors, report them
+    if (empty($candidates) && !empty($sourceErrors)) {
+        $tookMs = round((microtime(true) - $startTime) * 1000);
         echo json_encode([
             'ok' => false,
-            'error' => 'No API keys configured. Go to Suppliers AI → Settings to add your OpenAI API key.'
+            'error' => $sourceErrors[0],
+            'took_ms' => $tookMs
         ]);
         exit;
     }
@@ -495,7 +505,7 @@ PROMPT;
         CURLOPT_POSTFIELDS => json_encode([
             'model' => $model,
             'messages' => [
-                ['role' => 'system', 'content' => 'You are a verified business directory. You ONLY suggest companies you can confirm exist. You are liable for accuracy.'],
+                ['role' => 'system', 'content' => 'You are a South African supplier and subcontractor directory. Find real businesses that match the search query. Include well-known chains, local businesses, and specialists in the area.'],
                 ['role' => 'user', 'content' => $searchPrompt]
             ],
             'max_tokens' => max(500, $maxTokens),
@@ -504,12 +514,23 @@ PROMPT;
     ]);
 
     $response = curl_exec($ch);
+    $curlError = curl_error($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
+    if ($curlError) {
+        error_log("OpenAI curl error: " . $curlError);
+        return ['error' => 'Connection failed: ' . $curlError];
+    }
+
     if ($httpCode !== 200) {
         error_log("OpenAI API error: HTTP $httpCode - " . substr($response, 0, 500));
-        return [];
+        $errData = json_decode($response, true);
+        $errMsg = $errData['error']['message'] ?? "HTTP $httpCode";
+        if ($httpCode === 401) $errMsg = 'Invalid API key. Check your OpenAI key in Settings.';
+        if ($httpCode === 429) $errMsg = 'OpenAI rate limit exceeded. Try again in a minute.';
+        if ($httpCode === 402) $errMsg = 'OpenAI billing issue. Check your OpenAI account has credits.';
+        return ['error' => $errMsg];
     }
 
     $data = json_decode($response, true);

@@ -206,6 +206,14 @@
           resultsCount.textContent = data.candidates.length;
           showToast(`Found ${data.candidates.length} suppliers in ${data.took_ms}ms 🤖`, 'success');
         } else {
+          // Show error in results area so user can see it clearly
+          const resultsList = document.getElementById('resultsList');
+          if (resultsList) {
+            resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state" style="color: var(--accent-danger, #ef4444);">' +
+              (data.error || 'Search failed') + '</div>';
+          }
+          resultsArea.style.display = 'block';
+          resultsCount.textContent = '0';
           showToast(data.error || 'Search failed', 'error');
         }
       } catch (err) {
