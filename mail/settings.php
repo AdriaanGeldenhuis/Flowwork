@@ -1,95 +1,426 @@
-<script>
-/* Inline Settings Accounts script – identical logic as mail.settings.js */
-(function () {
-  'use strict';
-  function $(sel, ctx) { return (ctx || document).querySelector(sel); }
-  function showMessage(elId, message, isError) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    el.textContent = message;
-    el.className = 'fw-mail__form-message ' + (isError ? 'fw-mail__form-message--error' : 'fw-mail__form-message--success');
-    el.style.display = 'block';
-    setTimeout(() => { el.style.display = 'none'; }, 5000);
-  }
-  async function fetchJson(url, opts) {
-    const res = await fetch(url, opts);
-    let data = null; try { data = await res.json(); } catch(_){}
-    return { ok: res.ok && data && (data.ok !== false), data };
-  }
-  function openModal(){ const m = document.getElementById('accountModal'); if (m) m.style.display='block'; }
-  function closeModal(){ const m = document.getElementById('accountModal'); if (m) m.style.display='none'; }
-  function resetForm(){ const f=$('#accountForm'); if(!f) return; f.reset(); if(f.elements['account_id']) f.elements['account_id'].value=''; const msg=$('#accountMessage'); if(msg){ msg.textContent=''; msg.style.display='none'; } }
-  function fillForm(acc){
-    const f=$('#accountForm'); if(!f) return; const get=(k,d='')=>acc&&acc[k]!=null?acc[k]:d;
-    f.elements['account_id'].value=get('account_id','');
-    f.elements['account_name'].value=get('account_name');
-    f.elements['email_address'].value=get('email_address');
-    f.elements['imap_server'].value=get('imap_server');
-    f.elements['imap_port'].value=get('imap_port',993);
-    f.elements['imap_encryption'].value=get('imap_encryption','ssl');
-    f.elements['smtp_server'].value=get('smtp_server');
-    f.elements['smtp_port'].value=get('smtp_port',587);
-    f.elements['smtp_encryption'].value=get('smtp_encryption','tls');
-    f.elements['username'].value=get('username');
-    const active=document.getElementById('accountActive'); if(active) active.checked=!!get('is_active',1);
-  }
-  function getPayload(){
-    const f=$('#accountForm');
-    return {
-      account_id:Number(f.account_id.value||0),
-      account_name:f.account_name.value.trim(),
-      email_address:f.email_address.value.trim(),
-      imap_server:f.imap_server.value.trim(),
-      imap_port:Number(f.imap_port.value||993),
-      imap_encryption:f.imap_encryption.value,
-      smtp_server:f.smtp_server.value.trim(),
-      smtp_port:Number(f.smtp_port.value||587),
-      smtp_encryption:f.smtp_encryption.value,
-      username:f.username.value.trim(),
-      password:f.password.value,
-      is_active:document.getElementById('accountActive')?.checked?1:0
-    };
-  }
-  async function onEditAccount(id){
-    const t=document.getElementById('accountModalTitle'); if(t) t.textContent='Edit Email Account';
-    resetForm();
-    const {ok,data}=await fetchJson('/mail/ajax/account_get.php?id='+encodeURIComponent(id));
-    if(!ok||!data||!data.account){ showMessage('accountMessage',(data&&data.error)?data.error:'Failed to load account',true); return; }
-    fillForm(data.account); openModal();
-  }
-  function onNewAccount(){ const t=document.getElementById('accountModalTitle'); if(t) t.textContent='New Email Account'; resetForm(); openModal(); }
-  async function onSaveAccount(e){
-    e.preventDefault();
-    const payload=getPayload();
-    if(!payload.account_name||!payload.email_address){ showMessage('accountMessage','Account name and email address are required',true); return; }
-    const {ok,data}=await fetchJson('/mail/ajax/account_save.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(!ok){ showMessage('accountMessage',(data&&data.error)?data.error:'Failed to save',true); return; }
-    showMessage('accountMessage','Saved'); setTimeout(()=>{ window.location.reload(); },600);
-  }
-  async function onTestAccount(id){
-    const {ok,data}=await fetchJson('/mail/ajax/account_test.php?id='+encodeURIComponent(id));
-    if(!ok){ showMessage('accountMessage',(data&&data.error)?data.error:'Test failed',true); return; }
-    showMessage('accountMessage',(data&&data.message)?data.message:'Test completed',false);
-  }
-  async function onDeleteAccount(id){
-    if(!confirm('Delete this email account? This cannot be undone.')) return;
-    const {ok,data}=await fetchJson('/mail/ajax/account_delete.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number(id)})});
-    if(!ok){ showMessage('accountMessage',(data&&data.error)?data.error:'Delete failed',true); return; }
-    showMessage('accountMessage','Account deleted'); setTimeout(()=>{ window.location.reload(); },600);
-  }
-  function init(){
-    if(!document.getElementById('accountList')) return;
-    document.addEventListener('click',(e)=>{
-      const btn=e.target.closest('[data-action]'); if(!btn) return;
-      const action=btn.getAttribute('data-action');
-      if(action==='edit-account'){ const id=btn.getAttribute('data-id'); if(id) onEditAccount(id); }
-      else if(action==='new-account'){ onNewAccount(); }
-      else if(action==='test-account'){ const id=btn.getAttribute('data-id'); if(id) onTestAccount(id); }
-      else if(action==='delete-account'){ const id=btn.getAttribute('data-id'); if(id) onDeleteAccount(id); }
-      else if(action==='close-modal'){ const m=document.getElementById('accountModal'); if(m) m.style.display='none'; }
-    });
-    const form=document.getElementById('accountForm'); if(form) form.addEventListener('submit', onSaveAccount);
-  }
-  document.addEventListener('DOMContentLoaded', init);
-})();
-</script>
+<?php
+// /mail/settings.php
+require_once __DIR__ . '/../init.php';
+require_once __DIR__ . '/../auth_gate.php';
+
+define('ASSET_VERSION', '2025-01-21-MAIL-1');
+
+$companyId = $_SESSION['company_id'];
+$userId = $_SESSION['user_id'];
+
+// Fetch user info
+$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
+$stmt->execute([$userId]);
+$user = $stmt->fetch();
+$firstName = $user['first_name'] ?? 'User';
+
+// Fetch company name
+$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
+$stmt->execute([$companyId]);
+$company = $stmt->fetch();
+$companyName = $company['name'] ?? 'Company';
+
+// Fetch email accounts
+$stmt = $DB->prepare("
+    SELECT account_id, account_name, email_address, imap_server, smtp_server,
+           is_active, last_sync_at, last_error
+    FROM email_accounts
+    WHERE company_id = ? AND user_id = ?
+    ORDER BY account_name
+");
+$stmt->execute([$companyId, $userId]);
+$accounts = $stmt->fetchAll();
+
+// Fetch user mail preferences
+$stmt = $DB->prepare("SELECT * FROM user_mail_prefs WHERE company_id = ? AND user_id = ?");
+$stmt->execute([$companyId, $userId]);
+$prefs = $stmt->fetch();
+if (!$prefs) {
+    $prefs = [
+        'sla_default_hours' => 24,
+        'block_external_images' => 1,
+        'notification_enabled' => 1,
+    ];
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <title>Settings – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="stylesheet" href="/mail/assets/mail.css?v=<?= ASSET_VERSION ?>">
+</head>
+<body>
+    <main class="fw-mail">
+        <div class="fw-mail__container">
+
+            <!-- Header -->
+            <header class="fw-mail__header">
+                <div class="fw-mail__brand">
+                    <div class="fw-mail__logo-tile">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="fw-mail__brand-text">
+                        <div class="fw-mail__company-name"><?= htmlspecialchars($companyName) ?></div>
+                        <div class="fw-mail__app-name">Mail Settings</div>
+                    </div>
+                </div>
+
+                <div class="fw-mail__greeting">
+                    Hello, <span class="fw-mail__greeting-name"><?= htmlspecialchars($firstName) ?></span>
+                </div>
+
+                <div class="fw-mail__controls">
+                    <a href="/mail/" class="fw-mail__home-btn" title="Back to Mail">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+
+                    <a href="/" class="fw-mail__home-btn" title="Home">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+
+                    <button class="fw-mail__theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                        <svg class="fw-mail__theme-icon fw-mail__theme-icon--light" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
+                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        <svg class="fw-mail__theme-icon fw-mail__theme-icon--dark" viewBox="0 0 24 24" fill="none">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Settings -->
+            <div class="fw-mail__settings-container">
+
+                <!-- Tabs -->
+                <div class="fw-mail__tabs">
+                    <button class="fw-mail__tab fw-mail__tab--active" data-tab="accounts">Accounts</button>
+                    <button class="fw-mail__tab" data-tab="signatures">Signatures</button>
+                    <button class="fw-mail__tab" data-tab="rules">Rules</button>
+                    <button class="fw-mail__tab" data-tab="preferences">Preferences</button>
+                </div>
+
+                <!-- TAB: Accounts -->
+                <div class="fw-mail__tab-panel fw-mail__tab-panel--active" data-panel="accounts">
+                    <div class="fw-mail__settings-header">
+                        <h2>Email Accounts</h2>
+                        <button class="fw-mail__btn fw-mail__btn--primary" onclick="window.MailSettings.showAccountModal(null)">+ Add Account</button>
+                    </div>
+
+                    <?php if (empty($accounts)): ?>
+                        <div class="fw-mail__empty-state">
+                            <p>No email accounts configured yet.</p>
+                            <small>Add an IMAP/SMTP account to start sending and receiving email.</small>
+                        </div>
+                    <?php else: ?>
+                        <div class="fw-mail__accounts-list" id="accountList">
+                            <?php foreach ($accounts as $acc): ?>
+                                <div class="fw-mail__account-card">
+                                    <div class="fw-mail__account-card-header">
+                                        <h3><?= htmlspecialchars($acc['account_name']) ?></h3>
+                                        <span class="fw-mail__badge <?= $acc['is_active'] ? 'fw-mail__badge--active' : 'fw-mail__badge--inactive' ?>">
+                                            <?= $acc['is_active'] ? 'Active' : 'Inactive' ?>
+                                        </span>
+                                    </div>
+                                    <div class="fw-mail__account-card-body">
+                                        <p><strong>Email:</strong> <?= htmlspecialchars($acc['email_address']) ?></p>
+                                        <p><strong>IMAP:</strong> <?= htmlspecialchars($acc['imap_server'] ?: '—') ?></p>
+                                        <p><strong>SMTP:</strong> <?= htmlspecialchars($acc['smtp_server'] ?: '—') ?></p>
+                                        <?php if ($acc['last_sync_at']): ?>
+                                            <p><strong>Last sync:</strong> <?= htmlspecialchars($acc['last_sync_at']) ?></p>
+                                        <?php endif; ?>
+                                        <?php if ($acc['last_error']): ?>
+                                            <p class="fw-mail__error-text"><strong>Error:</strong> <?= htmlspecialchars($acc['last_error']) ?></p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="fw-mail__card-actions">
+                                        <button class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.editAccount(<?= (int)$acc['account_id'] ?>)">Edit</button>
+                                        <button class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.testAccount(<?= $acc['account_id'] ?>)">Test</button>
+                                        <button class="fw-mail__btn fw-mail__btn--small fw-mail__btn--danger" onclick="window.MailSettings.deleteAccount(<?= $acc['account_id'] ?>)">Delete</button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- TAB: Signatures -->
+                <div class="fw-mail__tab-panel" data-panel="signatures">
+                    <div class="fw-mail__settings-header">
+                        <h2>Signatures</h2>
+                        <button class="fw-mail__btn fw-mail__btn--primary" onclick="window.MailSettings.showSignatureModal(null)">+ New Signature</button>
+                    </div>
+                    <div id="signaturesList">
+                        <div class="fw-mail__loading">Loading signatures...</div>
+                    </div>
+                </div>
+
+                <!-- TAB: Rules -->
+                <div class="fw-mail__tab-panel" data-panel="rules">
+                    <div class="fw-mail__settings-header">
+                        <h2>Rules</h2>
+                        <button class="fw-mail__btn fw-mail__btn--primary" onclick="window.MailSettings.showRuleModal(null)">+ New Rule</button>
+                    </div>
+                    <div id="rulesList">
+                        <div class="fw-mail__loading">Loading rules...</div>
+                    </div>
+                </div>
+
+                <!-- TAB: Preferences -->
+                <div class="fw-mail__tab-panel" data-panel="preferences">
+                    <div class="fw-mail__settings-header">
+                        <h2>Preferences</h2>
+                    </div>
+                    <form id="prefsForm" class="fw-mail__form">
+                        <div class="fw-mail__account-card">
+                            <div class="fw-mail__form-group">
+                                <label class="fw-mail__label">SLA Default Response Time (hours)</label>
+                                <input type="number" name="sla_default_hours" class="fw-mail__input"
+                                       value="<?= (int)($prefs['sla_default_hours'] ?? 24) ?>" min="1" max="168">
+                                <small style="color:var(--fw-text-muted);font-size:13px;">Target hours to respond to incoming emails</small>
+                            </div>
+
+                            <div class="fw-mail__form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" name="block_external_images" value="1"
+                                           <?= !empty($prefs['block_external_images']) ? 'checked' : '' ?>>
+                                    <span class="fw-mail__label" style="margin:0;">Block External Images</span>
+                                </label>
+                                <small style="color:var(--fw-text-muted);font-size:13px;">Prevent loading of remote images in emails for privacy</small>
+                            </div>
+
+                            <div class="fw-mail__form-group">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" name="notification_enabled" value="1"
+                                           <?= !empty($prefs['notification_enabled']) ? 'checked' : '' ?>>
+                                    <span class="fw-mail__label" style="margin:0;">Enable Notifications</span>
+                                </label>
+                                <small style="color:var(--fw-text-muted);font-size:13px;">Receive notifications for new incoming emails</small>
+                            </div>
+
+                            <div class="fw-mail__form-actions">
+                                <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Preferences</button>
+                            </div>
+
+                            <div id="prefsMessage" class="fw-mail__form-message" style="display:none;"></div>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <footer style="text-align:center;padding:24px;color:var(--fw-text-muted);font-size:13px;">
+                <span>Mail v<?= ASSET_VERSION ?></span>
+            </footer>
+
+        </div>
+    </main>
+
+    <!-- Account Modal -->
+    <div class="fw-mail__modal-overlay" id="accountModal">
+        <div class="fw-mail__modal">
+            <div class="fw-mail__modal-header">
+                <h3 class="fw-mail__modal-title" id="accountModalTitle">Add Email Account</h3>
+                <button class="fw-mail__modal-close" onclick="window.MailSettings.closeModal('accountModal')">&times;</button>
+            </div>
+            <div class="fw-mail__modal-body">
+                <form id="accountForm" class="fw-mail__form">
+                    <input type="hidden" name="account_id" id="accountId" value="">
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Account Name <span class="fw-mail__required">*</span></label>
+                        <input type="text" name="account_name" class="fw-mail__input" required placeholder="e.g., Work Email">
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Email Address <span class="fw-mail__required">*</span></label>
+                        <input type="email" name="email_address" class="fw-mail__input" required placeholder="you@example.com">
+                    </div>
+
+                    <div class="fw-mail__form-row">
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">IMAP Server</label>
+                            <input type="text" name="imap_server" class="fw-mail__input" placeholder="imap.example.com">
+                        </div>
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">IMAP Port</label>
+                            <input type="number" name="imap_port" class="fw-mail__input" value="993">
+                        </div>
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">Encryption</label>
+                            <select name="imap_encryption" class="fw-mail__input">
+                                <option value="ssl" selected>SSL</option>
+                                <option value="tls">TLS</option>
+                                <option value="none">None</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="fw-mail__form-row">
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">SMTP Server</label>
+                            <input type="text" name="smtp_server" class="fw-mail__input" placeholder="smtp.example.com">
+                        </div>
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">SMTP Port</label>
+                            <input type="number" name="smtp_port" class="fw-mail__input" value="587">
+                        </div>
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">Encryption</label>
+                            <select name="smtp_encryption" class="fw-mail__input">
+                                <option value="tls" selected>TLS</option>
+                                <option value="ssl">SSL</option>
+                                <option value="none">None</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Username</label>
+                        <input type="text" name="username" class="fw-mail__input" placeholder="Usually your email address">
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Password</label>
+                        <input type="password" name="password" class="fw-mail__input" placeholder="Leave blank to keep existing">
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="is_active" id="accountActive" value="1" checked>
+                            <span class="fw-mail__label" style="margin:0;">Active</span>
+                        </label>
+                    </div>
+
+                    <div class="fw-mail__form-actions">
+                        <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Account</button>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="window.MailSettings.closeModal('accountModal')">Cancel</button>
+                    </div>
+
+                    <div id="accountMessage" class="fw-mail__form-message" style="display:none;"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signature Modal -->
+    <div class="fw-mail__modal-overlay" id="signatureModal">
+        <div class="fw-mail__modal">
+            <div class="fw-mail__modal-header">
+                <h3 class="fw-mail__modal-title" id="signatureModalTitle">New Signature</h3>
+                <button class="fw-mail__modal-close" onclick="window.MailSettings.closeModal('signatureModal')">&times;</button>
+            </div>
+            <div class="fw-mail__modal-body">
+                <form id="signatureForm" class="fw-mail__form">
+                    <input type="hidden" name="signature_id" id="signatureId" value="">
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Name <span class="fw-mail__required">*</span></label>
+                        <input type="text" name="name" class="fw-mail__input" required placeholder="e.g., Default Signature">
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Content (HTML) <span class="fw-mail__required">*</span></label>
+                        <textarea name="content_html" class="fw-mail__textarea" rows="8" required placeholder="<p>Regards,<br>Your Name</p>"></textarea>
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="is_default" value="1">
+                            <span class="fw-mail__label" style="margin:0;">Set as default signature</span>
+                        </label>
+                    </div>
+
+                    <div class="fw-mail__form-actions">
+                        <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Signature</button>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="window.MailSettings.closeModal('signatureModal')">Cancel</button>
+                    </div>
+
+                    <div id="signatureMessage" class="fw-mail__form-message" style="display:none;"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rule Modal -->
+    <div class="fw-mail__modal-overlay" id="ruleModal">
+        <div class="fw-mail__modal fw-mail__modal--large">
+            <div class="fw-mail__modal-header">
+                <h3 class="fw-mail__modal-title" id="ruleModalTitle">New Rule</h3>
+                <button class="fw-mail__modal-close" onclick="window.MailSettings.closeModal('ruleModal')">&times;</button>
+            </div>
+            <div class="fw-mail__modal-body">
+                <form id="ruleForm" class="fw-mail__form">
+                    <input type="hidden" name="rule_id" id="ruleId" value="">
+
+                    <div class="fw-mail__form-row">
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">Rule Name <span class="fw-mail__required">*</span></label>
+                            <input type="text" name="name" class="fw-mail__input" required placeholder="e.g., Auto-tag invoices">
+                        </div>
+                        <div class="fw-mail__form-group">
+                            <label class="fw-mail__label">Priority</label>
+                            <input type="number" name="priority" class="fw-mail__input" value="100" min="1" max="999">
+                        </div>
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="is_active" value="1" checked>
+                            <span class="fw-mail__label" style="margin:0;">Active</span>
+                        </label>
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Conditions</label>
+                        <div id="conditionsContainer"></div>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.addCondition()">+ Add Condition</button>
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label class="fw-mail__label">Actions</label>
+                        <div id="actionsContainer"></div>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.addAction()">+ Add Action</button>
+                    </div>
+
+                    <div class="fw-mail__form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="stop_processing" value="1">
+                            <span class="fw-mail__label" style="margin:0;">Stop processing further rules after this one matches</span>
+                        </label>
+                    </div>
+
+                    <div class="fw-mail__form-actions">
+                        <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Rule</button>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="window.MailSettings.closeModal('ruleModal')">Cancel</button>
+                    </div>
+
+                    <div id="ruleMessage" class="fw-mail__form-message" style="display:none;"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/mail/assets/mail.js?v=<?= ASSET_VERSION ?>"></script>
+</body>
+</html>
