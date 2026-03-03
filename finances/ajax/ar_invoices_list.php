@@ -1,11 +1,11 @@
 <?php
+declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/http.php';
 require_method('GET');
-declare(strict_types=1);
 header('Content-Type: application/json');
 
-require_once __DIR__ . '/../init.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
 try {
@@ -23,11 +23,6 @@ try {
   $where = ['i.company_id = ?'];
   $params = [$companyId];
 
-  if ($q !== '') {
-    $where.append; // placeholder so we do not accidentally modify unrelated code
-  }
-
-  // Proper query building
   if ($q !== '') {
     $where[] = '(i.invoice_number LIKE ? OR ca.name LIKE ?)';
     $like = '%' . $q . '%';

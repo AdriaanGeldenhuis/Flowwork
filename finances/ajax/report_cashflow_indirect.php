@@ -29,7 +29,7 @@ try {
 
 try {
     // Resolve important account codes/IDs
-    $accountsMap = new \Finances\AccountsMap($DB, $companyId);
+    $accountsMap = new AccountsMap($DB, $companyId);
     $arId  = $accountsMap->getAccountId('finance_ar_account_id');
     $apId  = $accountsMap->getAccountId('finance_ap_account_id');
     $invId = $accountsMap->getAccountId('finance_inventory_account_id');
@@ -51,35 +51,40 @@ try {
 
     // Helper to calculate balances for an account (asset) as debit-credit and for liability/equity as credit-debit
     function calculateBalances(PDO $db, $companyId, $accountCodes, $accountIds, $startDate, $endDate, $isAsset) {
-        if (!$accountCodes && !$accountIds) return [0.0, 0.0];
-        $conditions = [];
-        $params = [];
-        if ($accountCodes) {
-            $placeholders = implode(',', array_fill(0, count($accountCodes), '?'));
-            $conditions[] = "jl.account_code IN ($placeholders)";
-            $params = array_merge($params, $accountCodes);
-        }
-        if ($accountIds) {
-            $placeholders = implode(',', array_fill(0, count($accountIds), '?'));
-            $conditions[] = "jl.account_id IN ($placeholders)";
-            $params = array_merge($params, $accountIds);
-        }
-        $condSql = implode(' OR ', $conditions);
-        $sql = "SELECT\n            COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (" . ($isAsset ? 'jl.debit - jl.credit' : 'jl.credit - jl.debit') . ") ELSE 0 END), 0) AS end_bal,\n            COALESCE(SUM(CASE WHEN je.entry_date < ? THEN (" . ($isAsset ? 'jl.debit - jl.credit' : 'jl.credit - jl.debit') . ") ELSE 0 END), 0) AS start_bal\n        FROM journal_lines jl\n        JOIN journal_entries je ON jl.journal_id = je.id\n        WHERE ($condSql) AND je.company_id = ?";
+        if (!$accountCodes) return [0.0, 0.0];
+        $placeholders = implode(',', array_fill(0, count($accountCodes), '?'));
+        $expr = $isAsset ? 'jl.debit - jl.credit' : 'jl.credit - jl.debit';
+        $sql = "SELECT
+            COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN ($expr) ELSE 0 END), 0) AS end_bal,
+            COALESCE(SUM(CASE WHEN je.entry_date < ? THEN ($expr) ELSE 0 END), 0) AS start_bal
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        WHERE jl.account_code IN ($placeholders) AND je.company_id = ? AND je.status = 'posted'";
         $stmt = $db->prepare($sql);
-        $stmt->execute(array_merge([$endDate, $startDate], $params, [$companyId]));
+        $stmt->execute(array_merge([$endDate, $startDate], $accountCodes, [$companyId]));
         $res = $stmt->fetch(PDO::FETCH_ASSOC);
         return [floatval($res['start_bal']), floatval($res['end_bal'])];
     }
 
     // Compute Net Income for period using P&L logic (revenues - expenses)
-    $sqlNI = "SELECT\n            COALESCE(SUM(CASE WHEN ga.account_type = 'revenue' THEN (jl.credit - jl.debit)\n                               WHEN ga.account_type = 'expense' THEN (jl.debit - jl.credit)\n                               ELSE 0 END), 0) AS net\n        FROM journal_lines jl\n        JOIN journal_entries je ON jl.journal_id = je.id\n        JOIN gl_accounts ga ON (ga.account_code = jl.account_code OR ga.account_id = jl.account_id) AND ga.company_id = je.company_id\n        WHERE je.company_id = ? AND je.entry_date BETWEEN ? AND ?";
+    $sqlNI = "SELECT
+            COALESCE(SUM(CASE WHEN ga.account_type = 'revenue' THEN (jl.credit - jl.debit)
+                               WHEN ga.account_type = 'expense' THEN (jl.debit - jl.credit)
+                               ELSE 0 END), 0) AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+        WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?";
     $stmt = $DB->prepare($sqlNI);
     $stmt->execute([$companyId, $startDate, $endDate]);
     $netIncome = floatval($stmt->fetchColumn());
 
     // Depreciation expense (non-cash) for period: sum of debit - credit for expense accounts with name like 'Depreciation'
-    $stmt = $DB->prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0)\n        FROM journal_lines jl\n        JOIN journal_entries je ON jl.journal_id = je.id\n        JOIN gl_accounts ga ON (ga.account_code = jl.account_code OR ga.account_id = jl.account_id)\n        WHERE je.company_id = ? AND je.entry_date BETWEEN ? AND ? AND ga.account_type = 'expense' AND ga.account_name LIKE '%Depreciation%'");
+    $stmt = $DB->prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+        WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ? AND ga.account_type = 'expense' AND ga.account_name LIKE '%Depreciation%'");
     $stmt->execute([$companyId, $startDate, $endDate]);
     $depreciation = floatval($stmt->fetchColumn());
 

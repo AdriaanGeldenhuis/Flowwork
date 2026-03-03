@@ -36,18 +36,33 @@ try {
     $accountCode = $account['account_code'];
 
     // Calculate opening balance up to but excluding the date
-    $stmt = $DB->prepare("\
-        SELECT COALESCE(SUM(CASE WHEN je.entry_date < ? THEN (jl.debit - jl.credit) ELSE 0 END), 0) AS balance\
-        FROM journal_lines jl\
-        JOIN journal_entries je ON jl.journal_id = je.id\
-        WHERE (jl.account_code = ? OR jl.account_id = ?) AND je.company_id = ?\
+    $stmt = $DB->prepare("
+        SELECT COALESCE(SUM(CASE WHEN je.entry_date < ? THEN (jl.debit - jl.credit) ELSE 0 END), 0) AS balance
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        WHERE jl.account_code = ? AND je.company_id = ? AND je.status = 'posted'
     ");
-    $stmt->execute([$date, $accountCode, $accountId, $companyId]);
+    $stmt->execute([$date, $accountCode, $companyId]);
     $openingBalance = (float)$stmt->fetchColumn();
 
     // Fetch transactions up to and including the date
-    $sql = "SELECT \n            je.id as journal_id,\n            je.entry_date,\n            je.memo,\n            je.reference,\n            je.module,\n            jl.description,\n            jl.debit,\n            jl.credit,\n            jl.project_id\n        FROM journal_lines jl\n        JOIN journal_entries je ON jl.journal_id = je.id\n        WHERE (jl.account_code = ? OR jl.account_id = ?) \n        AND je.company_id = ?\n        AND je.entry_date <= ?";
-    $params = [$accountCode, $accountId, $companyId, $date];
+    $sql = "SELECT
+            je.id as journal_id,
+            je.entry_date,
+            je.description AS memo,
+            je.reference,
+            je.module,
+            jl.description,
+            jl.debit,
+            jl.credit,
+            jl.project_id
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        WHERE jl.account_code = ?
+        AND je.company_id = ?
+        AND je.status = 'posted'
+        AND je.entry_date <= ?";
+    $params = [$accountCode, $companyId, $date];
     if ($projectId) {
         $sql .= " AND jl.project_id = ?";
         $params[] = $projectId;

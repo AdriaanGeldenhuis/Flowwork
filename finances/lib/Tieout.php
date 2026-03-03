@@ -34,7 +34,7 @@ class Tieout
         $inv = (float)$this->scalar("
             SELECT COALESCE(SUM(total),0)
             FROM invoices
-            WHERE company_id = ? AND issue_date <= ?
+            WHERE company_id = ? AND issue_date <= ? AND status NOT IN ('cancelled','void')
         ", [$this->companyId, $asOf]);
 
         $pay = (float)$this->scalar("
@@ -60,7 +60,7 @@ class Tieout
         $bills = (float)$this->scalar("
             SELECT COALESCE(SUM(total),0)
             FROM ap_bills
-            WHERE company_id = ? AND issue_date <= ?
+            WHERE company_id = ? AND issue_date <= ? AND status NOT IN ('cancelled','void','blocked')
         ", [$this->companyId, $asOf]);
 
         $pay = (float)$this->scalar("

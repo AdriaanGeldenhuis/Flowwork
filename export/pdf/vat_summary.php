@@ -23,12 +23,12 @@ $vatInCode  = $accountsMap->get('finance_vat_input_account_id', '2130');
 // Aggregate VAT balances
 $stmt = $DB->prepare(
     "SELECT
-        COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (COALESCE(jl.credit, jl.credit_cents/100) - COALESCE(jl.debit, jl.debit_cents/100)) ELSE 0 END),0) AS output_vat,
-        COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (COALESCE(jl.debit, jl.debit_cents/100) - COALESCE(jl.credit, jl.credit_cents/100)) ELSE 0 END),0) AS input_vat
+        COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.credit - jl.debit) ELSE 0 END),0) AS output_vat,
+        COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.debit - jl.credit) ELSE 0 END),0) AS input_vat
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_id
-     JOIN gl_accounts ga ON ga.company_id = je.company_id AND (ga.account_code = jl.account_code OR ga.account_id = jl.account_id)
-     WHERE je.company_id = ?"
+     JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
+     WHERE je.company_id = ? AND je.status = 'posted'"
 );
 $stmt->execute([$vatOutCode, $vatInCode, $companyId]);
 $row = $stmt->fetch(PDO::FETCH_ASSOC);

@@ -7,7 +7,7 @@ require_once __DIR__ . '/../lib/Csrf.php';
 require_method('POST');
 Csrf::validate();
 
-require_once __DIR__ . '/../init.php';
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
 requireRoles(['bookkeeper','admin']);
 

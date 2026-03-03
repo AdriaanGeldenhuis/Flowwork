@@ -51,53 +51,35 @@ try {
 
     // Calculate Output VAT (credit minus debit) for this period
     $stmt = $DB->prepare(
-        "SELECT
-            COALESCE(SUM(
-                COALESCE(jl.credit, jl.credit_cents/100.0) - COALESCE(jl.debit, jl.debit_cents/100.0)
-            ), 0) AS total_output
+        "SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS total_output
          FROM journal_lines jl
          JOIN journal_entries je ON jl.journal_id = je.id
-         WHERE je.company_id = ?
+         WHERE je.company_id = ? AND je.status = 'posted'
            AND je.entry_date BETWEEN ? AND ?
-           AND (
-                jl.account_code = ?
-             OR (? IS NOT NULL AND jl.account_id = ?)
-           )
-    "
+           AND jl.account_code = ?"
     );
     $stmt->execute([
         $companyId,
         $period['period_start'],
         $period['period_end'],
-        $vatOutputCode,
-        $vatOutputId,
-        $vatOutputId
+        $vatOutputCode
     ]);
     $outputVat = (float)$stmt->fetchColumn();
 
     // Calculate Input VAT (debit minus credit)
     $stmt = $DB->prepare(
-        "SELECT
-            COALESCE(SUM(
-                COALESCE(jl.debit, jl.debit_cents/100.0) - COALESCE(jl.credit, jl.credit_cents/100.0)
-            ), 0) AS total_input
+        "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS total_input
          FROM journal_lines jl
          JOIN journal_entries je ON jl.journal_id = je.id
-         WHERE je.company_id = ?
+         WHERE je.company_id = ? AND je.status = 'posted'
            AND je.entry_date BETWEEN ? AND ?
-           AND (
-                jl.account_code = ?
-             OR (? IS NOT NULL AND jl.account_id = ?)
-           )
-    "
+           AND jl.account_code = ?"
     );
     $stmt->execute([
         $companyId,
         $period['period_start'],
         $period['period_end'],
-        $vatInputCode,
-        $vatInputId,
-        $vatInputId
+        $vatInputCode
     ]);
     $inputVat = (float)$stmt->fetchColumn();
 

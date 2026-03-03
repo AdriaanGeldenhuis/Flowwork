@@ -23,42 +23,27 @@ try {
         throw new Exception('End date must be on or after start date');
     }
     // Resolve VAT account codes
-    $accountsMap = new \Finances\AccountsMap($DB, $companyId);
+    $accountsMap = new AccountsMap($DB, $companyId);
     $vatOutputId = $accountsMap->getAccountId('finance_vat_output_account_id');
     $vatInputId  = $accountsMap->getAccountId('finance_vat_input_account_id');
     $vatOutputCode = $accountsMap->getAccountCodeById($vatOutputId);
     $vatInputCode  = $accountsMap->getAccountCodeById($vatInputId);
-    if (!$vatOutputCode && !$vatOutputId) {
+    if (!$vatOutputCode) {
         throw new Exception('VAT Output account not configured');
     }
-    if (!$vatInputCode && !$vatInputId) {
+    if (!$vatInputCode) {
         throw new Exception('VAT Input account not configured');
     }
-    $conditionsOut = [];
-    $paramsOut = [];
-    if ($vatOutputCode) {
-        $conditionsOut[] = 'jl.account_code = ?';
-        $paramsOut[] = $vatOutputCode;
-    }
-    if ($vatOutputId) {
-        $conditionsOut[] = 'jl.account_id = ?';
-        $paramsOut[] = $vatOutputId;
-    }
-    $sqlOutCond = implode(' OR ', $conditionsOut);
-    $conditionsIn = [];
-    $paramsIn = [];
-    if ($vatInputCode) {
-        $conditionsIn[] = 'jl.account_code = ?';
-        $paramsIn[] = $vatInputCode;
-    }
-    if ($vatInputId) {
-        $conditionsIn[] = 'jl.account_id = ?';
-        $paramsIn[] = $vatInputId;
-    }
-    $sqlInCond = implode(' OR ', $conditionsIn);
     // Build query
-    $sql = "SELECT DATE_FORMAT(je.entry_date, '%Y-%m') AS period,\n            SUM(CASE WHEN $sqlOutCond THEN (jl.credit - jl.debit) ELSE 0 END) AS output_vat,\n            SUM(CASE WHEN $sqlInCond THEN (jl.debit - jl.credit) ELSE 0 END) AS input_vat\n        FROM journal_lines jl\n        JOIN journal_entries je ON jl.journal_id = je.id\n        WHERE je.company_id = ? AND je.entry_date BETWEEN ? AND ?\n        GROUP BY period\n        ORDER BY period";
-    $params = array_merge($paramsOut, $paramsIn, [$companyId, $startDate, $endDate]);
+    $sql = "SELECT DATE_FORMAT(je.entry_date, '%Y-%m') AS period,
+            SUM(CASE WHEN jl.account_code = ? THEN (jl.credit - jl.debit) ELSE 0 END) AS output_vat,
+            SUM(CASE WHEN jl.account_code = ? THEN (jl.debit - jl.credit) ELSE 0 END) AS input_vat
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?
+        GROUP BY period
+        ORDER BY period";
+    $params = [$vatOutputCode, $vatInputCode, $companyId, $startDate, $endDate];
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

@@ -161,8 +161,8 @@ class PostingService
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'fin', 'invoice', ?, 'invoice', ?, ?, NOW())"
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'fin', 'invoice', ?, 'invoice', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $reference = $invoice['invoice_number'];
             $desc      = 'Invoice ' . $reference;
@@ -173,6 +173,7 @@ class PostingService
                 $desc,
                 $invoiceId,
                 $invoiceId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -330,8 +331,8 @@ class PostingService
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'fin', 'payment', ?, 'payment', ?, ?, NOW())"
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'fin', 'payment', ?, 'payment', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $stmt->execute([
                 $this->companyId,
@@ -340,6 +341,7 @@ class PostingService
                 $desc,
                 $paymentId,
                 $paymentId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -456,8 +458,8 @@ class PostingService
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'fin', 'credit_note', ?, 'credit_note', ?, ?, NOW())"
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'fin', 'credit_note', ?, 'credit_note', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $reference = $credit['credit_note_number'];
             $desc      = 'Credit Note ' . $reference;
@@ -468,6 +470,7 @@ class PostingService
                 $desc,
                 $creditNoteId,
                 $creditNoteId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -508,8 +511,9 @@ class PostingService
                 $credit['customer_id'] ?: null,
                 $reference
             ]);
-            // Optionally update credit note with journal id if column exists
-            // But we do not assume a journal_id column; rely on journal_entries linkage
+            // Update credit note with journal id
+            $stmt = $this->db->prepare("UPDATE credit_notes SET journal_id = ? WHERE id = ? AND company_id = ?");
+            $stmt->execute([$journalId, $creditNoteId, $this->companyId]);
             $this->db->commit();
         } catch (Exception $e) {
             $this->db->rollBack();
@@ -517,7 +521,6 @@ class PostingService
         }
     }
 
-    // TODO: implement postApBill, postSupplierPayment, postCreditNote, postVatAdjustment, postDepreciation
     /**
      * Post a payroll run to the general ledger. Each run aggregates gross wages, taxes and
      * contributions per employee and produces a single journal entry. The journal debits
@@ -631,9 +634,9 @@ class PostingService
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
                 ) VALUES (
-                    ?, ?, ?, ?, 'payroll', 'pay_run', ?, 'payroll', ?, ?, NOW()
+                    ?, ?, ?, ?, 'payroll', 'pay_run', ?, 'payroll', ?, ?, NOW(), 'posted', ?, NOW()
                 )"
             );
             $reference = $run['run_number'] ?: ('PR' . $runId);
@@ -645,6 +648,7 @@ class PostingService
                 $desc,
                 $runId,
                 $runId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -781,8 +785,8 @@ class PostingService
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description,
                     module, ref_type, ref_id, source_type, source_id,
-                    created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'fin', 'depreciation', ?, 'depreciation', ?, ?, NOW())"
+                    created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'fin', 'depreciation', ?, 'depreciation', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $stmtJ->execute([
                 $this->companyId,
@@ -791,6 +795,7 @@ class PostingService
                 $desc,
                 $runId,
                 $runId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -958,8 +963,8 @@ class PostingService
             // Create journal entry
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id,\n"
-                . "source_type, source_id, created_by, created_at)\n"
-                . "VALUES (?, ?, ?, ?, 'fin', 'ap_bill', ?, 'ap_bill', ?, ?, NOW())"
+                . "source_type, source_id, created_by, created_at, status, posted_by, posted_at)\n"
+                . "VALUES (?, ?, ?, ?, 'fin', 'ap_bill', ?, 'ap_bill', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $reference = $bill['vendor_invoice_number'] ?: ('BILL' . $billId);
             $desc      = 'AP Bill ' . $reference;
@@ -970,6 +975,7 @@ class PostingService
                 $desc,
                 $billId,
                 $billId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -1076,8 +1082,8 @@ class PostingService
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (\n"
                 . "company_id, entry_date, reference, description, module, ref_type, ref_id,\n"
-                . "source_type, source_id, created_by, created_at\n"
-                . ") VALUES (?, ?, ?, ?, 'fin', 'ap_payment', ?, 'ap_payment', ?, ?, NOW())"
+                . "source_type, source_id, created_by, created_at, status, posted_by, posted_at\n"
+                . ") VALUES (?, ?, ?, ?, 'fin', 'ap_payment', ?, 'ap_payment', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $stmt->execute([
                 $this->companyId,
@@ -1086,6 +1092,7 @@ class PostingService
                 $desc,
                 $paymentId,
                 $paymentId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -1260,8 +1267,8 @@ class PostingService
         try {
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id,\n"
-                . "source_type, source_id, created_by, created_at)\n"
-                . "VALUES (?, ?, ?, ?, 'fin', 'vendor_credit', ?, 'vendor_credit', ?, ?, NOW())"
+                . "source_type, source_id, created_by, created_at, status, posted_by, posted_at)\n"
+                . "VALUES (?, ?, ?, ?, 'fin', 'vendor_credit', ?, 'vendor_credit', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $reference = $credit['credit_number'];
             $desc      = 'Vendor Credit ' . $reference;
@@ -1272,6 +1279,7 @@ class PostingService
                 $desc,
                 $creditId,
                 $creditId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -1297,6 +1305,94 @@ class PostingService
             );
             $stmt->execute([$journalId, $creditId, $this->companyId]);
             $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Post a VAT adjustment journal entry. This creates a journal that
+     * debits or credits the VAT output/input accounts against a VAT
+     * control or bank account. Used when filing a VAT return to record
+     * the net VAT payable/receivable.
+     *
+     * @param float  $vatOutputTotal  Total VAT Output (credit balance to clear)
+     * @param float  $vatInputTotal   Total VAT Input (debit balance to clear)
+     * @param string $entryDate       The date for the adjustment (YYYY-MM-DD)
+     * @param string $reference       Reference for the journal (e.g. VAT period)
+     * @param int|null $existingJournalId  Optional existing journal to replace
+     * @return int The created journal entry id
+     * @throws Exception on locked period
+     */
+    public function postVatAdjustment(float $vatOutputTotal, float $vatInputTotal, string $entryDate, string $reference = '', ?int $existingJournalId = null): int
+    {
+        if ($this->periodService->isLocked($entryDate)) {
+            throw new Exception('Cannot post VAT adjustment to locked period (' . $entryDate . ')');
+        }
+        if ($existingJournalId) {
+            $this->deleteJournal($existingJournalId);
+        }
+        $vatOutCode  = $this->accounts->get('finance_vat_output_account_id', '2120');
+        $vatInCode   = $this->accounts->get('finance_vat_input_account_id', '2130');
+        $vatCtrlCode = $this->accounts->get('finance_vat_control_account_id', '2140');
+
+        $netVat = round($vatOutputTotal - $vatInputTotal, 2);
+
+        $this->db->beginTransaction();
+        try {
+            $desc = 'VAT Adjustment ' . $reference;
+            $stmt = $this->db->prepare(
+                "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id,
+                    source_type, created_by, created_at, status, posted_by, posted_at)
+                 VALUES (?, ?, ?, ?, 'fin', 'vat_adjustment', NULL, 'vat_adjustment', ?, NOW(), 'posted', ?, NOW())"
+            );
+            $stmt->execute([
+                $this->companyId,
+                $entryDate,
+                $reference ?: 'VAT-ADJ',
+                $desc,
+                $this->userId,
+                $this->userId
+            ]);
+            $journalId = (int)$this->db->lastInsertId();
+
+            $stmtLine = $this->db->prepare(
+                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit)
+                 VALUES (?, ?, ?, ?, ?)"
+            );
+
+            // Clear VAT Output (debit to reduce liability)
+            if ($vatOutputTotal > 0.0001) {
+                $stmtLine->execute([
+                    $journalId, $vatOutCode, 'VAT Output Cleared',
+                    number_format($vatOutputTotal, 2, '.', ''), '0.00'
+                ]);
+            }
+            // Clear VAT Input (credit to reduce asset)
+            if ($vatInputTotal > 0.0001) {
+                $stmtLine->execute([
+                    $journalId, $vatInCode, 'VAT Input Cleared',
+                    '0.00', number_format($vatInputTotal, 2, '.', '')
+                ]);
+            }
+            // Net VAT to control account
+            if ($netVat > 0.0001) {
+                // Net payable: credit VAT control
+                $stmtLine->execute([
+                    $journalId, $vatCtrlCode, 'VAT Payable',
+                    '0.00', number_format($netVat, 2, '.', '')
+                ]);
+            } elseif ($netVat < -0.0001) {
+                // Net receivable: debit VAT control
+                $stmtLine->execute([
+                    $journalId, $vatCtrlCode, 'VAT Receivable',
+                    number_format(abs($netVat), 2, '.', ''), '0.00'
+                ]);
+            }
+
+            $this->db->commit();
+            return $journalId;
         } catch (Exception $e) {
             $this->db->rollBack();
             throw $e;

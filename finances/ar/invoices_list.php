@@ -1,12 +1,19 @@
 <?php
-require_once __DIR__ . '/../init.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
 // Minimal server-rendered shell with a data table fed by AJAX.
-// Keep styling to existing global CSS; do NOT add new assets.
 $title = 'AR Invoices';
-include __DIR__ . '/../partials/header.php'; // if your app uses a standard header
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><?= htmlspecialchars($title) ?> – Finances</title>
+  <link rel="stylesheet" href="/finances/assets/finance.css">
+</head>
+<body>
 <div class="container">
   <h1>Accounts Receivable — Invoices</h1>
   <form id="filters" class="filters">
@@ -89,4 +96,5 @@ include __DIR__ . '/../partials/header.php'; // if your app uses a standard head
   load();
 })();
 </script>
-<?php include __DIR__ . '/../partials/footer.php'; ?>
+</body>
+</html>

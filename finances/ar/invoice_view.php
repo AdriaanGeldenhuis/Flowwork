@@ -2,13 +2,21 @@
 
 require_once __DIR__ . '/../lib/http.php';
 require_method('GET');
-require_once __DIR__ . '/../init.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $title = 'Invoice #' . $id;
-include __DIR__ . '/../partials/header.php';
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><?= htmlspecialchars($title) ?> – Finances</title>
+  <link rel="stylesheet" href="/finances/assets/finance.css">
+</head>
+<body>
 <div class="container">
   <h1>Invoice <span id="invNo"></span></h1>
   <div id="meta"></div>
@@ -32,6 +40,7 @@ include __DIR__ . '/../partials/header.php';
 </div>
 <script>
 (async function(){
+  try {
   const res = await fetch('../ajax/ar_invoice_view.php?id=<?=$id?>', {headers:{'Accept':'application/json'}});
   const js = await res.json();
   if(!js.ok){ alert(js.error||'Error'); return; }
@@ -67,6 +76,11 @@ include __DIR__ . '/../partials/header.php';
   if (d.journal_id){
     document.getElementById('journal').innerHTML = ' · <a href="/finances/gl/journal_view.php?id=' + encodeURIComponent(d.journal_id) + '">Journal #' + d.journal_id + '</a>';
   }
+  } catch(e) {
+    console.error('Invoice load failed:', e);
+    alert('Failed to load invoice data. Check console for details.');
+  }
 })();
 </script>
-<?php include __DIR__ . '/../partials/footer.php'; ?>
+</body>
+</html>

@@ -12,54 +12,33 @@ $companyId = $_SESSION['company_id'];
 try {
     // Resolve VAT account codes via AccountsMap
     $accounts = new AccountsMap($DB, $companyId);
-    $stmt = $DB->prepare(
-        "SELECT setting_key, setting_value FROM company_settings
-         WHERE company_id = ? AND setting_key IN ('finance_vat_output_account_id', 'finance_vat_input_account_id')"
-    );
-    $stmt->execute([$companyId]);
-    $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    $rawOutput = $settings['finance_vat_output_account_id'] ?? null;
-    $rawInput  = $settings['finance_vat_input_account_id'] ?? null;
     $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
     $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
-    $vatOutputId = (is_numeric($rawOutput) ? (int)$rawOutput : null);
-    $vatInputId  = (is_numeric($rawInput) ? (int)$rawInput : null);
 
-    // Compute balances for VAT accounts. We join journal_entries to enforce company scope
-    // and use COALESCE to support both decimal and cent columns. Output VAT is credit minus debit.
+    // Compute balances for VAT accounts. Output VAT is credit minus debit.
     $outputVat = 0.0;
     $inputVat  = 0.0;
     if ($vatOutputCode) {
         $stmt = $DB->prepare(
-            "SELECT COALESCE(SUM(
-                COALESCE(jl.credit, jl.credit_cents/100.0) - COALESCE(jl.debit, jl.debit_cents/100.0)
-            ), 0) AS balance
+            "SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS balance
              FROM journal_lines jl
              JOIN journal_entries je ON jl.journal_id = je.id
-             WHERE je.company_id = ?
-               AND (
-                    jl.account_code = ?
-                 OR (? IS NOT NULL AND jl.account_id = ?)
-               )"
+             WHERE je.company_id = ? AND je.status = 'posted'
+               AND jl.account_code = ?"
         );
-        $stmt->execute([$companyId, $vatOutputCode, $vatOutputId, $vatOutputId]);
+        $stmt->execute([$companyId, $vatOutputCode]);
         $outputVat = (float)$stmt->fetchColumn();
     }
     if ($vatInputCode) {
         // Input VAT is debit minus credit
         $stmt = $DB->prepare(
-            "SELECT COALESCE(SUM(
-                COALESCE(jl.debit, jl.debit_cents/100.0) - COALESCE(jl.credit, jl.credit_cents/100.0)
-            ), 0) AS balance
+            "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
              FROM journal_lines jl
              JOIN journal_entries je ON jl.journal_id = je.id
-             WHERE je.company_id = ?
-               AND (
-                    jl.account_code = ?
-                 OR (? IS NOT NULL AND jl.account_id = ?)
-               )"
+             WHERE je.company_id = ? AND je.status = 'posted'
+               AND jl.account_code = ?"
         );
-        $stmt->execute([$companyId, $vatInputCode, $vatInputId, $vatInputId]);
+        $stmt->execute([$companyId, $vatInputCode]);
         $inputVat = (float)$stmt->fetchColumn();
     }
     $outputVatCents = (int)round($outputVat * 100);

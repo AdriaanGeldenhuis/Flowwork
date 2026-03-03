@@ -78,4 +78,45 @@ class AccountsMap
         $code = $stmt->fetchColumn();
         return $code ?: null;
     }
+
+    /**
+     * Resolve an account_id from a company setting key. Returns the integer
+     * account_id or null if not found.
+     *
+     * @param string $settingKey
+     * @return int|null
+     */
+    public function getAccountId(string $settingKey): ?int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = ? LIMIT 1"
+        );
+        $stmt->execute([$this->companyId, $settingKey]);
+        $value = $stmt->fetchColumn();
+        if (!$value) {
+            return null;
+        }
+        if (is_numeric($value)) {
+            return (int)$value;
+        }
+        // If setting contains an account_code, look up the account_id
+        $stmt = $this->db->prepare(
+            "SELECT account_id FROM gl_accounts WHERE account_code = ? AND company_id = ? LIMIT 1"
+        );
+        $stmt->execute([trim($value), $this->companyId]);
+        $id = $stmt->fetchColumn();
+        return $id ? (int)$id : null;
+    }
+
+    /**
+     * Resolve an account_code from an account_id. Returns the account_code
+     * string or null if not found.
+     *
+     * @param int|null $accountId
+     * @return string|null
+     */
+    public function getAccountCodeById(?int $accountId): ?string
+    {
+        return $this->getById($accountId);
+    }
 }

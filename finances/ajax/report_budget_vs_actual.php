@@ -79,14 +79,14 @@ try {
         $sql = "SELECT ga.account_id, MONTH(je.entry_date) AS m,
                 SUM(
                     CASE
-                        WHEN ga.account_type = 'income' THEN COALESCE(jl.credit_cents, jl.credit*100) - COALESCE(jl.debit_cents, jl.debit*100)
-                        ELSE COALESCE(jl.debit_cents, jl.debit*100) - COALESCE(jl.credit_cents, jl.credit*100)
+                        WHEN ga.account_type = 'income' THEN (jl.credit - jl.debit) * 100
+                        ELSE (jl.debit - jl.credit) * 100
                     END
                 ) AS actual_cents
                 FROM journal_lines jl
                 JOIN journal_entries je ON je.id = jl.journal_id
                 JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = ?
-                WHERE je.company_id = ? AND YEAR(je.entry_date) = ? AND ga.account_code IN ($placeholders)
+                WHERE je.company_id = ? AND je.status = 'posted' AND YEAR(je.entry_date) = ? AND ga.account_code IN ($placeholders)
                 GROUP BY ga.account_id, m";
         $params[] = $companyId;
         $params[] = $companyId;

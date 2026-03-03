@@ -27,21 +27,17 @@ try {
     $vatOutputId = (is_numeric($rawOutput) ? (int)$rawOutput : null);
     $vatInputId  = (is_numeric($rawInput) ? (int)$rawInput : null);
 
-    // Get unfiled VAT transactions. Use COALESCE to support both decimal and cent columns.
+    // Get unfiled VAT transactions
     $stmt = $DB->prepare(
-        "SELECT 
+        "SELECT
             COALESCE(SUM(
-                CASE WHEN (jl.account_code = ? OR jl.account_id = ?) THEN
-                    COALESCE(jl.credit, jl.credit_cents/100.0) - COALESCE(jl.debit, jl.debit_cents/100.0)
-                ELSE 0 END
+                CASE WHEN jl.account_code = ? THEN jl.credit - jl.debit ELSE 0 END
             ), 0) AS output_vat,
             COALESCE(SUM(
-                CASE WHEN (jl.account_code = ? OR jl.account_id = ?) THEN
-                    COALESCE(jl.debit, jl.debit_cents/100.0) - COALESCE(jl.credit, jl.credit_cents/100.0)
-                ELSE 0 END
+                CASE WHEN jl.account_code = ? THEN jl.debit - jl.credit ELSE 0 END
             ), 0) AS input_vat,
-            COUNT(DISTINCT CASE WHEN (jl.account_code = ? OR jl.account_id = ?) THEN jl.journal_id END) AS output_count,
-            COUNT(DISTINCT CASE WHEN (jl.account_code = ? OR jl.account_id = ?) THEN jl.journal_id END) AS input_count,
+            COUNT(DISTINCT CASE WHEN jl.account_code = ? THEN jl.journal_id END) AS output_count,
+            COUNT(DISTINCT CASE WHEN jl.account_code = ? THEN jl.journal_id END) AS input_count,
             MIN(je.entry_date) AS earliest_date,
             MAX(je.entry_date) AS latest_date
         FROM journal_lines jl
@@ -49,29 +45,18 @@ try {
         LEFT JOIN gl_vat_periods vp ON je.entry_date BETWEEN vp.period_start AND vp.period_end
             AND vp.company_id = je.company_id
             AND vp.status != 'open'
-        WHERE je.company_id = ?
-          AND (
-                jl.account_code IN (?, ?) 
-             OR jl.account_id IN (?, ?)
-          )
+        WHERE je.company_id = ? AND je.status = 'posted'
+          AND jl.account_code IN (?, ?)
           AND vp.id IS NULL
     "
     );
     $stmt->execute([
-        // Output VAT: match output code/id
-        $vatOutputCode, $vatOutputId,
-        // Input VAT: match input code/id
-        $vatInputCode, $vatInputId,
-        // Output count: code/id
-        $vatOutputCode, $vatOutputId,
-        // Input count: code/id
-        $vatInputCode, $vatInputId,
-        // Company ID
+        $vatOutputCode,
+        $vatInputCode,
+        $vatOutputCode,
+        $vatInputCode,
         $companyId,
-        // Filter codes list (for both output and input)
-        $vatOutputCode, $vatInputCode,
-        // Filter ids list (for both output and input)
-        $vatOutputId, $vatInputId
+        $vatOutputCode, $vatInputCode
     ]);
     $data = $stmt->fetch(PDO::FETCH_ASSOC);
 

@@ -62,7 +62,7 @@
               Sync to GL
             </button>
           `}
-          <a href="/quotes-invoices/invoice_view.php?id=${inv.id}" class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary" target="_blank">
+          <a href="/finances/ar/invoice_view.php?id=${inv.id}" class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary" target="_blank">
             View Invoice
           </a>
         </div>
