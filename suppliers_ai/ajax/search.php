@@ -130,11 +130,19 @@ try {
         exit;
     }
 
-    error_log("Pre-scoring candidates: " . count($candidates));
+    $debugInfo['pre_scoring_count'] = count($candidates);
+    $debugInfo['pre_scoring_names'] = array_map(function($c) {
+        return $c['name'] . ' (score=' . $c['score_final'] . ', src=' . $c['source'] . ')';
+    }, $candidates);
+    $debugInfo['filter_min_score'] = $filterMinScore;
+    $debugInfo['filter_compliance'] = $filterCompliance;
+    $debugInfo['filter_source'] = $filterSource;
+    $debugInfo['rules_deny_phones'] = count($rules['deny_list']['phones'] ?? []);
+    $debugInfo['rules_deny_domains'] = count($rules['deny_list']['domains'] ?? []);
 
     // Score, rank and filter
     $candidates = scoreAndRank($candidates, $filterMinScore, $filterCompliance, $rules);
-    error_log("Post-scoring candidates: " . count($candidates) . " (minScore=$filterMinScore, compliance=$filterCompliance)");
+    $debugInfo['post_scoring_count'] = count($candidates);
 
     // Limit to top 10
     $candidates = array_slice($candidates, 0, 10);

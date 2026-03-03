@@ -267,6 +267,18 @@
         errorHtml += 'Content length: ' + (debug.openai_content_length || 'N/A') + ' chars\n';
         errorHtml += 'Companies parsed: ' + (debug.openai_companies_count ?? 'N/A') + '\n';
         errorHtml += 'JSON keys: ' + escapeHtml(JSON.stringify(debug.openai_json_keys || [])) + '\n';
+        errorHtml += '\n--- Scoring Pipeline ---\n';
+        errorHtml += 'Pre-scoring count: ' + (debug.pre_scoring_count ?? 'N/A') + '\n';
+        errorHtml += 'Post-scoring count: ' + (debug.post_scoring_count ?? 'N/A') + '\n';
+        errorHtml += 'Min score filter: ' + (debug.filter_min_score ?? 'N/A') + '\n';
+        errorHtml += 'Compliance filter: ' + escapeHtml(debug.filter_compliance || '(none)') + '\n';
+        errorHtml += 'Source filter: ' + escapeHtml(debug.filter_source || '(all)') + '\n';
+        errorHtml += 'Deny phones: ' + (debug.rules_deny_phones ?? 0) + '\n';
+        errorHtml += 'Deny domains: ' + (debug.rules_deny_domains ?? 0) + '\n';
+        if (debug.pre_scoring_names) {
+          errorHtml += '\nCandidates before scoring:\n';
+          debug.pre_scoring_names.forEach(function(n) { errorHtml += '  - ' + escapeHtml(n) + '\n'; });
+        }
         if (debug.openai_raw_content) {
           errorHtml += '\nRaw OpenAI response:\n' + escapeHtml(debug.openai_raw_content);
         }
