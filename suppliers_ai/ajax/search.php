@@ -84,6 +84,7 @@ try {
 
     $sourcesTried = [];
     $sourceErrors = [];
+    $debugInfo = [];
 
     // SOURCE 3: Google Places API (if key configured and not CRM-only)
     if ($filterSource !== 'crm' && $filterSource !== 'history') {
@@ -108,7 +109,7 @@ try {
             $sourceErrors[] = 'OpenAI API key not set. Add your key in Settings → OpenAI Configuration.';
         } else {
             $sourcesTried[] = 'openai';
-            $openaiResult = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys);
+            $openaiResult = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys, $debugInfo);
             error_log("OpenAI result type: " . gettype($openaiResult) . " count: " . (is_array($openaiResult) ? count($openaiResult) : 'N/A') . " has error key: " . (is_array($openaiResult) && isset($openaiResult['error']) ? 'YES' : 'NO'));
             if (is_array($openaiResult) && isset($openaiResult['error'])) {
                 $sourceErrors[] = 'OpenAI error: ' . $openaiResult['error'];
@@ -155,7 +156,8 @@ try {
             'parsed' => $parsed,
             'source' => 'multi',
             'sources_tried' => $sourcesTried,
-            'source_errors' => $sourceErrors
+            'source_errors' => $sourceErrors,
+            'debug' => $debugInfo
         ]);
         exit;
     }
@@ -461,7 +463,7 @@ function searchGooglePlaces($apiKey, $category, $location, &$seenKeys) {
     return $candidates;
 }
 
-function searchWithOpenAI($apiKey, $model, $maxTokens, $queryText, $location, $categories, &$seenKeys) {
+function searchWithOpenAI($apiKey, $model, $maxTokens, $queryText, $location, $categories, &$seenKeys, &$debugInfo = []) {
     $categoryHint = !empty($categories) ? implode(', ', $categories) : 'general';
     $locationHint = !empty($location) ? $location : 'South Africa';
 
@@ -540,6 +542,14 @@ PROMPT;
 
     $data = json_decode($response, true);
     $content = $data['choices'][0]['message']['content'] ?? '';
+    $finishReason = $data['choices'][0]['finish_reason'] ?? 'unknown';
+
+    // Capture debug info
+    $debugInfo['openai_model'] = $model;
+    $debugInfo['openai_finish_reason'] = $finishReason;
+    $debugInfo['openai_raw_content'] = substr($content, 0, 500);
+    $debugInfo['openai_content_length'] = strlen($content);
+    $debugInfo['openai_http_code'] = $httpCode;
 
     error_log("OpenAI raw content: " . substr($content, 0, 1500));
 
@@ -578,6 +588,8 @@ PROMPT;
         $suppliers = $result;
     }
 
+    $debugInfo['openai_json_keys'] = array_keys($result);
+    $debugInfo['openai_companies_count'] = count($suppliers);
     error_log("OpenAI returned " . count($suppliers) . " companies. Keys in result: " . implode(', ', array_keys($result)));
 
     $candidates = [];

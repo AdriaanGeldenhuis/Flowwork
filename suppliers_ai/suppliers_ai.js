@@ -202,10 +202,14 @@
         if (data.ok) {
           currentQuery = data.query_id;
           allCandidates = data.candidates;
-          renderResults(data.candidates);
+          renderResults(data.candidates, data.source_errors, data.debug);
           resultsArea.style.display = 'block';
           resultsCount.textContent = data.candidates.length;
-          showToast(`Found ${data.candidates.length} suppliers in ${data.took_ms}ms 🤖`, 'success');
+          if (data.candidates.length === 0 && data.source_errors && data.source_errors.length > 0) {
+            showToast('Search completed with errors - see details above', 'error');
+          } else {
+            showToast(`Found ${data.candidates.length} suppliers in ${data.took_ms}ms`, 'success');
+          }
         } else {
           // Show error in results area so user can see it clearly
           const resultsList = document.getElementById('resultsList');
@@ -235,12 +239,47 @@
   }
 
   // ========== RENDER RESULTS ==========
-  function renderResults(candidates) {
+  function renderResults(candidates, sourceErrors, debug) {
     const resultsList = document.getElementById('resultsList');
     if (!resultsList) return;
 
     if (candidates.length === 0) {
-      resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria. Check that your OpenAI API key is configured in Settings.</div>';
+      let errorHtml = '';
+
+      // Show source errors prominently
+      if (sourceErrors && sourceErrors.length > 0) {
+        errorHtml += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin-bottom:16px;">';
+        errorHtml += '<strong style="color:#dc2626;">Search Errors:</strong><ul style="margin:8px 0 0 0;padding-left:20px;color:#991b1b;">';
+        sourceErrors.forEach(err => {
+          errorHtml += '<li>' + escapeHtml(err) + '</li>';
+        });
+        errorHtml += '</ul></div>';
+      }
+
+      // Show debug info when available
+      if (debug && Object.keys(debug).length > 0) {
+        errorHtml += '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:16px;margin-bottom:16px;">';
+        errorHtml += '<strong style="color:#92400e;">Debug Info:</strong>';
+        errorHtml += '<div style="margin-top:8px;font-size:12px;color:#78350f;font-family:monospace;white-space:pre-wrap;">';
+        errorHtml += 'Model: ' + escapeHtml(debug.openai_model || 'N/A') + '\n';
+        errorHtml += 'Finish reason: ' + escapeHtml(debug.openai_finish_reason || 'N/A') + '\n';
+        errorHtml += 'HTTP code: ' + (debug.openai_http_code || 'N/A') + '\n';
+        errorHtml += 'Content length: ' + (debug.openai_content_length || 'N/A') + ' chars\n';
+        errorHtml += 'Companies parsed: ' + (debug.openai_companies_count ?? 'N/A') + '\n';
+        errorHtml += 'JSON keys: ' + escapeHtml(JSON.stringify(debug.openai_json_keys || [])) + '\n';
+        if (debug.openai_raw_content) {
+          errorHtml += '\nRaw OpenAI response:\n' + escapeHtml(debug.openai_raw_content);
+        }
+        errorHtml += '</div></div>';
+      }
+
+      if (!errorHtml) {
+        errorHtml = '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria. Check that your OpenAI API key is configured in Settings.</div>';
+      } else {
+        errorHtml += '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria.</div>';
+      }
+
+      resultsList.innerHTML = errorHtml;
       return;
     }
 
