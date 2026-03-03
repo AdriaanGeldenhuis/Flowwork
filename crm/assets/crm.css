@@ -1479,33 +1479,6 @@
   color: var(--fw-text-secondary);
 }
 
-/* ===== KPI GRID ===== */
-.fw-crm__kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--fw-spacing-lg);
-}
-
-.fw-crm__kpi {
-  text-align: center;
-}
-
-.fw-crm__kpi-value {
-  font-size: 32px;
-  font-weight: 900;
-  color: var(--fw-primary);
-  text-shadow: 0 0 20px var(--fw-primary-glow);
-}
-
-.fw-crm__kpi-label {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--fw-text-muted);
-  margin-top: 4px;
-}
-
 /* ===== 2-COLUMN GRID ===== */
 .fw-crm__grid-2col {
   display: grid;
@@ -2916,7 +2889,7 @@ body.fw-crm-modal-open {
 }
 .fw-crm__kpi-card {
   background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border-color);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   padding: var(--fw-spacing-lg);
   text-align: center;
@@ -2942,9 +2915,14 @@ body.fw-crm-modal-open {
 }
 .fw-crm__chart-card {
   background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border-color);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   padding: var(--fw-spacing-md);
+  position: relative;
+}
+.fw-crm__chart-card canvas {
+  max-height: 280px;
+  width: 100% !important;
 }
 .fw-crm__chart-title {
   font-size: 0.95rem;
@@ -2962,7 +2940,7 @@ body.fw-crm-modal-open {
 }
 .fw-crm__table-card {
   background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border-color);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   padding: var(--fw-spacing-md);
 }
@@ -2977,7 +2955,7 @@ body.fw-crm-modal-open {
 .fw-crm__data-table th {
   text-align: left;
   padding: 8px 12px;
-  border-bottom: 2px solid var(--fw-border-color);
+  border-bottom: 2px solid var(--fw-border-base);
   color: var(--fw-text-secondary);
   font-weight: 600;
   font-size: 0.8rem;
@@ -2986,7 +2964,7 @@ body.fw-crm-modal-open {
 }
 .fw-crm__data-table td {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--fw-border-color);
+  border-bottom: 1px solid var(--fw-border-base);
   color: var(--fw-text-primary);
 }
 .fw-crm__data-table a {

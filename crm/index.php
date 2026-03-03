@@ -456,7 +456,7 @@ if ($activeTab === 'overview') {
             ]
           },
           options: {
-            responsive: true, maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: true,
             plugins: { legend: { position: 'bottom', labels: { color: tickColor } } },
             scales: {
               x: { grid: { display: false }, ticks: { color: tickColor } },
@@ -481,7 +481,7 @@ if ($activeTab === 'overview') {
             }]
           },
           options: {
-            responsive: true, maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: true,
             plugins: {
               legend: { position: 'bottom', labels: { color: tickColor } },
               tooltip: {
