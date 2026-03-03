@@ -21,17 +21,17 @@ $companyName = $company['name'] ?? 'Company';
 // Get active tab from URL
 $activeTab = $_GET['tab'] ?? 'overview';
 
-// Fetch statistics for overview
+// Always fetch tab counts (used in tab headers on every tab)
+$suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier'");
+$suppliersCount->execute([$companyId]);
+$totalSuppliers = $suppliersCount->fetchColumn();
+
+$customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'customer'");
+$customersCount->execute([$companyId]);
+$totalCustomers = $customersCount->fetchColumn();
+
+// Fetch additional statistics for overview
 if ($activeTab === 'overview') {
-    // Total counts
-    $suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier'");
-    $suppliersCount->execute([$companyId]);
-    $totalSuppliers = $suppliersCount->fetchColumn();
-
-    $customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'customer'");
-    $customersCount->execute([$companyId]);
-    $totalCustomers = $customersCount->fetchColumn();
-
     $contactsCount = $DB->prepare("SELECT COUNT(*) FROM crm_contacts WHERE company_id = ?");
     $contactsCount->execute([$companyId]);
     $totalContacts = $contactsCount->fetchColumn();
