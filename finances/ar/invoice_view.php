@@ -40,6 +40,7 @@ $title = 'Invoice #' . $id;
 </div>
 <script>
 (async function(){
+  try {
   const res = await fetch('../ajax/ar_invoice_view.php?id=<?=$id?>', {headers:{'Accept':'application/json'}});
   const js = await res.json();
   if(!js.ok){ alert(js.error||'Error'); return; }
@@ -74,6 +75,10 @@ $title = 'Invoice #' . $id;
   document.getElementById('qiLink').href = '/qi/invoice_view.php?id=' + encodeURIComponent(d.id);
   if (d.journal_id){
     document.getElementById('journal').innerHTML = ' · <a href="/finances/gl/journal_view.php?id=' + encodeURIComponent(d.journal_id) + '">Journal #' + d.journal_id + '</a>';
+  }
+  } catch(e) {
+    console.error('Invoice load failed:', e);
+    alert('Failed to load invoice data. Check console for details.');
   }
 })();
 </script>

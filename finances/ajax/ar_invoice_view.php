@@ -1,8 +1,8 @@
 <?php
+declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/http.php';
 require_method('GET');
-declare(strict_types=1);
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../permissions.php';
