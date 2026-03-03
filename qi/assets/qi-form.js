@@ -191,7 +191,6 @@ window.QI = window.QI || {};
           btnSave.querySelector('.fw-qi__spinner').style.display = 'none';
         }
       } catch (err) {
-        console.error(err);
         showMessage('Network error. Please try again.', 'error');
         btnSave.disabled = false;
         btnSave.querySelector('.fw-qi__btn-text').style.display = 'inline';

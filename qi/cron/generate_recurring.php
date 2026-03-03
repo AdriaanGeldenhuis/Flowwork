@@ -3,6 +3,7 @@
 // Run daily: 0 2 * * * /usr/bin/php /path/to/qi/cron/generate_recurring.php
 
 require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 try {
     // Find all active recurring invoices due today or earlier
@@ -24,22 +25,9 @@ try {
             $stmt->execute([$rec['id']]);
             $lines = $stmt->fetchAll();
 
-            // Generate invoice number using race-proof sequence allocation (see Section 1)
-            $year = date('Y');
-            $seqStmt = $DB->prepare("SELECT next_number FROM qi_sequences WHERE company_id = ? AND type = 'invoice' AND year = ? FOR UPDATE");
-            $seqStmt->execute([$rec['company_id'], $year]);
-            $seqRow = $seqStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$seqRow) {
-                // Insert new sequence row starting at 0
-                $insertSeq = $DB->prepare("INSERT INTO qi_sequences (company_id, type, year, next_number) VALUES (?, 'invoice', ?, 0)");
-                $insertSeq->execute([$rec['company_id'], $year]);
-                $nextNum = 1;
-            } else {
-                $nextNum = intval($seqRow['next_number']) + 1;
-            }
-            $updateSeq = $DB->prepare("UPDATE qi_sequences SET next_number = ? WHERE company_id = ? AND type = 'invoice' AND year = ?");
-            $updateSeq->execute([$nextNum, $rec['company_id'], $year]);
-            $invoiceNumber = sprintf('INV%d-%04d', $year, $nextNum);
+            // Generate invoice number using SequenceAllocator (race-safe)
+            $alloc = new SequenceAllocator($DB);
+            [$invoiceNumber, $seqNum] = $alloc->allocate((int)$rec['company_id'], 'invoice', null, true);
 
             // Calculate totals
             $subtotal = 0;
@@ -63,9 +51,13 @@ try {
 
             $total = $subtotal - $discount + $tax;
 
-            // Create invoice
+            // Create invoice - use qi_settings for payment terms
             $issueDate = date('Y-m-d');
-            $dueDate = date('Y-m-d', strtotime('+30 days'));
+            $stmtTerms = $DB->prepare("SELECT default_payment_terms FROM qi_settings WHERE company_id = ?");
+            $stmtTerms->execute([$rec['company_id']]);
+            $termsRow = $stmtTerms->fetch();
+            $paymentDays = ($termsRow && $termsRow['default_payment_terms']) ? (int)$termsRow['default_payment_terms'] : 30;
+            $dueDate = date('Y-m-d', strtotime("+{$paymentDays} days"));
 
             $stmt = $DB->prepare("
                 INSERT INTO invoices (
@@ -132,8 +124,6 @@ try {
                 WHERE id = ?
             ");
             $stmt->execute([$nextDate, $rec['id']]);
-
-            // TODO: Auto-send email to customer
 
             $DB->commit();
 

@@ -1,10 +1,11 @@
 <?php
 // /qi/ajax/convert_to_invoice.php - COMPLETE WORKING VERSION
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
 
@@ -39,29 +40,16 @@ try {
         throw new Exception('Quote not found or not accepted');
     }
     
-    // 2. Generate invoice number using qi_sequences for race-safe allocation
-    $year = date('Y');
-    // Lock the sequence row for invoices for this company and year
-    $seqStmt = $DB->prepare("SELECT next_number FROM qi_sequences WHERE company_id = ? AND type = 'invoice' AND year = ? FOR UPDATE");
-    $seqStmt->execute([$companyId, $year]);
-    $seq = $seqStmt->fetch();
-    
-    if ($seq === false) {
-        // No sequence row exists yet: create one starting at 0
-        $insertSeq = $DB->prepare("INSERT INTO qi_sequences (company_id, type, year, next_number) VALUES (?, 'invoice', ?, 0)");
-        $insertSeq->execute([$companyId, $year]);
-        $nextNum = 1;
-    } else {
-        $nextNum = intval($seq['next_number']) + 1;
-    }
-    // Update the sequence with new number
-    $updateSeq = $DB->prepare("UPDATE qi_sequences SET next_number = ? WHERE company_id = ? AND type = 'invoice' AND year = ?");
-    $updateSeq->execute([$nextNum, $companyId, $year]);
-    // Build invoice number with year prefix and zero-padded sequence
-    $invoiceNumber = sprintf('INV%d-%04d', $year, $nextNum);
+    // 2. Generate invoice number using SequenceAllocator (race-safe)
+    $alloc = new SequenceAllocator($DB);
+    [$invoiceNumber, $seqNum] = $alloc->allocate($companyId, 'invoice', null, true);
 
-    // 3. Determine due date (company terms). Default: 30 days from today
-    $dueDate = date('Y-m-d', strtotime('+30 days'));
+    // 3. Determine due date from qi_settings payment terms
+    $stmtTerms = $DB->prepare("SELECT default_payment_terms FROM qi_settings WHERE company_id = ?");
+    $stmtTerms->execute([$companyId]);
+    $termsRow = $stmtTerms->fetch();
+    $paymentDays = ($termsRow && $termsRow['default_payment_terms']) ? (int)$termsRow['default_payment_terms'] : 30;
+    $dueDate = date('Y-m-d', strtotime("+{$paymentDays} days"));
 
     // 4. Create invoice record and link to quote
     $stmt = $DB->prepare("INSERT INTO invoices (
@@ -171,5 +159,8 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Quote conversion error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $safeMsg = ($e instanceof PDOException)
+        ? 'A database error occurred. Please try again.'
+        : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }

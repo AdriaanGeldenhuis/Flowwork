@@ -1,7 +1,7 @@
 <?php
 // /qi/ajax/upload_logo.php - WebP Logo Upload with proper structure
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';

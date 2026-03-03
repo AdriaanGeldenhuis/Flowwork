@@ -1,10 +1,11 @@
 <?php
 // /qi/ajax/save_quote.php - COMPLETE WITH UPDATE
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
 
@@ -31,15 +32,25 @@ if (empty($lineItems) || !is_array($lineItems)) {
     exit;
 }
 
+// Fetch default tax rate from qi_settings
+$stmtTax = $DB->prepare("SELECT default_tax_rate FROM qi_settings WHERE company_id = ?");
+$stmtTax->execute([$companyId]);
+$qiSettings = $stmtTax->fetch();
+$defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
+    ? floatval($qiSettings['default_tax_rate']) / 100
+    : 0.15;
+
 // Recalculate subtotal, tax and total to prevent tampering
 $subtotalCalc = 0;
+$taxCalc = 0;
 foreach ($lineItems as $item) {
     $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0;
     $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0;
     $lineTotal = $qty * $price;
     $subtotalCalc += $lineTotal;
+    $lineTaxRate = isset($item['tax_rate']) ? floatval($item['tax_rate']) / 100 : $defaultTaxRate;
+    $taxCalc += $lineTotal * $lineTaxRate;
 }
-$taxCalc = $subtotalCalc * 0.15;
 $totalCalc = $subtotalCalc + $taxCalc;
 
 // Override incoming totals with calculated values
@@ -108,28 +119,9 @@ try {
         
     } else {
         // CREATE
-        // Allocate a unique quote number in a race-safe way using qi_sequences
-        $year = date('Y');
-        // Lock the sequence row for this company/year/type
-        $stmt = $DB->prepare("SELECT next_number FROM qi_sequences WHERE company_id = ? AND type = 'quote' AND year = ? FOR UPDATE");
-        $stmt->execute([$companyId, $year]);
-        $seq = $stmt->fetch();
-
-        if ($seq === false) {
-            // If no sequence row exists, create it starting at 0
-            $stmtInsert = $DB->prepare("INSERT INTO qi_sequences (company_id, type, year, next_number) VALUES (?, 'quote', ?, 0)");
-            $stmtInsert->execute([$companyId, $year]);
-            $nextNum = 1;
-        } else {
-            $nextNum = intval($seq['next_number']) + 1;
-        }
-
-        // Update the sequence with the new number
-        $stmtUpdate = $DB->prepare("UPDATE qi_sequences SET next_number = ? WHERE company_id = ? AND type = 'quote' AND year = ?");
-        $stmtUpdate->execute([$nextNum, $companyId, $year]);
-
-        // Build the quote number with year prefix and padded sequence
-        $quoteNumber = sprintf('Q%d-%04d', $year, $nextNum);
+        // Allocate a unique quote number using SequenceAllocator (race-safe)
+        $alloc = new SequenceAllocator($DB);
+        [$quoteNumber, $seqNum] = $alloc->allocate($companyId, 'quote', $input['issue_date'] ?? null, true);
 
         // Generate public token for this quote
         $publicToken = bin2hex(random_bytes(16));
@@ -195,7 +187,10 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Save quote error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $safeMsg = ($e instanceof PDOException)
+        ? 'A database error occurred. Please try again.'
+        : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
 
 // After the quote has been saved (either created or updated) and committed, hook into the calendar to create/update expiry events.
