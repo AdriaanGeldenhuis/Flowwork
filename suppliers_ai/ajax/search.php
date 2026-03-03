@@ -513,7 +513,7 @@ PROMPT;
                 ['role' => 'system', 'content' => 'You are a South African supplier and subcontractor directory. Find real businesses that match the search query. Include well-known chains, local businesses, and specialists in the area.'],
                 ['role' => 'user', 'content' => $searchPrompt]
             ],
-            'max_tokens' => max(500, $maxTokens),
+            'max_tokens' => max(1500, $maxTokens),
             'temperature' => 0.1
         ])
     ]);
@@ -541,21 +541,44 @@ PROMPT;
     $data = json_decode($response, true);
     $content = $data['choices'][0]['message']['content'] ?? '';
 
-    error_log("OpenAI raw content: " . substr($content, 0, 1000));
+    error_log("OpenAI raw content: " . substr($content, 0, 1500));
 
-    // Clean markdown code blocks
+    // Clean markdown code blocks and any text before/after JSON
     $content = preg_replace('/```json\s*/', '', $content);
     $content = preg_replace('/```\s*/', '', $content);
     $content = trim($content);
 
-    $result = json_decode($content, true);
-    if (!is_array($result)) {
-        error_log("OpenAI JSON parse failed. Cleaned content: " . substr($content, 0, 500));
-        return ['error' => 'Could not parse AI response. Raw: ' . substr($content, 0, 200)];
+    // Try to extract JSON object from the content
+    if (preg_match('/\{[\s\S]*\}/u', $content, $jsonMatch)) {
+        $content = $jsonMatch[0];
     }
 
-    $suppliers = $result['companies'] ?? [];
-    error_log("OpenAI returned " . count($suppliers) . " companies");
+    $result = json_decode($content, true);
+
+    // If JSON parsing failed, try to fix truncated JSON by adding closing brackets
+    if (!is_array($result)) {
+        $fixedContent = $content . ']}';
+        $result = json_decode($fixedContent, true);
+        if (!is_array($result)) {
+            $fixedContent = $content . '"}}]}';
+            $result = json_decode($fixedContent, true);
+        }
+    }
+
+    if (!is_array($result)) {
+        error_log("OpenAI JSON parse failed. Cleaned content: " . substr($content, 0, 500));
+        return ['error' => 'Could not parse AI response. Raw: ' . substr($content, 0, 300)];
+    }
+
+    // Try multiple key names that the model might use
+    $suppliers = $result['companies'] ?? $result['suppliers'] ?? $result['results'] ?? [];
+
+    // If result is a flat array of objects (no wrapper key), use it directly
+    if (empty($suppliers) && isset($result[0]['name'])) {
+        $suppliers = $result;
+    }
+
+    error_log("OpenAI returned " . count($suppliers) . " companies. Keys in result: " . implode(', ', array_keys($result)));
 
     $candidates = [];
     foreach ($suppliers as $s) {
