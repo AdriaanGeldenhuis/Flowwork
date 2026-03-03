@@ -211,8 +211,8 @@ $stats = $stmt->fetch();
                         <div class="fw-suppliers-ai__filter-group">
                             <label class="fw-suppliers-ai__label">Compliance</label>
                             <select id="filterCompliance" class="fw-suppliers-ai__input">
-                                <option value="">Any</option>
-                                <option value="valid" <?= $aiSettings['require_compliance'] ? 'selected' : '' ?>>Valid Only</option>
+                                <option value="" selected>Any</option>
+                                <option value="valid">Valid Only</option>
                                 <option value="expiring">Expiring Soon</option>
                                 <option value="expired">Expired</option>
                                 <option value="missing">Missing</option>
