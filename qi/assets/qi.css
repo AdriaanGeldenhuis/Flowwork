@@ -132,6 +132,12 @@
   color-scheme: dark;
 }
 
+/* Dark mode: force dark background/text on ALL native select options */
+.fw-qi[data-theme="dark"] select option {
+  background: #121824;
+  color: #e7ecf2;
+}
+
 /* ===== BASE RESET ===== */
 *,
 *::before,
