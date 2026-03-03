@@ -100,7 +100,7 @@
   --fw-text-primary: #e7ecf2;
   --fw-text-secondary: #c5d1e0;
   --fw-text-tertiary: #9fb0c8;
-  --fw-text-muted: #7a8aa3;
+  --fw-text-muted: #8a9ab5;
   
   --fw-border-base: rgba(255, 255, 255, 0.08);
   --fw-border-strong: rgba(255, 255, 255, 0.12);
@@ -118,10 +118,18 @@
   --fw-glow: rgba(255, 255, 0, 0.25);
   
   --fw-input-bg: rgba(255, 255, 255, 0.05);
-  --fw-input-border: rgba(255, 255, 255, 0.2);
-  --fw-input-border-hover: rgba(255, 255, 255, 0.3);
+  --fw-input-border: rgba(255, 255, 255, 0.25);
+  --fw-input-border-hover: rgba(255, 255, 255, 0.4);
   
   --fw-modal-overlay: rgba(0, 0, 0, 0.85);
+}
+
+/* Dark mode: tell browser to render native form controls in dark */
+.fw-qi[data-theme="dark"] select,
+.fw-qi[data-theme="dark"] input[type="date"],
+.fw-qi[data-theme="dark"] input[type="time"],
+.fw-qi[data-theme="dark"] input[type="datetime-local"] {
+  color-scheme: dark;
 }
 
 /* ===== BASE RESET ===== */
@@ -1598,4 +1606,9 @@ input[type="date"].fw-qi__input {
   -webkit-appearance: none;
   -moz-appearance: none;
   cursor: pointer;
+}
+
+.fw-qi[data-theme="dark"] input[type="date"].fw-qi__filter::-webkit-calendar-picker-indicator,
+.fw-qi[data-theme="dark"] input[type="date"].fw-qi__input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
 }
