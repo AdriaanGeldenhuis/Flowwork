@@ -82,26 +82,40 @@ try {
         $candidates = array_merge($candidates, $historyCandidates);
     }
 
+    $sourcesTried = [];
+
     // SOURCE 3: Google Places API (if key configured and not CRM-only)
     if ($filterSource !== 'crm' && $filterSource !== 'history') {
         $googlePlacesKey = $apiKeys['google_places_key'] ?? '';
         if (!empty($googlePlacesKey)) {
+            $sourcesTried[] = 'google_places';
             $placesCandidates = searchGooglePlaces($googlePlacesKey, $category, $location, $seenKeys);
             $candidates = array_merge($candidates, $placesCandidates);
         }
     }
 
-    // SOURCE 4: OpenAI Fallback (if fewer than 3 candidates and not CRM/history only)
-    if (count($candidates) < 3 && $filterSource !== 'crm' && $filterSource !== 'history') {
+    // SOURCE 4: OpenAI — primary AI search for finding real suppliers
+    if ($filterSource !== 'crm' && $filterSource !== 'history') {
         $openaiKey = $apiKeys['openai_api_key'] ?? '';
         $openaiEnabled = $apiKeys['openai_enabled'] ?? 0;
         $openaiModel = $apiKeys['openai_model'] ?? 'gpt-4o-mini';
         $openaiMaxTokens = intval($apiKeys['openai_max_tokens'] ?? 500);
 
         if ($openaiEnabled && !empty($openaiKey) && $openaiKey !== 'OPENAI_KEY_REMOVED') {
-            $aiCandidates = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $category, $location, $categories, $seenKeys);
+            $sourcesTried[] = 'openai';
+            $aiCandidates = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys);
             $candidates = array_merge($candidates, $aiCandidates);
         }
+    }
+
+    // If no external sources were available and no CRM results, inform the user
+    $externalAvailable = !empty($sourcesTried);
+    if (empty($candidates) && !$externalAvailable && $filterSource !== 'crm' && $filterSource !== 'history') {
+        echo json_encode([
+            'ok' => false,
+            'error' => 'No API keys configured. Go to Suppliers AI → Settings to add your OpenAI API key.'
+        ]);
+        exit;
     }
 
     // Score, rank and filter
@@ -125,7 +139,8 @@ try {
             'candidates' => [],
             'took_ms' => $tookMs,
             'parsed' => $parsed,
-            'source' => 'multi'
+            'source' => 'multi',
+            'sources_tried' => $sourcesTried
         ]);
         exit;
     }
@@ -199,7 +214,8 @@ try {
         'candidates' => $savedCandidates,
         'took_ms' => $tookMs,
         'parsed' => $parsed,
-        'source' => 'multi'
+        'source' => 'multi',
+        'sources_tried' => $sourcesTried
     ]);
 
 } catch (Exception $e) {
@@ -430,40 +446,41 @@ function searchGooglePlaces($apiKey, $category, $location, &$seenKeys) {
     return $candidates;
 }
 
-function searchWithOpenAI($apiKey, $model, $maxTokens, $category, $location, $categories, &$seenKeys) {
+function searchWithOpenAI($apiKey, $model, $maxTokens, $queryText, $location, $categories, &$seenKeys) {
+    $categoryHint = !empty($categories) ? implode(', ', $categories) : 'general';
+    $locationHint = !empty($location) ? $location : 'South Africa';
+
     $searchPrompt = <<<PROMPT
-You are a directory assistant for South Africa. Your job is to find REAL, VERIFIABLE companies.
+You are a supplier/subcontractor directory assistant for South Africa.
+A user searched: "{$queryText}"
+Detected location: {$locationHint}
+Detected categories: {$categoryHint}
 
-CRITICAL RULES (you will be penalized for fake companies):
-1. ONLY suggest companies if you can verify they exist through:
-   - Their official website domain
-   - Public company registration
-   - Known franchise/chain presence
-2. If you're NOT 100% certain, DO NOT include it
-3. Maximum 5-8 companies (quality over quantity)
-4. Phone numbers MUST be real SA format:
-   - Landline: 011/012/021/031/041/051/053 + 7 digits
-   - Mobile: 082/083/084/072/073/074/076/078/079/081 + 7 digits
-5. Websites MUST be real .co.za domains you know exist
-6. If you only know 2-3 real companies, return 2-3 (NOT 10 fake ones)
+Find REAL suppliers, subcontractors, or companies that match this search.
 
-Task: Find verified {$category} companies in {$location}
+RULES:
+1. Find companies that actually supply or do this kind of work in or near {$locationHint}
+2. Include well-known chains, franchises, or established local businesses
+3. Return 5-8 companies (quality over quantity)
+4. Phone numbers in SA format (e.g. 016 xxx xxxx for Vaal area, 011 for JHB, etc.)
+5. If you only know 2-3 real companies, return 2-3 (not fake ones)
+6. Include both large suppliers AND smaller local subcontractors if relevant
 
 Return ONLY this JSON (no explanations):
 {
   "companies": [
     {
-      "name": "Exact company name",
-      "phone": "Valid SA number",
-      "email": "Real email domain",
-      "website": "https://actual-domain.co.za",
-      "address": "Real physical address",
+      "name": "Company name",
+      "phone": "Phone number",
+      "email": "Email if known or null",
+      "website": "Website if known or null",
+      "address": "Physical address or area",
       "confidence": "high|medium"
     }
   ]
 }
 
-If you cannot find verified companies, return: {"companies": []}
+If you cannot find any companies, return: {"companies": []}
 PROMPT;
 
     $ch = curl_init('https://api.openai.com/v1/chat/completions');

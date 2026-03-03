@@ -231,7 +231,7 @@
     if (!resultsList) return;
 
     if (candidates.length === 0) {
-      resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria</div>';
+      resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria. Check that your OpenAI API key is configured in Settings.</div>';
       return;
     }
 
