@@ -13,7 +13,7 @@ const InvoiceView = {
         this.balanceDue = opts.balanceDue || 0;
     },
 
-    async sendInvoice() {
+    async sendInvoice(e) {
         if (!this.customerEmail) {
             alert('❌ No email address found for this customer.\n\nPlease add an email address in CRM first.');
             return;
@@ -22,10 +22,9 @@ const InvoiceView = {
         if (!confirm(confirmMsg)) {
             return;
         }
-        const btn = event.target;
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<span style="opacity:0.6">📧 Sending...</span>';
-        btn.disabled = true;
+        const btn = (e && e.target) ? e.target : (typeof event !== 'undefined' ? event.target : null);
+        const originalHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.innerHTML = '<span style="opacity:0.6">📧 Sending...</span>'; btn.disabled = true; }
         try {
             const res = await fetch('/qi/ajax/send_invoice.php', {
                 method: 'POST',
@@ -41,13 +40,11 @@ const InvoiceView = {
                 location.reload();
             } else {
                 alert('❌ Error: ' + (data.error || 'Send failed'));
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
+                if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
             }
         } catch (err) {
             alert('❌ Network error: ' + err.message);
-            btn.innerHTML = originalHTML;
-            btn.disabled = false;
+            if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
         }
     },
 
@@ -56,13 +53,12 @@ const InvoiceView = {
         window.open('/qi/ajax/generate_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
     },
 
-    async deleteInvoice() {
+    async deleteInvoice(e) {
         if (!this.invoiceId) return;
         if (!confirm('Delete this invoice? This action cannot be undone.')) return;
-        const btn = event.target;
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = 'Deleting...';
-        btn.disabled = true;
+        const btn = (e && e.target) ? e.target : (typeof event !== 'undefined' ? event.target : null);
+        const originalHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.innerHTML = 'Deleting...'; btn.disabled = true; }
         try {
             const res = await fetch('/qi/ajax/delete_invoice.php', {
                 method: 'POST',
@@ -75,13 +71,11 @@ const InvoiceView = {
                 window.location.href = '/qi/?tab=invoices';
             } else {
                 alert('❌ Error: ' + (data.error || 'Delete failed'));
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
+                if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
             }
         } catch (err) {
             alert('❌ Network error: ' + err.message);
-            btn.innerHTML = originalHTML;
-            btn.disabled = false;
+            if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
         }
     }
     ,
@@ -89,16 +83,15 @@ const InvoiceView = {
     /**
      * Create a Yoco payment link for this invoice
      */
-    async createPaymentLink() {
+    async createPaymentLink(e) {
         if (!this.invoiceId) return;
         // Confirm with the user
         if (!confirm('Generate a payment link for this invoice?\n\nThe link will allow your customer to pay online via Yoco.\n\nContinue?')) {
             return;
         }
-        const btn = event.target;
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = 'Creating...';
-        btn.disabled = true;
+        const btn = (e && e.target) ? e.target : (typeof event !== 'undefined' ? event.target : null);
+        const originalHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.innerHTML = 'Creating...'; btn.disabled = true; }
         try {
             const res = await fetch('/qi/ajax/create_yoco_link.php', {
                 method: 'POST',
@@ -112,13 +105,11 @@ const InvoiceView = {
                 location.reload();
             } else {
                 alert('❌ Error: ' + (data.error || 'Could not create link'));
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
+                if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
             }
         } catch (err) {
             alert('❌ Network error: ' + err.message);
-            btn.innerHTML = originalHTML;
-            btn.disabled = false;
+            if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
         }
     },
 

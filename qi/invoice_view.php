@@ -2,7 +2,11 @@
 // /qi/invoice_view.php – Display a single invoice with actions
 // This page closely mirrors quote_view.php but adapted for invoices.
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
+
+function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
+    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
+}
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
@@ -43,7 +47,9 @@ try {
     $firstName = $userRow['first_name'] ?? 'User';
 
 } catch (Exception $e) {
-    die('Database error: ' . $e->getMessage());
+    error_log('Invoice view error: ' . $e->getMessage());
+    header('Location: /qi/?tab=invoices&error=1');
+    exit;
 }
 
 // Permissions
@@ -52,8 +58,8 @@ $canSend = in_array($invoice['status'], ['draft', 'sent']);
 $canDelete = ($invoice['status'] === 'draft');
 
 // Colour and font customisation
-$primaryColor   = $invoice['primary_color'] ?? '#fbbf24';
-$secondaryColor = $invoice['secondary_color'] ?? '#f59e0b';
+$primaryColor   = sanitize_css_color($invoice['primary_color'] ?? '#fbbf24');
+$secondaryColor = sanitize_css_color($invoice['secondary_color'] ?? '#f59e0b', '#f59e0b');
 $fontFamily     = $invoice['qi_font_family'] ?? 'system-ui';
 $fontMap = [
     'system-ui'  => 'system-ui, -apple-system, sans-serif',

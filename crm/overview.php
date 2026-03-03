@@ -1,14 +1,9 @@
 <?php
-// CRM Overview Page
-// This page provides a dashboard-like overview of key metrics, charts and recent records.
-// It follows the CRM application's existing design language by reusing the core header,
-// footer and theme toggle, while introducing a new grid layout for KPIs, charts and tables.
-
+// CRM Overview Page — Redirects to the consolidated dashboard at index.php?tab=overview
+// The separate overview page has been merged into the main CRM index.
 require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
-
-// Define asset version to assist with cache busting. Keep this consistent with index.php.
-define('ASSET_VERSION', '2025-01-21-CRM-4');
+header('Location: /crm/?tab=overview');
+exit;
 
 // Fetch user and company information for the header and greeting.
 $companyId = $_SESSION['company_id'];
@@ -59,9 +54,10 @@ $kpiMetrics = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CRM – <?= htmlspecialchars($companyName) ?> Overview</title>
     <!-- Global CRM styles -->
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <!-- Overview-specific styles -->
-    <link rel="stylesheet" href="/crm/assets/overview.css?v=<?= ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/crm/assets/overview.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>
 <body class="fw-crm">
     <div class="fw-crm__container">
@@ -210,7 +206,7 @@ $kpiMetrics = [
                     <div class="fw-card">
                         <div class="fw-card-head">
                             <h3>Recent Activity</h3>
-                            <a href="/crm/activity.php" class="fw-link">See all</a>
+                            <a href="/crm/?tab=overview" class="fw-link">See all</a>
                         </div>
                         <div class="fw-table-wrap">
                             <table class="fw-table fw-table-compact">
@@ -233,7 +229,7 @@ $kpiMetrics = [
                     <div class="fw-card">
                         <div class="fw-card-head">
                             <h3>Top Accounts</h3>
-                            <a href="/crm/accounts.php" class="fw-link">Open</a>
+                            <a href="/crm/?tab=suppliers" class="fw-link">Open</a>
                         </div>
                         <div class="fw-table-wrap">
                             <table class="fw-table fw-table-compact">
@@ -257,15 +253,15 @@ $kpiMetrics = [
 
         <!-- Footer consistent with the rest of CRM -->
         <footer class="fw-crm__footer">
-            <span>CRM v<?= ASSET_VERSION ?></span>
+            <span>CRM v<?= CRM_ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Light</span>
         </footer>
     </div>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="/crm/assets/overview.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/overview.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <!-- Reuse existing CRM JS for theme toggling and interactions -->
-    <script src="/crm/assets/crm.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
 </body>
 </html>

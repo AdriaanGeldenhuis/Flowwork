@@ -2,6 +2,7 @@
 // /qi/ajax/run_recurring.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
 
@@ -33,25 +34,9 @@ try {
     $stmt->execute([$recurringId]);
     $lines = $stmt->fetchAll();
 
-    // Generate invoice number using race-proof sequence allocation (see Section 1)
-    $year = date('Y');
-    // Lock sequence row for invoices for this company/year
-    $seqStmt = $DB->prepare("SELECT next_number FROM qi_sequences WHERE company_id = ? AND type = 'invoice' AND year = ? FOR UPDATE");
-    $seqStmt->execute([$companyId, $year]);
-    $seqRow = $seqStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$seqRow) {
-        // If no sequence row exists yet, insert one starting at 0
-        $insertSeq = $DB->prepare("INSERT INTO qi_sequences (company_id, type, year, next_number) VALUES (?, 'invoice', ?, 0)");
-        $insertSeq->execute([$companyId, $year]);
-        $nextNum = 1;
-    } else {
-        $nextNum = intval($seqRow['next_number']) + 1;
-    }
-    // Update sequence with new number
-    $updateSeq = $DB->prepare("UPDATE qi_sequences SET next_number = ? WHERE company_id = ? AND type = 'invoice' AND year = ?");
-    $updateSeq->execute([$nextNum, $companyId, $year]);
-    // Build invoice number with year prefix and zero-padded sequence
-    $invoiceNumber = sprintf('INV%d-%04d', $year, $nextNum);
+    // Generate invoice number using SequenceAllocator (race-safe)
+    $alloc = new SequenceAllocator($DB);
+    [$invoiceNumber, $seqNum] = $alloc->allocate($companyId, 'invoice', null, true);
 
     // Calculate totals
     $subtotal = 0;
@@ -75,9 +60,13 @@ try {
 
     $total = $subtotal - $discount + $tax;
 
-    // Create invoice
+    // Create invoice - use qi_settings for payment terms
     $issueDate = date('Y-m-d');
-    $dueDate = date('Y-m-d', strtotime('+30 days'));
+    $stmtTerms = $DB->prepare("SELECT default_payment_terms FROM qi_settings WHERE company_id = ?");
+    $stmtTerms->execute([$companyId]);
+    $termsRow = $stmtTerms->fetch();
+    $paymentDays = ($termsRow && $termsRow['default_payment_terms']) ? (int)$termsRow['default_payment_terms'] : 30;
+    $dueDate = date('Y-m-d', strtotime("+{$paymentDays} days"));
 
     $stmt = $DB->prepare("
         INSERT INTO invoices (
@@ -179,5 +168,8 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Run recurring error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $safeMsg = ($e instanceof PDOException)
+        ? 'A database error occurred. Please try again.'
+        : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }

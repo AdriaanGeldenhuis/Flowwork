@@ -84,19 +84,15 @@
   function initOverview() {
     const listContainer = document.getElementById('qiList');
     if (!listContainer) {
-        console.error('qiList container not found');
         return;
     }
 
     const urlParams = new URLSearchParams(window.location.search);
     const activeTab = urlParams.get('tab') || 'overview';
-    
+
     if (activeTab !== 'overview') {
-        console.log('Not overview tab, skipping...');
         return;
     }
-
-    console.log('Loading overview...');
 
     listContainer.innerHTML = `
         <div class="fw-qi__loading">
@@ -107,11 +103,9 @@
 
     fetch('/qi/ajax/load_overview.php')
         .then(res => {
-            console.log('Response status:', res.status);
             return res.json();
         })
         .then(data => {
-            console.log('Response data:', data);
             if (data.ok) {
                 listContainer.innerHTML = renderOverview(data);
             } else {
@@ -119,7 +113,6 @@
             }
         })
         .catch(err => {
-            console.error('Fetch error:', err);
             listContainer.innerHTML = '<div class="fw-qi__loading">Network error: ' + err.message + '</div>';
         });
 }
@@ -487,7 +480,6 @@ function renderMiniChart(data) {
             })
             .catch(err => {
                 listContainer.innerHTML = '<div class="fw-qi__loading">Network error</div>';
-                console.error(err);
             });
     }
 

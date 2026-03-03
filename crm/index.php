@@ -3,8 +3,6 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-CRM-5');
-
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
 
@@ -23,17 +21,17 @@ $companyName = $company['name'] ?? 'Company';
 // Get active tab from URL
 $activeTab = $_GET['tab'] ?? 'overview';
 
-// Fetch statistics for overview
+// Always fetch tab counts (used in tab headers on every tab)
+$suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier'");
+$suppliersCount->execute([$companyId]);
+$totalSuppliers = $suppliersCount->fetchColumn();
+
+$customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'customer'");
+$customersCount->execute([$companyId]);
+$totalCustomers = $customersCount->fetchColumn();
+
+// Fetch additional statistics for overview
 if ($activeTab === 'overview') {
-    // Total counts
-    $suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier'");
-    $suppliersCount->execute([$companyId]);
-    $totalSuppliers = $suppliersCount->fetchColumn();
-
-    $customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'customer'");
-    $customersCount->execute([$companyId]);
-    $totalCustomers = $customersCount->fetchColumn();
-
     $contactsCount = $DB->prepare("SELECT COUNT(*) FROM crm_contacts WHERE company_id = ?");
     $contactsCount->execute([$companyId]);
     $totalContacts = $contactsCount->fetchColumn();
@@ -98,7 +96,7 @@ if ($activeTab === 'overview') {
 
     // Status breakdown
     $statusBreakdown = $DB->prepare("
-        SELECT 
+        SELECT
             status,
             COUNT(*) as count
         FROM crm_accounts
@@ -107,6 +105,62 @@ if ($activeTab === 'overview') {
     ");
     $statusBreakdown->execute([$companyId]);
     $statuses = $statusBreakdown->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // Pipeline stats (opportunities)
+    $pipelineStmt = $DB->prepare("
+        SELECT stage, COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total
+        FROM crm_opportunities
+        WHERE company_id = ? AND stage NOT IN ('won', 'lost')
+        GROUP BY stage
+    ");
+    $pipelineStmt->execute([$companyId]);
+    $pipelineByStage = $pipelineStmt->fetchAll(PDO::FETCH_ASSOC);
+    $totalPipelineValue = array_sum(array_column($pipelineByStage, 'total'));
+
+    // Won deals value
+    $wonStmt = $DB->prepare("
+        SELECT COALESCE(SUM(amount), 0) FROM crm_opportunities
+        WHERE company_id = ? AND stage = 'won'
+    ");
+    $wonStmt->execute([$companyId]);
+    $totalWonValue = $wonStmt->fetchColumn();
+
+    // Monthly account growth (last 6 months)
+    $monthlyGrowth = $DB->prepare("
+        SELECT DATE_FORMAT(created_at, '%Y-%m') as month,
+               SUM(CASE WHEN type='supplier' THEN 1 ELSE 0 END) as suppliers,
+               SUM(CASE WHEN type='customer' THEN 1 ELSE 0 END) as customers
+        FROM crm_accounts
+        WHERE company_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+        ORDER BY month ASC
+    ");
+    $monthlyGrowth->execute([$companyId]);
+    $growthData = $monthlyGrowth->fetchAll(PDO::FETCH_ASSOC);
+
+    // Monthly interactions (last 6 months)
+    $monthlyInteractions = $DB->prepare("
+        SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as cnt
+        FROM crm_interactions
+        WHERE company_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+        ORDER BY month ASC
+    ");
+    $monthlyInteractions->execute([$companyId]);
+    $interactionData = $monthlyInteractions->fetchAll(PDO::FETCH_ASSOC);
+
+    // Recent interactions for activity table
+    $recentInteractions = $DB->prepare("
+        SELECT i.type, i.subject, i.created_at,
+               a.name as account_name, a.id as account_id
+        FROM crm_interactions i
+        JOIN crm_accounts a ON a.id = i.account_id
+        WHERE i.company_id = ?
+        ORDER BY i.created_at DESC
+        LIMIT 8
+    ");
+    $recentInteractions->execute([$companyId]);
+    $latestInteractions = $recentInteractions->fetchAll(PDO::FETCH_ASSOC);
 }
 ?>
 <!DOCTYPE html>
@@ -118,7 +172,8 @@ if ($activeTab === 'overview') {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body class="fw-crm">
@@ -208,23 +263,100 @@ if ($activeTab === 'overview') {
                 <a href="/crm/?tab=customers" class="fw-crm__view-tab <?= $activeTab === 'customers' ? 'fw-crm__view-tab--active' : '' ?>">
                     Customers (<?= $totalCustomers ?? 0 ?>)
                 </a>
+                <a href="/crm/opps_list.php" class="fw-crm__view-tab">
+                    Pipeline
+                </a>
             </div>
 
             <!-- Tab Content -->
             <div class="fw-crm__view-content">
                 
                 <?php if ($activeTab === 'overview'): ?>
-                <!-- OVERVIEW TAB -->
-                <div class="crm-playground">
-                    <div class="crm-playground-header">
-                        <h2>🎮 Interactive Analytics</h2>
-                        <div class="crm-playground-controls">
-                            <button class="fw-crm__btn fw-crm__btn--secondary" id="playgroundRefresh">🔄 Refresh Data</button>
-                            <button class="fw-crm__btn fw-crm__btn--secondary" id="playgroundReset">Reset Layout</button>
+                <!-- OVERVIEW TAB — Real Data -->
+                <?php
+                    // Format currency
+                    function fmtRand($val) {
+                        if ($val >= 1000000) return 'R' . number_format($val / 1000000, 1) . 'M';
+                        if ($val >= 1000) return 'R' . number_format($val / 1000, 1) . 'k';
+                        return 'R' . number_format($val, 0);
+                    }
+                ?>
+                <!-- KPI Cards -->
+                <div class="fw-crm__kpi-grid">
+                    <div class="fw-crm__kpi-card">
+                        <div class="fw-crm__kpi-value"><?= (int)$totalSuppliers ?></div>
+                        <div class="fw-crm__kpi-label">Suppliers</div>
+                    </div>
+                    <div class="fw-crm__kpi-card">
+                        <div class="fw-crm__kpi-value"><?= (int)$totalCustomers ?></div>
+                        <div class="fw-crm__kpi-label">Customers</div>
+                    </div>
+                    <div class="fw-crm__kpi-card">
+                        <div class="fw-crm__kpi-value"><?= fmtRand($totalPipelineValue) ?></div>
+                        <div class="fw-crm__kpi-label">Pipeline Value</div>
+                    </div>
+                    <div class="fw-crm__kpi-card">
+                        <div class="fw-crm__kpi-value"><?= fmtRand($totalWonValue) ?></div>
+                        <div class="fw-crm__kpi-label">Won Deals</div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="fw-crm__charts-grid">
+                    <div class="fw-crm__chart-card">
+                        <h3 class="fw-crm__chart-title">Account Growth (6 months)</h3>
+                        <canvas id="chartGrowth" height="200"></canvas>
+                    </div>
+                    <div class="fw-crm__chart-card">
+                        <h3 class="fw-crm__chart-title">Pipeline by Stage</h3>
+                        <canvas id="chartPipeline" height="200"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tables Row -->
+                <div class="fw-crm__tables-grid">
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Recent Activity</h3>
+                        <div class="fw-crm__table-scroll">
+                            <table class="fw-crm__data-table">
+                                <thead>
+                                    <tr><th>Type</th><th>Subject</th><th>Account</th><th>When</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($latestInteractions)): ?>
+                                        <tr><td colspan="4" style="text-align:center;color:var(--fw-text-secondary)">No recent activity</td></tr>
+                                    <?php else: foreach ($latestInteractions as $ia): ?>
+                                        <tr>
+                                            <td><span class="fw-crm__pill"><?= htmlspecialchars(ucfirst($ia['type'])) ?></span></td>
+                                            <td><?= htmlspecialchars($ia['subject'] ?: '—') ?></td>
+                                            <td><a href="/crm/account_view.php?id=<?= (int)$ia['account_id'] ?>"><?= htmlspecialchars($ia['account_name']) ?></a></td>
+                                            <td><?= date('d M H:i', strtotime($ia['created_at'])) ?></td>
+                                        </tr>
+                                    <?php endforeach; endif; ?>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                    <div class="crm-playground-board" id="playgroundBoard">
-                        <!-- Charts will be inserted here by JS -->
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Expiring Compliance (30 days)</h3>
+                        <div class="fw-crm__table-scroll">
+                            <table class="fw-crm__data-table">
+                                <thead>
+                                    <tr><th>Document</th><th>Account</th><th>Expires</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($expiringCompliance)): ?>
+                                        <tr><td colspan="3" style="text-align:center;color:var(--fw-text-secondary)">No expiring documents</td></tr>
+                                    <?php else: foreach ($expiringCompliance as $doc): ?>
+                                        <tr>
+                                            <td><?= htmlspecialchars($doc['doc_type']) ?></td>
+                                            <td><a href="/crm/account_view.php?id=<?= (int)$doc['account_id'] ?>"><?= htmlspecialchars($doc['account_name']) ?></a></td>
+                                            <td><?= date('d M Y', strtotime($doc['expiry_date'])) ?></td>
+                                        </tr>
+                                    <?php endforeach; endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -293,253 +425,76 @@ if ($activeTab === 'overview') {
 
         <!-- Footer -->
         <footer class="fw-crm__footer">
-            <span>CRM v<?= ASSET_VERSION ?></span>
+            <span>CRM v<?= CRM_ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Light</span>
         </footer>
 
     </div>
 
-    <script src="/crm/assets/crm.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
+    <?php if ($activeTab === 'overview'): ?>
     <script>
-    // Playground chart definitions matching landing page
-    const playgroundCharts = [
-      {
-        id: 'chartSuppliers',
-        title: 'Total Suppliers',
-        type: 'bar',
-        data: {
-          labels: ['Jan','Feb','Mar','Apr','May','Jun'],
-          datasets: [{
-            label: 'Suppliers',
-            data: [<?= $totalSuppliers ?>, <?= $totalSuppliers + 2 ?>, <?= $totalSuppliers + 1 ?>, <?= $totalSuppliers + 3 ?>, <?= $totalSuppliers + 5 ?>, <?= $totalSuppliers + 4 ?>],
-            backgroundColor: '#06b6d4',
-            borderRadius: 8
-          }]
-        }
-      },
-      {
-        id: 'chartCustomers',
-        title: 'Total Customers',
-        type: 'line',
-        data: {
-          labels: ['Jan','Feb','Mar','Apr','May','Jun'],
-          datasets: [{
-            label: 'Customers',
-            data: [<?= $totalCustomers ?>, <?= $totalCustomers + 1 ?>, <?= $totalCustomers + 3 ?>, <?= $totalCustomers + 2 ?>, <?= $totalCustomers + 5 ?>, <?= $totalCustomers + 6 ?>],
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16,185,129,.2)',
-            borderWidth: 3,
-            tension: .4,
-            fill: true
-          }]
-        }
-      },
-      {
-        id: 'chartContacts',
-        title: 'Contact Growth',
-        type: 'bar',
-        data: {
-          labels: ['Jan','Feb','Mar','Apr','May','Jun'],
-          datasets: [{
-            label: 'Contacts',
-            data: [<?= max(1, $totalContacts - 10) ?>, <?= max(1, $totalContacts - 8) ?>, <?= max(1, $totalContacts - 5) ?>, <?= max(1, $totalContacts - 3) ?>, <?= max(1, $totalContacts - 1) ?>, <?= $totalContacts ?>],
-            backgroundColor: '#8b5cf6',
-            borderRadius: 8
-          }]
-        }
-      },
-      {
-        id: 'chartInteractions',
-        title: 'Interactions',
-        type: 'line',
-        data: {
-          labels: ['Jan','Feb','Mar','Apr','May','Jun'],
-          datasets: [{
-            label: 'Interactions',
-            data: [<?= max(1, $totalInteractions - 20) ?>, <?= max(1, $totalInteractions - 15) ?>, <?= max(1, $totalInteractions - 10) ?>, <?= max(1, $totalInteractions - 5) ?>, <?= max(1, $totalInteractions - 2) ?>, <?= $totalInteractions ?>],
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245,158,11,.2)',
-            borderWidth: 3,
-            tension: .4,
-            fill: true
-          }]
-        }
-      }
-    ];
+    document.addEventListener('DOMContentLoaded', function() {
+      const isDark = document.querySelector('.fw-crm').getAttribute('data-theme') === 'dark';
+      const gridColor = isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)';
+      const tickColor = isDark ? '#9fb0c8' : '#6b7280';
 
-    const chartInstances = {};
-    let draggedCard = null;
-
-    function buildPlayground() {
-      const board = document.getElementById('playgroundBoard');
-      if (!board) return;
-      
-      const savedLayout = localStorage.getItem('crm_playground_layout');
-      let chartsOrder = savedLayout ? JSON.parse(savedLayout) : playgroundCharts.map(c => c.id);
-      
-      board.innerHTML = '';
-      
-      chartsOrder.forEach(chartId => {
-        const chartDef = playgroundCharts.find(c => c.id === chartId);
-        if (!chartDef) return;
-        
-        const card = document.createElement('div');
-        card.className = 'crm-playground-chart-card';
-        card.draggable = true;
-        card.dataset.chartId = chartDef.id;
-        
-        card.innerHTML = `
-          <div class="crm-playground-chart-header">
-            <div class="crm-playground-chart-title">${chartDef.title}</div>
-            <div class="crm-playground-chart-controls">
-              <button class="crm-chart-btn refresh-chart" title="Change View">🔄</button>
-            </div>
-          </div>
-          <div class="crm-playground-chart-body">
-            <canvas id="${chartDef.id}"></canvas>
-          </div>
-        `;
-        
-        board.appendChild(card);
-        
-        // Init chart
-        setTimeout(() => {
-          const canvas = document.getElementById(chartDef.id);
-          if (canvas) {
-            const ctx = canvas.getContext('2d');
-            const isDark = document.querySelector('.fw-crm').getAttribute('data-theme') === 'dark';
-            
-            chartInstances[chartDef.id] = new Chart(canvas, {
-              type: chartDef.type,
-              data: JSON.parse(JSON.stringify(chartDef.data)),
-              options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { 
-                  legend: { 
-                    display: false
-                  },
-                  tooltip: {
-                    backgroundColor: isDark ? 'rgba(18,24,36,.95)' : 'rgba(255,255,255,.95)',
-                    titleColor: isDark ? '#e7ecf2' : '#1a1d29',
-                    bodyColor: isDark ? '#9fb0c8' : '#6b7280',
-                    borderColor: '#06b6d4',
-                    borderWidth: 1
-                  }
-                },
-                scales: chartDef.type !== 'doughnut' ? {
-                  x: { 
-                    grid: { color: isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)' },
-                    ticks: { color: isDark ? '#9fb0c8' : '#6b7280', font: { size: 10 } }
-                  },
-                  y: { 
-                    grid: { color: isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)' },
-                    ticks: { color: isDark ? '#9fb0c8' : '#6b7280', font: { size: 10 } }
-                  }
-                } : {}
-              }
-            });
-          }
-        }, 100);
-      });
-      
-      attachPlaygroundListeners();
-    }
-
-    function attachPlaygroundListeners() {
-      const cards = document.querySelectorAll('.crm-playground-chart-card');
-      
-      cards.forEach(card => {
-        card.addEventListener('dragstart', e => {
-          draggedCard = card;
-          card.classList.add('dragging');
-          e.dataTransfer.effectAllowed = 'move';
-        });
-        
-        card.addEventListener('dragend', () => {
-          card.classList.remove('dragging');
-          draggedCard = null;
-        });
-        
-        card.addEventListener('dragover', e => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-        });
-        
-        card.addEventListener('drop', e => {
-          if (!draggedCard || draggedCard === card) return;
-          e.preventDefault();
-          
-          const board = document.getElementById('playgroundBoard');
-          const allCards = [...board.querySelectorAll('.crm-playground-chart-card')];
-          const draggedIndex = allCards.indexOf(draggedCard);
-          const targetIndex = allCards.indexOf(card);
-          
-          if (draggedIndex < targetIndex) {
-            card.after(draggedCard);
-          } else {
-            card.before(draggedCard);
-          }
-          
-          savePlaygroundLayout();
-        });
-        
-        const refreshBtn = card.querySelector('.refresh-chart');
-        refreshBtn?.addEventListener('click', () => {
-          const chartId = card.dataset.chartId;
-          const chart = chartInstances[chartId];
-          if (chart) {
-            // Change chart type
-            const types = ['bar', 'line', 'doughnut'];
-            const currentIndex = types.indexOf(chart.config.type);
-            const nextType = types[(currentIndex + 1) % types.length];
-            
-            chart.config.type = nextType;
-            if (nextType === 'doughnut') {
-              chart.options.scales = {};
-            } else {
-              const isDark = document.querySelector('.fw-crm').getAttribute('data-theme') === 'dark';
-              chart.options.scales = {
-                x: { 
-                  grid: { color: isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)' },
-                  ticks: { color: isDark ? '#9fb0c8' : '#6b7280' }
-                },
-                y: { 
-                  grid: { color: isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)' },
-                  ticks: { color: isDark ? '#9fb0c8' : '#6b7280' }
-                }
-              };
+      // Account Growth chart (real monthly data)
+      const growthCanvas = document.getElementById('chartGrowth');
+      if (growthCanvas) {
+        const growthData = <?= json_encode($growthData) ?>;
+        const labels = growthData.map(r => r.month);
+        const suppliers = growthData.map(r => parseInt(r.suppliers));
+        const customers = growthData.map(r => parseInt(r.customers));
+        new Chart(growthCanvas, {
+          type: 'bar',
+          data: {
+            labels: labels.length ? labels : ['No data'],
+            datasets: [
+              { label: 'Suppliers', data: suppliers.length ? suppliers : [0], backgroundColor: '#06b6d4', borderRadius: 6 },
+              { label: 'Customers', data: customers.length ? customers : [0], backgroundColor: '#10b981', borderRadius: 6 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: true,
+            plugins: { legend: { position: 'bottom', labels: { color: tickColor } } },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: tickColor } },
+              y: { grid: { color: gridColor }, ticks: { color: tickColor, stepSize: 1 } }
             }
-            chart.update();
           }
         });
-      });
-    }
+      }
 
-    function savePlaygroundLayout() {
-      const board = document.getElementById('playgroundBoard');
-      const order = [...board.querySelectorAll('.crm-playground-chart-card')].map(c => c.dataset.chartId);
-      localStorage.setItem('crm_playground_layout', JSON.stringify(order));
-    }
-
-    document.getElementById('playgroundReset')?.addEventListener('click', () => {
-      localStorage.removeItem('crm_playground_layout');
-      Object.values(chartInstances).forEach(chart => chart.destroy());
-      buildPlayground();
-    });
-
-    document.getElementById('playgroundRefresh')?.addEventListener('click', () => {
-      Object.values(chartInstances).forEach(chart => {
-        chart.data.datasets.forEach(dataset => {
-          dataset.data = dataset.data.map(() => Math.floor(Math.random() * 100) + 10);
+      // Pipeline by Stage chart (real data)
+      const pipelineCanvas = document.getElementById('chartPipeline');
+      if (pipelineCanvas) {
+        const pipelineData = <?= json_encode($pipelineByStage) ?>;
+        const stageColors = { prospect: '#8b5cf6', qualification: '#3b82f6', proposal: '#06b6d4', negotiation: '#f59e0b' };
+        new Chart(pipelineCanvas, {
+          type: 'doughnut',
+          data: {
+            labels: pipelineData.length ? pipelineData.map(r => r.stage.charAt(0).toUpperCase() + r.stage.slice(1)) : ['No data'],
+            datasets: [{
+              data: pipelineData.length ? pipelineData.map(r => parseFloat(r.total)) : [1],
+              backgroundColor: pipelineData.length ? pipelineData.map(r => stageColors[r.stage] || '#6b7280') : ['#374151']
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: true,
+            plugins: {
+              legend: { position: 'bottom', labels: { color: tickColor } },
+              tooltip: {
+                callbacks: {
+                  label: function(ctx) { return ctx.label + ': R' + ctx.parsed.toLocaleString(); }
+                }
+              }
+            }
+          }
         });
-        chart.update();
-      });
+      }
     });
-
-    if (document.getElementById('playgroundBoard')) {
-      buildPlayground();
-    }
     </script>
+    <?php endif; ?>
 </body>
 </html>

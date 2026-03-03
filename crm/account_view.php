@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-FINAL-FIX');
+// CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -149,7 +149,8 @@ try {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body class="fw-crm" data-theme="dark" data-account-id="<?= $accountId ?>">
@@ -604,7 +605,7 @@ try {
 
         <!-- Footer -->
         <footer class="fw-crm__footer">
-            <span>CRM v<?= ASSET_VERSION ?></span>
+            <span>CRM v<?= CRM_ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Dark</span>
         </footer>
 
@@ -838,7 +839,7 @@ try {
         };
     </script>
 
-    <script src="/crm/assets/crm.js?v=<?= ASSET_VERSION ?>"></script>
-    <script src="/crm/assets/account_view.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/account_view.js?v=<?= CRM_ASSET_VERSION ?>"></script>
 </body>
 </html>

@@ -4,7 +4,13 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/utils.php';
+require_once __DIR__ . '/finances/lib/Csrf.php';
 
+
+// Centralized CRM asset version for cache busting
+if (!defined('CRM_ASSET_VERSION')) {
+    define('CRM_ASSET_VERSION', '2026-03-03-v1');
+}
 
 // Helper function to get CRM settings
 function getCRMSetting($key, $default = null) {

@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-CRM-4');
+// CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -100,7 +100,8 @@ $types = $complianceTypes->fetchAll();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CRM Settings – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>
 <body class="fw-crm">
     <div class="fw-crm__container">
@@ -347,7 +348,7 @@ $types = $complianceTypes->fetchAll();
 
         <!-- Footer -->
         <footer class="fw-crm__footer">
-            <span>CRM v<?= ASSET_VERSION ?></span>
+            <span>CRM v<?= CRM_ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Light</span>
         </footer>
 
@@ -401,7 +402,7 @@ $types = $complianceTypes->fetchAll();
         </div>
     </div>
 
-    <script src="/crm/assets/crm.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script>
     // === Compliance Type Management ===
     function openCTModal() {
