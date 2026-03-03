@@ -17,10 +17,10 @@ try {
     $stmt = $DB->prepare("
         SELECT pb.board_id, pb.project_id, pb.title, pb.default_view, pb.description
         FROM project_boards pb
-        WHERE pb.board_id = ?
+        WHERE pb.board_id = ? AND pb.company_id = ?
         LIMIT 1
     ");
-    $stmt->execute([$boardId]);
+    $stmt->execute([$boardId, $COMPANY_ID]);
     $board = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$board) respond_error('Board not found', 404);
 

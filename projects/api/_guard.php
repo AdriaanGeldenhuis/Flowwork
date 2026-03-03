@@ -66,7 +66,7 @@ function require_project_role(int $projectId, string $minRole = 'viewer') {
 }
 
 function require_board_role(int $boardId, string $minRole = 'viewer') {
-    global $DB, $USER_ID, $USER_ROLE;
+    global $DB, $USER_ID, $USER_ROLE, $COMPANY_ID;
 
     if ($USER_ROLE === 'admin') {
         return true;
@@ -95,12 +95,12 @@ function require_board_role(int $boardId, string $minRole = 'viewer') {
 
     // val terug na project rol
     $stmt = $DB->prepare("
-        SELECT project_id 
+        SELECT project_id
         FROM project_boards
-        WHERE board_id = ?
+        WHERE board_id = ? AND company_id = ?
         LIMIT 1
     ");
-    $stmt->execute([$boardId]);
+    $stmt->execute([$boardId, $COMPANY_ID]);
     $board = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$board) {

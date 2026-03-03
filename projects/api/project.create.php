@@ -6,7 +6,7 @@ $name = trim($_POST['name'] ?? '');
 $managerId = (int)($_POST['manager_user_id'] ?? 0);
 $startDate = $_POST['start_date'] ?? null;
 $endDate = $_POST['end_date'] ?? null;
-$budget = (int)($_POST['budget'] ?? 0);
+$budget = floatval($_POST['budget'] ?? 0);
 $template = trim($_POST['template'] ?? '');
 
 if (!$name) respond_error('Project name is required');
@@ -52,9 +52,8 @@ try {
                 foreach ($tpl['boards'] as $boardDef) {
                     // Prepare defaults
                     $bTitle = $boardDef['title'] ?? 'Untitled Board';
-                    // Use 'general' board type for template boards.  The DB enum
-                    // allows: schedule, costing, procurement, quality, safety, general.
-                    $bType  = 'general';
+                    $allowedTypes = ['schedule','costing','procurement','quality','safety','general'];
+                    $bType  = in_array($boardDef['type'] ?? '', $allowedTypes) ? $boardDef['type'] : 'general';
                     $bView  = $boardDef['default_view'] ?? 'table';
                     // Insert board
                     $stmt = $DB->prepare("INSERT INTO project_boards (company_id, project_id, title, board_type, default_view, created_at) VALUES (?, ?, ?, ?, ?, NOW())");

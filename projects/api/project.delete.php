@@ -53,6 +53,8 @@ try {
         $DB->prepare("DELETE FROM board_saved_views WHERE board_id IN ($placeholders)")->execute($boardIds);
         $DB->prepare("DELETE FROM board_automations WHERE board_id IN ($placeholders)")->execute($boardIds);
         $DB->prepare("DELETE FROM board_dependencies WHERE board_id IN ($placeholders)")->execute($boardIds);
+        $DB->prepare("DELETE FROM board_column_settings WHERE board_id IN ($placeholders)")->execute($boardIds);
+        $DB->prepare("DELETE FROM board_audit_log WHERE board_id IN ($placeholders)")->execute($boardIds);
     }
     
     // Delete boards
@@ -70,5 +72,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Project delete error: " . $e->getMessage());
-    respond_error('Failed to delete project: ' . $e->getMessage(), 500);
+    respond_error('Failed to delete project', 500);
 }

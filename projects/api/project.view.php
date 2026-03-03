@@ -73,5 +73,5 @@ try {
     
 } catch (Exception $e) {
     error_log("Project view error: " . $e->getMessage());
-    respond_error('Failed to load project: ' . $e->getMessage(), 500);
+    respond_error('Failed to load project', 500);
 }
