@@ -542,12 +542,11 @@ PROMPT;
     $content = trim($content);
 
     $result = json_decode($content, true);
+    if (!is_array($result)) {
+        error_log("OpenAI response not valid JSON: " . substr($content, 0, 500));
+        return ['error' => 'Could not parse AI response'];
+    }
     $suppliers = $result['companies'] ?? [];
-
-    // Filter out low confidence
-    $suppliers = array_filter($suppliers, function($s) {
-        return ($s['confidence'] ?? 'low') !== 'low';
-    });
 
     $candidates = [];
     foreach ($suppliers as $s) {
@@ -572,8 +571,8 @@ PROMPT;
             'categories' => $categories,
             'compliance_state' => 'missing',
             'performance' => [],
-            'score_final' => ($s['confidence'] === 'high') ? 0.75 : 0.60,
-            'explanation' => 'Verified company found via AI search'
+            'score_final' => (($s['confidence'] ?? 'medium') === 'high') ? 0.75 : 0.65,
+            'explanation' => 'Found via AI search'
         ];
     }
 
