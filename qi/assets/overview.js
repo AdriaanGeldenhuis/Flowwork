@@ -34,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(res => res.json())
     .then(data => {
       if (!data.ok) {
-        console.error('Failed to load overview:', data.error);
         const overview = document.getElementById('qi-overview');
         if (overview) {
           overview.innerHTML = `<p style="padding:20px;">Error loading overview: ${data.error}</p>`;
@@ -50,7 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
       renderVolumeChart(data.volume || []);
     })
     .catch(err => {
-      console.error('Overview fetch error:', err);
       const overview = document.getElementById('qi-overview');
       if (overview) {
         overview.innerHTML = `<p style="padding:20px;">Network error loading overview: ${err.message}</p>`;
@@ -645,9 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!card) return;
     
     if (!document.fullscreenElement) {
-      card.requestFullscreen().catch(err => {
-        console.error('Fullscreen error:', err);
-      });
+      card.requestFullscreen().catch(() => {});
     } else {
       document.exitFullscreen();
     }
@@ -657,20 +653,14 @@ document.addEventListener('DOMContentLoaded', () => {
    * Refresh all charts
    */
   function refreshAllCharts() {
-    console.log('🔄 Refreshing all charts...');
     fetch('/qi/ajax/overview_api.php')
       .then(res => res.json())
       .then(data => {
         if (data.ok) {
           populateKpis(data.kpis || {});
-          // Re-render all charts with new data
-          // (Implementation depends on chart instances being stored globally)
-          console.log('✅ Charts refreshed');
         }
       })
-      .catch(err => {
-        console.error('Refresh error:', err);
-      });
+      .catch(() => {});
   }
 
   // ===== EXPORT GLOBAL FUNCTIONS =====
@@ -686,5 +676,4 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshAllCharts
   };
 
-  console.log('✅ QI Overview initialized with neon charts');
 });

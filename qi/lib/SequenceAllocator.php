@@ -20,9 +20,10 @@ class SequenceAllocator {
      * @param int $companyId
      * @param string $type 'quote' | 'invoice' | 'credit_note'
      * @param string|null $issueDate 'YYYY-mm-dd'
+     * @param bool $inTransaction When true, caller already holds a transaction — skip begin/commit/rollback
      * @return array [string $code, int $num]
      */
-    public function allocate(int $companyId, string $type, ?string $issueDate = null): array {
+    public function allocate(int $companyId, string $type, ?string $issueDate = null, bool $inTransaction = false): array {
         $valid = ['quote','invoice','credit_note'];
         if (!in_array($type, $valid, true)) {
             throw new InvalidArgumentException("Invalid type: " . $type);
@@ -31,7 +32,9 @@ class SequenceAllocator {
         $year = (int) date('Y', strtotime($date));
 
         // SERIALIZE row for update so that two parallel requests can't get the same number.
-        $this->db->beginTransaction();
+        if (!$inTransaction) {
+            $this->db->beginTransaction();
+        }
         try {
             $stmt = $this->db->prepare("SELECT id, next_number FROM qi_sequences WHERE company_id=? AND type=? AND year=? FOR UPDATE");
             $stmt->execute([$companyId, $type, $year]);
@@ -49,9 +52,13 @@ class SequenceAllocator {
 
             $upd = $this->db->prepare("UPDATE qi_sequences SET next_number = next_number + 1 WHERE id=?");
             $upd->execute([$id]);
-            $this->db->commit();
+            if (!$inTransaction) {
+                $this->db->commit();
+            }
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if (!$inTransaction) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
 

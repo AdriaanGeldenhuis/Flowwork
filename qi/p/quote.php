@@ -1,9 +1,13 @@
 <?php
 // Public quote view – allows clients to view, accept or decline a quote via a token link
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
+
+function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
+    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
+}
 
 // Get token from query string
 $token = $_GET['token'] ?? '';
@@ -63,8 +67,8 @@ try {
     $lines = $stmt->fetchAll();
 
     // Determine settings
-    $primaryColor = $quote['primary_color'] ?? '#fbbf24';
-    $secondaryColor = $quote['secondary_color'] ?? '#f59e0b';
+    $primaryColor = sanitize_css_color($quote['primary_color'] ?? '#fbbf24');
+    $secondaryColor = sanitize_css_color($quote['secondary_color'] ?? '#f59e0b', '#f59e0b');
     $fontFamily = $quote['qi_font_family'] ?? 'system-ui';
     $fontMap = [
         'system-ui' => 'system-ui, -apple-system, sans-serif',
@@ -189,9 +193,9 @@ try {
                         </tbody>
                     </table>
                     <div class="fw-qi__doc-totals">
-                        <?php $tax = $subtotal * 0.15; $total = $subtotal + $tax; ?>
+                        <?php $tax = (float)$quote['tax']; $total = (float)$quote['total']; ?>
                         <div class="fw-qi__doc-total-row"><span>Subtotal:</span><span>R <?= number_format($subtotal, 2) ?></span></div>
-                        <div class="fw-qi__doc-total-row"><span>VAT (15%):</span><span>R <?= number_format($tax, 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row"><span>VAT:</span><span>R <?= number_format($tax, 2) ?></span></div>
                         <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span>R <?= number_format($total, 2) ?></span></div>
                     </div>
                 </div>

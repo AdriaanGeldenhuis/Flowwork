@@ -1,7 +1,11 @@
 <?php
 // /qi/quote_view.php - COMPLETE WITH CONVERSION
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
+
+function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
+    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
+}
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
@@ -78,15 +82,17 @@ try {
     $firstName = $user['first_name'] ?? 'User';
 
 } catch (Exception $e) {
-    die('Database error: ' . $e->getMessage());
+    error_log('Quote view error: ' . $e->getMessage());
+    header('Location: /qi/?error=1');
+    exit;
 }
 
 $canEdit = in_array($quote['status'], ['draft']);
 $canSend = in_array($quote['status'], ['draft', 'sent']);
 $canConvert = $quote['status'] === 'accepted';
 
-$primaryColor = $quote['primary_color'] ?? '#fbbf24';
-$secondaryColor = $quote['secondary_color'] ?? '#f59e0b';
+$primaryColor = sanitize_css_color($quote['primary_color'] ?? '#fbbf24');
+$secondaryColor = sanitize_css_color($quote['secondary_color'] ?? '#f59e0b', '#f59e0b');
 $fontFamily = $quote['qi_font_family'] ?? 'system-ui';
 
 $fontMap = [
@@ -449,7 +455,6 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
             btn.disabled = false;
         }
     } catch (err) {
-        console.error('Send error:', err);
         alert('❌ Network error: ' + err.message);
         btn.innerHTML = originalHTML;
         btn.disabled = false;

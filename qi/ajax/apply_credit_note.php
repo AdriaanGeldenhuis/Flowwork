@@ -3,7 +3,7 @@
 // Accepts JSON input {credit_note_id} (and optionally invoice_id) and applies the credit amount to the invoice's balance.
 
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
@@ -52,8 +52,9 @@ try {
         throw new Exception('Invalid credit amount');
     }
     $newBalance = (float)$invoice['balance_due'] - $creditAmount;
+    $excess = 0;
     if ($newBalance < 0) {
-        // Do not allow invoice balance to go negative
+        $excess = abs($newBalance);
         $newBalance = 0;
     }
     // Determine new status
@@ -85,9 +86,16 @@ try {
         error_log('Credit note journal posting failed: ' . $e->getMessage());
     }
 
-    echo json_encode(['ok' => true, 'new_balance' => $newBalance]);
+    $response = ['ok' => true, 'new_balance' => $newBalance];
+    if ($excess > 0) {
+        $response['warning'] = 'Credit note amount exceeded invoice balance by R ' . number_format($excess, 2) . '. Excess was not applied.';
+    }
+    echo json_encode($response);
 } catch (Exception $e) {
     $DB->rollBack();
     error_log('Apply credit note error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $safeMsg = ($e instanceof PDOException)
+        ? 'A database error occurred. Please try again.'
+        : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }

@@ -1,10 +1,11 @@
 <?php
 // /qi/ajax/save_invoice.php - COMPLETE WITH UPDATE
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
 
@@ -31,15 +32,25 @@ if (empty($lineItems) || !is_array($lineItems)) {
     exit;
 }
 
+// Fetch default tax rate from qi_settings
+$stmtTax = $DB->prepare("SELECT default_tax_rate FROM qi_settings WHERE company_id = ?");
+$stmtTax->execute([$companyId]);
+$qiSettings = $stmtTax->fetch();
+$defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
+    ? floatval($qiSettings['default_tax_rate']) / 100
+    : 0.15;
+
 // Recalculate subtotal, tax and total to prevent tampering
 $subtotalCalc = 0;
+$taxCalc = 0;
 foreach ($lineItems as $item) {
     $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0;
     $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0;
     $lineTotal = $qty * $price;
     $subtotalCalc += $lineTotal;
+    $lineTaxRate = isset($item['tax_rate']) ? floatval($item['tax_rate']) / 100 : $defaultTaxRate;
+    $taxCalc += $lineTotal * $lineTaxRate;
 }
-$taxCalc = $subtotalCalc * 0.15;
 $totalCalc = $subtotalCalc + $taxCalc;
 
 // Override incoming totals with calculated values
@@ -108,28 +119,9 @@ try {
         
     } else {
         // CREATE
-        // Allocate a unique invoice number in a race-safe way using qi_sequences
-        $year = date('Y');
-        // Lock the sequence row for this company/year/type
-        $stmt = $DB->prepare("SELECT next_number FROM qi_sequences WHERE company_id = ? AND type = 'invoice' AND year = ? FOR UPDATE");
-        $stmt->execute([$companyId, $year]);
-        $seq = $stmt->fetch();
-
-        if ($seq === false) {
-            // No sequence row exists: insert starting at 0
-            $stmtInsert = $DB->prepare("INSERT INTO qi_sequences (company_id, type, year, next_number) VALUES (?, 'invoice', ?, 0)");
-            $stmtInsert->execute([$companyId, $year]);
-            $nextNum = 1;
-        } else {
-            $nextNum = intval($seq['next_number']) + 1;
-        }
-
-        // Update sequence
-        $stmtUpdate = $DB->prepare("UPDATE qi_sequences SET next_number = ? WHERE company_id = ? AND type = 'invoice' AND year = ?");
-        $stmtUpdate->execute([$nextNum, $companyId, $year]);
-
-        // Build invoice number: include year and zero-pad
-        $invoiceNumber = sprintf('INV%d-%04d', $year, $nextNum);
+        // Allocate a unique invoice number using SequenceAllocator (race-safe)
+        $alloc = new SequenceAllocator($DB);
+        [$invoiceNumber, $seqNum] = $alloc->allocate($companyId, 'invoice', $input['issue_date'] ?? null, true);
 
         // Insert new invoice; balance_due initially equals total
         $stmt = $DB->prepare("\n            INSERT INTO invoices (\n                company_id, invoice_number, customer_id, contact_id, project_id,\n                issue_date, due_date, status, subtotal, discount, tax, total, balance_due,\n                currency, terms, notes, created_by, created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, 'ZAR', ?, ?, ?, NOW(), NOW())\n        ");
@@ -204,7 +196,10 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Save invoice error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $safeMsg = ($e instanceof PDOException)
+        ? 'A database error occurred. Please try again.'
+        : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
 
 // After the invoice has been saved and committed, hook into the calendar to create/update due events.

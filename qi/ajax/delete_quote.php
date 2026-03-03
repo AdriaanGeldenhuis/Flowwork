@@ -1,7 +1,7 @@
 <?php
 // /qi/ajax/delete_quote.php - COMPLETE
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';

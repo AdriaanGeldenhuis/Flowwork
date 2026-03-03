@@ -1,10 +1,11 @@
 <?php
 // /qi/ajax/duplicate_quote.php - COMPLETE
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
 
@@ -31,25 +32,9 @@ try {
         throw new Exception('Quote not found');
     }
     
-    // Generate new quote number using qi_sequences table (race-proof)
-    $year = date('Y');
-    // Lock sequence row for quotes for this company and year
-    $seqStmt = $DB->prepare("SELECT next_number FROM qi_sequences WHERE company_id = ? AND type = 'quote' AND year = ? FOR UPDATE");
-    $seqStmt->execute([$companyId, $year]);
-    $seq = $seqStmt->fetch();
-    if ($seq === false) {
-        // No sequence row yet; insert row starting at 0
-        $insertSeq = $DB->prepare("INSERT INTO qi_sequences (company_id, type, year, next_number) VALUES (?, 'quote', ?, 0)");
-        $insertSeq->execute([$companyId, $year]);
-        $nextNum = 1;
-    } else {
-        $nextNum = intval($seq['next_number']) + 1;
-    }
-    // Update sequence row
-    $updateSeq = $DB->prepare("UPDATE qi_sequences SET next_number = ? WHERE company_id = ? AND type = 'quote' AND year = ?");
-    $updateSeq->execute([$nextNum, $companyId, $year]);
-    // Build new quote number with year prefix and padded sequence
-    $newQuoteNumber = sprintf('Q%d-%04d', $year, $nextNum);
+    // Generate new quote number using SequenceAllocator (race-safe)
+    $alloc = new SequenceAllocator($DB);
+    [$newQuoteNumber, $seqNum] = $alloc->allocate($companyId, 'quote', null, true);
     
     // Create duplicate quote header including new public token
     $insertHdr = $DB->prepare("INSERT INTO quotes (
@@ -125,5 +110,8 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Duplicate quote error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $safeMsg = ($e instanceof PDOException)
+        ? 'A database error occurred. Please try again.'
+        : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
