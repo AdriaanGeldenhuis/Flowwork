@@ -280,7 +280,7 @@ try {
 
             $stmt = $DB->prepare("
                 UPDATE project_boards
-                SET archived = 1, updated_at = NOW()
+                SET archived = 1
                 WHERE board_id = ? AND company_id = ?
             ");
             $stmt->execute([$boardId, $companyId]);
@@ -376,7 +376,7 @@ try {
         case 'update_board_member':
             $boardId = (int)($_POST['board_id'] ?? 0);
             $memberId = (int)($_POST['user_id'] ?? 0);
-            $role = trim($_POST['role'] ?? 'member');
+            $role = trim($_POST['role'] ?? 'editor');
 
             if (!$boardId || !$memberId) {
                 throw new Exception('Board ID and User ID required');
@@ -394,7 +394,7 @@ try {
         case 'add_board_member':
             $boardId = (int)($_POST['board_id'] ?? 0);
             $memberId = (int)($_POST['user_id'] ?? 0);
-            $role = trim($_POST['role'] ?? 'member');
+            $role = trim($_POST['role'] ?? 'editor');
 
             if (!$boardId || !$memberId) {
                 throw new Exception('Board ID and User ID required');

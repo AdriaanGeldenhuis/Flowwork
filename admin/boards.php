@@ -23,14 +23,14 @@ $stmt = $DB->prepare("
         pb.board_type,
         pb.created_at,
         p.name as project_name,
-        p.id as project_id,
+        p.project_id,
         (SELECT COUNT(*) FROM board_members bm WHERE bm.board_id = pb.board_id) as member_count,
         (SELECT COUNT(*) FROM board_items bi WHERE bi.board_id = pb.board_id) as item_count,
         (SELECT CONCAT(u.first_name, ' ', u.last_name) FROM board_members bm2
          JOIN users u ON u.id = bm2.user_id
          WHERE bm2.board_id = pb.board_id AND bm2.role = 'owner' LIMIT 1) as owner_name
     FROM project_boards pb
-    LEFT JOIN projects p ON p.id = pb.project_id
+    LEFT JOIN projects p ON p.project_id = pb.project_id
     WHERE pb.company_id = ?
     ORDER BY pb.created_at DESC
 ");
@@ -89,8 +89,8 @@ $boards = $stmt->fetchAll();
                                     </a>
                                 </td>
                                 <td>
-                                    <a href="/projects/project.php?id=<?= $board['project_id'] ?>" target="_blank" style="color: inherit; text-decoration: none;">
-                                        <?= htmlspecialchars($board['project_name']) ?>
+                                    <a href="/projects/project.php?id=<?= $board['project_id'] ?? '' ?>" target="_blank" style="color: inherit; text-decoration: none;">
+                                        <?= htmlspecialchars($board['project_name'] ?? '') ?>
                                     </a>
                                 </td>
                                 <td>
@@ -169,7 +169,6 @@ $boards = $stmt->fetchAll();
                 <div style="display: flex; gap: 8px;">
                     <select id="addMemberSelect" class="fw-admin__select" style="flex: 1;"></select>
                     <select id="addMemberRole" class="fw-admin__select" style="width: 120px;">
-                        <option value="member">Member</option>
                         <option value="editor">Editor</option>
                         <option value="viewer">Viewer</option>
                     </select>
@@ -231,7 +230,6 @@ async function manageBoardAccess(boardId, boardTitle) {
                     <select class="fw-admin__select" style="width:120px;" onchange="updateBoardMemberRole(${m.user_id}, this.value)" ${m.role === 'owner' ? 'disabled' : ''}>
                         <option value="owner" ${m.role === 'owner' ? 'selected' : ''}>Owner</option>
                         <option value="editor" ${m.role === 'editor' ? 'selected' : ''}>Editor</option>
-                        <option value="member" ${m.role === 'member' ? 'selected' : ''}>Member</option>
                         <option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>Viewer</option>
                     </select>
                     ${m.role !== 'owner' ? `<button class="fw-admin__btn-icon fw-admin__btn-icon--danger" onclick="removeBoardMember(${m.user_id})" title="Remove">
