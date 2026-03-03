@@ -240,9 +240,9 @@
       ).join('');
 
       const complianceBadge = getComplianceBadge(c.compliance_state);
-      const sourceBadge = c.account_id ? '<span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--crm">In CRM</span>' : '';
+      const sourceBadge = getSourceBadge(c.source, c.account_id);
 
-      const performance = c.performance ? JSON.parse(c.performance) : {};
+      const performance = c.performance ? (typeof c.performance === 'string' ? JSON.parse(c.performance) : c.performance) : {};
       
       return `
         <div class="fw-suppliers-ai__supplier-card ${isSelected ? 'fw-suppliers-ai__supplier-card--selected' : ''}" data-candidate-id="${c.id}">
@@ -349,6 +349,18 @@
     return badges[state] || '';
   }
 
+  function getSourceBadge(source, accountId) {
+    const badges = {
+      'crm': '<span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--crm">CRM Supplier</span>',
+      'history': '<span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--history">Past Winner</span>',
+      'places': '<span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--places">Google Places</span>',
+      'openai': '<span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--ai">AI Found</span>'
+    };
+    if (source && badges[source]) return badges[source];
+    if (accountId) return badges['crm'];
+    return '';
+  }
+
   // ========== CARD ACTIONS ==========
   function attachCardListeners() {
     const resultsList = document.getElementById('resultsList');
@@ -422,6 +434,36 @@ async function openEmailModal(candidateId, candidateName, candidateEmail) {
 
   // Generate email
   await generateEmail(candidateName, candidateEmail);
+}
+
+async function generateEmail(supplierName, supplierEmail) {
+  try {
+    const response = await fetch('/suppliers_ai/ajax/generate_rfq_email.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        supplier_name: supplierName,
+        supplier_email: supplierEmail,
+        query_text: currentQueryText,
+        scope: document.getElementById('emailScope')?.value || '',
+        deadline: ''
+      })
+    });
+    const data = await response.json();
+    if (data.ok) {
+      document.getElementById('emailSubject').value = data.subject;
+      document.getElementById('emailBody').value = data.body;
+    } else {
+      document.getElementById('emailSubject').value = 'RFQ: ' + currentQueryText;
+      document.getElementById('emailBody').value = 'Could not generate email automatically. Please write your RFQ message manually.';
+      showToast(data.error || 'Email generation failed', 'error');
+    }
+  } catch (err) {
+    console.error('Email generation error:', err);
+    document.getElementById('emailSubject').value = 'RFQ: ' + currentQueryText;
+    document.getElementById('emailBody').value = 'Could not generate email automatically. Please write your RFQ message manually.';
+    showToast('Email generation failed', 'error');
+  }
 }
 
 window.SupplierAI = {
