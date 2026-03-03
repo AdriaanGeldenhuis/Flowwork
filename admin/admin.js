@@ -98,23 +98,45 @@
     }
   }
 
-  function openUserModal(userId = null) {
+  async function openUserModal(userId = null) {
     const modal = document.getElementById('modalUser');
     const form = document.getElementById('formUser');
     const title = document.getElementById('modalUserTitle');
-    
+
     if (!modal || !form) return;
 
     if (userId) {
       title.textContent = 'Edit User';
-      // TODO: Fetch user data and populate form
       form.user_id.value = userId;
+
+      try {
+        const res = await fetch('/admin/api.php?action=get_user&user_id=' + userId);
+        const data = await res.json();
+
+        if (data.success && data.user) {
+          const u = data.user;
+          form.first_name.value = u.first_name || '';
+          form.last_name.value = u.last_name || '';
+          form.email.value = u.email || '';
+          form.role.value = u.role || 'member';
+          form.status.value = u.status || 'active';
+          const seatCb = form.querySelector('[name="is_seat"]');
+          if (seatCb) seatCb.checked = !!parseInt(u.is_seat);
+        } else {
+          alert(data.error || 'Failed to load user data');
+          return;
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to load user data');
+        return;
+      }
     } else {
       title.textContent = 'Add User';
       form.reset();
       form.user_id.value = '';
     }
-    
+
     modal.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
   }

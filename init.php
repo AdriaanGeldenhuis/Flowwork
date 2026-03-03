@@ -52,3 +52,37 @@ function isVATRequired() {
 function isRegNumberRequired() {
     return getCRMSetting('crm_require_reg_number', '0') === '1';
 }
+
+// Helper function to set/update a CRM setting
+function setCRMSetting($key, $value) {
+    global $DB, $_SESSION;
+
+    if (!isset($_SESSION['company_id'])) {
+        return false;
+    }
+
+    $companyId = $_SESSION['company_id'];
+
+    $stmt = $DB->prepare("
+        SELECT id FROM company_settings
+        WHERE company_id = ? AND setting_key = ?
+    ");
+    $stmt->execute([$companyId, $key]);
+
+    if ($stmt->fetch()) {
+        $stmt = $DB->prepare("
+            UPDATE company_settings
+            SET setting_value = ?
+            WHERE company_id = ? AND setting_key = ?
+        ");
+        $stmt->execute([$value, $companyId, $key]);
+    } else {
+        $stmt = $DB->prepare("
+            INSERT INTO company_settings (company_id, setting_key, setting_value)
+            VALUES (?, ?, ?)
+        ");
+        $stmt->execute([$companyId, $key, $value]);
+    }
+
+    return true;
+}
