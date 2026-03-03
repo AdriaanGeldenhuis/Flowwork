@@ -22,14 +22,14 @@
   --fw-text-primary: #1a1d29;
   --fw-text-secondary: #4b5563;
   --fw-text-muted: #6b7280;
-  --fw-border: rgba(0, 0, 0, 0.08);
-  --fw-panel-bg: rgba(255, 255, 255, 0.7);
-  --fw-panel-border: rgba(255, 255, 255, 0.9);
-  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --fw-border: rgba(0, 0, 0, 0.15);
+  --fw-panel-bg: rgba(255, 255, 255, 0.92);
+  --fw-panel-border: rgba(0, 0, 0, 0.1);
+  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.14);
   --fw-glow: rgba(0, 0, 0, 0.12);
-  --fw-highlight: rgba(0, 0, 0, 0.04);
+  --fw-highlight: rgba(0, 0, 0, 0.06);
   --fw-rim-light: rgba(255, 255, 255, 0.5);
 
   /* AI accent colors (monochrome) */
@@ -547,9 +547,10 @@
 
 .fw-suppliers-ai__supplier-card {
   background: var(--fw-panel-bg);
-  border: 2px solid var(--fw-border);
+  border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
+  box-shadow: var(--fw-shadow-sm);
   transition: all 0.2s ease;
 }
 
@@ -635,7 +636,7 @@
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: var(--fw-highlight);
+  background: var(--fw-bg-base);
   border: 3px solid var(--accent-ai-primary);
   flex-shrink: 0;
 }
@@ -700,7 +701,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  background: var(--fw-panel-bg);
+  background: var(--fw-bg-base);
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-md);
   font-size: 13px;

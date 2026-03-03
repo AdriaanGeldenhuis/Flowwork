@@ -63,7 +63,8 @@ $parsed = parseQuery($queryText, $rules);
 
 $location = $parsed['location'] ?? 'South Africa';
 $categories = $parsed['categories'] ?? [];
-$category = !empty($categories) ? $categories[0] : 'suppliers';
+// Use the raw query for external searches so specific terms like "19mm rock" are preserved
+$category = !empty($categories) ? $categories[0] : $queryText;
 
 try {
     $candidates = [];
@@ -81,30 +82,67 @@ try {
         $candidates = array_merge($candidates, $historyCandidates);
     }
 
+    $sourcesTried = [];
+    $sourceErrors = [];
+    $debugInfo = [];
+
     // SOURCE 3: Google Places API (if key configured and not CRM-only)
     if ($filterSource !== 'crm' && $filterSource !== 'history') {
         $googlePlacesKey = $apiKeys['google_places_key'] ?? '';
         if (!empty($googlePlacesKey)) {
+            $sourcesTried[] = 'google_places';
             $placesCandidates = searchGooglePlaces($googlePlacesKey, $category, $location, $seenKeys);
             $candidates = array_merge($candidates, $placesCandidates);
         }
     }
 
-    // SOURCE 4: OpenAI Fallback (if fewer than 3 candidates and not CRM/history only)
-    if (count($candidates) < 3 && $filterSource !== 'crm' && $filterSource !== 'history') {
+    // SOURCE 4: OpenAI — primary AI search for finding real suppliers
+    if ($filterSource !== 'crm' && $filterSource !== 'history') {
         $openaiKey = $apiKeys['openai_api_key'] ?? '';
         $openaiEnabled = $apiKeys['openai_enabled'] ?? 0;
         $openaiModel = $apiKeys['openai_model'] ?? 'gpt-4o-mini';
         $openaiMaxTokens = intval($apiKeys['openai_max_tokens'] ?? 500);
 
-        if ($openaiEnabled && !empty($openaiKey) && $openaiKey !== 'OPENAI_KEY_REMOVED') {
-            $aiCandidates = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $category, $location, $categories, $seenKeys);
-            $candidates = array_merge($candidates, $aiCandidates);
+        if (!$openaiEnabled) {
+            $sourceErrors[] = 'OpenAI is disabled. Enable it in Settings → OpenAI Configuration.';
+        } elseif (empty($openaiKey) || $openaiKey === 'OPENAI_KEY_REMOVED') {
+            $sourceErrors[] = 'OpenAI API key not set. Add your key in Settings → OpenAI Configuration.';
+        } else {
+            $sourcesTried[] = 'openai';
+            $openaiResult = searchWithOpenAI($openaiKey, $openaiModel, $openaiMaxTokens, $queryText, $location, $categories, $seenKeys, $debugInfo);
+            error_log("OpenAI result type: " . gettype($openaiResult) . " count: " . (is_array($openaiResult) ? count($openaiResult) : 'N/A') . " has error key: " . (is_array($openaiResult) && isset($openaiResult['error']) ? 'YES' : 'NO'));
+            if (is_array($openaiResult) && isset($openaiResult['error'])) {
+                $sourceErrors[] = 'OpenAI error: ' . $openaiResult['error'];
+            } elseif (is_array($openaiResult)) {
+                $candidates = array_merge($candidates, $openaiResult);
+            }
         }
     }
 
+    // If no candidates found and there were errors, report them
+    if (empty($candidates) && !empty($sourceErrors)) {
+        $tookMs = round((microtime(true) - $startTime) * 1000);
+        echo json_encode([
+            'ok' => false,
+            'error' => $sourceErrors[0],
+            'took_ms' => $tookMs
+        ]);
+        exit;
+    }
+
+    $debugInfo['pre_scoring_count'] = count($candidates);
+    $debugInfo['pre_scoring_names'] = array_map(function($c) {
+        return $c['name'] . ' (score=' . $c['score_final'] . ', src=' . $c['source'] . ')';
+    }, $candidates);
+    $debugInfo['filter_min_score'] = $filterMinScore;
+    $debugInfo['filter_compliance'] = $filterCompliance;
+    $debugInfo['filter_source'] = $filterSource;
+    $debugInfo['rules_deny_phones'] = count($rules['deny_list']['phones'] ?? []);
+    $debugInfo['rules_deny_domains'] = count($rules['deny_list']['domains'] ?? []);
+
     // Score, rank and filter
     $candidates = scoreAndRank($candidates, $filterMinScore, $filterCompliance, $rules);
+    $debugInfo['post_scoring_count'] = count($candidates);
 
     // Limit to top 10
     $candidates = array_slice($candidates, 0, 10);
@@ -124,7 +162,10 @@ try {
             'candidates' => [],
             'took_ms' => $tookMs,
             'parsed' => $parsed,
-            'source' => 'multi'
+            'source' => 'multi',
+            'sources_tried' => $sourcesTried,
+            'source_errors' => $sourceErrors,
+            'debug' => $debugInfo
         ]);
         exit;
     }
@@ -198,7 +239,8 @@ try {
         'candidates' => $savedCandidates,
         'took_ms' => $tookMs,
         'parsed' => $parsed,
-        'source' => 'multi'
+        'source' => 'multi',
+        'sources_tried' => $sourcesTried
     ]);
 
 } catch (Exception $e) {
@@ -210,32 +252,31 @@ try {
 // ========== SOURCE FUNCTIONS ==========
 
 function searchCRM($DB, $companyId, $categories, $location, $rules, &$seenKeys) {
+    // If no categories detected, skip CRM — we can't meaningfully filter
+    if (empty($categories)) return [];
+
     // Build category filter via industry matching
     $industryFilter = '';
     $params = [$companyId];
 
-    // If categories detected, try to match to CRM industries
-    if (!empty($categories)) {
-        $industryKeywords = [];
-        foreach ($categories as $cat) {
-            $industryKeywords[] = '%' . $cat . '%';
-            // Add synonyms from rules if available
-            $synonyms = $rules['synonyms'][$cat] ?? [];
-            foreach ($synonyms as $syn) {
-                $industryKeywords[] = '%' . $syn . '%';
-            }
-        }
-
-        if (!empty($industryKeywords)) {
-            // Search by industry name or account name/notes matching category keywords
-            $nameLikes = array_map(function() { return 'a.name LIKE ?'; }, $industryKeywords);
-            $notesLikes = array_map(function() { return 'a.notes LIKE ?'; }, $industryKeywords);
-            $industryLikes = array_map(function() { return 'ind.name LIKE ?'; }, $industryKeywords);
-
-            $industryFilter = ' AND (' . implode(' OR ', array_merge($nameLikes, $notesLikes, $industryLikes)) . ')';
-            $params = array_merge($params, $industryKeywords, $industryKeywords, $industryKeywords);
+    // Match CRM industries using detected categories
+    $industryKeywords = [];
+    foreach ($categories as $cat) {
+        $industryKeywords[] = '%' . $cat . '%';
+        // Add synonyms from rules if available
+        $synonyms = $rules['synonyms'][$cat] ?? [];
+        foreach ($synonyms as $syn) {
+            $industryKeywords[] = '%' . $syn . '%';
         }
     }
+
+    // Search by industry name or account name/notes matching category keywords
+    $nameLikes = array_map(function() { return 'a.name LIKE ?'; }, $industryKeywords);
+    $notesLikes = array_map(function() { return 'a.notes LIKE ?'; }, $industryKeywords);
+    $industryLikes = array_map(function() { return 'ind.name LIKE ?'; }, $industryKeywords);
+
+    $industryFilter = ' AND (' . implode(' OR ', array_merge($nameLikes, $notesLikes, $industryLikes)) . ')';
+    $params = array_merge($params, $industryKeywords, $industryKeywords, $industryKeywords);
 
     $sql = "
         SELECT
@@ -267,27 +308,6 @@ function searchCRM($DB, $companyId, $categories, $location, $rules, &$seenKeys) 
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // If no category-matched results, fall back to all active suppliers
-    if (empty($accounts) && !empty($categories)) {
-        $stmt = $DB->prepare("
-            SELECT
-                a.id, a.name, a.phone, a.email, a.website, a.preferred,
-                a.on_time_percent, a.avg_response_hours, a.defect_rate_percent, a.notes,
-                ind.name as industry_name,
-                CONCAT_WS(', ', addr.line1, addr.line2, addr.city, addr.region, addr.postal_code) as address,
-                addr.city
-            FROM crm_accounts a
-            LEFT JOIN crm_industries ind ON a.industry_id = ind.id
-            LEFT JOIN crm_addresses addr ON addr.account_id = a.id AND addr.company_id = a.company_id
-            WHERE a.company_id = ? AND a.type = 'supplier' AND a.status = 'active'
-            GROUP BY a.id
-            ORDER BY a.preferred DESC, a.name
-            LIMIT 10
-        ");
-        $stmt->execute([$companyId]);
-        $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
 
     $candidates = [];
     foreach ($accounts as $acc) {
@@ -451,40 +471,41 @@ function searchGooglePlaces($apiKey, $category, $location, &$seenKeys) {
     return $candidates;
 }
 
-function searchWithOpenAI($apiKey, $model, $maxTokens, $category, $location, $categories, &$seenKeys) {
+function searchWithOpenAI($apiKey, $model, $maxTokens, $queryText, $location, $categories, &$seenKeys, &$debugInfo = []) {
+    $categoryHint = !empty($categories) ? implode(', ', $categories) : 'general';
+    $locationHint = !empty($location) ? $location : 'South Africa';
+
     $searchPrompt = <<<PROMPT
-You are a directory assistant for South Africa. Your job is to find REAL, VERIFIABLE companies.
+You are a supplier/subcontractor directory assistant for South Africa.
+A user searched: "{$queryText}"
+Detected location: {$locationHint}
+Detected categories: {$categoryHint}
 
-CRITICAL RULES (you will be penalized for fake companies):
-1. ONLY suggest companies if you can verify they exist through:
-   - Their official website domain
-   - Public company registration
-   - Known franchise/chain presence
-2. If you're NOT 100% certain, DO NOT include it
-3. Maximum 5-8 companies (quality over quantity)
-4. Phone numbers MUST be real SA format:
-   - Landline: 011/012/021/031/041/051/053 + 7 digits
-   - Mobile: 082/083/084/072/073/074/076/078/079/081 + 7 digits
-5. Websites MUST be real .co.za domains you know exist
-6. If you only know 2-3 real companies, return 2-3 (NOT 10 fake ones)
+Find REAL suppliers, subcontractors, or companies that match this search.
 
-Task: Find verified {$category} companies in {$location}
+RULES:
+1. Find companies that actually supply or do this kind of work in or near {$locationHint}
+2. Include well-known chains, franchises, or established local businesses
+3. Return 5-8 companies (quality over quantity)
+4. Phone numbers in SA format (e.g. 016 xxx xxxx for Vaal area, 011 for JHB, etc.)
+5. If you only know 2-3 real companies, return 2-3 (not fake ones)
+6. Include both large suppliers AND smaller local subcontractors if relevant
 
 Return ONLY this JSON (no explanations):
 {
   "companies": [
     {
-      "name": "Exact company name",
-      "phone": "Valid SA number",
-      "email": "Real email domain",
-      "website": "https://actual-domain.co.za",
-      "address": "Real physical address",
+      "name": "Company name",
+      "phone": "Phone number",
+      "email": "Email if known or null",
+      "website": "Website if known or null",
+      "address": "Physical address or area",
       "confidence": "high|medium"
     }
   ]
 }
 
-If you cannot find verified companies, return: {"companies": []}
+If you cannot find any companies, return: {"companies": []}
 PROMPT;
 
     $ch = curl_init('https://api.openai.com/v1/chat/completions');
@@ -499,46 +520,93 @@ PROMPT;
         CURLOPT_POSTFIELDS => json_encode([
             'model' => $model,
             'messages' => [
-                ['role' => 'system', 'content' => 'You are a verified business directory. You ONLY suggest companies you can confirm exist. You are liable for accuracy.'],
+                ['role' => 'system', 'content' => 'You are a South African supplier and subcontractor directory. Find real businesses that match the search query. Include well-known chains, local businesses, and specialists in the area.'],
                 ['role' => 'user', 'content' => $searchPrompt]
             ],
-            'max_tokens' => max(500, $maxTokens),
+            'max_tokens' => max(1500, $maxTokens),
             'temperature' => 0.1
         ])
     ]);
 
     $response = curl_exec($ch);
+    $curlError = curl_error($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
+    if ($curlError) {
+        error_log("OpenAI curl error: " . $curlError);
+        return ['error' => 'Connection failed: ' . $curlError];
+    }
+
     if ($httpCode !== 200) {
         error_log("OpenAI API error: HTTP $httpCode - " . substr($response, 0, 500));
-        return [];
+        $errData = json_decode($response, true);
+        $errMsg = $errData['error']['message'] ?? "HTTP $httpCode";
+        if ($httpCode === 401) $errMsg = 'Invalid API key. Check your OpenAI key in Settings.';
+        if ($httpCode === 429) $errMsg = 'OpenAI rate limit exceeded. Try again in a minute.';
+        if ($httpCode === 402) $errMsg = 'OpenAI billing issue. Check your OpenAI account has credits.';
+        return ['error' => $errMsg];
     }
 
     $data = json_decode($response, true);
     $content = $data['choices'][0]['message']['content'] ?? '';
+    $finishReason = $data['choices'][0]['finish_reason'] ?? 'unknown';
 
-    // Clean markdown code blocks
+    // Capture debug info
+    $debugInfo['openai_model'] = $model;
+    $debugInfo['openai_finish_reason'] = $finishReason;
+    $debugInfo['openai_raw_content'] = substr($content, 0, 500);
+    $debugInfo['openai_content_length'] = strlen($content);
+    $debugInfo['openai_http_code'] = $httpCode;
+
+    error_log("OpenAI raw content: " . substr($content, 0, 1500));
+
+    // Clean markdown code blocks and any text before/after JSON
     $content = preg_replace('/```json\s*/', '', $content);
     $content = preg_replace('/```\s*/', '', $content);
     $content = trim($content);
 
-    $result = json_decode($content, true);
-    $suppliers = $result['companies'] ?? [];
+    // Try to extract JSON object from the content
+    if (preg_match('/\{[\s\S]*\}/u', $content, $jsonMatch)) {
+        $content = $jsonMatch[0];
+    }
 
-    // Filter out low confidence
-    $suppliers = array_filter($suppliers, function($s) {
-        return ($s['confidence'] ?? 'low') !== 'low';
-    });
+    $result = json_decode($content, true);
+
+    // If JSON parsing failed, try to fix truncated JSON by adding closing brackets
+    if (!is_array($result)) {
+        $fixedContent = $content . ']}';
+        $result = json_decode($fixedContent, true);
+        if (!is_array($result)) {
+            $fixedContent = $content . '"}}]}';
+            $result = json_decode($fixedContent, true);
+        }
+    }
+
+    if (!is_array($result)) {
+        error_log("OpenAI JSON parse failed. Cleaned content: " . substr($content, 0, 500));
+        return ['error' => 'Could not parse AI response. Raw: ' . substr($content, 0, 300)];
+    }
+
+    // Try multiple key names that the model might use
+    $suppliers = $result['companies'] ?? $result['suppliers'] ?? $result['results'] ?? [];
+
+    // If result is a flat array of objects (no wrapper key), use it directly
+    if (empty($suppliers) && isset($result[0]['name'])) {
+        $suppliers = $result;
+    }
+
+    $debugInfo['openai_json_keys'] = array_keys($result);
+    $debugInfo['openai_companies_count'] = count($suppliers);
+    error_log("OpenAI returned " . count($suppliers) . " companies. Keys in result: " . implode(', ', array_keys($result)));
 
     $candidates = [];
     foreach ($suppliers as $s) {
-        if (empty($s['name'])) continue;
+        if (empty($s['name'])) { error_log("OpenAI skip: empty name"); continue; }
 
         $dedupKey = strtolower(trim($s['name']));
-        if (isset($seenKeys[$dedupKey])) continue;
-        if (!empty($s['phone']) && isset($seenKeys[preg_replace('/[^0-9]/', '', $s['phone'])])) continue;
+        if (isset($seenKeys[$dedupKey])) { error_log("OpenAI skip dedup name: " . $s['name']); continue; }
+        if (!empty($s['phone']) && isset($seenKeys[preg_replace('/[^0-9]/', '', $s['phone'])])) { error_log("OpenAI skip dedup phone: " . $s['name']); continue; }
 
         $seenKeys[$dedupKey] = true;
         if (!empty($s['phone'])) $seenKeys[preg_replace('/[^0-9]/', '', $s['phone'])] = true;
@@ -555,11 +623,12 @@ PROMPT;
             'categories' => $categories,
             'compliance_state' => 'missing',
             'performance' => [],
-            'score_final' => ($s['confidence'] === 'high') ? 0.75 : 0.60,
-            'explanation' => 'Verified company found via AI search'
+            'score_final' => (($s['confidence'] ?? 'medium') === 'high') ? 0.75 : 0.65,
+            'explanation' => 'Found via AI search'
         ];
     }
 
+    error_log("OpenAI final candidates: " . count($candidates));
     return $candidates;
 }
 
@@ -727,7 +796,13 @@ function parseQuery($text, $rules = []) {
         'catering' => ['cater', 'food', 'kitchen', 'chef'],
         'it' => ['it ', 'computer', 'software', 'network', 'server'],
         'welding' => ['weld', 'fabricat', 'steel', 'metal work'],
-        'flooring' => ['floor', 'carpet', 'vinyl', 'laminate', 'tiling']
+        'flooring' => ['floor', 'carpet', 'vinyl', 'laminate', 'tiling'],
+        'aggregates' => ['rock', 'stone', 'aggregate', 'gravel', 'sand', 'crusher', 'quarry', 'crushed stone', 'building sand', 'river sand', 'fill'],
+        'concrete' => ['concrete', 'cement', 'ready-mix', 'readymix', 'ready mix', 'screed', 'mortar'],
+        'bricks' => ['brick', 'block', 'paver', 'maxi brick', 'stock brick', 'cement block'],
+        'timber' => ['timber', 'lumber', 'wood', 'planks', 'poles', 'shutterboard'],
+        'plumbing_supplies' => ['pvc pipe', 'fitting', 'valve', 'cistern', 'toilet', 'basin', 'bath'],
+        'earthworks' => ['earthwork', 'excavat', 'tipper', 'tlb', 'bobcat', 'bulldozer', 'plant hire']
     ];
 
     // Merge synonyms from rules

@@ -13,6 +13,10 @@
   let searchInProgress = false;
   let allCandidates = [];
 
+  function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
+
   // ========== UTILITIES ==========
   function getCookie(name) {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -184,6 +188,7 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
           },
           body: JSON.stringify({
             query: query,
@@ -192,15 +197,28 @@
         });
 
         const data = await response.json();
+        console.log('Search response:', data);
 
         if (data.ok) {
           currentQuery = data.query_id;
           allCandidates = data.candidates;
-          renderResults(data.candidates);
+          renderResults(data.candidates, data.source_errors, data.debug);
           resultsArea.style.display = 'block';
           resultsCount.textContent = data.candidates.length;
-          showToast(`Found ${data.candidates.length} suppliers in ${data.took_ms}ms 🤖`, 'success');
+          if (data.candidates.length === 0 && data.source_errors && data.source_errors.length > 0) {
+            showToast('Search completed with errors - see details above', 'error');
+          } else {
+            showToast(`Found ${data.candidates.length} suppliers in ${data.took_ms}ms`, 'success');
+          }
         } else {
+          // Show error in results area so user can see it clearly
+          const resultsList = document.getElementById('resultsList');
+          if (resultsList) {
+            resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state" style="color: var(--accent-danger, #ef4444);">' +
+              (data.error || 'Search failed') + '</div>';
+          }
+          resultsArea.style.display = 'block';
+          resultsCount.textContent = '0';
           showToast(data.error || 'Search failed', 'error');
         }
       } catch (err) {
@@ -221,12 +239,44 @@
   }
 
   // ========== RENDER RESULTS ==========
-  function renderResults(candidates) {
+  function renderResults(candidates, sourceErrors, debug) {
     const resultsList = document.getElementById('resultsList');
     if (!resultsList) return;
 
     if (candidates.length === 0) {
-      resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria</div>';
+      let errorHtml = '';
+
+      // Show source errors prominently
+      if (sourceErrors && sourceErrors.length > 0) {
+        errorHtml += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin-bottom:16px;">';
+        errorHtml += '<strong style="color:#dc2626;">Search Errors:</strong><ul style="margin:8px 0 0 0;padding-left:20px;color:#991b1b;">';
+        sourceErrors.forEach(err => {
+          errorHtml += '<li>' + escapeHtml(err) + '</li>';
+        });
+        errorHtml += '</ul></div>';
+      }
+
+      // Show concise debug info when available
+      if (debug && Object.keys(debug).length > 0) {
+        const details = [];
+        if (debug.openai_companies_count !== undefined) details.push(debug.openai_companies_count + ' companies found by AI');
+        if (debug.pre_scoring_count !== undefined) details.push(debug.pre_scoring_count + ' total candidates');
+        if (debug.post_scoring_count !== undefined) details.push(debug.post_scoring_count + ' passed filters');
+        if (debug.filter_compliance) details.push('Compliance filter: ' + debug.filter_compliance);
+        if (details.length > 0) {
+          errorHtml += '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">';
+          errorHtml += details.join(' · ');
+          errorHtml += '</div>';
+        }
+      }
+
+      if (!errorHtml) {
+        errorHtml = '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria. Check that your OpenAI API key is configured in Settings.</div>';
+      } else {
+        errorHtml += '<div class="fw-suppliers-ai__empty-state">No suppliers found matching your criteria.</div>';
+      }
+
+      resultsList.innerHTML = errorHtml;
       return;
     }
 
@@ -251,7 +301,7 @@
             <div class="fw-suppliers-ai__card-info">
               <h3 class="fw-suppliers-ai__card-title">${escapeHtml(c.name)}</h3>
               <div class="fw-suppliers-ai__card-meta">
-                ${c.distance_km ? `<span>📍 ${parseFloat(c.distance_km).toFixed(1)} km away</span>` : ''}
+                ${c.address ? `<span>📍 ${escapeHtml(c.address)}</span>` : (c.distance_km ? `<span>📍 ${parseFloat(c.distance_km).toFixed(1)} km away</span>` : '')}
                 ${c.phone ? `<span>📞 ${escapeHtml(c.phone)}</span>` : ''}
                 ${c.email ? `<span>✉️ ${escapeHtml(c.email)}</span>` : ''}
               </div>
@@ -398,7 +448,7 @@
     try {
       await fetch('/suppliers_ai/ajax/log_action.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
         body: JSON.stringify({
           query_id: currentQuery,
           candidate_id: candidateId,
@@ -440,7 +490,7 @@ async function generateEmail(supplierName, supplierEmail) {
   try {
     const response = await fetch('/suppliers_ai/ajax/generate_rfq_email.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
       body: JSON.stringify({
         supplier_name: supplierName,
         supplier_email: supplierEmail,
@@ -548,7 +598,7 @@ document.addEventListener('keydown', (e) => {
     try {
       const response = await fetch('/suppliers_ai/ajax/add_to_crm.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
         body: JSON.stringify({
           query_id: currentQuery,
           candidate_id: candidateId
@@ -676,7 +726,7 @@ document.addEventListener('keydown', (e) => {
       // Use the bulk RFQ endpoint which generates separate RFQs for each supplier
       const response = await fetch('/suppliers_ai/ajax/generate_rfq_bulk.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
         body: JSON.stringify({
           query_id: currentQuery,
           candidate_ids: Array.from(shortlist)

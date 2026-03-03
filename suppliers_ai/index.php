@@ -79,6 +79,7 @@ $stats = $stmt->fetch();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -210,8 +211,8 @@ $stats = $stmt->fetch();
                         <div class="fw-suppliers-ai__filter-group">
                             <label class="fw-suppliers-ai__label">Compliance</label>
                             <select id="filterCompliance" class="fw-suppliers-ai__input">
-                                <option value="">Any</option>
-                                <option value="valid" <?= $aiSettings['require_compliance'] ? 'selected' : '' ?>>Valid Only</option>
+                                <option value="" selected>Any</option>
+                                <option value="valid">Valid Only</option>
                                 <option value="expiring">Expiring Soon</option>
                                 <option value="expired">Expired</option>
                                 <option value="missing">Missing</option>

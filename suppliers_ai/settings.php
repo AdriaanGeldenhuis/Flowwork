@@ -231,6 +231,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Settings – Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -305,6 +306,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                 <?php if ($userRole === 'admin'): ?>
                 <form method="POST" class="fw-suppliers-ai__settings-form">
                     <input type="hidden" name="action" value="save_api_keys">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     
                     <div class="fw-suppliers-ai__section">
                         <h2 class="fw-suppliers-ai__section-title">🤖 OpenAI Configuration</h2>
@@ -386,6 +388,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                 <!-- General Settings -->
                 <form method="POST" class="fw-suppliers-ai__settings-form">
                     <input type="hidden" name="action" value="save_settings">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     
                     <div class="fw-suppliers-ai__section">
                         <h2 class="fw-suppliers-ai__section-title">General Settings</h2>
@@ -454,6 +457,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                 <!-- Rules Configuration -->
                 <form method="POST" class="fw-suppliers-ai__settings-form">
                     <input type="hidden" name="action" value="save_rules">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     
                     <div class="fw-suppliers-ai__section">
                         <h2 class="fw-suppliers-ai__section-title">AI Rules (JSON)</h2>
@@ -497,7 +501,11 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
         btn.textContent = '⏳ Testing...';
         
         try {
-            const response = await fetch('/suppliers_ai/ajax/test_openai.php', { method: 'POST' });
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            const response = await fetch('/suppliers_ai/ajax/test_openai.php', {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': csrfMeta ? csrfMeta.content : '' }
+            });
             const data = await response.json();
             
             if (data.ok) {
