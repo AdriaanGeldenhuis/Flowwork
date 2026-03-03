@@ -256,33 +256,18 @@
         errorHtml += '</ul></div>';
       }
 
-      // Show debug info when available
+      // Show concise debug info when available
       if (debug && Object.keys(debug).length > 0) {
-        errorHtml += '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:16px;margin-bottom:16px;">';
-        errorHtml += '<strong style="color:#92400e;">Debug Info:</strong>';
-        errorHtml += '<div style="margin-top:8px;font-size:12px;color:#78350f;font-family:monospace;white-space:pre-wrap;">';
-        errorHtml += 'Model: ' + escapeHtml(debug.openai_model || 'N/A') + '\n';
-        errorHtml += 'Finish reason: ' + escapeHtml(debug.openai_finish_reason || 'N/A') + '\n';
-        errorHtml += 'HTTP code: ' + (debug.openai_http_code || 'N/A') + '\n';
-        errorHtml += 'Content length: ' + (debug.openai_content_length || 'N/A') + ' chars\n';
-        errorHtml += 'Companies parsed: ' + (debug.openai_companies_count ?? 'N/A') + '\n';
-        errorHtml += 'JSON keys: ' + escapeHtml(JSON.stringify(debug.openai_json_keys || [])) + '\n';
-        errorHtml += '\n--- Scoring Pipeline ---\n';
-        errorHtml += 'Pre-scoring count: ' + (debug.pre_scoring_count ?? 'N/A') + '\n';
-        errorHtml += 'Post-scoring count: ' + (debug.post_scoring_count ?? 'N/A') + '\n';
-        errorHtml += 'Min score filter: ' + (debug.filter_min_score ?? 'N/A') + '\n';
-        errorHtml += 'Compliance filter: ' + escapeHtml(debug.filter_compliance || '(none)') + '\n';
-        errorHtml += 'Source filter: ' + escapeHtml(debug.filter_source || '(all)') + '\n';
-        errorHtml += 'Deny phones: ' + (debug.rules_deny_phones ?? 0) + '\n';
-        errorHtml += 'Deny domains: ' + (debug.rules_deny_domains ?? 0) + '\n';
-        if (debug.pre_scoring_names) {
-          errorHtml += '\nCandidates before scoring:\n';
-          debug.pre_scoring_names.forEach(function(n) { errorHtml += '  - ' + escapeHtml(n) + '\n'; });
+        const details = [];
+        if (debug.openai_companies_count !== undefined) details.push(debug.openai_companies_count + ' companies found by AI');
+        if (debug.pre_scoring_count !== undefined) details.push(debug.pre_scoring_count + ' total candidates');
+        if (debug.post_scoring_count !== undefined) details.push(debug.post_scoring_count + ' passed filters');
+        if (debug.filter_compliance) details.push('Compliance filter: ' + debug.filter_compliance);
+        if (details.length > 0) {
+          errorHtml += '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">';
+          errorHtml += details.join(' · ');
+          errorHtml += '</div>';
         }
-        if (debug.openai_raw_content) {
-          errorHtml += '\nRaw OpenAI response:\n' + escapeHtml(debug.openai_raw_content);
-        }
-        errorHtml += '</div></div>';
       }
 
       if (!errorHtml) {
@@ -316,7 +301,7 @@
             <div class="fw-suppliers-ai__card-info">
               <h3 class="fw-suppliers-ai__card-title">${escapeHtml(c.name)}</h3>
               <div class="fw-suppliers-ai__card-meta">
-                ${c.distance_km ? `<span>📍 ${parseFloat(c.distance_km).toFixed(1)} km away</span>` : ''}
+                ${c.address ? `<span>📍 ${escapeHtml(c.address)}</span>` : (c.distance_km ? `<span>📍 ${parseFloat(c.distance_km).toFixed(1)} km away</span>` : '')}
                 ${c.phone ? `<span>📞 ${escapeHtml(c.phone)}</span>` : ''}
                 ${c.email ? `<span>✉️ ${escapeHtml(c.email)}</span>` : ''}
               </div>
