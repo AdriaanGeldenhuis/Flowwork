@@ -123,7 +123,7 @@ if (!$prefs) {
                 <div class="fw-mail__tab-panel fw-mail__tab-panel--active" data-panel="accounts">
                     <div class="fw-mail__settings-header">
                         <h2>Email Accounts</h2>
-                        <button class="fw-mail__btn fw-mail__btn--primary" data-action="add-account">+ Add Account</button>
+                        <button class="fw-mail__btn fw-mail__btn--primary" onclick="window.MailSettings.showAccountModal(null)">+ Add Account</button>
                     </div>
 
                     <?php if (empty($accounts)): ?>
@@ -153,7 +153,7 @@ if (!$prefs) {
                                         <?php endif; ?>
                                     </div>
                                     <div class="fw-mail__card-actions">
-                                        <button class="fw-mail__btn fw-mail__btn--small" data-action="edit-account" data-id="<?= $acc['account_id'] ?>">Edit</button>
+                                        <button class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.editAccount(<?= (int)$acc['account_id'] ?>)">Edit</button>
                                         <button class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.testAccount(<?= $acc['account_id'] ?>)">Test</button>
                                         <button class="fw-mail__btn fw-mail__btn--small fw-mail__btn--danger" onclick="window.MailSettings.deleteAccount(<?= $acc['account_id'] ?>)">Delete</button>
                                     </div>
@@ -167,7 +167,7 @@ if (!$prefs) {
                 <div class="fw-mail__tab-panel" data-panel="signatures">
                     <div class="fw-mail__settings-header">
                         <h2>Signatures</h2>
-                        <button class="fw-mail__btn fw-mail__btn--primary" data-action="add-signature">+ New Signature</button>
+                        <button class="fw-mail__btn fw-mail__btn--primary" onclick="window.MailSettings.showSignatureModal(null)">+ New Signature</button>
                     </div>
                     <div id="signaturesList">
                         <div class="fw-mail__loading">Loading signatures...</div>
@@ -178,7 +178,7 @@ if (!$prefs) {
                 <div class="fw-mail__tab-panel" data-panel="rules">
                     <div class="fw-mail__settings-header">
                         <h2>Rules</h2>
-                        <button class="fw-mail__btn fw-mail__btn--primary" data-action="add-rule">+ New Rule</button>
+                        <button class="fw-mail__btn fw-mail__btn--primary" onclick="window.MailSettings.showRuleModal(null)">+ New Rule</button>
                     </div>
                     <div id="rulesList">
                         <div class="fw-mail__loading">Loading rules...</div>
@@ -241,7 +241,7 @@ if (!$prefs) {
         <div class="fw-mail__modal">
             <div class="fw-mail__modal-header">
                 <h3 class="fw-mail__modal-title" id="accountModalTitle">Add Email Account</h3>
-                <button class="fw-mail__modal-close" data-action="close-modal" data-modal="accountModal">&times;</button>
+                <button class="fw-mail__modal-close" onclick="window.MailSettings.closeModal('accountModal')">&times;</button>
             </div>
             <div class="fw-mail__modal-body">
                 <form id="accountForm" class="fw-mail__form">
@@ -314,7 +314,7 @@ if (!$prefs) {
 
                     <div class="fw-mail__form-actions">
                         <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Account</button>
-                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" data-action="close-modal" data-modal="accountModal">Cancel</button>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="window.MailSettings.closeModal('accountModal')">Cancel</button>
                     </div>
 
                     <div id="accountMessage" class="fw-mail__form-message" style="display:none;"></div>
@@ -328,7 +328,7 @@ if (!$prefs) {
         <div class="fw-mail__modal">
             <div class="fw-mail__modal-header">
                 <h3 class="fw-mail__modal-title" id="signatureModalTitle">New Signature</h3>
-                <button class="fw-mail__modal-close" data-action="close-modal" data-modal="signatureModal">&times;</button>
+                <button class="fw-mail__modal-close" onclick="window.MailSettings.closeModal('signatureModal')">&times;</button>
             </div>
             <div class="fw-mail__modal-body">
                 <form id="signatureForm" class="fw-mail__form">
@@ -353,7 +353,7 @@ if (!$prefs) {
 
                     <div class="fw-mail__form-actions">
                         <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Signature</button>
-                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" data-action="close-modal" data-modal="signatureModal">Cancel</button>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="window.MailSettings.closeModal('signatureModal')">Cancel</button>
                     </div>
 
                     <div id="signatureMessage" class="fw-mail__form-message" style="display:none;"></div>
@@ -367,7 +367,7 @@ if (!$prefs) {
         <div class="fw-mail__modal fw-mail__modal--large">
             <div class="fw-mail__modal-header">
                 <h3 class="fw-mail__modal-title" id="ruleModalTitle">New Rule</h3>
-                <button class="fw-mail__modal-close" data-action="close-modal" data-modal="ruleModal">&times;</button>
+                <button class="fw-mail__modal-close" onclick="window.MailSettings.closeModal('ruleModal')">&times;</button>
             </div>
             <div class="fw-mail__modal-body">
                 <form id="ruleForm" class="fw-mail__form">
@@ -412,7 +412,7 @@ if (!$prefs) {
 
                     <div class="fw-mail__form-actions">
                         <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Rule</button>
-                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" data-action="close-modal" data-modal="ruleModal">Cancel</button>
+                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="window.MailSettings.closeModal('ruleModal')">Cancel</button>
                     </div>
 
                     <div id="ruleMessage" class="fw-mail__form-message" style="display:none;"></div>
