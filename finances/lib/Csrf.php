@@ -11,7 +11,7 @@ class Csrf {
     
     public static function validate(): void {
         if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
-        $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf_token'] ?? null);
+        $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf_token'] ?? ($_POST['csrf'] ?? null));
         if (!isset($_SESSION['csrf_token'], $token) || !hash_equals($_SESSION['csrf_token'], $token)) {
             http_response_code(419);
             header('Content-Type: application/json');

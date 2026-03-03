@@ -211,18 +211,5 @@ $activeSeats = count(array_filter($users, fn($u) => $u['is_seat'] == 1 && $u['st
 </div>
 
 <script src="/admin/admin.js?v=2025-01-21-1"></script>
-<script>
-// User management functions
-function editUser(userId) {
-    // TODO: Fetch user data and populate modal
-    console.log('Edit user:', userId);
-}
-
-function deleteUser(userId) {
-    if (!confirm('Are you sure you want to remove this user?')) return;
-    // TODO: Implement delete
-    console.log('Delete user:', userId);
-}
-</script>
 </body>
 </html>
