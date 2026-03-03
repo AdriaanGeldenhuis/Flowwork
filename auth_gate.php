@@ -35,3 +35,8 @@ if ($user['status'] !== 'active') {
 
 // Set company context
 $_SESSION['company_id'] = (int)$user['company_id'];
+
+// CSRF protection for state-changing requests
+if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE', 'PATCH'])) {
+    Csrf::validate();
+}

@@ -4,6 +4,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/utils.php';
+require_once __DIR__ . '/finances/lib/Csrf.php';
 
 
 // Centralized CRM asset version for cache busting

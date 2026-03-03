@@ -38,6 +38,7 @@ $regions = $DB->query("SELECT * FROM crm_regions ORDER BY name ASC")->fetchAll()
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New <?= ucfirst($type) ?> – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>
 <body class="fw-crm">

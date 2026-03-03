@@ -1,13 +1,9 @@
 <?php
-// CRM Overview Page
-// This page provides a dashboard-like overview of key metrics, charts and recent records.
-// It follows the CRM application's existing design language by reusing the core header,
-// footer and theme toggle, while introducing a new grid layout for KPIs, charts and tables.
-
+// CRM Overview Page — Redirects to the consolidated dashboard at index.php?tab=overview
+// The separate overview page has been merged into the main CRM index.
 require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
-
-// CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
+header('Location: /crm/?tab=overview');
+exit;
 
 // Fetch user and company information for the header and greeting.
 $companyId = $_SESSION['company_id'];
@@ -58,6 +54,7 @@ $kpiMetrics = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CRM – <?= htmlspecialchars($companyName) ?> Overview</title>
     <!-- Global CRM styles -->
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <!-- Overview-specific styles -->
     <link rel="stylesheet" href="/crm/assets/overview.css?v=<?= CRM_ASSET_VERSION ?>">

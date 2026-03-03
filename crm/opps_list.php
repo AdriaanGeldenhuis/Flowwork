@@ -72,6 +72,7 @@ $totalPipeline = array_sum($stageTotals);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sales Pipeline – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <link rel="stylesheet" href="/crm/opps/opps.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>
@@ -152,9 +153,15 @@ $totalPipeline = array_sum($stageTotals);
             <div class="fw-opps__summary">
                 Total Pipeline Value: <strong>R<?= number_format($totalPipeline, 2) ?></strong>
             </div>
+            <!-- Mobile stage selector -->
+            <select id="mobileStageSelect" class="fw-opps__mobile-stage-select">
+                <?php foreach ($stages as $i => $stage): ?>
+                    <option value="<?= htmlspecialchars($stage) ?>" <?= $i === 0 ? 'selected' : '' ?>><?= ucfirst($stage) ?> (<?= (int)$stageCounts[$stage] ?>)</option>
+                <?php endforeach; ?>
+            </select>
             <div id="kanbanBoard" class="fw-opps__board">
-                <?php foreach ($stages as $stage): ?>
-                    <div class="fw-opps__column" data-stage="<?= htmlspecialchars($stage) ?>">
+                <?php foreach ($stages as $i => $stage): ?>
+                    <div class="fw-opps__column <?= $i === 0 ? 'fw-opps__column--active' : '' ?>" data-stage="<?= htmlspecialchars($stage) ?>">
                         <div class="fw-opps__column-header">
                             <span class="fw-opps__column-title"><?= ucfirst($stage) ?></span>
                             <span class="fw-opps__column-count" id="count-<?= htmlspecialchars($stage) ?>"><?= (int)$stageCounts[$stage] ?></span>

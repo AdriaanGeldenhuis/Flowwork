@@ -82,3 +82,85 @@
 .fw-opps__card.dragging {
     opacity: 0.5;
 }
+
+/* Dark theme support */
+[data-theme="dark"] .fw-opps__column {
+    background-color: rgba(18, 24, 36, 0.6);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .fw-opps__column-header {
+    background-color: rgba(18, 24, 36, 0.8);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #e7ecf2;
+}
+[data-theme="dark"] .fw-opps__column-count,
+[data-theme="dark"] .fw-opps__column-total {
+    color: #9fb0c8;
+}
+[data-theme="dark"] .fw-opps__card {
+    background-color: rgba(30, 40, 60, 0.8);
+    border-color: rgba(255, 255, 255, 0.06);
+    color: #e7ecf2;
+}
+[data-theme="dark"] .fw-opps__card-title a {
+    color: #e7ecf2;
+}
+[data-theme="dark"] .fw-opps__card-meta {
+    color: #9fb0c8;
+}
+
+/* Mobile stage selector for small screens */
+.fw-opps__mobile-stage-select {
+    display: none;
+    width: 100%;
+    margin-bottom: 0.75rem;
+}
+
+/* ===== MOBILE RESPONSIVE KANBAN ===== */
+@media (max-width: 768px) {
+    .fw-opps__toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    .fw-opps__board {
+        flex-direction: column;
+        overflow-x: visible;
+    }
+    .fw-opps__column {
+        min-width: 100%;
+        flex: none;
+    }
+    /* Collapse columns — show only active one */
+    .fw-opps__column {
+        display: none;
+    }
+    .fw-opps__column.fw-opps__column--active {
+        display: flex;
+    }
+    .fw-opps__mobile-stage-select {
+        display: block;
+        padding: 0.5rem;
+        font-size: 1rem;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        background: #fff;
+    }
+    [data-theme="dark"] .fw-opps__mobile-stage-select {
+        background: rgba(18, 24, 36, 0.8);
+        border-color: rgba(255, 255, 255, 0.08);
+        color: #e7ecf2;
+    }
+    /* Cards need touch-friendly sizing */
+    .fw-opps__card {
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+        cursor: pointer;
+    }
+    .fw-opps__card-title {
+        font-size: 1rem;
+    }
+    .fw-opps__card-info {
+        font-size: 0.9rem;
+    }
+}

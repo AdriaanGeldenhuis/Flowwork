@@ -68,6 +68,7 @@ $companyName = $company['name'] ?? 'Company';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Opportunity – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
     <link rel="stylesheet" href="/crm/opps/opps.css?v=<?= CRM_ASSET_VERSION ?>">
 </head>

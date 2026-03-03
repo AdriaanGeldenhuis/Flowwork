@@ -84,6 +84,7 @@ function format_currency($amount) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($invoice['invoice_number']) ?> – <?= htmlspecialchars($invoice['company_name']) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -429,6 +430,7 @@ function format_currency($amount) {
         </div>
     </div>
 
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.invoice.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script>

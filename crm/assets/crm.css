@@ -2843,13 +2843,182 @@ body.fw-crm-modal-open {
 
 .fw-crm__modal-overlay[aria-hidden="false"] {
   display: flex !important;
-}/* ADD TO END OF crm.css */
-
-/* ===== MODAL DISPLAY FIX ===== */
-.fw-crm__modal-overlay {
-  display: none !important;
 }
 
-.fw-crm__modal-overlay[aria-hidden="false"] {
-  display: flex !important;
+/* ===== PAGINATION ===== */
+.fw-crm__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--fw-spacing-md) 0;
+  margin-top: var(--fw-spacing-md);
+  flex-wrap: wrap;
+  gap: var(--fw-spacing-sm);
+}
+.fw-crm__pagination-info {
+  font-size: 0.85rem;
+  color: var(--fw-text-secondary);
+}
+.fw-crm__pagination-btns {
+  display: flex;
+  gap: 4px;
+}
+.fw-crm__pagination-btns .fw-crm__btn {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  min-width: 36px;
+  text-align: center;
+}
+
+/* ===== BULK ACTIONS ===== */
+.fw-crm__account-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--fw-spacing-xs);
+}
+.fw-crm__account-row .fw-crm__account-card {
+  flex: 1;
+  min-width: 0;
+}
+.fw-crm__bulk-check {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.fw-crm__bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-sm);
+  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  margin-bottom: var(--fw-spacing-sm);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-primary);
+  border-radius: var(--fw-radius-md);
+  flex-wrap: wrap;
+}
+.fw-crm__bulk-count {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--fw-primary);
+}
+.fw-crm__bulk-status-select {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+
+/* ===== OVERVIEW KPI CARDS ===== */
+.fw-crm__kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--fw-spacing-md);
+  margin-bottom: var(--fw-spacing-lg);
+}
+.fw-crm__kpi-card {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border-color);
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-spacing-lg);
+  text-align: center;
+}
+.fw-crm__kpi-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--fw-primary);
+  line-height: 1.2;
+}
+.fw-crm__kpi-label {
+  font-size: 0.85rem;
+  color: var(--fw-text-secondary);
+  margin-top: 4px;
+}
+
+/* ===== OVERVIEW CHARTS ===== */
+.fw-crm__charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--fw-spacing-md);
+  margin-bottom: var(--fw-spacing-lg);
+}
+.fw-crm__chart-card {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border-color);
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-spacing-md);
+}
+.fw-crm__chart-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 var(--fw-spacing-sm) 0;
+  color: var(--fw-text-primary);
+}
+
+/* ===== OVERVIEW DATA TABLES ===== */
+.fw-crm__tables-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--fw-spacing-md);
+  margin-bottom: var(--fw-spacing-lg);
+}
+.fw-crm__table-card {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border-color);
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-spacing-md);
+}
+.fw-crm__table-scroll {
+  overflow-x: auto;
+}
+.fw-crm__data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.fw-crm__data-table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--fw-border-color);
+  color: var(--fw-text-secondary);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.fw-crm__data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--fw-border-color);
+  color: var(--fw-text-primary);
+}
+.fw-crm__data-table a {
+  color: var(--fw-primary);
+  text-decoration: none;
+}
+.fw-crm__data-table a:hover {
+  text-decoration: underline;
+}
+.fw-crm__pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--fw-primary);
+  color: #fff;
+}
+
+@media (max-width: 1024px) {
+  .fw-crm__kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .fw-crm__kpi-grid { grid-template-columns: 1fr; }
+  .fw-crm__charts-grid { grid-template-columns: 1fr; }
+  .fw-crm__tables-grid { grid-template-columns: 1fr; }
+  .fw-crm__pagination {
+    flex-direction: column;
+    align-items: center;
+  }
+  .fw-crm__bulk-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
