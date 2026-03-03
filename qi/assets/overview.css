@@ -97,7 +97,12 @@
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid var(--fw-border, #e7e7e9);
-  background: #fff;
+  background: var(--fw-input-bg, #fff);
+  color: var(--fw-text-primary, #111);
+}
+
+.fw-qi[data-theme="dark"] .fw-select {
+  color-scheme: dark;
 }
 
 /* Responsive grids */
