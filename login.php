@@ -65,11 +65,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       WHERE id = ?")
            ->execute([$token, $u['id']]);
 
-        // Remember me cookie (optional)
+        // Remember me: persist login for 7 days
         if ($remember) {
           $rememberToken = bin2hex(random_bytes(32));
-          setcookie('fw_remember', $rememberToken, time() + (30 * 24 * 60 * 60), '/', '', true, true);
-          // Store remember token in DB (you'd need to add a table for this)
+          $tokenHash = hash('sha256', $rememberToken);
+          $expiry = 7 * 24 * 60 * 60; // 7 days in seconds
+
+          setcookie('fw_remember', $rememberToken, [
+            'expires'  => time() + $expiry,
+            'path'     => '/',
+            'secure'   => $https,
+            'httponly'  => true,
+            'samesite' => 'Lax',
+          ]);
+
+          // Clear any old remember tokens for this user, then store new one
+          $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
+             ->execute([$u['id']]);
+          $DB->prepare("INSERT INTO remember_tokens (user_id, token_hash, expires_at)
+                        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))")
+             ->execute([$u['id'], $tokenHash]);
         }
 
         // Log successful login

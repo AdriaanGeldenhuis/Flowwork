@@ -20,6 +20,10 @@ if (!empty($_SESSION['user_id'])) {
   // Clear session token from database
   $DB->prepare("UPDATE users SET session_token = NULL WHERE id = ?")
      ->execute([$_SESSION['user_id']]);
+
+  // Clear remember tokens from database
+  $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
+     ->execute([$_SESSION['user_id']]);
 }
 
 // Destroy session
