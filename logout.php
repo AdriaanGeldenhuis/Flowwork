@@ -22,8 +22,12 @@ if (!empty($_SESSION['user_id'])) {
      ->execute([$_SESSION['user_id']]);
 
   // Clear remember tokens from database
-  $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
-     ->execute([$_SESSION['user_id']]);
+  try {
+    $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
+       ->execute([$_SESSION['user_id']]);
+  } catch (Exception $e) {
+    error_log("Remember token cleanup error: " . $e->getMessage());
+  }
 }
 
 // Destroy session
