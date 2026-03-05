@@ -80,11 +80,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ]);
 
           // Clear any old remember tokens for this user, then store new one
-          $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
-             ->execute([$u['id']]);
-          $DB->prepare("INSERT INTO remember_tokens (user_id, token_hash, expires_at)
-                        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))")
-             ->execute([$u['id'], $tokenHash]);
+          try {
+            $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
+               ->execute([$u['id']]);
+            $DB->prepare("INSERT INTO remember_tokens (user_id, token_hash, expires_at)
+                          VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))")
+               ->execute([$u['id'], $tokenHash]);
+          } catch (Exception $e) {
+            error_log("Remember token store error: " . $e->getMessage());
+          }
         }
 
         // Log successful login
