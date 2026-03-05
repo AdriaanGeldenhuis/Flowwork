@@ -39,12 +39,12 @@ if (empty($_SESSION['user_id'])) {
           // Rotate remember token for security
           $newRememberToken = bin2hex(random_bytes(32));
           $newTokenHash = hash('sha256', $newRememberToken);
-          $DB->prepare("UPDATE remember_tokens SET token_hash = ?, expires_at = DATE_ADD(NOW(), INTERVAL 7 DAY) WHERE user_id = ?")
-             ->execute([$newTokenHash, $rem['user_id']]);
+          $DB->prepare("UPDATE remember_tokens SET token_hash = ?, expires_at = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE user_id = ?")
+             ->execute([$newTokenHash, REMEMBER_ME_EXPIRY, $rem['user_id']]);
 
           $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
           setcookie('fw_remember', $newRememberToken, [
-            'expires'  => time() + (7 * 24 * 60 * 60),
+            'expires'  => time() + REMEMBER_ME_EXPIRY,
             'path'     => '/',
             'secure'   => $https,
             'httponly'  => true,
