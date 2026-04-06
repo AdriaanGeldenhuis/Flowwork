@@ -66,12 +66,20 @@ try {
                ca.name AS customer_name,
                ca.email AS customer_email,
                ca.phone AS customer_phone,
+               ca.vat_no AS customer_vat,
+               ca.reg_no AS customer_reg,
+               addr.line1 AS customer_address1,
+               addr.line2 AS customer_address2,
+               addr.city AS customer_city,
+               addr.region AS customer_region,
+               addr.postal_code AS customer_postal,
                i.invoice_number AS linked_invoice_number,
                i.total AS invoice_total
         FROM credit_notes cn
         LEFT JOIN users u ON cn.created_by = u.id
         LEFT JOIN companies c ON cn.company_id = c.id
         LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id
+        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
         LEFT JOIN invoices i ON cn.invoice_id = i.id
         WHERE cn.id = ? AND cn.company_id = ?
     ");
@@ -290,11 +298,27 @@ function format_currency($amount) {
                     <div class="fw-qi__doc-detail-box">
                         <h3>Credit To</h3>
                         <p><strong><?= htmlspecialchars($creditNote['customer_name'] ?? 'Customer') ?></strong></p>
+                        <?php
+                            $custAddr = trim(($creditNote['customer_address1'] ?? '') . ' ' . ($creditNote['customer_address2'] ?? ''));
+                            $custCity = trim(($creditNote['customer_city'] ?? '') . ', ' . ($creditNote['customer_region'] ?? '') . ' ' . ($creditNote['customer_postal'] ?? ''));
+                        ?>
+                        <?php if ($custAddr): ?>
+                            <p><?= htmlspecialchars($custAddr) ?></p>
+                        <?php endif; ?>
+                        <?php if ($custCity && $custCity !== ', '): ?>
+                            <p><?= htmlspecialchars($custCity) ?></p>
+                        <?php endif; ?>
                         <?php if (!empty($creditNote['customer_phone'])): ?>
                             <p>Phone: <?= htmlspecialchars($creditNote['customer_phone']) ?></p>
                         <?php endif; ?>
                         <?php if (!empty($creditNote['customer_email'])): ?>
                             <p>Email: <?= htmlspecialchars($creditNote['customer_email']) ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($creditNote['customer_vat'])): ?>
+                            <p>VAT: <?= htmlspecialchars($creditNote['customer_vat']) ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($creditNote['customer_reg'])): ?>
+                            <p>Reg: <?= htmlspecialchars($creditNote['customer_reg']) ?></p>
                         <?php endif; ?>
                     </div>
                     <?php if (!empty($creditNote['reason'])): ?>

@@ -44,10 +44,14 @@ try {
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     p.name AS project_name
              FROM quotes q
              LEFT JOIN companies c ON q.company_id = c.id
              LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN projects p ON q.project_id = p.project_id
              WHERE q.id = ? AND q.company_id = ?"
         );
@@ -83,10 +87,14 @@ try {
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
              LEFT JOIN companies c ON cn.company_id = c.id
              LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN invoices i ON cn.invoice_id = i.id
              WHERE cn.id = ? AND cn.company_id = ?"
         );
@@ -126,10 +134,14 @@ try {
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     p.name AS project_name
              FROM invoices i
              LEFT JOIN companies c ON i.company_id = c.id
              LEFT JOIN crm_accounts ca ON i.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN projects p ON i.project_id = p.project_id
              WHERE i.id = ? AND i.company_id = ?"
         );
@@ -354,11 +366,27 @@ try {
             <div class="fw-qi__doc-detail-box">
                 <h3>Bill To</h3>
                 <p><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
+                <?php
+                    $custAddr = trim(($doc['customer_address1'] ?? '') . ' ' . ($doc['customer_address2'] ?? ''));
+                    $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? ''));
+                ?>
+                <?php if ($custAddr): ?>
+                    <p><?= htmlspecialchars($custAddr) ?></p>
+                <?php endif; ?>
+                <?php if ($custCity && $custCity !== ', '): ?>
+                    <p><?= htmlspecialchars($custCity) ?></p>
+                <?php endif; ?>
                 <?php if (!empty($doc['customer_phone'])): ?>
                     <p>Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
                 <?php endif; ?>
                 <?php if (!empty($doc['customer_email'])): ?>
                     <p>Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($doc['customer_vat'])): ?>
+                    <p>VAT: <?= htmlspecialchars($doc['customer_vat']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($doc['customer_reg'])): ?>
+                    <p>Reg: <?= htmlspecialchars($doc['customer_reg']) ?></p>
                 <?php endif; ?>
             </div>
             <?php if (!empty($doc['project_name'])): ?>

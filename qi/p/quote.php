@@ -56,10 +56,18 @@ try {
                ca.name AS customer_name,
                ca.email AS customer_email,
                ca.phone AS customer_phone,
+               ca.vat_no AS customer_vat,
+               ca.reg_no AS customer_reg,
+               addr.line1 AS customer_address1,
+               addr.line2 AS customer_address2,
+               addr.city AS customer_city,
+               addr.region AS customer_region,
+               addr.postal_code AS customer_postal,
                p.name AS project_name
         FROM quotes q
         LEFT JOIN companies c ON q.company_id = c.id
         LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
+        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
         LEFT JOIN projects p ON q.project_id = p.project_id
         WHERE q.public_token = ?
     ");
@@ -187,8 +195,16 @@ try {
                 <div class="fw-qi__doc-section">
                     <h3>Quote To</h3>
                     <p><strong><?= htmlspecialchars($quote['customer_name']) ?></strong></p>
-                    <?php if ($quote['customer_email']): ?><p><?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
-                    <?php if ($quote['customer_phone']): ?><p><?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
+                    <?php
+                        $custAddr = trim(($quote['customer_address1'] ?? '') . ' ' . ($quote['customer_address2'] ?? ''));
+                        $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? ''));
+                    ?>
+                    <?php if ($custAddr): ?><p><?= htmlspecialchars($custAddr) ?></p><?php endif; ?>
+                    <?php if ($custCity && $custCity !== ', '): ?><p><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
+                    <?php if ($quote['customer_phone']): ?><p>Phone: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
+                    <?php if ($quote['customer_email']): ?><p>Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
+                    <?php if (!empty($quote['customer_vat'])): ?><p>VAT: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
+                    <?php if (!empty($quote['customer_reg'])): ?><p>Reg: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
                     <?php if ($quote['project_name']): ?><p><em>Project: <?= htmlspecialchars($quote['project_name']) ?></em></p><?php endif; ?>
                 </div>
                 <div class="fw-qi__doc-section">

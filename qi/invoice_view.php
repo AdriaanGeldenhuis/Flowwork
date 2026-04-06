@@ -25,7 +25,7 @@ if (!$invoiceId) {
 try {
     // Fetch invoice details with company, customer and creator
     $stmt = $DB->prepare(
-        "SELECT i.*,\n               u.first_name AS creator_first_name,\n               u.last_name AS creator_last_name,\n               c.name AS company_name,\n               c.logo_url,\n               c.vat_number,\n               c.tax_number,\n               c.reg_number,\n               c.website,\n               c.phone AS company_phone,\n               c.email AS company_email,\n               c.address_line1 AS company_address1,\n               c.address_line2 AS company_address2,\n               c.city AS company_city,\n               c.region AS company_region,\n               c.postal AS company_postal,\n               c.bank_name,\n               c.bank_account_number,\n               c.bank_branch_code,\n               c.invoice_footer_text,\n               c.primary_color,\n               c.secondary_color,\n               c.qi_font_family,\n               c.qi_show_company_address,\n               c.qi_show_company_phone,\n               c.qi_show_company_email,\n               c.qi_show_company_website,\n               c.qi_show_vat_number,\n               c.qi_show_tax_number,\n               c.qi_show_reg_number,\n               c.qi_heading_color,\n               c.qi_text_color,\n               c.qi_table_header_text,\n               c.qi_bg_color,\n               c.qi_border_radius,\n               c.qi_logo_size,\n               c.qi_logo_position,\n               c.qi_template,\n               c.qi_custom_css,\n               c.qi_invoice_title,\n               ca.name AS customer_name,\n               ca.email AS customer_email,\n               ca.phone AS customer_phone,\n               p.name AS project_name\n        FROM invoices i\n        LEFT JOIN users u ON i.created_by = u.id\n        LEFT JOIN companies c ON i.company_id = c.id\n        LEFT JOIN crm_accounts ca ON i.customer_id = ca.id\n        LEFT JOIN projects p ON i.project_id = p.project_id\n        WHERE i.id = ? AND i.company_id = ?"
+        "SELECT i.*,\n               u.first_name AS creator_first_name,\n               u.last_name AS creator_last_name,\n               c.name AS company_name,\n               c.logo_url,\n               c.vat_number,\n               c.tax_number,\n               c.reg_number,\n               c.website,\n               c.phone AS company_phone,\n               c.email AS company_email,\n               c.address_line1 AS company_address1,\n               c.address_line2 AS company_address2,\n               c.city AS company_city,\n               c.region AS company_region,\n               c.postal AS company_postal,\n               c.bank_name,\n               c.bank_account_number,\n               c.bank_branch_code,\n               c.invoice_footer_text,\n               c.primary_color,\n               c.secondary_color,\n               c.qi_font_family,\n               c.qi_show_company_address,\n               c.qi_show_company_phone,\n               c.qi_show_company_email,\n               c.qi_show_company_website,\n               c.qi_show_vat_number,\n               c.qi_show_tax_number,\n               c.qi_show_reg_number,\n               c.qi_heading_color,\n               c.qi_text_color,\n               c.qi_table_header_text,\n               c.qi_bg_color,\n               c.qi_border_radius,\n               c.qi_logo_size,\n               c.qi_logo_position,\n               c.qi_template,\n               c.qi_custom_css,\n               c.qi_invoice_title,\n               ca.name AS customer_name,\n               ca.email AS customer_email,\n               ca.phone AS customer_phone,\n               ca.vat_no AS customer_vat,\n               ca.reg_no AS customer_reg,\n               addr.line1 AS customer_address1,\n               addr.line2 AS customer_address2,\n               addr.city AS customer_city,\n               addr.region AS customer_region,\n               addr.postal_code AS customer_postal,\n               p.name AS project_name\n        FROM invoices i\n        LEFT JOIN users u ON i.created_by = u.id\n        LEFT JOIN companies c ON i.company_id = c.id\n        LEFT JOIN crm_accounts ca ON i.customer_id = ca.id\n        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)\n        LEFT JOIN projects p ON i.project_id = p.project_id\n        WHERE i.id = ? AND i.company_id = ?"
     );
     $stmt->execute([$invoiceId, $companyId]);
     $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -315,11 +315,27 @@ function format_currency($amount) {
                     <div class="fw-qi__doc-detail-box">
                         <h3>Bill To</h3>
                         <p><strong><?= htmlspecialchars($invoice['customer_name'] ?? 'Customer') ?></strong></p>
+                        <?php
+                            $custAddr = trim(($invoice['customer_address1'] ?? '') . ' ' . ($invoice['customer_address2'] ?? ''));
+                            $custCity = trim(($invoice['customer_city'] ?? '') . ', ' . ($invoice['customer_region'] ?? '') . ' ' . ($invoice['customer_postal'] ?? ''));
+                        ?>
+                        <?php if ($custAddr): ?>
+                            <p><?= htmlspecialchars($custAddr) ?></p>
+                        <?php endif; ?>
+                        <?php if ($custCity && $custCity !== ', '): ?>
+                            <p><?= htmlspecialchars($custCity) ?></p>
+                        <?php endif; ?>
                         <?php if (!empty($invoice['customer_phone'])): ?>
                             <p>Phone: <?= htmlspecialchars($invoice['customer_phone']) ?></p>
                         <?php endif; ?>
                         <?php if (!empty($invoice['customer_email'])): ?>
                             <p>Email: <?= htmlspecialchars($invoice['customer_email']) ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($invoice['customer_vat'])): ?>
+                            <p>VAT: <?= htmlspecialchars($invoice['customer_vat']) ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($invoice['customer_reg'])): ?>
+                            <p>Reg: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
                         <?php endif; ?>
                     </div>
                     <?php if ($invoice['project_name']): ?>
