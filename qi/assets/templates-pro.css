@@ -83,7 +83,7 @@
 
 .fw-qi__doc-logo {
   max-width: var(--qi-logo-size);
-  max-height: 80px;
+  max-height: 128px;
   object-fit: contain;
   margin-bottom: 12px;
 }
@@ -545,7 +545,7 @@
 
   .fw-qi__doc-logo {
     max-width: 150px;
-    max-height: 60px;
+    max-height: 96px;
   }
 
   .fw-qi__doc-details {
@@ -795,7 +795,7 @@
 }
 
 [data-template="minimal"] .fw-qi__doc-logo {
-  max-height: 50px;
+  max-height: 80px;
 }
 
 [data-template="minimal"] .fw-qi__doc-details {
@@ -1244,7 +1244,7 @@
 }
 
 [data-template="corporate"] .fw-qi__doc-logo {
-  max-height: 60px;
+  max-height: 96px;
 }
 
 [data-template="corporate"] .fw-qi__alert {
