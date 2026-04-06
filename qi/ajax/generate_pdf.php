@@ -18,8 +18,14 @@ if (!$id) {
     exit;
 }
 
+define('ASSET_VERSION', '2025-01-21-QI-FINAL');
+
 function fmt($amount) {
     return 'R ' . number_format((float)$amount, 2);
+}
+
+function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
+    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
 }
 
 try {
@@ -36,6 +42,7 @@ try {
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
+                    c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM quotes q
@@ -74,6 +81,7 @@ try {
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
+                    c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
@@ -116,6 +124,7 @@ try {
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
+                    c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM invoices i
@@ -151,10 +160,10 @@ try {
     $showTax     = (int)($doc['qi_show_tax_number']      ?? 1);
     $showReg     = (int)($doc['qi_show_reg_number']      ?? 1);
 
-    // Branding — same logic as invoice_view.php
-    $primaryColor    = $doc['primary_color'] ?: '#fbbf24';
-    $secondaryColor  = $doc['secondary_color'] ?: '#f59e0b';
-    $headingColor    = $doc['qi_heading_color'] ?: $primaryColor;
+    // Branding — identical to invoice_view.php
+    $primaryColor    = sanitize_css_color($doc['primary_color'] ?? '#fbbf24');
+    $secondaryColor  = sanitize_css_color($doc['secondary_color'] ?? '#f59e0b', '#f59e0b');
+    $headingColor    = sanitize_css_color($doc['qi_heading_color'] ?? '', $primaryColor);
     $textColor       = $doc['qi_text_color'] ?? '';
     $tableHeaderText = $doc['qi_table_header_text'] ?: '#ffffff';
     $bgColor         = $doc['qi_bg_color'] ?? '';
