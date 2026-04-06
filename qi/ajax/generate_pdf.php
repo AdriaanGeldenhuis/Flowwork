@@ -1,7 +1,7 @@
 <?php
-// /qi/ajax/generate_pdf.php – Generate a print-ready invoice/quote/credit note page
-// Renders styled HTML matching the invoice_view.php layout, optimized for
-// browser Print → Save as PDF.
+// /qi/ajax/generate_pdf.php – Generate a print-ready invoice/quote/credit note page.
+// Uses the SAME templates-pro.css and HTML structure as invoice_view.php / quote_view.php
+// so the PDF always looks identical to the app.
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
@@ -34,7 +34,8 @@ try {
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
+                    c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM quotes q
@@ -47,7 +48,7 @@ try {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$doc) { throw new Exception('Quote not found'); }
 
-        $docType = 'QUOTE';
+        $docType = $doc['qi_quote_title'] ?? 'QUOTE';
         $docNumber = $doc['quote_number'];
         $docTitle = 'Quote #: ' . $docNumber;
         $dates = [
@@ -71,7 +72,8 @@ try {
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
+                    c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
@@ -112,7 +114,8 @@ try {
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
+                    c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM invoices i
@@ -125,7 +128,7 @@ try {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$doc) { throw new Exception('Invoice not found'); }
 
-        $docType = 'INVOICE';
+        $docType = $doc['qi_invoice_title'] ?? 'INVOICE';
         $docNumber = $doc['invoice_number'];
         $docTitle = 'Invoice #: ' . $docNumber;
         $dates = [
@@ -148,22 +151,27 @@ try {
     $showTax     = (int)($doc['qi_show_tax_number']      ?? 1);
     $showReg     = (int)($doc['qi_show_reg_number']      ?? 1);
 
-    // Branding colours from company settings
-    $primaryColor     = $doc['primary_color'] ?: '#fbbf24';
-    $secondaryColor   = $doc['secondary_color'] ?: '#f59e0b';
-    $headingColor     = $doc['qi_heading_color'] ?: $primaryColor;
-    $textColor        = $doc['qi_text_color'] ?: '#374151';
-    $tableHeaderText  = $doc['qi_table_header_text'] ?: '#ffffff';
-    $bgColor          = $doc['qi_bg_color'] ?: '#ffffff';
-
-    // Compute rgba versions of primary colour for backgrounds/borders
-    $pHex = ltrim($primaryColor, '#');
-    $pR = hexdec(substr($pHex, 0, 2));
-    $pG = hexdec(substr($pHex, 2, 2));
-    $pB = hexdec(substr($pHex, 4, 2));
-    $primaryRgba = function($alpha) use ($pR, $pG, $pB) {
-        return "rgba({$pR},{$pG},{$pB},{$alpha})";
-    };
+    // Branding — same logic as invoice_view.php
+    $primaryColor    = $doc['primary_color'] ?: '#fbbf24';
+    $secondaryColor  = $doc['secondary_color'] ?: '#f59e0b';
+    $headingColor    = $doc['qi_heading_color'] ?: $primaryColor;
+    $textColor       = $doc['qi_text_color'] ?? '';
+    $tableHeaderText = $doc['qi_table_header_text'] ?: '#ffffff';
+    $bgColor         = $doc['qi_bg_color'] ?? '';
+    $borderRadius    = max(0, min(24, (int)($doc['qi_border_radius'] ?? 8)));
+    $logoSize        = max(80, min(400, (int)($doc['qi_logo_size'] ?? 200)));
+    $logoPosition    = in_array($doc['qi_logo_position'] ?? 'left', ['left','center','right']) ? $doc['qi_logo_position'] : 'left';
+    $template        = in_array($doc['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $doc['qi_template'] : 'modern';
+    $fontFamily      = $doc['qi_font_family'] ?? 'system-ui';
+    $customCss       = $doc['qi_custom_css'] ?? '';
+    $fontMap = [
+        'system-ui'  => 'system-ui, -apple-system, sans-serif',
+        'montserrat' => "'Montserrat', sans-serif",
+        'helvetica'  => "'Helvetica Neue', Helvetica, Arial, sans-serif",
+        'georgia'    => 'Georgia, serif',
+        'inter'      => "'Inter', sans-serif"
+    ];
+    $fontStack = $fontMap[$fontFamily] ?? $fontMap['system-ui'];
 
 } catch (Exception $e) {
     http_response_code(500);
@@ -176,249 +184,44 @@ try {
 <head>
 <meta charset="UTF-8">
 <title><?= htmlspecialchars($docNumber) ?></title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- Use the SAME template CSS as the app -->
+<link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
+
 <style>
+    /* Branding variables — identical to invoice_view.php */
     :root {
-        --pdf-primary: <?= htmlspecialchars($primaryColor) ?>;
-        --pdf-heading: <?= htmlspecialchars($headingColor) ?>;
-        --pdf-text: <?= htmlspecialchars($textColor) ?>;
-        --pdf-th-text: <?= htmlspecialchars($tableHeaderText) ?>;
-        --pdf-bg: <?= htmlspecialchars($bgColor) ?>;
-        --pdf-primary-005: <?= $primaryRgba(0.05) ?>;
-        --pdf-primary-004: <?= $primaryRgba(0.04) ?>;
-        --pdf-primary-008: <?= $primaryRgba(0.08) ?>;
-        --pdf-primary-02: <?= $primaryRgba(0.2) ?>;
+        --accent-qi: <?= $primaryColor ?>;
+        --accent-qi-secondary: <?= $secondaryColor ?>;
+        --doc-font: <?= $fontStack ?>;
+        --qi-heading: <?= $headingColor ?>;
+        --qi-border-radius: <?= $borderRadius ?>px;
+        --qi-logo-max-w: <?= $logoSize ?>px;
+        --qi-th-text: <?= $tableHeaderText ?>;
+        <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
+        <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+    <?= $customCss ?>
+
+    /* PDF-specific overrides for A4 print layout */
     body {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 14px;
-        color: var(--pdf-text);
+        margin: 0;
         background: #e5e7eb;
     }
-    .page {
+    .fw-qi__main {
+        padding: 0 !important;
+        min-height: auto;
+    }
+    .fw-qi__document {
         width: 210mm;
         min-height: 297mm;
         margin: 0 auto;
-        background: var(--pdf-bg);
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    }
-
-    /* Header — matches invoice_view grid layout */
-    .header {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 40px;
-        padding: 36px 40px;
-        border-bottom: 4px solid var(--pdf-primary);
-        background: linear-gradient(135deg, var(--pdf-primary-005) 0%, transparent 100%);
-    }
-    .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-    .company-logo {
-        max-width: 200px;
-        max-height: 70px;
-        object-fit: contain;
-        margin-bottom: 8px;
-    }
-    .doc-type {
-        font-size: 24px;
-        font-weight: 800;
-        color: var(--pdf-heading);
-        margin: 0 0 6px;
-    }
-    .company-name {
-        font-size: 13px;
-        font-weight: 700;
-        color: #1f2937;
-        margin: 0 0 4px;
-    }
-    .company-info p {
-        font-size: 12px;
-        color: #374151;
-        line-height: 1.6;
-        margin: 2px 0;
-    }
-    .header-right {
-        text-align: right;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-    }
-    .header-right h2 {
-        font-size: 20px;
-        font-weight: 800;
-        color: #1f2937;
-        margin-bottom: 8px;
-    }
-    .header-right p {
-        font-size: 12px;
-        color: #374151;
-        line-height: 1.8;
-        margin: 0;
-    }
-    .header-right .reg-info {
-        margin-top: 8px;
-        padding-top: 6px;
-        border-top: 1px solid #e5e7eb;
-    }
-    .header-right .reg-info p {
-        font-size: 11px;
-        color: #6b7280;
-    }
-
-    /* Bill To / Project boxes */
-    .details {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 24px;
-        padding: 28px 40px;
-        background: rgba(0,0,0,0.02);
-        border-bottom: 1px solid rgba(0,0,0,0.05);
-    }
-    .detail-box {
-        padding: 18px 20px;
-        background: #fff;
-        border-radius: 6px;
-        border-left: 3px solid var(--pdf-primary);
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .detail-box h3 {
-        font-size: 10px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: var(--pdf-heading);
-        margin-bottom: 10px;
-    }
-    .detail-box p {
-        font-size: 13px;
-        color: #1f2937;
-        margin: 4px 0;
-        line-height: 1.5;
-    }
-
-    /* Line items table */
-    .items-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 0;
-        page-break-inside: auto;
-    }
-    .items-table thead {
-        display: table-header-group;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-    .items-table thead th {
-        background: var(--pdf-primary);
-        color: var(--pdf-th-text);
-        font-size: 11px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        padding: 14px 16px;
-        text-align: left;
-    }
-    .items-table thead th.right { text-align: right; }
-    .items-table tbody td {
-        padding: 13px 16px;
-        border-bottom: 1px solid rgba(0,0,0,0.05);
-        font-size: 13px;
-        color: #1f2937;
-        vertical-align: top;
-    }
-    .items-table tbody tr {
-        page-break-inside: avoid;
-    }
-    .items-table tbody td.right { text-align: right; }
-    .items-table tbody tr:hover { background: var(--pdf-primary-004); }
-
-    /* Totals */
-    .totals {
-        max-width: 380px;
-        margin: 24px 40px 24px auto;
-        padding: 20px;
-        background: var(--pdf-primary-008);
-        border-radius: 8px;
-        border: 2px solid var(--pdf-primary-02);
-    }
-    .total-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 9px 0;
-        font-size: 14px;
-        color: #1f2937;
-        border-bottom: 1px solid rgba(0,0,0,0.05);
-    }
-    .total-row:last-child { border-bottom: none; }
-    .total-row span:first-child { color: #6b7280; font-weight: 600; }
-    .total-row span:last-child { font-weight: 700; }
-    .total-row.grand {
-        font-size: 20px;
-        font-weight: 900;
-        color: var(--pdf-primary);
-        border-top: 2px solid var(--pdf-primary);
-        border-bottom: none;
-        padding-top: 14px;
-        margin-top: 8px;
-    }
-    .total-row.grand span:first-child { color: var(--pdf-primary); }
-    .total-row.grand span:last-child { color: var(--pdf-primary); }
-
-    /* Sections (payment details, terms, notes) */
-    .section {
-        padding: 0 40px;
-        margin-bottom: 20px;
-        page-break-inside: avoid;
-    }
-    .section h3 {
-        font-size: 14px;
-        font-weight: 800;
-        color: var(--pdf-heading);
-        margin-bottom: 12px;
-        padding-bottom: 6px;
-        border-bottom: 2px solid var(--pdf-primary);
-        text-transform: uppercase;
-    }
-    .section p {
-        font-size: 13px;
-        color: #374151;
-        line-height: 1.7;
-    }
-
-    /* Print styles */
-    @media print {
-        body { background: #fff; }
-        .page {
-            margin: 0;
-            width: 100%;
-            min-height: auto;
-            box-shadow: none;
-            border-radius: 0;
-        }
-        .no-print { display: none !important; }
-        .header { page-break-inside: avoid; }
-        .details { page-break-inside: avoid; }
-        .totals { page-break-inside: avoid; }
-        .items-table thead {
-            display: table-header-group;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .items-table tbody tr { page-break-inside: avoid; }
-        .items-table thead th {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-    }
-    @page {
-        size: A4;
-        margin: 10mm 0;
+        border-radius: 0;
     }
 
     /* Print toolbar */
@@ -436,8 +239,8 @@ try {
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     .print-bar button {
-        background: var(--pdf-primary);
-        color: #000;
+        background: var(--accent-qi);
+        color: #fff;
         border: none;
         padding: 8px 20px;
         font-size: 13px;
@@ -453,6 +256,37 @@ try {
     }
     .print-bar a:hover { color: #fff; }
     .page-spacer { height: 50px; }
+
+    /* Print media */
+    @media print {
+        body { background: #fff; }
+        .no-print { display: none !important; }
+        .fw-qi__document {
+            width: 100%;
+            min-height: auto;
+            margin: 0;
+            box-shadow: none !important;
+            border-radius: 0;
+            page-break-after: always;
+        }
+        .fw-qi__doc-header { page-break-inside: avoid; }
+        .fw-qi__doc-details { page-break-inside: avoid; }
+        .fw-qi__doc-totals { page-break-inside: avoid; }
+        .fw-qi__doc-table thead {
+            display: table-header-group;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .fw-qi__doc-table th {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .fw-qi__doc-table tbody tr { page-break-inside: avoid; }
+    }
+    @page {
+        size: A4;
+        margin: 10mm 0;
+    }
 </style>
 </head>
 <body>
@@ -460,45 +294,34 @@ try {
 <div class="print-bar no-print">
     <button onclick="window.print()">Save as PDF / Print</button>
     <span><?= htmlspecialchars($docNumber) ?></span>
-    <a href="javascript:history.back()">← Back</a>
+    <a href="javascript:history.back()">&larr; Back</a>
 </div>
 <div class="page-spacer no-print"></div>
 
-<div class="page">
-    <!-- Header -->
-    <div class="header">
-        <div class="header-left">
-            <?php if (!empty($doc['logo_url'])): ?>
-                <img src="<?= htmlspecialchars($doc['logo_url']) ?>" alt="Logo" class="company-logo">
-            <?php endif; ?>
-            <div class="doc-type"><?= $docType ?></div>
-            <?php if (!empty($doc['company_name'])): ?>
-                <div class="company-name"><?= htmlspecialchars($doc['company_name']) ?></div>
-            <?php endif; ?>
-            <div class="company-info">
-                <?php if ($showAddress): ?>
-                    <p><?= htmlspecialchars($doc['company_address1'] ?? '') ?>
-                    <?php if (!empty($doc['company_address2'])): ?><br><?= htmlspecialchars($doc['company_address2']) ?><?php endif; ?>
-                    <br><?= htmlspecialchars($doc['company_city'] ?? '') ?>, <?= htmlspecialchars($doc['company_region'] ?? '') ?> <?= htmlspecialchars($doc['company_postal'] ?? '') ?></p>
+<main class="fw-qi__main">
+    <div class="fw-qi__document" data-template="<?= $template ?>">
+        <!-- Document Header — same HTML as invoice_view.php -->
+        <div class="fw-qi__doc-header">
+            <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">
+                <?php if (!empty($doc['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($doc['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                 <?php endif; ?>
-                <?php if ($showPhone && !empty($doc['company_phone'])): ?>
-                    <p>Tel: <?= htmlspecialchars($doc['company_phone']) ?></p>
-                <?php endif; ?>
-                <?php if ($showEmail && !empty($doc['company_email'])): ?>
-                    <p>Email: <?= htmlspecialchars($doc['company_email']) ?></p>
-                <?php endif; ?>
-                <?php if ($showWebsite && !empty($doc['website'])): ?>
-                    <p>Website: <?= htmlspecialchars($doc['website']) ?></p>
-                <?php endif; ?>
-            </div>
-        </div>
-        <div class="header-right">
-            <h2><?= htmlspecialchars($docTitle) ?></h2>
-            <?php foreach ($dates as $label => $value): ?>
-                <p><?= htmlspecialchars($label) ?>: <?= htmlspecialchars($value) ?></p>
-            <?php endforeach; ?>
-            <?php if (($showVat && !empty($doc['vat_number'])) || ($showTax && !empty($doc['tax_number'])) || ($showReg && !empty($doc['reg_number']))): ?>
-                <div class="reg-info">
+                <div class="fw-qi__doc-company">
+                    <h1 class="fw-qi__doc-title"><?= htmlspecialchars($docType) ?></h1>
+                    <?php if ($showAddress): ?>
+                        <p><?= htmlspecialchars($doc['company_address1'] ?? '') ?>
+                        <?php if (!empty($doc['company_address2'])): ?><br><?= htmlspecialchars($doc['company_address2']) ?><?php endif; ?>
+                        <br><?= htmlspecialchars($doc['company_city'] ?? '') ?>, <?= htmlspecialchars($doc['company_region'] ?? '') ?> <?= htmlspecialchars($doc['company_postal'] ?? '') ?></p>
+                    <?php endif; ?>
+                    <?php if ($showPhone && !empty($doc['company_phone'])): ?>
+                        <p>Tel: <?= htmlspecialchars($doc['company_phone']) ?></p>
+                    <?php endif; ?>
+                    <?php if ($showEmail && !empty($doc['company_email'])): ?>
+                        <p>Email: <?= htmlspecialchars($doc['company_email']) ?></p>
+                    <?php endif; ?>
+                    <?php if ($showWebsite && !empty($doc['website'])): ?>
+                        <p>Website: <?= htmlspecialchars($doc['website']) ?></p>
+                    <?php endif; ?>
                     <?php if ($showVat && !empty($doc['vat_number'])): ?>
                         <p>VAT No: <?= htmlspecialchars($doc['vat_number']) ?></p>
                     <?php endif; ?>
@@ -509,120 +332,124 @@ try {
                         <p>Reg No: <?= htmlspecialchars($doc['reg_number']) ?></p>
                     <?php endif; ?>
                 </div>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <!-- Bill To / Project -->
-    <div class="details">
-        <div class="detail-box">
-            <h3>Bill To</h3>
-            <p><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
-            <?php if (!empty($doc['customer_phone'])): ?>
-                <p>Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
-            <?php endif; ?>
-            <?php if (!empty($doc['customer_email'])): ?>
-                <p>Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
-            <?php endif; ?>
-        </div>
-        <?php if (!empty($doc['project_name'])): ?>
-            <div class="detail-box">
-                <h3>Project</h3>
-                <p><?= htmlspecialchars($doc['project_name']) ?></p>
             </div>
-        <?php endif; ?>
-    </div>
+            <div class="fw-qi__doc-meta">
+                <h2><?= htmlspecialchars($docTitle) ?></h2>
+                <?php foreach ($dates as $label => $value): ?>
+                    <p><?= htmlspecialchars($label) ?>: <?= htmlspecialchars($value) ?></p>
+                <?php endforeach; ?>
+            </div>
+        </div>
 
-    <!-- Line Items -->
-    <table class="items-table" style="margin-top:0;">
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th class="right">Qty</th>
-                <th class="right">Unit Price</th>
-                <th class="right">Line Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($lines as $li): ?>
+        <!-- Customer & Project Details -->
+        <div class="fw-qi__doc-details">
+            <div class="fw-qi__doc-detail-box">
+                <h3>Bill To</h3>
+                <p><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
+                <?php if (!empty($doc['customer_phone'])): ?>
+                    <p>Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
+                <?php endif; ?>
+                <?php if (!empty($doc['customer_email'])): ?>
+                    <p>Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
+                <?php endif; ?>
+            </div>
+            <?php if (!empty($doc['project_name'])): ?>
+                <div class="fw-qi__doc-detail-box">
+                    <h3>Project</h3>
+                    <p><?= htmlspecialchars($doc['project_name']) ?></p>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Line Items Table -->
+        <table class="fw-qi__doc-table">
+            <thead>
                 <tr>
-                    <td><?= htmlspecialchars($li['item_description']) ?></td>
-                    <td class="right"><?= number_format((float)$li['quantity'], 2) ?></td>
-                    <td class="right"><?= fmt($li['unit_price']) ?></td>
-                    <td class="right"><?= fmt($li['line_total']) ?></td>
+                    <th>Description</th>
+                    <th style="text-align:right;">Qty</th>
+                    <th style="text-align:right;">Unit Price</th>
+                    <th style="text-align:right;">Line Total</th>
                 </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                <?php foreach ($lines as $li): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($li['item_description']) ?></td>
+                        <td style="text-align:right;"><?= number_format((float)$li['quantity'], 2) ?></td>
+                        <td style="text-align:right;"><?= fmt($li['unit_price']) ?></td>
+                        <td style="text-align:right;"><?= fmt($li['line_total']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
 
-    <!-- Totals -->
-    <div class="totals">
-        <div class="total-row">
-            <span>Subtotal:</span>
-            <span><?= fmt($doc['subtotal']) ?></span>
+        <!-- Totals Summary -->
+        <div class="fw-qi__doc-totals">
+            <div class="fw-qi__doc-total-row">
+                <span>Subtotal:</span>
+                <span><?= fmt($doc['subtotal']) ?></span>
+            </div>
+            <?php if ((float)($doc['discount'] ?? 0) > 0): ?>
+                <div class="fw-qi__doc-total-row">
+                    <span>Discount:</span>
+                    <span><?= fmt($doc['discount']) ?></span>
+                </div>
+            <?php endif; ?>
+            <div class="fw-qi__doc-total-row">
+                <span>VAT (15%):</span>
+                <span><?= fmt($doc['tax']) ?></span>
+            </div>
+            <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand">
+                <span>TOTAL:</span>
+                <span><?= fmt($doc['total']) ?></span>
+            </div>
+            <?php if ($type === 'invoice' && (float)($doc['balance_due'] ?? 0) < (float)$doc['total']): ?>
+                <div class="fw-qi__doc-total-row" style="margin-top:8px;">
+                    <span>Balance Due:</span>
+                    <span><?= fmt($doc['balance_due']) ?></span>
+                </div>
+            <?php endif; ?>
         </div>
-        <?php if ((float)($doc['discount'] ?? 0) > 0): ?>
-            <div class="total-row">
-                <span>Discount:</span>
-                <span><?= fmt($doc['discount']) ?></span>
+
+        <!-- Payment & Bank Details -->
+        <?php if (!empty($doc['bank_name']) || !empty($doc['bank_account_number'])): ?>
+            <div class="fw-qi__doc-section">
+                <h3>Payment Details</h3>
+                <p>
+                    <?php if (!empty($doc['bank_name'])): ?><strong>Bank:</strong> <?= htmlspecialchars($doc['bank_name']) ?><br><?php endif; ?>
+                    <?php if (!empty($doc['bank_account_number'])): ?><strong>Account No:</strong> <?= htmlspecialchars($doc['bank_account_number']) ?><br><?php endif; ?>
+                    <?php if (!empty($doc['bank_branch_code'])): ?><strong>Branch Code:</strong> <?= htmlspecialchars($doc['bank_branch_code']) ?><br><?php endif; ?>
+                </p>
             </div>
         <?php endif; ?>
-        <div class="total-row">
-            <span>VAT (15%):</span>
-            <span><?= fmt($doc['tax']) ?></span>
-        </div>
-        <div class="total-row grand">
-            <span>TOTAL:</span>
-            <span><?= fmt($doc['total']) ?></span>
-        </div>
-        <?php if ($type === 'invoice' && (float)($doc['balance_due'] ?? 0) < (float)$doc['total']): ?>
-            <div class="total-row" style="margin-top:6px;">
-                <span>Balance Due:</span>
-                <span><?= fmt($doc['balance_due']) ?></span>
+
+        <!-- Terms -->
+        <?php if (!empty($doc['terms'])): ?>
+            <div class="fw-qi__doc-section">
+                <h3>Terms & Conditions</h3>
+                <p><?= nl2br(htmlspecialchars($doc['terms'])) ?></p>
+            </div>
+        <?php endif; ?>
+
+        <!-- Notes -->
+        <?php if (!empty($doc['notes'])): ?>
+            <div class="fw-qi__doc-section">
+                <h3>Notes</h3>
+                <p><?= nl2br(htmlspecialchars($doc['notes'])) ?></p>
+            </div>
+        <?php endif; ?>
+
+        <!-- Footer Text -->
+        <?php if (!empty($doc['invoice_footer_text'])): ?>
+            <div class="fw-qi__doc-footer">
+                <p><?= nl2br(htmlspecialchars($doc['invoice_footer_text'])) ?></p>
             </div>
         <?php endif; ?>
     </div>
-
-    <!-- Bank Details -->
-    <?php if (!empty($doc['bank_name']) || !empty($doc['bank_account_number'])): ?>
-        <div class="section">
-            <h3>Payment Details</h3>
-            <p>
-                <?php if (!empty($doc['bank_name'])): ?><strong>Bank:</strong> <?= htmlspecialchars($doc['bank_name']) ?><br><?php endif; ?>
-                <?php if (!empty($doc['bank_account_number'])): ?><strong>Account No:</strong> <?= htmlspecialchars($doc['bank_account_number']) ?><br><?php endif; ?>
-                <?php if (!empty($doc['bank_branch_code'])): ?><strong>Branch Code:</strong> <?= htmlspecialchars($doc['bank_branch_code']) ?><br><?php endif; ?>
-            </p>
-        </div>
-    <?php endif; ?>
-
-    <!-- Terms -->
-    <?php if (!empty($doc['terms'])): ?>
-        <div class="section">
-            <h3>Terms & Conditions</h3>
-            <p><?= nl2br(htmlspecialchars($doc['terms'])) ?></p>
-        </div>
-    <?php endif; ?>
-
-    <!-- Notes -->
-    <?php if (!empty($doc['notes'])): ?>
-        <div class="section">
-            <h3>Notes</h3>
-            <p><?= nl2br(htmlspecialchars($doc['notes'])) ?></p>
-        </div>
-    <?php endif; ?>
-
-    <!-- Footer -->
-    <?php if (!empty($doc['invoice_footer_text'])): ?>
-        <div class="section" style="margin-top: 30px; text-align: center; color: #888; font-size: 9px;">
-            <p><?= nl2br(htmlspecialchars($doc['invoice_footer_text'])) ?></p>
-        </div>
-    <?php endif; ?>
-</div>
+</main>
 
 <script>
-// Auto-trigger print dialog
 window.addEventListener('load', function() {
-    // Small delay to ensure styles and images are loaded
     setTimeout(function() { window.print(); }, 500);
 });
 </script>
