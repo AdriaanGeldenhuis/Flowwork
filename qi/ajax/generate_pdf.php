@@ -156,6 +156,15 @@ try {
     $tableHeaderText  = $doc['qi_table_header_text'] ?: '#ffffff';
     $bgColor          = $doc['qi_bg_color'] ?: '#ffffff';
 
+    // Compute rgba versions of primary colour for backgrounds/borders
+    $pHex = ltrim($primaryColor, '#');
+    $pR = hexdec(substr($pHex, 0, 2));
+    $pG = hexdec(substr($pHex, 2, 2));
+    $pB = hexdec(substr($pHex, 4, 2));
+    $primaryRgba = function($alpha) use ($pR, $pG, $pB) {
+        return "rgba({$pR},{$pG},{$pB},{$alpha})";
+    };
+
 } catch (Exception $e) {
     http_response_code(500);
     echo 'Error: ' . htmlspecialchars($e->getMessage());
@@ -174,6 +183,10 @@ try {
         --pdf-text: <?= htmlspecialchars($textColor) ?>;
         --pdf-th-text: <?= htmlspecialchars($tableHeaderText) ?>;
         --pdf-bg: <?= htmlspecialchars($bgColor) ?>;
+        --pdf-primary-005: <?= $primaryRgba(0.05) ?>;
+        --pdf-primary-004: <?= $primaryRgba(0.04) ?>;
+        --pdf-primary-008: <?= $primaryRgba(0.08) ?>;
+        --pdf-primary-02: <?= $primaryRgba(0.2) ?>;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -199,7 +212,7 @@ try {
         gap: 40px;
         padding: 36px 40px;
         border-bottom: 4px solid var(--pdf-primary);
-        background: linear-gradient(135deg, rgba(212,160,23,0.05) 0%, transparent 100%);
+        background: linear-gradient(135deg, var(--pdf-primary-005) 0%, transparent 100%);
     }
     .header-left {
         display: flex;
@@ -323,16 +336,16 @@ try {
         page-break-inside: avoid;
     }
     .items-table tbody td.right { text-align: right; }
-    .items-table tbody tr:hover { background: rgba(212,160,23,0.04); }
+    .items-table tbody tr:hover { background: var(--pdf-primary-004); }
 
     /* Totals */
     .totals {
         max-width: 380px;
         margin: 24px 40px 24px auto;
         padding: 20px;
-        background: rgba(212,160,23,0.08);
+        background: var(--pdf-primary-008);
         border-radius: 8px;
-        border: 2px solid rgba(212,160,23,0.2);
+        border: 2px solid var(--pdf-primary-02);
     }
     .total-row {
         display: flex;
@@ -432,7 +445,7 @@ try {
         border-radius: 4px;
         cursor: pointer;
     }
-    .print-bar button:hover { background: #c4900f; }
+    .print-bar button:hover { opacity: 0.85; }
     .print-bar a {
         color: #aaa;
         text-decoration: none;
