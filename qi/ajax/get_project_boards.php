@@ -20,7 +20,7 @@ try {
     }
 
     // Fetch boards for this project and company
-    $stmt = $pdo->prepare("SELECT board_id, name FROM project_boards WHERE project_id = ? AND company_id = ? ORDER BY name");
+    $stmt = $pdo->prepare("SELECT board_id, title AS name FROM project_boards WHERE project_id = ? AND company_id = ? ORDER BY title");
     $stmt->execute([$projectId, $companyId]);
     $boards = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

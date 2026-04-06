@@ -50,6 +50,7 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
     <title>New Invoice – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <!-- Expose inventory items to the client-side JS -->
@@ -309,7 +310,10 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
 
                 const res = await fetch('/qi/ajax/save_invoice.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    },
                     body: JSON.stringify(payload)
                 });
                 const data = await res.json();

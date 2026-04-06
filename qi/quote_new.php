@@ -58,6 +58,7 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
     <title><?= $editMode ? 'Edit Quote' : 'New Quote' ?> – <?= htmlspecialchars($company['name']) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <style>
