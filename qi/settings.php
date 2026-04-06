@@ -131,6 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Q&I Settings – <?= htmlspecialchars($company['name']) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <style>
@@ -229,6 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- COMPANY TAB -->
             <div class="fw-qi__settings-panel fw-qi__settings-panel--active" data-panel="company">
                 <form method="POST" class="fw-qi__settings-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_company">
                     
                     <div class="fw-qi__form-section">
@@ -306,6 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- BANKING TAB -->
             <div class="fw-qi__settings-panel" data-panel="banking">
                 <form method="POST" class="fw-qi__settings-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_banking">
                     <div class="fw-qi__form-section">
                         <h3 class="fw-qi__form-section-title">Banking Details</h3>
@@ -331,6 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- BRANDING TAB -->
             <div class="fw-qi__settings-panel" data-panel="branding">
                 <form method="POST" class="fw-qi__settings-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_branding">
                     
                     <div class="fw-qi__form-section">
@@ -567,6 +571,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         // Tab switching

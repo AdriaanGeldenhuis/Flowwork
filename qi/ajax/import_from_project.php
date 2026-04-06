@@ -2,8 +2,8 @@
 // /qi/ajax/import_from_project.php
 // Import line items from a project board into a quote or invoice
 
+require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
-require_once __DIR__ . '/../../db.php';
 
 header('Content-Type: application/json');
 
@@ -25,7 +25,7 @@ if (!$boardId || !$companyId) {
 try {
     // Verify board belongs to current company via project association
     // project_boards table has board_id, project_id, company_id
-    $stmt = $pdo->prepare("SELECT pb.project_id, p.name AS project_name FROM project_boards pb JOIN projects p ON pb.project_id = p.project_id WHERE pb.board_id = ? AND pb.company_id = ? AND p.company_id = ? LIMIT 1");
+    $stmt = $DB->prepare("SELECT pb.project_id, p.name AS project_name FROM project_boards pb JOIN projects p ON pb.project_id = p.project_id WHERE pb.board_id = ? AND pb.company_id = ? AND p.company_id = ? LIMIT 1");
     $stmt->execute([$boardId, $companyId, $companyId]);
     $boardInfo = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$boardInfo) {
@@ -34,7 +34,7 @@ try {
     }
 
     // Fetch numeric columns for this board
-    $stmtCols = $pdo->prepare("SELECT column_id, name FROM board_columns WHERE board_id = ? AND type = 'number' ORDER BY column_id");
+    $stmtCols = $DB->prepare("SELECT column_id, name FROM board_columns WHERE board_id = ? AND type = 'number' ORDER BY column_id");
     $stmtCols->execute([$boardId]);
     $cols = $stmtCols->fetchAll(PDO::FETCH_ASSOC);
     $quantityCol = null;
@@ -69,7 +69,7 @@ try {
     // Determine default tax rate from qi_settings if available
     $defaultTaxRate = 15.0;
     try {
-        $stmtTax = $pdo->prepare("SELECT default_tax_rate FROM qi_settings WHERE company_id = ? LIMIT 1");
+        $stmtTax = $DB->prepare("SELECT default_tax_rate FROM qi_settings WHERE company_id = ? LIMIT 1");
         $stmtTax->execute([$companyId]);
         $row = $stmtTax->fetch(PDO::FETCH_ASSOC);
         if ($row && is_numeric($row['default_tax_rate'])) {
@@ -80,12 +80,12 @@ try {
     }
 
     // Fetch board items and their values
-    $stmtItems = $pdo->prepare("SELECT id, title FROM board_items WHERE board_id = ? AND (status IS NULL OR status NOT IN ('archived','deleted')) ORDER BY id");
+    $stmtItems = $DB->prepare("SELECT id, title FROM board_items WHERE board_id = ? AND (status IS NULL OR status NOT IN ('archived','deleted')) ORDER BY id");
     $stmtItems->execute([$boardId]);
     $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
     $results = [];
-    $stmtVals = $pdo->prepare("SELECT column_id, value FROM board_item_values WHERE item_id = ?");
+    $stmtVals = $DB->prepare("SELECT column_id, value FROM board_item_values WHERE item_id = ?");
     foreach ($items as $item) {
         $itemId = (int)$item['id'];
         $title = trim($item['title'] ?? '');

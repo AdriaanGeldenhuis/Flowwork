@@ -5,12 +5,30 @@ const InvoiceView = {
     customerEmail: '',
     customerName: '',
     balanceDue: 0,
+    hasMilestones: false,
 
     init: function (opts) {
         this.invoiceId = opts.invoiceId || null;
         this.customerEmail = opts.customerEmail || '';
         this.customerName = opts.customerName || '';
         this.balanceDue = opts.balanceDue || 0;
+        this.hasMilestones = opts.hasMilestones || false;
+    },
+
+    /**
+     * When a milestone is selected in the payment modal, pre-fill the amount
+     */
+    onMilestoneSelect: function() {
+        const select = document.getElementById('milestoneSelect');
+        if (!select) return;
+        const option = select.options[select.selectedIndex];
+        const remaining = option?.dataset?.remaining;
+        if (remaining && parseFloat(remaining) > 0) {
+            const amountInput = document.querySelector('#paymentForm input[name="amount"]');
+            if (amountInput) {
+                amountInput.value = remaining;
+            }
+        }
     },
 
     async sendInvoice() {
@@ -175,6 +193,10 @@ const InvoiceView = {
             submitBtn.textContent = 'Recording...';
         }
         try {
+            // Get milestone selection if present
+            const milestoneSelect = document.getElementById('milestoneSelect');
+            const milestoneId = milestoneSelect ? milestoneSelect.value || null : null;
+
             const res = await fetch('/qi/ajax/record_payment.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -184,7 +206,8 @@ const InvoiceView = {
                     amount: amount,
                     method: method,
                     reference: reference,
-                    notes: notes
+                    notes: notes,
+                    milestone_id: milestoneId
                 })
             });
             const data = await res.json();

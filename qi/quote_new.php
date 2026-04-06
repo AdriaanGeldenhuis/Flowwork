@@ -58,6 +58,7 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= $editMode ? 'Edit Quote' : 'New Quote' ?> – <?= htmlspecialchars($company['name']) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <style>
@@ -213,6 +214,29 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
                 </div>
 
                 <div class="fw-qi__form-section">
+                    <h3 class="fw-qi__form-section-title">Payment Milestones</h3>
+                    <div class="fw-qi__milestone-toggle">
+                        <label class="fw-qi__checkbox-label">
+                            <input type="checkbox" id="enableMilestones" onchange="QI.toggleMilestones()">
+                            <span>Enable payment phases (deposit & percentage-based payments)</span>
+                        </label>
+                    </div>
+                    <div id="milestonesSection" style="display:none;">
+                        <div id="milestonesContainer"></div>
+                        <div class="fw-qi__milestone-actions">
+                            <button type="button" class="fw-qi__btn fw-qi__btn--secondary fw-qi__btn--small" onclick="QI.addMilestone()">+ Add Phase</button>
+                        </div>
+                        <div class="fw-qi__milestone-summary">
+                            <div class="fw-qi__milestone-summary-row">
+                                <span>Total allocated:</span>
+                                <strong id="milestoneTotalPct">0%</strong>
+                            </div>
+                            <div id="milestoneValidation" class="fw-qi__milestone-validation" style="display:none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fw-qi__form-section">
                     <h3 class="fw-qi__form-section-title">Terms & Notes</h3>
                     
                     <div class="fw-qi__form-group">
@@ -244,6 +268,7 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
 
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <!-- Quote-specific logic -->
     <script>

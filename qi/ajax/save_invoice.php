@@ -173,13 +173,67 @@ try {
             ]);
         }
     }
-    
+
+    // Handle payment milestones
+    $milestones = $input['milestones'] ?? [];
+    $hasMilestones = !empty($milestones) && is_array($milestones) ? 1 : 0;
+
+    if ($hasMilestones) {
+        // Calculate total allocated (supports both percentage and fixed amounts)
+        $totalAllocated = 0;
+        foreach ($milestones as $ms) {
+            if (isset($ms['fixed_amount']) && $ms['fixed_amount'] !== null) {
+                $totalAllocated += floatval($ms['fixed_amount']);
+            } else {
+                $totalAllocated += $totalCalc * (floatval($ms['percentage'] ?? 0) / 100);
+            }
+        }
+        $allocatedPct = $totalCalc > 0 ? ($totalAllocated / $totalCalc) * 100 : 0;
+        if (abs($allocatedPct - 100) > 0.01) {
+            throw new Exception('Milestone amounts must add up to 100% of total (currently ' . round($allocatedPct, 2) . '%)');
+        }
+
+        // Delete existing milestones on edit
+        if ($editMode) {
+            $stmt = $DB->prepare("DELETE FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ?");
+            $stmt->execute([$invoiceId, $companyId]);
+        }
+
+        // Insert milestones (first milestone starts as 'due', rest as 'pending')
+        $msStmt = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('invoice', ?, ?, ?, ?, ?, ?, ?, ?)");
+        foreach ($milestones as $idx => $ms) {
+            if (isset($ms['fixed_amount']) && $ms['fixed_amount'] !== null) {
+                $msAmount = round(floatval($ms['fixed_amount']), 2);
+                $pct = $totalCalc > 0 ? round(($msAmount / $totalCalc) * 100, 2) : 0;
+            } else {
+                $pct = floatval($ms['percentage'] ?? 0);
+                $msAmount = round($totalCalc * ($pct / 100), 2);
+            }
+            $msDueDate = !empty($ms['due_date']) ? $ms['due_date'] : null;
+            $msStatus = ($idx === 0) ? 'due' : 'pending';
+            $msStmt->execute([
+                $invoiceId,
+                $companyId,
+                $ms['label'] ?? ('Phase ' . ($idx + 1)),
+                $pct,
+                $msAmount,
+                $msDueDate,
+                $msStatus,
+                $idx
+            ]);
+        }
+    }
+
+    // Update has_milestones flag
+    $stmt = $DB->prepare("UPDATE invoices SET has_milestones = ? WHERE id = ?");
+    $stmt->execute([$hasMilestones, $invoiceId]);
+
     $DB->commit();
 
     // After invoice is saved, post journal entry to general ledger (Section 11).
     try {
         // JournalPoster is located under qi/services; relative to this file go two levels up
-        require_once __DIR__ . '/../../services/JournalPoster.php';
+        require_once __DIR__ . '/../services/JournalPoster.php';
         $poster = new JournalPoster($DB, $companyId, $userId);
         $poster->postInvoice($invoiceId);
     } catch (Exception $e) {
@@ -195,17 +249,20 @@ try {
 
 } catch (Exception $e) {
     $DB->rollBack();
-    error_log("Save invoice error: " . $e->getMessage());
-    $safeMsg = ($e instanceof PDOException)
-        ? 'A database error occurred. Please try again.'
-        : $e->getMessage();
+    error_log("Save invoice error: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
+    if ($e instanceof PDOException) {
+        // Include the SQL error code for debugging
+        $safeMsg = 'A database error occurred: ' . $e->getMessage();
+    } else {
+        $safeMsg = $e->getMessage();
+    }
     echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
 
 // After the invoice has been saved and committed, hook into the calendar to create/update due events.
 if (isset($invoiceId) && isset($companyId) && isset($userId) && $invoiceId) {
     try {
-        require_once __DIR__ . '/../../services/CalendarHook.php';
+        require_once __DIR__ . '/../services/CalendarHook.php';
         $calendarHook = new CalendarHook($DB);
         // Fetch invoice number and due date
         $stmtInfo = $DB->prepare("SELECT invoice_number, due_date FROM invoices WHERE id = ? AND company_id = ?");

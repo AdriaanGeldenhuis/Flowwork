@@ -76,6 +76,14 @@ try {
     $stmt->execute([$quoteId]);
     $lines = $stmt->fetchAll();
 
+    // Fetch payment milestones
+    $milestones = [];
+    if (!empty($quote['has_milestones'])) {
+        $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+        $stmt->execute([$quoteId, $companyId]);
+        $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
@@ -117,6 +125,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($quote['quote_number']) ?> – <?= htmlspecialchars($quote['company_name']) ?></title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -352,6 +361,33 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
                         <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span>R <?= number_format($quote['total'], 2) ?></span></div>
                     </div>
                 </div>
+
+                <!-- Payment Milestones -->
+                <?php if (!empty($milestones)): ?>
+                    <div class="fw-qi__doc-section fw-qi__milestones-view">
+                        <h3>Payment Schedule</h3>
+                        <table class="fw-qi__doc-table fw-qi__milestones-table">
+                            <thead>
+                                <tr>
+                                    <th>Phase</th>
+                                    <th style="text-align:right;">%</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th>Due Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($milestones as $ms): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($ms['label']) ?></td>
+                                        <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
+                                        <td style="text-align:right;">R <?= number_format($ms['amount'], 2) ?></td>
+                                        <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
 
                 <?php if ($quote['terms']): ?>
                     <div class="fw-qi__doc-section">

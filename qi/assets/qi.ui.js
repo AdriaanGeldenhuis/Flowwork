@@ -1,6 +1,31 @@
 // qi/assets/qi.ui.js - Shared UI utilities
 // Provides basic confirm and toast helpers and a JSON fetch wrapper
 
+// Auto-inject CSRF token into all POST/PUT/DELETE/PATCH fetch requests
+(function() {
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+        options = options || {};
+        const method = (options.method || 'GET').toUpperCase();
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            if (csrfToken) {
+                if (options.headers instanceof Headers) {
+                    if (!options.headers.has('X-CSRF-Token')) {
+                        options.headers.set('X-CSRF-Token', csrfToken);
+                    }
+                } else {
+                    options.headers = options.headers || {};
+                    if (!options.headers['X-CSRF-Token']) {
+                        options.headers['X-CSRF-Token'] = csrfToken;
+                    }
+                }
+            }
+        }
+        return originalFetch.call(this, url, options);
+    };
+})();
+
 const UI = {
     /**
      * Display a confirm dialog. Returns true if user confirms.

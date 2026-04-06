@@ -52,6 +52,7 @@ $issueDate = date('Y-m-d');
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>New Credit Note – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -180,6 +181,7 @@ $issueDate = date('Y-m-d');
         </footer>
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi-form.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
@@ -214,8 +216,10 @@ $issueDate = date('Y-m-d');
 
             try {
                 const formData = new FormData(this);
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                 const res = await fetch('/qi/ajax/save_credit_note.php', {
                     method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData
                 });
 

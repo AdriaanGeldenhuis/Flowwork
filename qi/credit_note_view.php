@@ -56,6 +56,7 @@ $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($creditNote['credit_note_number']) ?> – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -196,6 +197,7 @@ $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
         </footer>
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         window.CNView = {

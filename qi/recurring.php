@@ -41,6 +41,7 @@ $customers = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Recurring Invoices – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -271,6 +272,7 @@ $customers = $stmt->fetchAll();
         </div>
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         window.RecurringView = {
@@ -356,8 +358,10 @@ $customers = $stmt->fetchAll();
 
                 try {
                     const formData = new FormData(form);
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
                     const res = await fetch('/qi/ajax/save_recurring.php', {
                         method: 'POST',
+                        headers: { 'X-CSRF-Token': csrfToken },
                         body: formData
                     });
 

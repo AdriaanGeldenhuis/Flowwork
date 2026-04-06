@@ -143,6 +143,200 @@ window.QI = window.QI || {};
     document.getElementById('inputDiscount').value = totalDiscount.toFixed(2);
     document.getElementById('inputTax').value = totalTax.toFixed(2);
     document.getElementById('inputTotal').value = grandTotal.toFixed(2);
+
+    // Recalculate milestone amounts when total changes
+    if (document.getElementById('enableMilestones')?.checked) {
+      QI.calculateMilestones();
+    }
+  };
+
+  // ========== MILESTONES ==========
+  let milestoneCounter = 0;
+
+  QI.toggleMilestones = function() {
+    const enabled = document.getElementById('enableMilestones')?.checked;
+    const section = document.getElementById('milestonesSection');
+    if (!section) return;
+
+    section.style.display = enabled ? 'block' : 'none';
+
+    // Add default milestones when first enabled
+    if (enabled && document.querySelectorAll('.fw-qi__milestone-row').length === 0) {
+      QI.addMilestone('Deposit', 50);
+      QI.addMilestone('Final Payment', 50);
+    }
+  };
+
+  QI.addMilestone = function(defaultLabel, defaultPct, defaultAmount) {
+    milestoneCounter++;
+    const container = document.getElementById('milestonesContainer');
+    if (!container) return;
+
+    const row = document.createElement('div');
+    row.className = 'fw-qi__milestone-row';
+    row.dataset.milestoneId = milestoneCounter;
+
+    row.innerHTML = `
+      <div class="fw-qi__milestone-fields">
+        <div class="fw-qi__form-group">
+          <label class="fw-qi__label">Phase Name</label>
+          <input type="text" class="fw-qi__input ms-label" value="${defaultLabel || ''}" placeholder="e.g. Deposit, Progress, Final" required>
+        </div>
+        <div class="fw-qi__form-group">
+          <label class="fw-qi__label">Type</label>
+          <select class="fw-qi__input ms-type" onchange="QI.onMilestoneTypeChange(${milestoneCounter})">
+            <option value="percentage" ${!defaultAmount ? 'selected' : ''}>Percentage (%)</option>
+            <option value="fixed" ${defaultAmount ? 'selected' : ''}>Fixed Amount (R)</option>
+          </select>
+        </div>
+        <div class="fw-qi__form-group ms-pct-group" ${defaultAmount ? 'style="display:none;"' : ''}>
+          <label class="fw-qi__label">Percentage (%)</label>
+          <input type="number" class="fw-qi__input ms-percentage" value="${defaultPct || ''}" step="0.01" min="0.01" max="100" placeholder="e.g. 50">
+        </div>
+        <div class="fw-qi__form-group ms-fixed-group" ${!defaultAmount ? 'style="display:none;"' : ''}>
+          <label class="fw-qi__label">Amount (R)</label>
+          <input type="number" class="fw-qi__input ms-fixed-amount" value="${defaultAmount || ''}" step="0.01" min="0.01" placeholder="e.g. 5000">
+        </div>
+        <div class="fw-qi__form-group">
+          <label class="fw-qi__label">Due Date</label>
+          <input type="date" class="fw-qi__input ms-due-date">
+        </div>
+        <div class="fw-qi__form-group">
+          <label class="fw-qi__label">Calculated</label>
+          <div class="fw-qi__milestone-amount" data-ms-id="${milestoneCounter}">R 0.00</div>
+        </div>
+        <div class="fw-qi__form-group fw-qi__milestone-remove-col">
+          <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="QI.removeMilestone(${milestoneCounter})">Remove</button>
+        </div>
+      </div>
+    `;
+
+    container.appendChild(row);
+
+    // Attach listeners
+    row.querySelector('.ms-percentage').addEventListener('input', QI.calculateMilestones);
+    row.querySelector('.ms-fixed-amount').addEventListener('input', QI.calculateMilestones);
+    QI.calculateMilestones();
+  };
+
+  QI.onMilestoneTypeChange = function(msId) {
+    const row = document.querySelector(`.fw-qi__milestone-row[data-milestone-id="${msId}"]`);
+    if (!row) return;
+    const type = row.querySelector('.ms-type').value;
+    const pctGroup = row.querySelector('.ms-pct-group');
+    const fixedGroup = row.querySelector('.ms-fixed-group');
+    if (type === 'percentage') {
+      pctGroup.style.display = '';
+      fixedGroup.style.display = 'none';
+    } else {
+      pctGroup.style.display = 'none';
+      fixedGroup.style.display = '';
+    }
+    QI.calculateMilestones();
+  };
+
+  QI.removeMilestone = function(msId) {
+    const row = document.querySelector(`.fw-qi__milestone-row[data-milestone-id="${msId}"]`);
+    if (row) {
+      row.remove();
+      QI.calculateMilestones();
+    }
+  };
+
+  QI.calculateMilestones = function() {
+    const grandTotal = parseFloat(document.getElementById('inputTotal')?.value) || 0;
+    let totalAllocated = 0;
+
+    document.querySelectorAll('.fw-qi__milestone-row').forEach(function(row) {
+      const msId = row.dataset.milestoneId;
+      const type = row.querySelector('.ms-type')?.value || 'percentage';
+      let amount = 0;
+
+      if (type === 'percentage') {
+        const pct = parseFloat(row.querySelector('.ms-percentage')?.value) || 0;
+        amount = grandTotal * (pct / 100);
+      } else {
+        amount = parseFloat(row.querySelector('.ms-fixed-amount')?.value) || 0;
+      }
+
+      totalAllocated += amount;
+
+      const amountDisplay = document.querySelector(`.fw-qi__milestone-amount[data-ms-id="${msId}"]`);
+      if (amountDisplay) {
+        amountDisplay.textContent = 'R ' + amount.toFixed(2);
+      }
+    });
+
+    // Calculate effective percentage of total
+    const totalPct = grandTotal > 0 ? (totalAllocated / grandTotal) * 100 : 0;
+
+    // Update summary
+    const pctDisplay = document.getElementById('milestoneTotalPct');
+    if (pctDisplay) {
+      pctDisplay.textContent = totalPct.toFixed(2) + '% (R ' + totalAllocated.toFixed(2) + ')';
+      pctDisplay.style.color = Math.abs(totalPct - 100) < 0.01 ? 'var(--accent-qi, #10b981)' : '#ef4444';
+    }
+
+    // Validation message
+    const validationEl = document.getElementById('milestoneValidation');
+    if (validationEl) {
+      if (Math.abs(totalPct - 100) < 0.01) {
+        validationEl.style.display = 'none';
+      } else if (totalPct < 100) {
+        validationEl.textContent = `${(100 - totalPct).toFixed(2)}% (R ${(grandTotal - totalAllocated).toFixed(2)}) still unallocated`;
+        validationEl.style.display = 'block';
+      } else {
+        validationEl.textContent = `${(totalPct - 100).toFixed(2)}% (R ${(totalAllocated - grandTotal).toFixed(2)}) over-allocated`;
+        validationEl.style.display = 'block';
+      }
+    }
+  };
+
+  QI.validateMilestones = function() {
+    const grandTotal = parseFloat(document.getElementById('inputTotal')?.value) || 0;
+    let totalAllocated = 0;
+
+    document.querySelectorAll('.fw-qi__milestone-row').forEach(function(row) {
+      const type = row.querySelector('.ms-type')?.value || 'percentage';
+      if (type === 'percentage') {
+        const pct = parseFloat(row.querySelector('.ms-percentage')?.value) || 0;
+        totalAllocated += grandTotal * (pct / 100);
+      } else {
+        totalAllocated += parseFloat(row.querySelector('.ms-fixed-amount')?.value) || 0;
+      }
+    });
+
+    const totalPct = grandTotal > 0 ? (totalAllocated / grandTotal) * 100 : 0;
+    return Math.abs(totalPct - 100) < 0.01;
+  };
+
+  QI.collectMilestones = function() {
+    const enabled = document.getElementById('enableMilestones')?.checked;
+    if (!enabled) return [];
+
+    const grandTotal = parseFloat(document.getElementById('inputTotal')?.value) || 0;
+    const milestones = [];
+    document.querySelectorAll('.fw-qi__milestone-row').forEach(function(row) {
+      const type = row.querySelector('.ms-type')?.value || 'percentage';
+      let percentage, fixedAmount;
+
+      if (type === 'percentage') {
+        percentage = parseFloat(row.querySelector('.ms-percentage')?.value) || 0;
+        fixedAmount = null;
+      } else {
+        fixedAmount = parseFloat(row.querySelector('.ms-fixed-amount')?.value) || 0;
+        // Calculate equivalent percentage for the backend
+        percentage = grandTotal > 0 ? (fixedAmount / grandTotal) * 100 : 0;
+      }
+
+      milestones.push({
+        label: row.querySelector('.ms-label')?.value || '',
+        percentage: percentage,
+        fixed_amount: fixedAmount,
+        due_date: row.querySelector('.ms-due-date')?.value || null
+      });
+    });
+    return milestones;
   };
 
   // ========== FORM SUBMIT ==========
@@ -171,10 +365,53 @@ window.QI = window.QI || {};
       btnSave.querySelector('.fw-qi__spinner').style.display = 'inline-block';
 
       try {
-        const formData = new FormData(form);
+        // Build JSON payload (matches save_quote.php expected format)
+        const payload = {};
+        payload.customer_id = form.querySelector('[name="customer_id"]')?.value || '';
+        payload.contact_id = form.querySelector('[name="contact_id"]')?.value || null;
+        payload.project_id = form.querySelector('[name="project_id"]')?.value || null;
+        payload.issue_date = form.querySelector('[name="issue_date"]')?.value || '';
+        payload.expiry_date = form.querySelector('[name="expiry_date"]')?.value || '';
+        payload.subtotal = parseFloat(document.getElementById('inputSubtotal')?.value) || 0;
+        payload.discount = parseFloat(document.getElementById('inputDiscount')?.value) || 0;
+        payload.tax = parseFloat(document.getElementById('inputTax')?.value) || 0;
+        payload.total = parseFloat(document.getElementById('inputTotal')?.value) || 0;
+        payload.terms = form.querySelector('[name="terms"]')?.value || '';
+        payload.notes = form.querySelector('[name="notes"]')?.value || '';
+
+        // Check for edit mode
+        const editQuoteId = form.querySelector('[name="quote_id"]');
+        const editModeInput = form.querySelector('[name="edit_mode"]');
+        if (editQuoteId) payload.quote_id = editQuoteId.value;
+        if (editModeInput) payload.edit_mode = editModeInput.value;
+
+        // Collect line items
+        payload.line_items = [];
+        document.querySelectorAll('.fw-qi__line-item').forEach(function(lineDiv) {
+          const description = lineDiv.querySelector('input[name*="[description]"]')?.value || '';
+          const quantity = parseFloat(lineDiv.querySelector('.line-quantity')?.value) || 0;
+          const unit_price = parseFloat(lineDiv.querySelector('.line-price')?.value) || 0;
+          const line_total = quantity * unit_price;
+          payload.line_items.push({ description, quantity, unit_price, line_total });
+        });
+
+        // Include milestones if enabled
+        payload.milestones = QI.collectMilestones();
+        if (payload.milestones.length > 0 && !QI.validateMilestones()) {
+          showMessage('Payment milestone percentages must add up to 100%', 'error');
+          btnSave.disabled = false;
+          btnSave.querySelector('.fw-qi__btn-text').style.display = 'inline';
+          btnSave.querySelector('.fw-qi__spinner').style.display = 'none';
+          return;
+        }
+
         const res = await fetch('/qi/ajax/save_quote.php', {
           method: 'POST',
-          body: formData
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+          },
+          body: JSON.stringify(payload)
         });
 
         const data = await res.json();

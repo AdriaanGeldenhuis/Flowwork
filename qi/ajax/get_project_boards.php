@@ -2,8 +2,8 @@
 // /qi/ajax/get_project_boards.php
 // Returns a list of boards for a given project belonging to the current company
 
+require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
-require_once __DIR__ . '/../../db.php';
 
 header('Content-Type: application/json');
 
@@ -20,7 +20,7 @@ try {
     }
 
     // Fetch boards for this project and company
-    $stmt = $pdo->prepare("SELECT board_id, name FROM project_boards WHERE project_id = ? AND company_id = ? ORDER BY name");
+    $stmt = $DB->prepare("SELECT board_id, title AS name FROM project_boards WHERE project_id = ? AND company_id = ? ORDER BY title");
     $stmt->execute([$projectId, $companyId]);
     $boards = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

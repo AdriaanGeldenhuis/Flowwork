@@ -8,6 +8,37 @@ define('ASSET_VERSION', '2025-01-21-QI-1');
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
 
+// Check edit mode
+$editMode = false;
+$editInvoiceId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
+$invoiceData = null;
+$editLineItems = [];
+$editMilestones = [];
+
+if ($editInvoiceId) {
+    $stmt = $DB->prepare("
+        SELECT * FROM invoices
+        WHERE id = ? AND company_id = ? AND status = 'draft'
+    ");
+    $stmt->execute([$editInvoiceId, $companyId]);
+    $invoiceData = $stmt->fetch();
+
+    if (!$invoiceData) {
+        header('Location: /qi/');
+        exit;
+    }
+
+    $editMode = true;
+
+    $stmt = $DB->prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
+    $stmt->execute([$editInvoiceId]);
+    $editLineItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+    $stmt->execute([$editInvoiceId, $companyId]);
+    $editMilestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // Fetch user/company info
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
 $stmt->execute([$userId]);
@@ -42,18 +73,28 @@ $qiSettings = $stmt->fetch();
 $defaultPaymentTerms = isset($qiSettings['default_payment_terms']) && is_numeric($qiSettings['default_payment_terms']) ? (int)$qiSettings['default_payment_terms'] : 30;
 $defaultTerms = $qiSettings['default_terms'] ?? '';
 
-$issueDate = date('Y-m-d');
-$dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
+$issueDate = $editMode ? $invoiceData['issue_date'] : date('Y-m-d');
+$dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Invoice – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <title><?= $editMode ? 'Edit Invoice' : 'New Invoice' ?> – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <!-- Expose inventory items to the client-side JS -->
     <script>window.FW_INV_ITEMS = <?= json_encode($INV_ITEMS) ?>;</script>
+    <?php if ($editMode): ?>
+    <script>
+    window.EDIT_INVOICE_DATA = {
+        invoice: <?= json_encode($invoiceData) ?>,
+        lineItems: <?= json_encode($editLineItems) ?>,
+        milestones: <?= json_encode($editMilestones) ?>
+    };
+    </script>
+    <?php endif; ?>
 </head>
 <body class="fw-qi">
     <div class="fw-qi__container">
@@ -69,7 +110,7 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                 </div>
                 <div class="fw-qi__brand-text">
                     <div class="fw-qi__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-qi__app-name">New Invoice</div>
+                    <div class="fw-qi__app-name"><?= $editMode ? 'Edit Invoice' : 'New Invoice' ?></div>
                 </div>
             </div>
 
@@ -97,7 +138,10 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
 
         <main class="fw-qi__main">
             <div class="fw-qi__form-header">
-                <h1 class="fw-qi__form-title">Create New Invoice</h1>
+                <h1 class="fw-qi__form-title"><?= $editMode ? 'Edit Invoice' : 'Create New Invoice' ?></h1>
+                <?php if ($editMode): ?>
+                    <p class="fw-qi__form-subtitle">Editing: <?= htmlspecialchars($invoiceData['invoice_number']) ?></p>
+                <?php endif; ?>
             </div>
 
             <form id="invoiceForm" class="fw-qi__form">
@@ -111,7 +155,7 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                             <select name="customer_id" class="fw-qi__input" required>
                                 <option value="">Select Customer...</option>
                                 <?php foreach ($customers as $c): ?>
-                                    <option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
+                                    <option value="<?= $c['id'] ?>" <?= ($editMode && $invoiceData['customer_id'] == $c['id']) ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -121,7 +165,7 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                             <select name="project_id" class="fw-qi__input">
                                 <option value="">None</option>
                                 <?php foreach ($projects as $p): ?>
-                                    <option value="<?= $p['project_id'] ?>"><?= htmlspecialchars($p['name']) ?></option>
+                                    <option value="<?= $p['project_id'] ?>" <?= ($editMode && $invoiceData['project_id'] == $p['project_id']) ? 'selected' : '' ?>><?= htmlspecialchars($p['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -186,24 +230,52 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                 </div>
 
                 <div class="fw-qi__form-section">
+                    <h2 class="fw-qi__form-section-title">Payment Milestones</h2>
+                    <div class="fw-qi__milestone-toggle">
+                        <label class="fw-qi__checkbox-label">
+                            <input type="checkbox" id="enableMilestones" onchange="QI.toggleMilestones()">
+                            <span>Enable payment phases (deposit & percentage-based payments)</span>
+                        </label>
+                    </div>
+                    <div id="milestonesSection" style="display:none;">
+                        <div id="milestonesContainer"></div>
+                        <div class="fw-qi__milestone-actions">
+                            <button type="button" class="fw-qi__btn fw-qi__btn--secondary fw-qi__btn--small" onclick="QI.addMilestone()">+ Add Phase</button>
+                        </div>
+                        <div class="fw-qi__milestone-summary">
+                            <div class="fw-qi__milestone-summary-row">
+                                <span>Total allocated:</span>
+                                <strong id="milestoneTotalPct">0%</strong>
+                            </div>
+                            <div id="milestoneValidation" class="fw-qi__milestone-validation" style="display:none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fw-qi__form-section">
                     <h2 class="fw-qi__form-section-title">Terms & Notes</h2>
                     <div class="fw-qi__form-group">
                         <label class="fw-qi__label">Payment Terms</label>
-                        <textarea name="terms" class="fw-qi__textarea" rows="4" placeholder="Payment due within 30 days..."><?= htmlspecialchars($defaultTerms) ?></textarea>
+                        <textarea name="terms" class="fw-qi__textarea" rows="4" placeholder="Payment due within 30 days..."><?= $editMode ? htmlspecialchars($invoiceData['terms'] ?? '') : htmlspecialchars($defaultTerms) ?></textarea>
                     </div>
                     <div class="fw-qi__form-group">
                         <label class="fw-qi__label">Internal Notes</label>
-                        <textarea name="notes" class="fw-qi__textarea" rows="3" placeholder="Private notes..."></textarea>
+                        <textarea name="notes" class="fw-qi__textarea" rows="3" placeholder="Private notes..."><?= $editMode ? htmlspecialchars($invoiceData['notes'] ?? '') : '' ?></textarea>
                     </div>
                 </div>
 
                 <div class="fw-qi__form-actions">
                     <a href="/qi/" class="fw-qi__btn fw-qi__btn--secondary">Cancel</a>
                     <button type="submit" class="fw-qi__btn fw-qi__btn--primary" id="btnSaveInvoice">
-                        <span class="fw-qi__btn-text">Create Invoice</span>
+                        <span class="fw-qi__btn-text"><?= $editMode ? 'Update Invoice' : 'Create Invoice' ?></span>
                         <span class="fw-qi__spinner" style="display:none;"></span>
                     </button>
                 </div>
+
+                <?php if ($editMode): ?>
+                    <input type="hidden" id="editInvoiceId" value="<?= $editInvoiceId ?>">
+                    <input type="hidden" id="editMode" value="1">
+                <?php endif; ?>
 
                 <div id="formMessage"></div>
             </form>
@@ -215,6 +287,7 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
         </footer>
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi-form.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
@@ -278,16 +351,33 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                     });
                 });
 
+                // Include milestones if enabled
+                payload.milestones = QI.collectMilestones();
+                if (payload.milestones.length > 0 && !QI.validateMilestones()) {
+                    throw new Error('Payment milestone percentages must add up to 100%');
+                }
+
+                // Include edit mode fields if editing
+                const editModeInput = document.getElementById('editMode');
+                const editInvoiceIdInput = document.getElementById('editInvoiceId');
+                if (editModeInput && editModeInput.value === '1') {
+                    payload.edit_mode = true;
+                    payload.invoice_id = parseInt(editInvoiceIdInput.value);
+                }
+
                 const res = await fetch('/qi/ajax/save_invoice.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    },
                     body: JSON.stringify(payload)
                 });
                 const data = await res.json();
 
                 if (data.ok) {
                     document.getElementById('formMessage').className = 'fw-qi__form-message fw-qi__form-message--success';
-                    document.getElementById('formMessage').textContent = 'Invoice created successfully!';
+                    document.getElementById('formMessage').textContent = document.getElementById('editMode') ? 'Invoice updated successfully!' : 'Invoice created successfully!';
                     document.getElementById('formMessage').style.display = 'block';
                     setTimeout(() => {
                         window.location.href = '/qi/invoice_view.php?id=' + data.invoice_id;
@@ -304,6 +394,82 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                 btn.querySelector('.fw-qi__spinner').style.display = 'none';
             }
         });
+    </script>
+
+    <!-- Initialise line items (and milestones in edit mode) -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        if (window.EDIT_INVOICE_DATA) {
+            var data = window.EDIT_INVOICE_DATA;
+
+            // Populate line items
+            if (Array.isArray(data.lineItems)) {
+                data.lineItems.forEach(function(item) {
+                    QI.addLineItem();
+                    var lines = document.querySelectorAll('.fw-qi__line-item');
+                    var lastLine = lines[lines.length - 1];
+                    if (!lastLine) return;
+
+                    var descInput    = lastLine.querySelector('input[name*="[description]"]');
+                    var qtyInput     = lastLine.querySelector('.line-quantity');
+                    var unitInput    = lastLine.querySelector('input[name*="[unit]"]');
+                    var priceInput   = lastLine.querySelector('.line-price');
+                    var discountInput = lastLine.querySelector('.line-discount');
+                    var taxSelect    = lastLine.querySelector('.line-tax-rate');
+                    var itemSelect   = lastLine.querySelector('select[name*="[inventory_item_id]"]');
+
+                    if (descInput)    descInput.value    = item.item_description || item.description || '';
+                    if (qtyInput)     qtyInput.value     = item.quantity || 1;
+                    if (unitInput)    unitInput.value     = item.unit || 'unit';
+                    if (priceInput)   priceInput.value    = item.unit_price || 0;
+                    if (discountInput) discountInput.value = item.discount || 0;
+                    if (taxSelect) {
+                        var rate = parseFloat(item.tax_rate || 15).toFixed(2);
+                        for (var i = 0; i < taxSelect.options.length; i++) {
+                            if (parseFloat(taxSelect.options[i].value).toFixed(2) === rate) {
+                                taxSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (itemSelect && item.inventory_item_id) {
+                        itemSelect.value = item.inventory_item_id;
+                    }
+                });
+            }
+
+            // Populate milestones
+            if (Array.isArray(data.milestones) && data.milestones.length > 0) {
+                var cb = document.getElementById('enableMilestones');
+                if (cb) {
+                    cb.checked = true;
+                    var section = document.getElementById('milestonesSection');
+                    if (section) section.style.display = 'block';
+                }
+
+                data.milestones.forEach(function(ms) {
+                    var isFixed = ms.fixed_amount !== null && ms.fixed_amount !== undefined && ms.fixed_amount !== '';
+                    QI.addMilestone(
+                        ms.label || '',
+                        isFixed ? null : (ms.percentage || 0),
+                        isFixed ? ms.fixed_amount : null
+                    );
+                    // Set due date on last milestone row
+                    var rows = document.querySelectorAll('.fw-qi__milestone-row');
+                    var lastRow = rows[rows.length - 1];
+                    if (lastRow && ms.due_date) {
+                        var dueDateInput = lastRow.querySelector('.ms-due-date');
+                        if (dueDateInput) dueDateInput.value = ms.due_date;
+                    }
+                });
+            }
+
+            QI.calculateTotals();
+        } else {
+            // New invoice: add one blank line item
+            QI.addLineItem();
+        }
+    });
     </script>
 
     <!-- Import items from project board functionality -->
@@ -361,7 +527,10 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                 try {
                     const res = await fetch('/qi/ajax/import_from_project.php', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                        },
                         body: JSON.stringify({ board_id: parseInt(boardId) })
                     });
                     const data = await res.json();
