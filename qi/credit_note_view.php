@@ -1,9 +1,16 @@
 <?php
 // /qi/credit_note_view.php
+error_reporting(E_ALL);
+ini_set('display_errors', '0');
+
+function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
+    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
+}
+
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-1');
+define('ASSET_VERSION', '2026-04-06-QI-v2');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -14,42 +21,130 @@ if (!$creditNoteId) {
     exit;
 }
 
-// Fetch credit note
-$stmt = $DB->prepare("
-    SELECT cn.*, ca.name AS customer_name,
-           i.invoice_number, i.total AS invoice_total,
-           u.first_name, u.last_name
-    FROM credit_notes cn
-    LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id
-    LEFT JOIN invoices i ON cn.invoice_id = i.id
-    LEFT JOIN users u ON cn.created_by = u.id
-    WHERE cn.id = ? AND cn.company_id = ?
-");
-$stmt->execute([$creditNoteId, $companyId]);
-$creditNote = $stmt->fetch();
+try {
+    // Fetch credit note with company branding, customer and linked invoice
+    $stmt = $DB->prepare("
+        SELECT cn.*,
+               u.first_name AS creator_first_name,
+               u.last_name AS creator_last_name,
+               c.name AS company_name,
+               c.logo_url,
+               c.vat_number,
+               c.tax_number,
+               c.reg_number,
+               c.website,
+               c.phone AS company_phone,
+               c.email AS company_email,
+               c.address_line1 AS company_address1,
+               c.address_line2 AS company_address2,
+               c.city AS company_city,
+               c.region AS company_region,
+               c.postal AS company_postal,
+               c.bank_name,
+               c.bank_account_number,
+               c.bank_branch_code,
+               c.invoice_footer_text,
+               c.primary_color,
+               c.secondary_color,
+               c.qi_font_family,
+               c.qi_show_company_address,
+               c.qi_show_company_phone,
+               c.qi_show_company_email,
+               c.qi_show_company_website,
+               c.qi_show_vat_number,
+               c.qi_show_tax_number,
+               c.qi_show_reg_number,
+               c.qi_heading_color,
+               c.qi_text_color,
+               c.qi_table_header_text,
+               c.qi_bg_color,
+               c.qi_border_radius,
+               c.qi_logo_size,
+               c.qi_logo_position,
+               c.qi_template,
+               c.qi_custom_css,
+               ca.name AS customer_name,
+               ca.email AS customer_email,
+               ca.phone AS customer_phone,
+               ca.vat_no AS customer_vat,
+               ca.reg_no AS customer_reg,
+               addr.line1 AS customer_address1,
+               addr.line2 AS customer_address2,
+               addr.city AS customer_city,
+               addr.region AS customer_region,
+               addr.postal_code AS customer_postal,
+               i.invoice_number AS linked_invoice_number,
+               i.total AS invoice_total
+        FROM credit_notes cn
+        LEFT JOIN users u ON cn.created_by = u.id
+        LEFT JOIN companies c ON cn.company_id = c.id
+        LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id
+        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
+        LEFT JOIN invoices i ON cn.invoice_id = i.id
+        WHERE cn.id = ? AND cn.company_id = ?
+    ");
+    $stmt->execute([$creditNoteId, $companyId]);
+    $creditNote = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$creditNote) {
-    header('Location: /qi/?tab=credit_notes');
+    if (!$creditNote) {
+        header('Location: /qi/?tab=credit_notes');
+        exit;
+    }
+
+    // Fetch line items
+    $stmt = $DB->prepare("SELECT * FROM credit_note_lines WHERE credit_note_id = ? ORDER BY sort_order");
+    $stmt->execute([$creditNoteId]);
+    $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Current user name
+    $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    $firstName = $userRow['first_name'] ?? 'User';
+
+} catch (Exception $e) {
+    error_log('Credit note view error: ' . $e->getMessage());
+    header('Location: /qi/?tab=credit_notes&error=1');
     exit;
 }
 
-// Fetch lines
-$stmt = $DB->prepare("SELECT * FROM credit_note_lines WHERE credit_note_id = ? ORDER BY sort_order");
-$stmt->execute([$creditNoteId]);
-$lines = $stmt->fetchAll();
-
-// Fetch company/user info
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
+$companyName = $creditNote['company_name'] ?? 'Company';
 $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
+
+// Branding
+$primaryColor   = sanitize_css_color($creditNote['primary_color'] ?? '#fbbf24');
+$secondaryColor = sanitize_css_color($creditNote['secondary_color'] ?? '#f59e0b', '#f59e0b');
+$headingColor   = sanitize_css_color($creditNote['qi_heading_color'] ?? '', $primaryColor);
+$textColor      = $creditNote['qi_text_color'] ?? '';
+$tableHeaderText = $creditNote['qi_table_header_text'] ?? '#ffffff';
+$bgColor        = $creditNote['qi_bg_color'] ?? '';
+$borderRadius   = max(0, min(24, (int)($creditNote['qi_border_radius'] ?? 8)));
+$logoSize       = max(80, min(400, (int)($creditNote['qi_logo_size'] ?? 200)));
+$logoPosition   = in_array($creditNote['qi_logo_position'] ?? 'left', ['left','center','right']) ? $creditNote['qi_logo_position'] : 'left';
+$customCss      = $creditNote['qi_custom_css'] ?? '';
+$template       = in_array($creditNote['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $creditNote['qi_template'] : 'modern';
+$fontFamily     = $creditNote['qi_font_family'] ?? 'system-ui';
+$fontMap = [
+    'system-ui'  => 'system-ui, -apple-system, sans-serif',
+    'montserrat' => "'Montserrat', sans-serif",
+    'helvetica'  => "'Helvetica Neue', Helvetica, Arial, sans-serif",
+    'georgia'    => 'Georgia, serif',
+    'inter'      => "'Inter', sans-serif"
+];
+$fontStack = $fontMap[$fontFamily] ?? $fontMap['system-ui'];
+
+$showAddress = (int)($creditNote['qi_show_company_address'] ?? 1);
+$showPhone   = (int)($creditNote['qi_show_company_phone']   ?? 1);
+$showEmail   = (int)($creditNote['qi_show_company_email']   ?? 1);
+$showWebsite = (int)($creditNote['qi_show_company_website'] ?? 1);
+$showVat     = (int)($creditNote['qi_show_vat_number']      ?? 1);
+$showTax     = (int)($creditNote['qi_show_tax_number']      ?? 1);
+$showReg     = (int)($creditNote['qi_show_reg_number']      ?? 1);
+
+function format_currency($amount) {
+    return 'R ' . number_format((float)$amount, 2);
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -58,150 +153,267 @@ $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($creditNote['credit_note_number']) ?> – <?= htmlspecialchars($companyName) ?></title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
+    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
+
+    <style>
+        :root {
+            --accent-qi: <?= $primaryColor ?>;
+            --accent-qi-secondary: <?= $secondaryColor ?>;
+            --doc-font: <?= $fontStack ?>;
+            --qi-heading: <?= $headingColor ?>;
+            --qi-border-radius: <?= $borderRadius ?>px;
+            --qi-logo-max-w: <?= $logoSize ?>px;
+            --qi-th-text: <?= $tableHeaderText ?>;
+            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
+            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
+        }
+        .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+        <?= $customCss ?>
+    </style>
 </head>
 <body class="fw-qi">
     <div class="fw-qi__container">
-        
         <header class="fw-qi__header">
             <div class="fw-qi__brand">
                 <div class="fw-qi__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+                    <?php if ($creditNote['logo_url']): ?>
+                        <img src="<?= htmlspecialchars($creditNote['logo_url']) ?>" alt="Logo" style="width:100%;height:100%;object-fit:contain;">
+                    <?php else: ?>
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2"/><polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="2"/></svg>
+                    <?php endif; ?>
                 </div>
                 <div class="fw-qi__brand-text">
                     <div class="fw-qi__company-name"><?= htmlspecialchars($companyName) ?></div>
                     <div class="fw-qi__app-name"><?= htmlspecialchars($creditNote['credit_note_number']) ?></div>
                 </div>
             </div>
-
-            <div class="fw-qi__greeting">
-                Hello, <span class="fw-qi__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-
+            <div class="fw-qi__greeting">Hello, <span class="fw-qi__greeting-name"><?= htmlspecialchars($firstName) ?></span></div>
             <div class="fw-qi__controls">
-                <a href="/qi/?tab=credit_notes" class="fw-qi__home-btn" title="Back">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-                <button class="fw-qi__theme-toggle" id="themeToggle"></button>
+                <a href="/qi/?tab=credit_notes" class="fw-qi__home-btn" title="Back"><svg viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></a>
+                <button class="fw-qi__theme-toggle" id="themeToggle"><svg class="fw-qi__theme-icon fw-qi__theme-icon--light" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/></svg><svg class="fw-qi__theme-icon fw-qi__theme-icon--dark" viewBox="0 0 24 24" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/></svg></button>
                 <div class="fw-qi__menu-wrapper">
-                    <button class="fw-qi__kebab-toggle" id="kebabToggle">⋮</button>
-                    <nav class="fw-qi__kebab-menu" id="kebabMenu" aria-hidden="true">
+                    <button class="fw-qi__kebab-toggle" id="kebabToggle">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <nav class="fw-qi__kebab-menu" id="kebabMenu">
                         <?php if ($creditNote['status'] === 'draft'): ?>
-                            <button onclick="CNView.approve()" class="fw-qi__kebab-item">Approve</button>
+                            <button onclick="CNView.approve()" class="fw-qi__kebab-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                    <path d="M9 11l3 3L22 4"/>
+                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                                </svg>
+                                Approve
+                            </button>
                         <?php endif; ?>
                         <?php if ($canApply): ?>
-                            <button onclick="CNView.applyToInvoice()" class="fw-qi__kebab-item">Apply to Invoice</button>
+                            <button onclick="CNView.applyToInvoice()" class="fw-qi__kebab-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <path d="M16 16l5 5m0 0l-5-5m5 5H14"/>
+                                </svg>
+                                Apply to Invoice
+                            </button>
                         <?php endif; ?>
-                        <button onclick="CNView.downloadPDF()" class="fw-qi__kebab-item">Download PDF</button>
+
+                        <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
+                        <button onclick="window.print()" class="fw-qi__kebab-item">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                <polyline points="6 9 6 2 18 2 18 9"/>
+                                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                                <rect x="6" y="14" width="12" height="8"/>
+                            </svg>
+                            Print
+                        </button>
+                        <button onclick="CNView.downloadPDF()" class="fw-qi__kebab-item">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Download PDF
+                        </button>
                     </nav>
                 </div>
             </div>
         </header>
 
         <main class="fw-qi__main">
-            <div class="fw-qi__view-header">
-                <div class="fw-qi__view-header-left">
-                    <h1 class="fw-qi__view-title"><?= htmlspecialchars($creditNote['credit_note_number']) ?></h1>
-                    <div class="fw-qi__view-meta">
-                        <span class="fw-qi__badge fw-qi__badge--<?= $creditNote['status'] ?>">
-                            <?= ucfirst($creditNote['status']) ?>
-                        </span>
-                        <span>•</span>
-                        <span>Issued: <?= date('d M Y', strtotime($creditNote['issue_date'])) ?></span>
-                        <?php if ($creditNote['invoice_number']): ?>
-                            <span>•</span>
-                            <span>Invoice: <a href="/qi/invoice_view.php?id=<?= $creditNote['invoice_id'] ?>"><?= htmlspecialchars($creditNote['invoice_number']) ?></a></span>
+            <div class="fw-qi__document" data-template="<?= $template ?>">
+                <!-- Document Header -->
+                <div class="fw-qi__doc-header">
+                    <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">
+                        <?php if ($creditNote['logo_url']): ?>
+                            <img src="<?= htmlspecialchars($creditNote['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
+                        <?php endif; ?>
+                    <div class="fw-qi__doc-company">
+                        <h1 class="fw-qi__doc-title">CREDIT NOTE</h1>
+                        <?php if ($showAddress): ?>
+                            <p><?= htmlspecialchars($creditNote['company_address1'] ?? '') ?>
+                            <?php if (!empty($creditNote['company_address2'])): ?><br><?= htmlspecialchars($creditNote['company_address2']) ?><?php endif; ?>
+                            <br><?= htmlspecialchars($creditNote['company_city'] ?? '') ?>, <?= htmlspecialchars($creditNote['company_region'] ?? '') ?> <?= htmlspecialchars($creditNote['company_postal'] ?? '') ?></p>
+                        <?php endif; ?>
+                        <?php if ($showPhone && !empty($creditNote['company_phone'])): ?>
+                            <p>Tel: <?= htmlspecialchars($creditNote['company_phone']) ?></p>
+                        <?php endif; ?>
+                        <?php if ($showEmail && !empty($creditNote['company_email'])): ?>
+                            <p>Email: <?= htmlspecialchars($creditNote['company_email']) ?></p>
+                        <?php endif; ?>
+                        <?php if ($showWebsite && !empty($creditNote['website'])): ?>
+                            <p>Website: <?= htmlspecialchars($creditNote['website']) ?></p>
+                        <?php endif; ?>
+                        <?php if ($showVat && !empty($creditNote['vat_number'])): ?>
+                            <p>VAT No: <?= htmlspecialchars($creditNote['vat_number']) ?></p>
+                        <?php endif; ?>
+                        <?php if ($showTax && !empty($creditNote['tax_number'])): ?>
+                            <p>Tax No: <?= htmlspecialchars($creditNote['tax_number']) ?></p>
+                        <?php endif; ?>
+                        <?php if ($showReg && !empty($creditNote['reg_number'])): ?>
+                            <p>Reg No: <?= htmlspecialchars($creditNote['reg_number']) ?></p>
                         <?php endif; ?>
                     </div>
-                </div>
+                    </div><!-- /.fw-qi__doc-header-left -->
+                    <div class="fw-qi__doc-meta">
+                        <h2>Credit Note #: <?= htmlspecialchars($creditNote['credit_note_number']) ?></h2>
+                        <p>Issue Date: <?= htmlspecialchars(date('d M Y', strtotime($creditNote['issue_date']))) ?></p>
+                        <p>Status: <?= htmlspecialchars(ucfirst($creditNote['status'])) ?></p>
+                        <?php if (!empty($creditNote['linked_invoice_number'])): ?>
+                            <p>Invoice: <?= htmlspecialchars($creditNote['linked_invoice_number']) ?></p>
+                        <?php endif; ?>
 
-                <div class="fw-qi__view-header-right">
-                    <div class="fw-qi__view-total" style="background: linear-gradient(135deg, #10b981, #059669);">
-                        <div class="fw-qi__view-total-label">Credit Amount</div>
-                        <div class="fw-qi__view-total-value">R <?= number_format($creditNote['total'], 2) ?></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="fw-qi__info-grid">
-                <div class="fw-qi__info-card">
-                    <h3 class="fw-qi__info-card-title">Customer</h3>
-                    <dl class="fw-qi__info-list">
-                        <div class="fw-qi__info-item">
-                            <dt>Name:</dt>
-                            <dd><strong><?= htmlspecialchars($creditNote['customer_name']) ?></strong></dd>
+                        <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                            <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Credit To</h3>
+                            <p style="margin:4px 0;"><strong><?= htmlspecialchars($creditNote['customer_name'] ?? 'Customer') ?></strong></p>
+                            <?php if (!empty($creditNote['customer_address1'])): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($creditNote['customer_address1']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_address2'])): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($creditNote['customer_address2']) ?></p>
+                            <?php endif; ?>
+                            <?php $custCity = trim(($creditNote['customer_city'] ?? '') . ', ' . ($creditNote['customer_region'] ?? '') . ' ' . ($creditNote['customer_postal'] ?? '')); ?>
+                            <?php if ($custCity && $custCity !== ', '): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_phone'])): ?>
+                                <p style="margin:3px 0;">Tel: <?= htmlspecialchars($creditNote['customer_phone']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_email'])): ?>
+                                <p style="margin:3px 0;">Email: <?= htmlspecialchars($creditNote['customer_email']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_vat'])): ?>
+                                <p style="margin:3px 0;">VAT No: <?= htmlspecialchars($creditNote['customer_vat']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_reg'])): ?>
+                                <p style="margin:3px 0;">Reg No: <?= htmlspecialchars($creditNote['customer_reg']) ?></p>
+                            <?php endif; ?>
                         </div>
-                    </dl>
+                    </div>
                 </div>
 
-                <div class="fw-qi__info-card">
-                    <h3 class="fw-qi__info-card-title">Reason</h3>
-                    <p class="fw-qi__notes"><?= nl2br(htmlspecialchars($creditNote['reason'])) ?></p>
+                <!-- Reason -->
+                <?php if (!empty($creditNote['reason'])): ?>
+                <div class="fw-qi__doc-details">
+                    <div class="fw-qi__doc-detail-box">
+                        <h3>Reason</h3>
+                        <p><?= nl2br(htmlspecialchars($creditNote['reason'])) ?></p>
+                    </div>
                 </div>
-            </div>
+                <?php endif; ?>
 
-            <div class="fw-qi__section">
-                <h2 class="fw-qi__section-title">Line Items</h2>
-                <div class="fw-qi__table-container">
-                    <table class="fw-qi__table">
-                        <thead>
+                <!-- Line Items Table -->
+                <table class="fw-qi__doc-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th style="text-align:right;">Qty</th>
+                            <th style="text-align:right;">Unit Price</th>
+                            <th style="text-align:right;">Line Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($lines as $line): ?>
                             <tr>
-                                <th>#</th>
-                                <th>Description</th>
-                                <th>Qty</th>
-                                <th>Unit Price</th>
-                                <th>Tax Rate</th>
-                                <th class="fw-qi__table-align-right">Line Total</th>
+                                <td><?= htmlspecialchars($line['item_description']) ?></td>
+                                <td style="text-align:right;"><?= number_format((float)$line['quantity'], 2) ?></td>
+                                <td style="text-align:right;"><?= format_currency($line['unit_price']) ?></td>
+                                <td style="text-align:right;"><?= format_currency($line['line_total']) ?></td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($lines as $idx => $line): ?>
-                                <tr>
-                                    <td><?= $idx + 1 ?></td>
-                                    <td><?= htmlspecialchars($line['item_description']) ?></td>
-                                    <td><?= number_format($line['quantity'], 3) ?></td>
-                                    <td>R <?= number_format($line['unit_price'], 2) ?></td>
-                                    <td><?= number_format($line['tax_rate'], 2) ?>%</td>
-                                    <td class="fw-qi__table-align-right"><strong>R <?= number_format($line['line_total'], 2) ?></strong></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+
+                <!-- Totals Summary -->
+                <div class="fw-qi__doc-totals">
+                    <div class="fw-qi__doc-total-row">
+                        <span>Subtotal:</span>
+                        <span><?= format_currency($creditNote['subtotal']) ?></span>
+                    </div>
+                    <?php if ((float)($creditNote['discount'] ?? 0) > 0): ?>
+                        <div class="fw-qi__doc-total-row">
+                            <span>Discount:</span>
+                            <span><?= format_currency($creditNote['discount']) ?></span>
+                        </div>
+                    <?php endif; ?>
+                    <div class="fw-qi__doc-total-row">
+                        <span>VAT (15%):</span>
+                        <span><?= format_currency($creditNote['tax']) ?></span>
+                    </div>
+                    <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand">
+                        <span>TOTAL CREDIT:</span>
+                        <span><?= format_currency($creditNote['total']) ?></span>
+                    </div>
                 </div>
 
-                <div class="fw-qi__totals-summary">
-                    <div class="fw-qi__total-row">
-                        <span>Subtotal:</span>
-                        <strong>R <?= number_format($creditNote['subtotal'], 2) ?></strong>
+                <!-- Reason (if not shown above) -->
+                <?php if (!empty($creditNote['reason']) && empty($creditNote['customer_email']) && empty($creditNote['customer_phone'])): ?>
+                <?php endif; ?>
+
+                <!-- Terms -->
+                <?php if (!empty($creditNote['terms'])): ?>
+                    <div class="fw-qi__doc-section">
+                        <h3>Terms & Conditions</h3>
+                        <p><?= nl2br(htmlspecialchars($creditNote['terms'])) ?></p>
                     </div>
-                    <div class="fw-qi__total-row">
-                        <span>VAT (15%):</span>
-                        <strong>R <?= number_format($creditNote['tax'], 2) ?></strong>
+                <?php endif; ?>
+
+                <!-- Notes -->
+                <?php if (!empty($creditNote['notes'])): ?>
+                    <div class="fw-qi__doc-section">
+                        <h3>Notes</h3>
+                        <p><?= nl2br(htmlspecialchars($creditNote['notes'])) ?></p>
                     </div>
-                    <div class="fw-qi__total-row fw-qi__total-row--grand">
-                        <span>Total Credit:</span>
-                        <strong>R <?= number_format($creditNote['total'], 2) ?></strong>
+                <?php endif; ?>
+
+                <!-- Footer Text -->
+                <?php if (!empty($creditNote['invoice_footer_text'])): ?>
+                    <div class="fw-qi__doc-footer">
+                        <p><?= nl2br(htmlspecialchars($creditNote['invoice_footer_text'])) ?></p>
                     </div>
-                </div>
+                <?php endif; ?>
             </div>
         </main>
 
         <footer class="fw-qi__footer">
-            <span>Quotes & Invoices v<?= ASSET_VERSION ?></span>
+            <span>Q&I v<?= ASSET_VERSION ?></span>
             <span id="themeIndicator">Theme: Light</span>
         </footer>
     </div>
 
-    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         window.CNView = {
-            creditNoteId: <?= $creditNoteId ?>,
+            creditNoteId: <?= (int)$creditNoteId ?>,
 
             async approve() {
                 if (!confirm('Approve this credit note?')) return;

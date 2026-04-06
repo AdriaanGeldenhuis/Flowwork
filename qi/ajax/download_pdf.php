@@ -38,10 +38,14 @@ try {
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     p.name AS project_name
              FROM quotes q
              LEFT JOIN companies c ON q.company_id = c.id
              LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN projects p ON q.project_id = p.project_id
              WHERE q.id = ? AND q.company_id = ?"
         );
@@ -73,10 +77,14 @@ try {
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
              LEFT JOIN companies c ON cn.company_id = c.id
              LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN invoices i ON cn.invoice_id = i.id
              WHERE cn.id = ? AND cn.company_id = ?"
         );
@@ -113,10 +121,14 @@ try {
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     p.name AS project_name
              FROM invoices i
              LEFT JOIN companies c ON i.company_id = c.id
              LEFT JOIN crm_accounts ca ON i.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN projects p ON i.project_id = p.project_id
              WHERE i.id = ? AND i.company_id = ?"
         );

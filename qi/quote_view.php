@@ -10,7 +10,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-FINAL');
+define('ASSET_VERSION', '2026-04-06-QI-v2');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -53,14 +53,32 @@ try {
                c.qi_show_vat_number,
                c.qi_show_tax_number,
                c.qi_show_reg_number,
+               c.qi_heading_color,
+               c.qi_text_color,
+               c.qi_table_header_text,
+               c.qi_bg_color,
+               c.qi_border_radius,
+               c.qi_logo_size,
+               c.qi_logo_position,
+               c.qi_template,
+               c.qi_custom_css,
+               c.qi_quote_title,
                ca.name AS customer_name,
                ca.email AS customer_email,
                ca.phone AS customer_phone,
+               ca.vat_no AS customer_vat,
+               ca.reg_no AS customer_reg,
+               addr.line1 AS customer_address1,
+               addr.line2 AS customer_address2,
+               addr.city AS customer_city,
+               addr.region AS customer_region,
+               addr.postal_code AS customer_postal,
                p.name AS project_name
         FROM quotes q
         LEFT JOIN users u ON q.created_by = u.id
         LEFT JOIN companies c ON q.company_id = c.id
         LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
+        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
         LEFT JOIN projects p ON q.project_id = p.project_id
         WHERE q.id = ? AND q.company_id = ?
     ");
@@ -305,9 +323,9 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
                                 <?php if ($quote['company_address2']): ?><p><?= htmlspecialchars($quote['company_address2']) ?></p><?php endif; ?>
                                 <?php if ($quote['company_city']): ?><p><?= htmlspecialchars($quote['company_city']) ?>, <?= htmlspecialchars($quote['company_postal']) ?></p><?php endif; ?>
                             <?php endif; ?>
-                            <?php if ($showReg && $quote['reg_number']): ?><p><strong>Reg:</strong> <?= htmlspecialchars($quote['reg_number']) ?></p><?php endif; ?>
+                            <?php if ($showReg && $quote['reg_number']): ?><p><strong>Reg No:</strong> <?= htmlspecialchars($quote['reg_number']) ?></p><?php endif; ?>
                             <?php if ($showTax && $quote['tax_number']): ?><p><strong>Tax:</strong> <?= htmlspecialchars($quote['tax_number']) ?></p><?php endif; ?>
-                            <?php if ($showVat && $quote['vat_number']): ?><p><strong>VAT:</strong> <?= htmlspecialchars($quote['vat_number']) ?></p><?php endif; ?>
+                            <?php if ($showVat && $quote['vat_number']): ?><p><strong>VAT No:</strong> <?= htmlspecialchars($quote['vat_number']) ?></p><?php endif; ?>
                             <?php if ($showPhone && $quote['company_phone']): ?><p><?= htmlspecialchars($quote['company_phone']) ?></p><?php endif; ?>
                             <?php if ($showEmail && $quote['company_email']): ?><p><?= htmlspecialchars($quote['company_email']) ?></p><?php endif; ?>
                             <?php if ($showWebsite && $quote['website']): ?><p><?= htmlspecialchars($quote['website']) ?></p><?php endif; ?>
@@ -316,26 +334,32 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
                     <div class="fw-qi__doc-header-right">
                         <h2 class="fw-qi__doc-title"><?= $docTitle ?></h2>
                         <div class="fw-qi__doc-number"><?= htmlspecialchars($quote['quote_number']) ?></div>
-                        <span class="fw-qi__badge fw-qi__badge--<?= $quote['status'] ?>"><?= strtoupper($quote['status']) ?></span>
-                    </div>
-                </div>
-
-                <div class="fw-qi__doc-details">
-                    <div class="fw-qi__doc-detail-box">
-                        <h3>Bill To:</h3>
-                        <p><strong><?= htmlspecialchars($quote['customer_name'] ?? 'No Customer') ?></strong></p>
-                        <?php if ($quote['customer_email']): ?><p><?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
-                        <?php if ($quote['customer_phone']): ?><p><?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
-                    </div>
-                    <div class="fw-qi__doc-detail-box">
-                        <table class="fw-qi__doc-info-table">
+                        <table class="fw-qi__doc-info-table" style="margin-top:8px;">
                             <tr><td>Quote Date:</td><td><strong><?= date('d M Y', strtotime($quote['issue_date'])) ?></strong></td></tr>
                             <tr><td>Valid Until:</td><td><strong><?= date('d M Y', strtotime($quote['expiry_date'])) ?></strong></td></tr>
-                            <?php if ($quote['project_name']): ?><tr><td>Project:</td><td><strong><?= htmlspecialchars($quote['project_name']) ?></strong></td></tr><?php endif; ?>
-                            <tr><td>Created By:</td><td><?= htmlspecialchars($quote['creator_first_name'] . ' ' . $quote['creator_last_name']) ?></td></tr>
                         </table>
-                    </div>
+                        <span class="fw-qi__badge fw-qi__badge--<?= $quote['status'] ?>"><?= strtoupper($quote['status']) ?></span>
+
+                        <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                            <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
+                            <p style="margin:4px 0;"><strong><?= htmlspecialchars($quote['customer_name'] ?? 'No Customer') ?></strong></p>
+                            <?php if (!empty($quote['customer_address1'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address1']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_address2'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address2']) ?></p><?php endif; ?>
+                            <?php $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? '')); ?>
+                            <?php if ($custCity && $custCity !== ', '): ?><p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
+                            <?php if ($quote['customer_phone']): ?><p style="margin:3px 0;">Tel: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
+                            <?php if ($quote['customer_email']): ?><p style="margin:3px 0;">Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_vat'])): ?><p style="margin:3px 0;">VAT No: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_reg'])): ?><p style="margin:3px 0;">Reg No: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
+                        </div>
+                                            </div>
                 </div>
+
+                <?php if ($quote['project_name']): ?>
+                <div class="fw-qi__classic-project">
+                    <h2><?= htmlspecialchars($quote['project_name']) ?></h2>
+                </div>
+                <?php endif; ?>
 
                 <div class="fw-qi__doc-section">
                     <h3>Items</h3>

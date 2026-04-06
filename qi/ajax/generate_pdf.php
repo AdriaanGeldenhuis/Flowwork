@@ -18,7 +18,7 @@ if (!$id) {
     exit;
 }
 
-define('ASSET_VERSION', '2025-01-21-QI-FINAL');
+define('ASSET_VERSION', '2026-04-06-QI-v2');
 
 function fmt($amount) {
     return 'R ' . number_format((float)$amount, 2);
@@ -44,10 +44,14 @@ try {
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     p.name AS project_name
              FROM quotes q
              LEFT JOIN companies c ON q.company_id = c.id
              LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN projects p ON q.project_id = p.project_id
              WHERE q.id = ? AND q.company_id = ?"
         );
@@ -67,6 +71,7 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $milestones = [];
 
     } elseif ($type === 'credit_note') {
         $stmt = $DB->prepare(
@@ -83,10 +88,14 @@ try {
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
              LEFT JOIN companies c ON cn.company_id = c.id
              LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN invoices i ON cn.invoice_id = i.id
              WHERE cn.id = ? AND cn.company_id = ?"
         );
@@ -109,6 +118,7 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM credit_note_lines WHERE credit_note_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $milestones = [];
 
     } else {
         // Invoice
@@ -126,10 +136,14 @@ try {
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                    ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                    addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                    addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
                     p.name AS project_name
              FROM invoices i
              LEFT JOIN companies c ON i.company_id = c.id
              LEFT JOIN crm_accounts ca ON i.customer_id = ca.id
+             LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
              LEFT JOIN projects p ON i.project_id = p.project_id
              WHERE i.id = ? AND i.company_id = ?"
         );
@@ -149,6 +163,14 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Fetch payment milestones
+        $milestones = [];
+        if (!empty($doc['has_milestones'])) {
+            $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+            $stmt->execute([$id, $companyId]);
+            $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
     }
 
     // Display toggles
@@ -282,8 +304,22 @@ try {
             min-height: auto;
             margin: 0;
             box-shadow: none !important;
+            border: none !important;
             border-radius: 0;
             page-break-after: always;
+        }
+        /* Force two-column header in print (override mobile breakpoint) */
+        .fw-qi__doc-header {
+            grid-template-columns: 1fr auto !important;
+            gap: 40px !important;
+            padding: 40px 40px 16px !important;
+        }
+        .fw-qi__doc-meta {
+            text-align: right !important;
+        }
+        .fw-qi__doc-logo {
+            max-width: 480px !important;
+            max-height: 160px !important;
         }
         .fw-qi__doc-header { page-break-inside: avoid; }
         .fw-qi__doc-details { page-break-inside: avoid; }
@@ -346,28 +382,41 @@ try {
                 <?php foreach ($dates as $label => $value): ?>
                     <p><?= htmlspecialchars($label) ?>: <?= htmlspecialchars($value) ?></p>
                 <?php endforeach; ?>
+
+                <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                    <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
+                    <p style="margin:4px 0;"><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
+                    <?php if (!empty($doc['customer_address1'])): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($doc['customer_address1']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_address2'])): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($doc['customer_address2']) ?></p>
+                    <?php endif; ?>
+                    <?php $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? '')); ?>
+                    <?php if ($custCity && $custCity !== ', '): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_phone'])): ?>
+                        <p style="margin:3px 0;">Tel: <?= htmlspecialchars($doc['customer_phone']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_email'])): ?>
+                        <p style="margin:3px 0;">Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_vat'])): ?>
+                        <p style="margin:3px 0;">VAT No: <?= htmlspecialchars($doc['customer_vat']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_reg'])): ?>
+                        <p style="margin:3px 0;">Reg No: <?= htmlspecialchars($doc['customer_reg']) ?></p>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
 
-        <!-- Customer & Project Details -->
-        <div class="fw-qi__doc-details">
-            <div class="fw-qi__doc-detail-box">
-                <h3>Bill To</h3>
-                <p><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
-                <?php if (!empty($doc['customer_phone'])): ?>
-                    <p>Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
-                <?php endif; ?>
-                <?php if (!empty($doc['customer_email'])): ?>
-                    <p>Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
-                <?php endif; ?>
-            </div>
-            <?php if (!empty($doc['project_name'])): ?>
-                <div class="fw-qi__doc-detail-box">
-                    <h3>Project</h3>
-                    <p><?= htmlspecialchars($doc['project_name']) ?></p>
-                </div>
-            <?php endif; ?>
+        <?php if (!empty($doc['project_name'])): ?>
+        <div class="fw-qi__classic-project">
+            <h2><?= htmlspecialchars($doc['project_name']) ?></h2>
         </div>
+        <?php endif; ?>
 
         <!-- Line Items Table -->
         <table class="fw-qi__doc-table">
@@ -418,6 +467,50 @@ try {
                 </div>
             <?php endif; ?>
         </div>
+
+        <!-- Payment Milestones -->
+        <?php if (!empty($milestones)): ?>
+            <div class="fw-qi__doc-section">
+                <h3>Payment Schedule</h3>
+                <table class="fw-qi__doc-table">
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th style="text-align:right;">%</th>
+                            <th style="text-align:right;">Amount</th>
+                            <th>Due Date</th>
+                            <th style="text-align:right;">Paid</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                            $nowPayableId = null;
+                            foreach ($milestones as $ms) {
+                                if ($ms['status'] !== 'paid') { $nowPayableId = $ms['id']; break; }
+                            }
+                        ?>
+                        <?php foreach ($milestones as $ms): ?>
+                            <?php
+                                $isNowPayable = ($nowPayableId !== null && $ms['id'] == $nowPayableId);
+                                if ($ms['status'] === 'paid') { $msStatusLabel = 'Paid'; }
+                                elseif ($ms['status'] === 'overdue') { $msStatusLabel = 'Overdue'; }
+                                elseif ($isNowPayable) { $msStatusLabel = 'Now Payable'; }
+                                else { $msStatusLabel = 'Upcoming'; }
+                            ?>
+                            <tr>
+                                <td><?= htmlspecialchars($ms['label']) ?></td>
+                                <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
+                                <td style="text-align:right;"><?= fmt($ms['amount']) ?></td>
+                                <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
+                                <td style="text-align:right;"><?= fmt($ms['amount_paid']) ?></td>
+                                <td><?= $msStatusLabel ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
 
         <!-- Payment & Bank Details -->
         <?php if (!empty($doc['bank_name']) || !empty($doc['bank_account_number'])): ?>

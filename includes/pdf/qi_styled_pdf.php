@@ -218,15 +218,55 @@ class QiStyledPdfWriter
         // Registration numbers (right side, below dates)
         $rightY -= 5;
         if (!empty($this->doc['vat_number'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'VAT: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'VAT No: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
         if (!empty($this->doc['tax_number'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'Tax: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Tax No: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
         if (!empty($this->doc['reg_number'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'Reg: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Reg No: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
+            $rightY -= 11;
+        }
+
+        // Bill To (right side, below status/dates)
+        $rightY -= 8;
+        $this->textRight('F2', 8, $rightX, $rightY, 'BILL TO', $this->headingR, $this->headingG, $this->headingB);
+        $rightY -= 13;
+        $this->textRight('F2', 9, $rightX, $rightY, $this->doc['customer_name'] ?? 'Customer', '0.1', '0.1', '0.1');
+        $rightY -= 12;
+        if (!empty($this->doc['customer_address1'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, $this->doc['customer_address1'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_address2'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, $this->doc['customer_address2'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        $custCity = trim(($this->doc['customer_city'] ?? '') . ', ' . ($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? ''));
+        if ($custCity && $custCity !== ', ') {
+            $this->textRight('F1', 8, $rightX, $rightY, $custCity, '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_phone'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Tel: ' . $this->doc['customer_phone'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_email'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Email: ' . $this->doc['customer_email'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_vat'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'VAT No: ' . $this->doc['customer_vat'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_reg'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Reg No: ' . $this->doc['customer_reg'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['project_name'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Project: ' . $this->doc['project_name'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
 
@@ -239,37 +279,8 @@ class QiStyledPdfWriter
 
     private function drawDetails(): void
     {
-        $this->checkSpace(65);
-        $x = $this->marginL;
-        $boxW = ($this->contentW() - 20) / 2;
-
-        // Bill To box
-        $boxH = 55;
-        $this->rect($x, $this->y - $boxH, $boxW, $boxH, '0.96', '0.96', '0.97');
-        // Left accent bar
-        $this->rect($x, $this->y - $boxH, 3, $boxH, $this->accentR, $this->accentG, $this->accentB);
-
-        $this->text('F2', 8, $x + 12, $this->y - 14, 'BILL TO', $this->headingR, $this->headingG, $this->headingB);
-        $this->text('F2', 10, $x + 12, $this->y - 28, $this->doc['customer_name'] ?? 'Customer', '0.1', '0.1', '0.1');
-        $detailY = $this->y - 40;
-        if (!empty($this->doc['customer_phone'])) {
-            $this->text('F1', 8, $x + 12, $detailY, 'Phone: ' . $this->doc['customer_phone'], '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-        if (!empty($this->doc['customer_email'])) {
-            $this->text('F1', 8, $x + 12, $detailY, $this->doc['customer_email'], '0.35', '0.35', '0.35');
-        }
-
-        // Project box (if applicable)
-        if (!empty($this->doc['project_name'])) {
-            $px = $x + $boxW + 20;
-            $this->rect($px, $this->y - $boxH, $boxW, $boxH, '0.96', '0.96', '0.97');
-            $this->rect($px, $this->y - $boxH, 3, $boxH, '0.6', '0.6', '0.65');
-            $this->text('F2', 8, $px + 12, $this->y - 14, 'PROJECT', $this->headingR, $this->headingG, $this->headingB);
-            $this->text('F1', 10, $px + 12, $this->y - 28, $this->doc['project_name'], '0.1', '0.1', '0.1');
-        }
-
-        $this->y -= ($boxH + 18);
+        // Bill To and Project are now in the header (right side, under status).
+        // Nothing to draw here.
     }
 
     private function drawLineItems(): void
