@@ -82,10 +82,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'update_branding') {
         try {
             $stmt = $DB->prepare("
-                UPDATE companies 
-                SET primary_color = ?,
+                UPDATE companies
+                SET qi_template = ?,
+                    primary_color = ?,
                     secondary_color = ?,
+                    qi_heading_color = ?,
+                    qi_text_color = ?,
+                    qi_table_header_text = ?,
+                    qi_bg_color = ?,
+                    qi_border_radius = ?,
+                    qi_logo_size = ?,
+                    qi_logo_position = ?,
                     qi_font_family = ?,
+                    qi_quote_title = ?,
+                    qi_invoice_title = ?,
                     quote_footer_text = ?,
                     invoice_footer_text = ?,
                     qi_show_company_address = ?,
@@ -95,13 +105,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     qi_show_vat_number = ?,
                     qi_show_tax_number = ?,
                     qi_show_reg_number = ?,
+                    qi_show_payment_details = ?,
+                    qi_custom_css = ?,
                     updated_at = NOW()
                 WHERE id = ?
             ");
             $stmt->execute([
+                in_array($_POST['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $_POST['qi_template'] : 'modern',
                 $_POST['primary_color'],
                 $_POST['secondary_color'],
+                $_POST['qi_heading_color'] ?: null,
+                $_POST['qi_text_color'] ?: null,
+                $_POST['qi_table_header_text'] ?: '#ffffff',
+                $_POST['qi_bg_color'] ?: null,
+                max(0, min(24, (int)($_POST['qi_border_radius'] ?? 8))),
+                max(80, min(400, (int)($_POST['qi_logo_size'] ?? 200))),
+                $_POST['qi_logo_position'] ?? 'left',
                 $_POST['qi_font_family'],
+                $_POST['qi_quote_title'] ?: 'QUOTATION',
+                $_POST['qi_invoice_title'] ?: 'INVOICE',
                 $_POST['quote_footer_text'],
                 $_POST['invoice_footer_text'],
                 isset($_POST['qi_show_company_address']) ? 1 : 0,
@@ -111,6 +133,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 isset($_POST['qi_show_vat_number']) ? 1 : 0,
                 isset($_POST['qi_show_tax_number']) ? 1 : 0,
                 isset($_POST['qi_show_reg_number']) ? 1 : 0,
+                isset($_POST['qi_show_payment_details']) ? 1 : 0,
+                $_POST['qi_custom_css'] ?? '',
                 $companyId
             ]);
             $message = 'Branding updated! Refresh quote/invoice to see changes.';
@@ -337,68 +361,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_branding">
                     
+                    <?php $currentTemplate = $company['qi_template'] ?? 'modern'; ?>
                     <div class="fw-qi__form-section">
                         <h3 class="fw-qi__form-section-title">Template Style</h3>
-                        <p class="fw-qi__help-text">Choose your document layout (more coming soon)</p>
-                        
+                        <p class="fw-qi__help-text">Choose your document layout</p>
+
                         <div class="fw-qi__template-grid">
                             <label class="fw-qi__template-card">
-                                <input type="radio" name="qi_template" value="modern" checked>
+                                <input type="radio" name="qi_template" value="modern" <?= $currentTemplate === 'modern' ? 'checked' : '' ?>>
                                 <div class="fw-qi__template-preview fw-qi__template-preview--modern">
+                                    <div class="fw-qi__template-preview-stripe"></div>
                                     <div class="fw-qi__template-preview-header">Modern</div>
                                     <div class="fw-qi__template-preview-body">
                                         <div class="fw-qi__template-preview-line"></div>
                                         <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Modern (Active)</div>
+                                <div class="fw-qi__template-name">Modern</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="classic" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--classic">
-                                    <div class="fw-qi__template-preview-header">Classic</div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="classic" <?= $currentTemplate === 'classic' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--classic" style="border-radius:0;">
+                                    <div class="fw-qi__template-preview-header" style="font-style:italic;font-weight:400;border-bottom:1px solid var(--fw-border);">Classic</div>
                                     <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line"></div>
-                                        <div class="fw-qi__template-preview-line"></div>
+                                        <div class="fw-qi__template-preview-line" style="opacity:0.4;"></div>
+                                        <div class="fw-qi__template-preview-line" style="opacity:0.4;"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Classic (Soon)</div>
+                                <div class="fw-qi__template-name">Classic</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="minimal" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--minimal">
-                                    <div class="fw-qi__template-preview-header">Minimal</div>
-                                    <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short"></div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="minimal" <?= $currentTemplate === 'minimal' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--minimal" style="border-radius:0;border-color:transparent;box-shadow:none;">
+                                    <div class="fw-qi__template-preview-header" style="font-weight:300;text-transform:lowercase;letter-spacing:2px;">minimal</div>
+                                    <div class="fw-qi__template-preview-body" style="gap:12px;">
+                                        <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short" style="height:4px;opacity:0.25;"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Minimal (Soon)</div>
+                                <div class="fw-qi__template-name">Minimal</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="bold" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--bold">
-                                    <div class="fw-qi__template-preview-stripe"></div>
-                                    <div class="fw-qi__template-preview-header">Bold</div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="bold" <?= $currentTemplate === 'bold' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--bold" style="background:var(--accent-qi);border-color:var(--accent-qi);">
+                                    <div class="fw-qi__template-preview-header" style="color:#fff;font-size:20px;font-weight:900;letter-spacing:1px;">BOLD</div>
                                     <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line"></div>
+                                        <div class="fw-qi__template-preview-line" style="background:rgba(255,255,255,0.4);"></div>
+                                        <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short" style="background:rgba(255,255,255,0.3);"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Bold (Soon)</div>
+                                <div class="fw-qi__template-name">Bold</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="corporate" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--corporate">
-                                    <div class="fw-qi__template-preview-header">Corporate</div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="corporate" <?= $currentTemplate === 'corporate' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--corporate" style="border-radius:0;">
+                                    <div style="height:4px;background:#1e3a5f;width:100%;"></div>
+                                    <div class="fw-qi__template-preview-header" style="color:#1e3a5f;font-size:12px;letter-spacing:2px;font-weight:700;">CORPORATE</div>
                                     <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line"></div>
-                                        <div class="fw-qi__template-preview-line"></div>
+                                        <div class="fw-qi__template-preview-line" style="height:6px;"></div>
+                                        <div class="fw-qi__template-preview-line" style="height:6px;opacity:0.5;"></div>
+                                        <div class="fw-qi__template-preview-line" style="height:6px;"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Corporate (Soon)</div>
+                                <div class="fw-qi__template-name">Corporate</div>
                             </label>
                         </div>
                     </div>
@@ -462,6 +490,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 </div>
                             </div>
                         </div>
+                        <div class="fw-qi__form-row" style="margin-top:16px;">
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Heading Color <small>(defaults to primary)</small></label>
+                                <div class="fw-qi__color-input-wrapper">
+                                    <input type="color" name="qi_heading_color" class="fw-qi__color-picker" value="<?= htmlspecialchars($company['qi_heading_color'] ?? $company['primary_color'] ?? '#fbbf24') ?>" data-sync="headingColorText">
+                                    <input type="text" class="fw-qi__input fw-qi__input--color" value="<?= htmlspecialchars($company['qi_heading_color'] ?? '') ?>" readonly id="headingColorText" placeholder="Same as primary">
+                                </div>
+                            </div>
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Text Color <small>(body text)</small></label>
+                                <div class="fw-qi__color-input-wrapper">
+                                    <input type="color" name="qi_text_color" class="fw-qi__color-picker" value="<?= htmlspecialchars($company['qi_text_color'] ?? '#374151') ?>" data-sync="textColorText">
+                                    <input type="text" class="fw-qi__input fw-qi__input--color" value="<?= htmlspecialchars($company['qi_text_color'] ?? '') ?>" readonly id="textColorText" placeholder="Default grey">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="fw-qi__form-row" style="margin-top:16px;">
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Table Header Text</label>
+                                <div class="fw-qi__color-input-wrapper">
+                                    <input type="color" name="qi_table_header_text" class="fw-qi__color-picker" value="<?= htmlspecialchars($company['qi_table_header_text'] ?? '#ffffff') ?>" data-sync="thTextColorText">
+                                    <input type="text" class="fw-qi__input fw-qi__input--color" value="<?= htmlspecialchars($company['qi_table_header_text'] ?? '#ffffff') ?>" readonly id="thTextColorText">
+                                </div>
+                            </div>
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Document Background</label>
+                                <div class="fw-qi__color-input-wrapper">
+                                    <input type="color" name="qi_bg_color" class="fw-qi__color-picker" value="<?= htmlspecialchars($company['qi_bg_color'] ?? '#ffffff') ?>" data-sync="bgColorText">
+                                    <input type="text" class="fw-qi__input fw-qi__input--color" value="<?= htmlspecialchars($company['qi_bg_color'] ?? '') ?>" readonly id="bgColorText" placeholder="White">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="fw-qi__form-section">
+                        <h3 class="fw-qi__form-section-title">Document Titles</h3>
+                        <div class="fw-qi__form-row">
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Quote Title</label>
+                                <input type="text" name="qi_quote_title" class="fw-qi__input" value="<?= htmlspecialchars($company['qi_quote_title'] ?? 'QUOTATION') ?>" placeholder="QUOTATION" maxlength="50">
+                            </div>
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Invoice Title</label>
+                                <input type="text" name="qi_invoice_title" class="fw-qi__input" value="<?= htmlspecialchars($company['qi_invoice_title'] ?? 'INVOICE') ?>" placeholder="INVOICE" maxlength="50">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="fw-qi__form-section">
+                        <h3 class="fw-qi__form-section-title">Logo & Layout</h3>
+                        <div class="fw-qi__form-row">
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Logo Max Width (px)</label>
+                                <input type="number" name="qi_logo_size" class="fw-qi__input" value="<?= (int)($company['qi_logo_size'] ?? 200) ?>" min="80" max="400" step="10">
+                            </div>
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Logo Position</label>
+                                <select name="qi_logo_position" class="fw-qi__input">
+                                    <option value="left" <?= ($company['qi_logo_position'] ?? 'left') === 'left' ? 'selected' : '' ?>>Left</option>
+                                    <option value="center" <?= ($company['qi_logo_position'] ?? '') === 'center' ? 'selected' : '' ?>>Center</option>
+                                    <option value="right" <?= ($company['qi_logo_position'] ?? '') === 'right' ? 'selected' : '' ?>>Right</option>
+                                </select>
+                            </div>
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Border Radius (px)</label>
+                                <input type="number" name="qi_border_radius" class="fw-qi__input" value="<?= (int)($company['qi_border_radius'] ?? 8) ?>" min="0" max="24" step="1">
+                            </div>
+                        </div>
                     </div>
 
                     <div class="fw-qi__form-section">
@@ -516,6 +612,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                     <div class="fw-qi__checkbox-label">Reg Number</div>
                                 </div>
                             </label>
+                            <label class="fw-qi__checkbox-card">
+                                <input type="checkbox" name="qi_show_payment_details" value="1" <?= ($company['qi_show_payment_details'] ?? 1) ? 'checked' : '' ?>>
+                                <div class="fw-qi__checkbox-content">
+                                    <div class="fw-qi__checkbox-icon">🏦</div>
+                                    <div class="fw-qi__checkbox-label">Bank Details</div>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -528,6 +631,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         <div class="fw-qi__form-group">
                             <label class="fw-qi__label">Invoice Footer</label>
                             <textarea name="invoice_footer_text" class="fw-qi__textarea" rows="3"><?= htmlspecialchars($company['invoice_footer_text'] ?? '') ?></textarea>
+                        </div>
+                    </div>
+
+                    <div class="fw-qi__form-section">
+                        <h3 class="fw-qi__form-section-title">Custom CSS <small style="font-weight:400;text-transform:none;font-size:12px;">(Advanced)</small></h3>
+                        <p class="fw-qi__help-text">Add custom CSS rules to fine-tune your document styling. These are injected directly into the document view.</p>
+                        <div class="fw-qi__form-group">
+                            <textarea name="qi_custom_css" class="fw-qi__textarea" rows="6" style="font-family:monospace;font-size:13px;" placeholder=".fw-qi__doc-title { letter-spacing: 2px; }&#10;.fw-qi__doc-table th { font-size: 11px; }"><?= htmlspecialchars($company['qi_custom_css'] ?? '') ?></textarea>
                         </div>
                     </div>
 
@@ -585,12 +696,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             });
         });
 
-        // Color picker sync
+        // Color picker sync (primary + secondary)
         document.getElementById('primaryColor').addEventListener('input', (e) => {
             document.getElementById('primaryColorText').value = e.target.value;
         });
         document.getElementById('secondaryColor').addEventListener('input', (e) => {
             document.getElementById('secondaryColorText').value = e.target.value;
+        });
+        // Sync all data-sync color pickers
+        document.querySelectorAll('.fw-qi__color-picker[data-sync]').forEach(picker => {
+            picker.addEventListener('input', (e) => {
+                const target = document.getElementById(e.target.dataset.sync);
+                if (target) target.value = e.target.value;
+            });
         });
 
         // Logo upload

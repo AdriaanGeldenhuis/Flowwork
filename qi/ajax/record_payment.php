@@ -38,8 +38,8 @@ if (!$invoiceId || $amount <= 0) {
 try {
     $DB->beginTransaction();
 
-    // Fetch invoice
-    $stmt = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ?");
+    // Fetch invoice (FOR UPDATE prevents concurrent overpayment)
+    $stmt = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE");
     $stmt->execute([$invoiceId, $companyId]);
     $invoice = $stmt->fetch();
 

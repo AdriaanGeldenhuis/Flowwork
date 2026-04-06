@@ -391,8 +391,12 @@ window.QI = window.QI || {};
           const description = lineDiv.querySelector('input[name*="[description]"]')?.value || '';
           const quantity = parseFloat(lineDiv.querySelector('.line-quantity')?.value) || 0;
           const unit_price = parseFloat(lineDiv.querySelector('.line-price')?.value) || 0;
-          const line_total = quantity * unit_price;
-          payload.line_items.push({ description, quantity, unit_price, line_total });
+          const discount = parseFloat(lineDiv.querySelector('.line-discount')?.value) || 0;
+          const tax_rate = parseFloat(lineDiv.querySelector('.line-tax-rate')?.value) || 0;
+          const inventory_item_id = lineDiv.querySelector('select[name*="[inventory_item_id]"]')?.value || null;
+          const lineNet = (quantity * unit_price) - discount;
+          const line_total = lineNet + (lineNet * tax_rate / 100);
+          payload.line_items.push({ description, quantity, unit_price, discount, tax_rate, inventory_item_id, line_total });
         });
 
         // Include milestones if enabled

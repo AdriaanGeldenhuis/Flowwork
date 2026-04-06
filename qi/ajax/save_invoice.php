@@ -42,19 +42,24 @@ $defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
 
 // Recalculate subtotal, tax and total to prevent tampering
 $subtotalCalc = 0;
+$discountCalc = 0;
 $taxCalc = 0;
 foreach ($lineItems as $item) {
     $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0;
     $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0;
-    $lineTotal = $qty * $price;
-    $subtotalCalc += $lineTotal;
+    $lineDiscount = isset($item['discount']) ? floatval($item['discount']) : 0;
+    $lineSubtotal = $qty * $price;
+    $lineNet = $lineSubtotal - $lineDiscount;
+    $subtotalCalc += $lineNet;
+    $discountCalc += $lineDiscount;
     $lineTaxRate = isset($item['tax_rate']) ? floatval($item['tax_rate']) / 100 : $defaultTaxRate;
-    $taxCalc += $lineTotal * $lineTaxRate;
+    $taxCalc += $lineNet * $lineTaxRate;
 }
 $totalCalc = $subtotalCalc + $taxCalc;
 
 // Override incoming totals with calculated values
 $input['subtotal'] = $subtotalCalc;
+$input['discount'] = $discountCalc;
 $input['tax'] = $taxCalc;
 $input['total'] = $totalCalc;
 
@@ -67,20 +72,24 @@ try {
         // UPDATE
         $invoiceId = (int)$input['invoice_id'];
         
-        $stmt = $DB->prepare("SELECT status FROM invoices WHERE id = ? AND company_id = ?");
+        $stmt = $DB->prepare("SELECT status, total, balance_due FROM invoices WHERE id = ? AND company_id = ?");
         $stmt->execute([$invoiceId, $companyId]);
         $existing = $stmt->fetch();
-        
+
         if (!$existing) {
             throw new Exception('Invoice not found');
         }
-        
+
         if ($existing['status'] !== 'draft') {
             throw new Exception('Only draft invoices can be edited');
         }
-        
+
+        // Recalculate balance_due: preserve amount already paid
+        $amountPaid = floatval($existing['total']) - floatval($existing['balance_due']);
+        $newBalanceDue = max(0, $totalCalc - $amountPaid);
+
         $stmt = $DB->prepare("
-            UPDATE invoices 
+            UPDATE invoices
             SET customer_id = ?,
                 contact_id = ?,
                 project_id = ?,
@@ -90,12 +99,13 @@ try {
                 discount = ?,
                 tax = ?,
                 total = ?,
+                balance_due = ?,
                 terms = ?,
                 notes = ?,
                 updated_at = NOW()
             WHERE id = ? AND company_id = ?
         ");
-        
+
         $stmt->execute([
             $input['customer_id'],
             $input['contact_id'] ?? null,
@@ -106,6 +116,7 @@ try {
             $input['discount'] ?? 0,
             $input['tax'],
             $input['total'],
+            $newBalanceDue,
             $input['terms'] ?? '',
             $input['notes'] ?? '',
             $invoiceId,

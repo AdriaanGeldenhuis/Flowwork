@@ -160,7 +160,7 @@ try {
 
     // After creating the invoice, create/update the calendar due event
     try {
-        require_once __DIR__ . '/../../services/CalendarHook.php';
+        require_once __DIR__ . '/../services/CalendarHook.php';
         $calendarHook = new CalendarHook($DB);
         $calendarHook->handleInvoiceEvent($companyId, (int)$invoiceId, $invoiceNumber, $dueDate, $userId);
     } catch (Exception $chEx) {
@@ -169,7 +169,7 @@ try {
 
     // Post journal entry for newly created invoice (Section 11)
     try {
-        require_once __DIR__ . '/../../services/JournalPoster.php';
+        require_once __DIR__ . '/../services/JournalPoster.php';
         $poster = new JournalPoster($DB, $companyId, $userId);
         $poster->postInvoice((int)$invoiceId);
     } catch (Exception $e) {

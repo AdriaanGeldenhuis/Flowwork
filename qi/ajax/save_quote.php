@@ -42,19 +42,24 @@ $defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
 
 // Recalculate subtotal, tax and total to prevent tampering
 $subtotalCalc = 0;
+$discountCalc = 0;
 $taxCalc = 0;
 foreach ($lineItems as $item) {
     $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0;
     $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0;
-    $lineTotal = $qty * $price;
-    $subtotalCalc += $lineTotal;
+    $lineDiscount = isset($item['discount']) ? floatval($item['discount']) : 0;
+    $lineSubtotal = $qty * $price;
+    $lineNet = $lineSubtotal - $lineDiscount;
+    $subtotalCalc += $lineNet;
+    $discountCalc += $lineDiscount;
     $lineTaxRate = isset($item['tax_rate']) ? floatval($item['tax_rate']) / 100 : $defaultTaxRate;
-    $taxCalc += $lineTotal * $lineTaxRate;
+    $taxCalc += $lineNet * $lineTaxRate;
 }
 $totalCalc = $subtotalCalc + $taxCalc;
 
 // Override incoming totals with calculated values
 $input['subtotal'] = $subtotalCalc;
+$input['discount'] = $discountCalc;
 $input['tax'] = $taxCalc;
 $input['total'] = $totalCalc;
 
@@ -250,7 +255,7 @@ try {
 // After the quote has been saved (either created or updated) and committed, hook into the calendar to create/update expiry events.
 if (isset($quoteId) && isset($companyId) && isset($userId) && $quoteId) {
     try {
-        require_once __DIR__ . '/../../services/CalendarHook.php';
+        require_once __DIR__ . '/../services/CalendarHook.php';
         $calendarHook = new CalendarHook($DB);
         // Fetch quote number and expiry date
         $stmtInfo = $DB->prepare("SELECT quote_number, expiry_date FROM quotes WHERE id = ? AND company_id = ?");

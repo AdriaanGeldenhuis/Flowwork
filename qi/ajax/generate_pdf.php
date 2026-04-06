@@ -60,13 +60,10 @@ if ($type === 'quote') {
         }
         $absPath = $dir . '/' . $safeCode . '.pdf';
         $relPath = '/storage/qi/' . $companyId . '/quote/' . $safeCode . '.pdf';
-        // Generate PDF if file does not exist
-        if (!file_exists($absPath)) {
-            qi_generate_simple_pdf($contentLines, $absPath);
-            // Update pdf_path on quote record
-            $upd = $DB->prepare("UPDATE quotes SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
-            $upd->execute([$relPath, $id, $companyId]);
-        }
+        // Always regenerate to reflect latest edits
+        qi_generate_simple_pdf($contentLines, $absPath);
+        $upd = $DB->prepare("UPDATE quotes SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
+        $upd->execute([$relPath, $id, $companyId]);
     } elseif ($type === 'credit_note') {
         // Credit note
         $stmt = $DB->prepare(
@@ -120,15 +117,13 @@ if ($type === 'quote') {
         }
         $absPath = $dir . '/' . $safeCode . '.pdf';
         $relPath = '/storage/qi/' . $companyId . '/credit_note/' . $safeCode . '.pdf';
-        if (!file_exists($absPath)) {
-            qi_generate_simple_pdf($contentLines, $absPath);
-            // If pdf_path column exists in credit_notes, update it. Safe guard with try/catch
-            try {
-                $upd = $DB->prepare("UPDATE credit_notes SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
-                $upd->execute([$relPath, $id, $companyId]);
-            } catch (Exception $e) {
-                // Column may not exist; ignore
-            }
+        // Always regenerate to reflect latest edits
+        qi_generate_simple_pdf($contentLines, $absPath);
+        try {
+            $upd = $DB->prepare("UPDATE credit_notes SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
+            $upd->execute([$relPath, $id, $companyId]);
+        } catch (Exception $e) {
+            // Column may not exist; ignore
         }
     } else {
         // Invoice
@@ -178,11 +173,10 @@ if ($type === 'quote') {
         }
         $absPath = $dir . '/' . $safeCode . '.pdf';
         $relPath = '/storage/qi/' . $companyId . '/invoice/' . $safeCode . '.pdf';
-        if (!file_exists($absPath)) {
-            qi_generate_simple_pdf($contentLines, $absPath);
-            $upd = $DB->prepare("UPDATE invoices SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
-            $upd->execute([$relPath, $id, $companyId]);
-        }
+        // Always regenerate to reflect latest edits
+        qi_generate_simple_pdf($contentLines, $absPath);
+        $upd = $DB->prepare("UPDATE invoices SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
+        $upd->execute([$relPath, $id, $companyId]);
     }
     // Serve the PDF file
     if (!isset($absPath) || !file_exists($absPath)) {
