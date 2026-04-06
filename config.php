@@ -5,7 +5,7 @@ const APP_BASE_URL = 'https://www.flowwork.app';
 
 // Database
 const DB_HOST = 'dedi321.cpt1.host-h.net';
-const DB_NAME = 'flowwpavgv_db1';
+const DB_NAME = 'flowwwqmnt_db1';
 const DB_USER = 'flowwwqmnt_1';
 const DB_PASS = '3CLkvJsAM52Xvh7Urf2E';
 
