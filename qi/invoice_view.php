@@ -280,7 +280,7 @@ function format_currency($amount) {
                     <div class="fw-qi__doc-company">
                         <h1 class="fw-qi__doc-title"><?= $docTitle ?></h1>
                         <?php if ($showAddress): ?>
-                            <p><?= htmlspecialchars($invoice['company_address1']) ?><br><?= htmlspecialchars($invoice['company_address2']) ?><br><?= htmlspecialchars($invoice['company_city']) ?>, <?= htmlspecialchars($invoice['company_region']) ?> <?= htmlspecialchars($invoice['company_postal']) ?></p>
+                            <p><?= htmlspecialchars($invoice['company_address1']) ?><?php if (!empty($invoice['company_address2'])): ?><br><?= htmlspecialchars($invoice['company_address2']) ?><?php endif; ?><br><?= htmlspecialchars($invoice['company_city']) ?>, <?= htmlspecialchars($invoice['company_region']) ?> <?= htmlspecialchars($invoice['company_postal']) ?></p>
                         <?php endif; ?>
                         <?php if ($showPhone && $invoice['company_phone']): ?>
                             <p>Tel: <?= htmlspecialchars($invoice['company_phone']) ?></p>
@@ -336,7 +336,7 @@ function format_currency($amount) {
                                 <p style="margin:3px 0;">Reg: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
                             <?php endif; ?>
                         </div>
-                        <?php if ($invoice['project_name']): ?>
+                        <?php if ($invoice['project_name'] && $template !== 'classic'): ?>
                             <p style="margin:3px 0;">Project: <?= htmlspecialchars($invoice['project_name']) ?></p>
                         <?php endif; ?>
                     </div>

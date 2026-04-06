@@ -385,7 +385,7 @@ try {
                         <p style="margin:3px 0;">Reg: <?= htmlspecialchars($doc['customer_reg']) ?></p>
                     <?php endif; ?>
                 </div>
-                <?php if (!empty($doc['project_name'])): ?>
+                <?php if (!empty($doc['project_name']) && $template !== 'classic'): ?>
                     <p style="margin:3px 0;">Project: <?= htmlspecialchars($doc['project_name']) ?></p>
                 <?php endif; ?>
             </div>
