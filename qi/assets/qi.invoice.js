@@ -33,19 +33,19 @@ const InvoiceView = {
 
     async sendInvoice() {
         if (!this.customerEmail) {
-            alert('❌ No email address found for this customer.\n\nPlease add an email address in CRM first.');
+            UI.toast('No email address found for this customer.\n\nPlease add an email address in CRM first.');
             return;
         }
-        const confirmMsg = 'Send invoice to customer?\n\n📧 To: ' + this.customerEmail + '\n👤 Customer: ' + (this.customerName || 'Customer') + '\n\nThis will mark the invoice as "Sent".\n\nContinue?';
-        if (!confirm(confirmMsg)) {
+        const confirmMsg = 'Send invoice to customer?\n\nTo: ' + this.customerEmail + '\nCustomer: ' + (this.customerName || 'Customer') + '\n\nThis will mark the invoice as "Sent".\n\nContinue?';
+        if (!UI.confirm(confirmMsg)) {
             return;
         }
         const btn = event.target;
         const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<span style="opacity:0.6">📧 Sending...</span>';
+        btn.innerHTML = '<span style="opacity:0.6">Sending...</span>';
         btn.disabled = true;
         try {
-            const res = await fetch('/qi/ajax/send_invoice.php', {
+            const data = await UI.fetchJSON('/qi/ajax/send_invoice.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -53,17 +53,16 @@ const InvoiceView = {
                     send_to: this.customerEmail
                 })
             });
-            const data = await res.json();
             if (data.ok) {
-                alert('✅ Invoice sent successfully!\n\n📧 Sent to: ' + (data.recipient || this.customerEmail) + '\n\nStatus updated to "Sent"');
+                UI.toast('Invoice sent successfully!\n\nSent to: ' + (data.recipient || this.customerEmail) + '\n\nStatus updated to "Sent"');
                 location.reload();
             } else {
-                alert('❌ Error: ' + (data.error || 'Send failed'));
+                UI.toast('Error: ' + (data.error || 'Send failed'));
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
         } catch (err) {
-            alert('❌ Network error: ' + err.message);
+            UI.toast('Network error: ' + err.message);
             btn.innerHTML = originalHTML;
             btn.disabled = false;
         }
@@ -76,41 +75,38 @@ const InvoiceView = {
 
     async deleteInvoice() {
         if (!this.invoiceId) return;
-        if (!confirm('Delete this invoice? This action cannot be undone.')) return;
+        if (!UI.confirm('Delete this invoice? This action cannot be undone.')) return;
         const btn = event.target;
         const originalHTML = btn.innerHTML;
         btn.innerHTML = 'Deleting...';
         btn.disabled = true;
         try {
-            const res = await fetch('/qi/ajax/delete_invoice.php', {
+            const data = await UI.fetchJSON('/qi/ajax/delete_invoice.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ invoice_id: this.invoiceId })
             });
-            const data = await res.json();
             if (data.ok) {
-                alert('✅ Invoice deleted');
+                UI.toast('Invoice deleted');
                 window.location.href = '/qi/?tab=invoices';
             } else {
-                alert('❌ Error: ' + (data.error || 'Delete failed'));
+                UI.toast('Error: ' + (data.error || 'Delete failed'));
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
         } catch (err) {
-            alert('❌ Network error: ' + err.message);
+            UI.toast('Network error: ' + err.message);
             btn.innerHTML = originalHTML;
             btn.disabled = false;
         }
-    }
-    ,
+    },
 
     /**
      * Create a Yoco payment link for this invoice
      */
     async createPaymentLink() {
         if (!this.invoiceId) return;
-        // Confirm with the user
-        if (!confirm('Generate a payment link for this invoice?\n\nThe link will allow your customer to pay online via Yoco.\n\nContinue?')) {
+        if (!UI.confirm('Generate a payment link for this invoice?\n\nThe link will allow your customer to pay online via Yoco.\n\nContinue?')) {
             return;
         }
         const btn = event.target;
@@ -118,23 +114,21 @@ const InvoiceView = {
         btn.innerHTML = 'Creating...';
         btn.disabled = true;
         try {
-            const res = await fetch('/qi/ajax/create_yoco_link.php', {
+            const data = await UI.fetchJSON('/qi/ajax/create_yoco_link.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ invoice_id: this.invoiceId })
             });
-            const data = await res.json();
             if (data.ok) {
-                // Show the link and reload to update UI
-                alert('✅ Payment link created!\n\nLink: ' + data.payment_link);
+                UI.toast('Payment link created!\n\nLink: ' + data.payment_link);
                 location.reload();
             } else {
-                alert('❌ Error: ' + (data.error || 'Could not create link'));
+                UI.toast('Error: ' + (data.error || 'Could not create link'));
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
         } catch (err) {
-            alert('❌ Network error: ' + err.message);
+            UI.toast('Network error: ' + err.message);
             btn.innerHTML = originalHTML;
             btn.disabled = false;
         }
@@ -173,16 +167,16 @@ const InvoiceView = {
         const reference   = form.reference.value || '';
         const notes       = form.notes.value || '';
         if (!paymentDate) {
-            alert('Please select a payment date.');
+            UI.toast('Please select a payment date.');
             return;
         }
         if (!amount || isNaN(amount) || amount <= 0) {
-            alert('Please enter a valid payment amount.');
+            UI.toast('Please enter a valid payment amount.');
             return;
         }
         // Check if payment exceeds outstanding balance
         if (amount > this.balanceDue) {
-            if (!confirm('⚠️ Payment amount exceeds the outstanding balance. Allocate anyway?')) {
+            if (!UI.confirm('Payment amount exceeds the outstanding balance. Allocate anyway?')) {
                 return;
             }
         }
@@ -197,7 +191,7 @@ const InvoiceView = {
             const milestoneSelect = document.getElementById('milestoneSelect');
             const milestoneId = milestoneSelect ? milestoneSelect.value || null : null;
 
-            const res = await fetch('/qi/ajax/record_payment.php', {
+            const data = await UI.fetchJSON('/qi/ajax/record_payment.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -210,27 +204,25 @@ const InvoiceView = {
                     milestone_id: milestoneId
                 })
             });
-            const data = await res.json();
             if (data.ok) {
-                alert('✅ Payment recorded successfully!\n\nNew balance: R ' + parseFloat(data.new_balance).toFixed(2));
-                // Reload to refresh invoice details and status
+                UI.toast('Payment recorded successfully!\n\nNew balance: R ' + parseFloat(data.new_balance).toFixed(2));
                 window.location.reload();
             } else {
-                alert('❌ Error: ' + (data.error || 'Payment could not be recorded'));
+                UI.toast('Error: ' + (data.error || 'Payment could not be recorded'));
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Record Payment';
                 }
             }
         } catch (err) {
-            alert('❌ Network error: ' + err.message);
+            UI.toast('Network error: ' + err.message);
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Record Payment';
             }
         }
-    }
-    ,
+    },
+
     /**
      * Prompt for a credit note ID and apply it to this invoice via API
      */
@@ -257,15 +249,15 @@ const InvoiceView = {
                 body: JSON.stringify({ credit_note_id: creditId, invoice_id: this.invoiceId })
             });
             if (res.ok) {
-                UI.toast('✅ Credit note applied successfully!\n\nNew balance: R ' + parseFloat(res.new_balance).toFixed(2));
+                UI.toast('Credit note applied successfully!\n\nNew balance: R ' + parseFloat(res.new_balance).toFixed(2));
                 window.location.reload();
             } else {
-                UI.toast('❌ Error: ' + (res.error || 'Could not apply credit note'));
+                UI.toast('Error: ' + (res.error || 'Could not apply credit note'));
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
         } catch (err) {
-            UI.toast('❌ Network error: ' + err.message);
+            UI.toast('Network error: ' + err.message);
             btn.innerHTML = originalHTML;
             btn.disabled = false;
         }
@@ -292,12 +284,12 @@ const InvoiceView = {
                 logs.forEach(log => {
                     logMsg += '- ' + log.created_at + ' → ' + (log.recipient || 'N/A') + '\n  ' + (log.subject || '(no subject)') + '\n\n';
                 });
-                alert(logMsg);
+                UI.toast(logMsg);
             } else {
-                UI.toast('❌ Error: ' + (res.error || 'Could not fetch email log'));
+                UI.toast('Error: ' + (res.error || 'Could not fetch email log'));
             }
         } catch (err) {
-            UI.toast('❌ Network error: ' + err.message);
+            UI.toast('Network error: ' + err.message);
         }
     }
 };

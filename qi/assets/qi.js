@@ -6,6 +6,12 @@
   const THEME_LIGHT = 'light';
 
   // ========== UTILITIES ==========
+  function esc(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
   function getCookie(name) {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
     return match ? match[2] : null;
@@ -212,11 +218,11 @@ function renderOverview(data) {
                                     </thead>
                                     <tbody>
                                         ${overdueInvoices.map(inv => `
-                                            <tr onclick="location.href='/qi/invoice_view.php?id=${inv.id}'" class="fw-qi__clickable-row">
-                                                <td><strong>${inv.invoice_number}</strong></td>
-                                                <td>${inv.customer_name}</td>
+                                            <tr onclick="location.href='/qi/invoice_view.php?id=${parseInt(inv.id)}'" class="fw-qi__clickable-row">
+                                                <td><strong>${esc(inv.invoice_number)}</strong></td>
+                                                <td>${esc(inv.customer_name)}</td>
                                                 <td>
-                                                    <span class="fw-qi__overdue-badge-sm">${inv.days_overdue}d overdue</span>
+                                                    <span class="fw-qi__overdue-badge-sm">${parseInt(inv.days_overdue)}d overdue</span>
                                                 </td>
                                                 <td class="fw-qi__table-align-right"><strong>R ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
                                             </tr>
@@ -246,13 +252,13 @@ function renderOverview(data) {
                                     </thead>
                                     <tbody>
                                         ${pendingInvoices.map(inv => `
-                                            <tr onclick="location.href='/qi/invoice_view.php?id=${inv.id}'" class="fw-qi__clickable-row">
-                                                <td><strong>${inv.invoice_number}</strong></td>
-                                                <td>${inv.customer_name}</td>
+                                            <tr onclick="location.href='/qi/invoice_view.php?id=${parseInt(inv.id)}'" class="fw-qi__clickable-row">
+                                                <td><strong>${esc(inv.invoice_number)}</strong></td>
+                                                <td>${esc(inv.customer_name)}</td>
                                                 <td>
-                                                    ${inv.days_until_due <= 7 ? 
-                                                        `<span class="fw-qi__due-soon-badge">${inv.days_until_due}d</span>` : 
-                                                        new Date(inv.due_date).toLocaleDateString()
+                                                    ${inv.days_until_due <= 7 ?
+                                                        `<span class="fw-qi__due-soon-badge">${parseInt(inv.days_until_due)}d</span>` :
+                                                        esc(new Date(inv.due_date).toLocaleDateString())
                                                     }
                                                 </td>
                                                 <td class="fw-qi__table-align-right"><strong>R ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
@@ -283,13 +289,13 @@ function renderOverview(data) {
                                     </thead>
                                     <tbody>
                                         ${activeQuotes.map(q => `
-                                            <tr onclick="location.href='/qi/quote_view.php?id=${q.id}'" class="fw-qi__clickable-row">
-                                                <td><strong>${q.quote_number}</strong></td>
-                                                <td>${q.customer_name}</td>
+                                            <tr onclick="location.href='/qi/quote_view.php?id=${parseInt(q.id)}'" class="fw-qi__clickable-row">
+                                                <td><strong>${esc(q.quote_number)}</strong></td>
+                                                <td>${esc(q.customer_name)}</td>
                                                 <td>
-                                                    ${q.days_until_expiry <= 3 ? 
-                                                        `<span class="fw-qi__expiring-badge">${q.days_until_expiry}d left</span>` : 
-                                                        new Date(q.expiry_date).toLocaleDateString()
+                                                    ${q.days_until_expiry <= 3 ?
+                                                        `<span class="fw-qi__expiring-badge">${parseInt(q.days_until_expiry)}d left</span>` :
+                                                        esc(new Date(q.expiry_date).toLocaleDateString())
                                                     }
                                                 </td>
                                                 <td class="fw-qi__table-align-right"><strong>R ${parseFloat(q.total).toFixed(2)}</strong></td>
@@ -329,8 +335,8 @@ function renderOverview(data) {
                                     <div class="fw-qi__payment-item">
                                         <div class="fw-qi__payment-icon">✅</div>
                                         <div class="fw-qi__payment-details">
-                                            <div class="fw-qi__payment-customer">${pmt.customer_name}</div>
-                                            <div class="fw-qi__payment-invoice">${pmt.invoice_number} • ${new Date(pmt.payment_date).toLocaleDateString()}</div>
+                                            <div class="fw-qi__payment-customer">${esc(pmt.customer_name)}</div>
+                                            <div class="fw-qi__payment-invoice">${esc(pmt.invoice_number)} • ${esc(new Date(pmt.payment_date).toLocaleDateString())}</div>
                                         </div>
                                         <div class="fw-qi__payment-amount">R ${parseFloat(pmt.amount).toFixed(2)}</div>
                                     </div>
@@ -350,8 +356,8 @@ function renderOverview(data) {
                                     <div class="fw-qi__top-customer-item">
                                         <div class="fw-qi__top-customer-rank">${idx + 1}</div>
                                         <div class="fw-qi__top-customer-info">
-                                            <div class="fw-qi__top-customer-name">${cust.name}</div>
-                                            <div class="fw-qi__top-customer-meta">${cust.invoice_count} invoices</div>
+                                            <div class="fw-qi__top-customer-name">${esc(cust.name)}</div>
+                                            <div class="fw-qi__top-customer-meta">${parseInt(cust.invoice_count)} invoices</div>
                                         </div>
                                         <div class="fw-qi__top-customer-revenue">R ${parseFloat(cust.total_revenue).toLocaleString('en-ZA', {minimumFractionDigits: 0})}</div>
                                     </div>
@@ -522,18 +528,20 @@ function renderMiniChart(data) {
         html += '</tr></thead><tbody>';
 
         items.forEach(item => {
-            html += '<tr onclick="QIView.openItem(\'' + tab + '\', ' + item.id + ')">';
+            html += '<tr onclick="QIView.openItem(\'' + tab + '\', ' + parseInt(item.id) + ')">';
             headers.forEach(h => {
                 let value = item[h.key] || '';
                 if (h.key === 'status') {
                     // For recurring type, display status without badge; others use badge styling
                     if (tab === 'recurring') {
-                        value = item.status_label || item.status;
+                        value = esc(item.status_label || item.status);
                     } else {
-                        value = `<span class="fw-qi__badge fw-qi__badge--${item.status}">${item.status_label || item.status}</span>`;
+                        value = `<span class="fw-qi__badge fw-qi__badge--${esc(item.status)}">${esc(item.status_label || item.status)}</span>`;
                     }
                 } else if (h.key === 'total' || h.key === 'balance_due') {
                     value = 'R ' + parseFloat(value || 0).toFixed(2);
+                } else {
+                    value = esc(value);
                 }
                 html += `<td class="${h.align || ''}">${value}</td>`;
             });

@@ -26,6 +26,8 @@ if (!$companyId) {
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $docType = isset($input['doc_type']) ? strtolower(trim($input['doc_type'])) : '';
 $docId   = isset($input['doc_id']) ? (int)$input['doc_id'] : 0;
+$page    = isset($input['page']) ? max(1, (int)$input['page']) : 1;
+$perPage = isset($input['per_page']) ? min(100, max(1, (int)$input['per_page'])) : 50;
 
 if (!$docType || !$docId) {
     echo json_encode(['ok' => false, 'error' => 'Missing parameters']);
@@ -44,14 +46,24 @@ try {
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'qi_email_log'"
     )->fetchColumn();
     if (!$hasLog) {
-        echo json_encode(['ok' => true, 'data' => []]);
+        echo json_encode(['ok' => true, 'data' => [], 'total_count' => 0]);
         exit;
     }
+
+    // Get total count
+    $countStmt = $DB->prepare(
+        "SELECT COUNT(*) FROM qi_email_log WHERE company_id = ? AND doc_type = ? AND doc_id = ?"
+    );
+    $countStmt->execute([$companyId, $docType, $docId]);
+    $totalCount = (int)$countStmt->fetchColumn();
+
+    $offset = ($page - 1) * $perPage;
     $stmt = $DB->prepare(
         "SELECT id, recipient, subject, created_at " .
         "FROM qi_email_log " .
         "WHERE company_id = ? AND doc_type = ? AND doc_id = ? " .
-        "ORDER BY created_at DESC"
+        "ORDER BY created_at DESC " .
+        "LIMIT " . intval($perPage) . " OFFSET " . intval($offset)
     );
     $stmt->execute([$companyId, $docType, $docId]);
     $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -59,7 +71,7 @@ try {
         // Format date/time for display
         $log['created_at'] = date('d M Y H:i', strtotime($log['created_at']));
     }
-    echo json_encode(['ok' => true, 'data' => $logs]);
+    echo json_encode(['ok' => true, 'data' => $logs, 'total_count' => $totalCount]);
 } catch (Exception $e) {
     error_log('Get email log error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => 'Unable to fetch log']);
