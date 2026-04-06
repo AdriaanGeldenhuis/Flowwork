@@ -501,10 +501,6 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
 },
         
         downloadPDF() {
-            window.location.href = '/qi/ajax/download_pdf.php?type=quote&id=' + this.quoteId;
-        },
-
-        printPDF() {
             window.open('/qi/ajax/generate_pdf.php?type=quote&id=' + this.quoteId, '_blank');
         },
         

@@ -98,7 +98,6 @@ $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
                             <button onclick="CNView.applyToInvoice()" class="fw-qi__kebab-item">Apply to Invoice</button>
                         <?php endif; ?>
                         <button onclick="CNView.downloadPDF()" class="fw-qi__kebab-item">Download PDF</button>
-                        <button onclick="CNView.printPDF()" class="fw-qi__kebab-item">Print</button>
                     </nav>
                 </div>
             </div>
@@ -249,10 +248,6 @@ $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
             },
 
             downloadPDF() {
-                window.location.href = '/qi/ajax/download_pdf.php?type=credit_note&id=' + this.creditNoteId;
-            },
-
-            printPDF() {
                 window.open('/qi/ajax/generate_pdf.php?type=credit_note&id=' + this.creditNoteId, '_blank');
             }
         };
