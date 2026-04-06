@@ -270,6 +270,10 @@ function format_currency($amount) {
             <div class="fw-qi__document">
                 <!-- Document Header -->
                 <div class="fw-qi__doc-header">
+                    <div class="fw-qi__doc-header-left">
+                        <?php if ($invoice['logo_url']): ?>
+                            <img src="<?= htmlspecialchars($invoice['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
+                        <?php endif; ?>
                     <div class="fw-qi__doc-company">
                         <h1 class="fw-qi__doc-title">Invoice</h1>
                         <?php if ($showAddress): ?>
@@ -294,6 +298,7 @@ function format_currency($amount) {
                             <p>Reg No: <?= htmlspecialchars($invoice['reg_number']) ?></p>
                         <?php endif; ?>
                     </div>
+                    </div><!-- /.fw-qi__doc-header-left -->
                     <div class="fw-qi__doc-meta">
                         <h2>Invoice #: <?= htmlspecialchars($invoice['invoice_number']) ?></h2>
                         <p>Issue Date: <?= htmlspecialchars(date('d M Y', strtotime($invoice['issue_date']))) ?></p>
