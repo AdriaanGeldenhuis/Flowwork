@@ -194,11 +194,9 @@ try {
                         <div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                             <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Quote To</h3>
                             <p style="margin:4px 0;"><strong><?= htmlspecialchars($quote['customer_name']) ?></strong></p>
-                            <?php
-                                $custAddr = trim(($quote['customer_address1'] ?? '') . ' ' . ($quote['customer_address2'] ?? ''));
-                                $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? ''));
-                            ?>
-                            <?php if ($custAddr): ?><p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_address1'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address1']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_address2'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address2']) ?></p><?php endif; ?>
+                            <?php $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? '')); ?>
                             <?php if ($custCity && $custCity !== ', '): ?><p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
                             <?php if ($quote['customer_phone']): ?><p style="margin:3px 0;">Phone: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
                             <?php if ($quote['customer_email']): ?><p style="margin:3px 0;">Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>

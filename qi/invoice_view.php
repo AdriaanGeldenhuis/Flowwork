@@ -311,13 +311,15 @@ function format_currency($amount) {
                         <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                             <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
                             <p style="margin:4px 0;"><strong><?= htmlspecialchars($invoice['customer_name'] ?? 'Customer') ?></strong></p>
+                            <?php if (!empty($invoice['customer_address1'])): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($invoice['customer_address1']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($invoice['customer_address2'])): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($invoice['customer_address2']) ?></p>
+                            <?php endif; ?>
                             <?php
-                                $custAddr = trim(($invoice['customer_address1'] ?? '') . ' ' . ($invoice['customer_address2'] ?? ''));
                                 $custCity = trim(($invoice['customer_city'] ?? '') . ', ' . ($invoice['customer_region'] ?? '') . ' ' . ($invoice['customer_postal'] ?? ''));
                             ?>
-                            <?php if ($custAddr): ?>
-                                <p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p>
-                            <?php endif; ?>
                             <?php if ($custCity && $custCity !== ', '): ?>
                                 <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
                             <?php endif; ?>
@@ -334,18 +336,11 @@ function format_currency($amount) {
                                 <p style="margin:3px 0;">Reg: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
                             <?php endif; ?>
                         </div>
+                        <?php if ($invoice['project_name']): ?>
+                            <p style="margin:3px 0;">Project: <?= htmlspecialchars($invoice['project_name']) ?></p>
+                        <?php endif; ?>
                     </div>
                 </div>
-
-                <!-- Project Details -->
-                <?php if ($invoice['project_name']): ?>
-                <div class="fw-qi__doc-details">
-                    <div class="fw-qi__doc-detail-box">
-                        <h3>Project</h3>
-                        <p><?= htmlspecialchars($invoice['project_name']) ?></p>
-                    </div>
-                </div>
-                <?php endif; ?>
 
                 <!-- Line Items Table -->
                 <table class="fw-qi__doc-table">

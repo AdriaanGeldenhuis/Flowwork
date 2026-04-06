@@ -236,12 +236,15 @@ class QiStyledPdfWriter
         $rightY -= 13;
         $this->textRight('F2', 9, $rightX, $rightY, $this->doc['customer_name'] ?? 'Customer', '0.1', '0.1', '0.1');
         $rightY -= 12;
-        $custAddr = trim(($this->doc['customer_address1'] ?? '') . ' ' . ($this->doc['customer_address2'] ?? ''));
-        $custCity = trim(($this->doc['customer_city'] ?? '') . ', ' . ($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? ''));
-        if ($custAddr) {
-            $this->textRight('F1', 8, $rightX, $rightY, $custAddr, '0.35', '0.35', '0.35');
+        if (!empty($this->doc['customer_address1'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, $this->doc['customer_address1'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
+        if (!empty($this->doc['customer_address2'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, $this->doc['customer_address2'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        $custCity = trim(($this->doc['customer_city'] ?? '') . ', ' . ($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? ''));
         if ($custCity && $custCity !== ', ') {
             $this->textRight('F1', 8, $rightX, $rightY, $custCity, '0.35', '0.35', '0.35');
             $rightY -= 11;
@@ -262,6 +265,10 @@ class QiStyledPdfWriter
             $this->textRight('F1', 8, $rightX, $rightY, 'Reg: ' . $this->doc['customer_reg'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
+        if (!empty($this->doc['project_name'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Project: ' . $this->doc['project_name'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
 
         // Accent line — position below whichever column is taller
         $headerBottom = min($leftY, $rightY) - 8;
@@ -272,24 +279,8 @@ class QiStyledPdfWriter
 
     private function drawDetails(): void
     {
-        // Bill To is now in the header (right side, under status).
-        // Only draw Project box if applicable.
-        if (empty($this->doc['project_name'])) {
-            return;
-        }
-
-        $x = $this->marginL;
-        $boxW = $this->contentW() / 2;
-        $boxH = 40;
-
-        $this->checkSpace($boxH + 18);
-
-        $this->rect($x, $this->y - $boxH, $boxW, $boxH, '0.96', '0.96', '0.97');
-        $this->rect($x, $this->y - $boxH, 3, $boxH, '0.6', '0.6', '0.65');
-        $this->text('F2', 8, $x + 12, $this->y - 14, 'PROJECT', $this->headingR, $this->headingG, $this->headingB);
-        $this->text('F1', 10, $x + 12, $this->y - 28, $this->doc['project_name'], '0.1', '0.1', '0.1');
-
-        $this->y -= ($boxH + 18);
+        // Bill To and Project are now in the header (right side, under status).
+        // Nothing to draw here.
     }
 
     private function drawLineItems(): void

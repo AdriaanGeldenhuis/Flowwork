@@ -362,13 +362,13 @@ try {
                 <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                     <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
                     <p style="margin:4px 0;"><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
-                    <?php
-                        $custAddr = trim(($doc['customer_address1'] ?? '') . ' ' . ($doc['customer_address2'] ?? ''));
-                        $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? ''));
-                    ?>
-                    <?php if ($custAddr): ?>
-                        <p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p>
+                    <?php if (!empty($doc['customer_address1'])): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($doc['customer_address1']) ?></p>
                     <?php endif; ?>
+                    <?php if (!empty($doc['customer_address2'])): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($doc['customer_address2']) ?></p>
+                    <?php endif; ?>
+                    <?php $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? '')); ?>
                     <?php if ($custCity && $custCity !== ', '): ?>
                         <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
                     <?php endif; ?>
@@ -385,18 +385,11 @@ try {
                         <p style="margin:3px 0;">Reg: <?= htmlspecialchars($doc['customer_reg']) ?></p>
                     <?php endif; ?>
                 </div>
+                <?php if (!empty($doc['project_name'])): ?>
+                    <p style="margin:3px 0;">Project: <?= htmlspecialchars($doc['project_name']) ?></p>
+                <?php endif; ?>
             </div>
         </div>
-
-        <!-- Project Details -->
-        <?php if (!empty($doc['project_name'])): ?>
-        <div class="fw-qi__doc-details">
-            <div class="fw-qi__doc-detail-box">
-                <h3>Project</h3>
-                <p><?= htmlspecialchars($doc['project_name']) ?></p>
-            </div>
-        </div>
-        <?php endif; ?>
 
         <!-- Line Items Table -->
         <table class="fw-qi__doc-table">
