@@ -80,7 +80,7 @@ try {
     }
 
     // Fetch board items and their values
-    $stmtItems = $DB->prepare("SELECT id, title FROM board_items WHERE board_id = ? AND (status IS NULL OR status NOT IN ('archived','deleted')) ORDER BY id");
+    $stmtItems = $DB->prepare("SELECT id, title FROM board_items WHERE board_id = ? AND archived = 0 ORDER BY id");
     $stmtItems->execute([$boardId]);
     $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 

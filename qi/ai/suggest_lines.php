@@ -40,7 +40,7 @@ $suggestions = [];
 if ($projectId > 0) {
     try {
         // Fetch items from board_items for the given project boards (join board_items -> projects?)
-        $stmt = $DB->prepare("SELECT bi.title FROM board_items bi JOIN project_boards pb ON bi.board_id = pb.board_id WHERE pb.project_id = ? AND bi.status IN ('todo','in_progress','done') ORDER BY bi.title LIMIT 10");
+        $stmt = $DB->prepare("SELECT bi.title FROM board_items bi JOIN project_boards pb ON bi.board_id = pb.board_id WHERE pb.project_id = ? AND bi.archived = 0 ORDER BY bi.title LIMIT 10");
         $stmt->execute([$projectId]);
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($items as $item) {
