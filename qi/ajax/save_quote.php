@@ -201,8 +201,8 @@ try {
             $stmt->execute([$quoteId, $companyId]);
         }
 
-        // Insert milestones
-        $msStmt = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('quote', ?, ?, ?, ?, ?, ?, 'pending', ?)");
+        // Insert milestones (first milestone starts as 'due', rest as 'pending')
+        $msStmt = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('quote', ?, ?, ?, ?, ?, ?, ?, ?)");
         foreach ($milestones as $idx => $ms) {
             if (isset($ms['fixed_amount']) && $ms['fixed_amount'] !== null) {
                 $msAmount = round(floatval($ms['fixed_amount']), 2);
@@ -212,6 +212,7 @@ try {
                 $msAmount = round($totalCalc * ($pct / 100), 2);
             }
             $msDueDate = !empty($ms['due_date']) ? $ms['due_date'] : null;
+            $msStatus = ($idx === 0) ? 'due' : 'pending';
             $msStmt->execute([
                 $quoteId,
                 $companyId,
@@ -219,6 +220,7 @@ try {
                 $pct,
                 $msAmount,
                 $msDueDate,
+                $msStatus,
                 $idx
             ]);
         }

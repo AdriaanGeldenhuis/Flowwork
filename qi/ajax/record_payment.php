@@ -91,6 +91,12 @@ try {
         $msStatus = ($newMsPaid >= $milestone['amount'] - 0.01) ? 'paid' : 'due';
         $stmt = $DB->prepare("UPDATE payment_milestones SET amount_paid = ?, status = ?, updated_at = NOW() WHERE id = ?");
         $stmt->execute([min($newMsPaid, $milestone['amount']), $msStatus, $milestoneId]);
+
+        // If milestone is now fully paid, advance the next pending milestone to 'due'
+        if ($msStatus === 'paid') {
+            $nextStmt = $DB->prepare("UPDATE payment_milestones SET status = 'due' WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? AND status = 'pending' ORDER BY sort_order ASC LIMIT 1");
+            $nextStmt->execute([$invoiceId, $companyId]);
+        }
     }
 
     // Update invoice balance and status

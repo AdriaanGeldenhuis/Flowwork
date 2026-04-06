@@ -388,20 +388,40 @@ function format_currency($amount) {
                                 </tr>
                             </thead>
                             <tbody>
+                                <?php
+                                    // Determine which milestone is "now payable" (first unpaid)
+                                    $nowPayableId = null;
+                                    foreach ($milestones as $ms) {
+                                        if ($ms['status'] !== 'paid') {
+                                            $nowPayableId = $ms['id'];
+                                            break;
+                                        }
+                                    }
+                                ?>
                                 <?php foreach ($milestones as $ms): ?>
                                     <?php
-                                        $msStatusClass = 'pending';
-                                        if ($ms['status'] === 'paid') $msStatusClass = 'paid';
-                                        elseif ($ms['status'] === 'overdue') $msStatusClass = 'overdue';
-                                        elseif ($ms['status'] === 'due') $msStatusClass = 'due';
+                                        $isNowPayable = ($nowPayableId !== null && $ms['id'] == $nowPayableId);
+                                        if ($ms['status'] === 'paid') {
+                                            $msStatusClass = 'paid';
+                                            $msStatusLabel = 'Paid';
+                                        } elseif ($ms['status'] === 'overdue') {
+                                            $msStatusClass = 'overdue';
+                                            $msStatusLabel = 'Overdue';
+                                        } elseif ($isNowPayable) {
+                                            $msStatusClass = 'now-payable';
+                                            $msStatusLabel = 'Now Payable';
+                                        } else {
+                                            $msStatusClass = 'upcoming';
+                                            $msStatusLabel = 'Upcoming';
+                                        }
                                     ?>
-                                    <tr>
+                                    <tr class="<?= $isNowPayable ? 'fw-qi__milestone-row--active' : '' ?>">
                                         <td><?= htmlspecialchars($ms['label']) ?></td>
                                         <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
                                         <td style="text-align:right;"><?= format_currency($ms['amount']) ?></td>
                                         <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
                                         <td style="text-align:right;"><?= format_currency($ms['amount_paid']) ?></td>
-                                        <td><span class="fw-qi__milestone-badge fw-qi__milestone-badge--<?= $msStatusClass ?>"><?= ucfirst($ms['status']) ?></span></td>
+                                        <td><span class="fw-qi__milestone-badge fw-qi__milestone-badge--<?= $msStatusClass ?>"><?= $msStatusLabel ?></span></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -473,9 +493,10 @@ function format_currency($amount) {
                             <label class="fw-qi__label">Payment Phase</label>
                             <select name="milestone_id" class="fw-qi__input" id="milestoneSelect" onchange="InvoiceView.onMilestoneSelect()">
                                 <option value="">— General payment —</option>
+                                <?php $firstUnpaidSelected = false; ?>
                                 <?php foreach ($milestones as $ms): ?>
                                     <?php if ($ms['status'] !== 'paid'): ?>
-                                        <option value="<?= $ms['id'] ?>" data-remaining="<?= number_format($ms['amount'] - $ms['amount_paid'], 2, '.', '') ?>">
+                                        <option value="<?= $ms['id'] ?>" data-remaining="<?= number_format($ms['amount'] - $ms['amount_paid'], 2, '.', '') ?>"<?php if (!$firstUnpaidSelected) { echo ' selected'; $firstUnpaidSelected = true; } ?>>
                                             <?= htmlspecialchars($ms['label']) ?> (<?= number_format($ms['percentage'], 1) ?>% — R <?= number_format($ms['amount'] - $ms['amount_paid'], 2) ?> remaining)
                                         </option>
                                     <?php endif; ?>

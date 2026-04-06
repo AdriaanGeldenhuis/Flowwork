@@ -1741,6 +1741,21 @@ input[type="date"].fw-qi__input {
   background: #fee2e2;
   color: #991b1b;
 }
+.fw-qi__milestone-badge--now-payable {
+  background: #f59e0b;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.8em;
+  padding: 4px 12px;
+}
+.fw-qi__milestone-badge--upcoming {
+  background: #e2e8f0;
+  color: #94a3b8;
+}
+.fw-qi__milestone-row--active {
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+}
 
 /* Dark mode milestone overrides */
 .fw-qi[data-theme="dark"] .fw-qi__milestone-row {
@@ -1766,6 +1781,18 @@ input[type="date"].fw-qi__input {
 .fw-qi[data-theme="dark"] .fw-qi__milestone-badge--overdue {
   background: #450a0a;
   color: #fca5a5;
+}
+.fw-qi[data-theme="dark"] .fw-qi__milestone-badge--now-payable {
+  background: #b45309;
+  color: #ffffff;
+}
+.fw-qi[data-theme="dark"] .fw-qi__milestone-badge--upcoming {
+  background: #334155;
+  color: #64748b;
+}
+.fw-qi[data-theme="dark"] .fw-qi__milestone-row--active {
+  border-left-color: #f59e0b;
+  background: #1c1a0e;
 }
 
 /* Responsive milestone fields */
