@@ -243,6 +243,10 @@ try {
         width: 100%;
         border-collapse: collapse;
         margin-bottom: 20px;
+        page-break-inside: auto;
+    }
+    .items-table thead {
+        display: table-header-group;
     }
     .items-table thead th {
         background: #333;
@@ -260,6 +264,9 @@ try {
         border-bottom: 1px solid #eee;
         font-size: 10px;
         vertical-align: top;
+    }
+    .items-table tbody tr {
+        page-break-inside: avoid;
     }
     .items-table tbody td.right { text-align: right; }
     .items-table tbody tr:nth-child(even) { background: #fafafa; }
@@ -312,12 +319,18 @@ try {
             margin: 0;
             padding: 12mm 15mm;
             width: 100%;
+            min-height: auto;
         }
         .no-print { display: none !important; }
+        .header { page-break-inside: avoid; }
+        .details { page-break-inside: avoid; }
+        .totals { page-break-inside: avoid; }
+        .items-table thead { display: table-header-group; }
+        .items-table tbody tr { page-break-inside: avoid; }
     }
     @page {
         size: A4;
-        margin: 0;
+        margin: 10mm 0;
     }
 
     /* Print toolbar */
