@@ -18,6 +18,7 @@ if (is_array($inputData)) {
     $method      = $inputData['method'] ?? 'eft';
     $reference   = $inputData['reference'] ?? '';
     $notes       = $inputData['notes'] ?? '';
+    $milestoneId = isset($inputData['milestone_id']) && $inputData['milestone_id'] !== '' ? (int)$inputData['milestone_id'] : null;
 } else {
     // Fallback to standard form POST
     $invoiceId   = filter_input(INPUT_POST, 'invoice_id', FILTER_VALIDATE_INT);
@@ -26,6 +27,7 @@ if (is_array($inputData)) {
     $method      = $_POST['method'] ?? 'eft';
     $reference   = $_POST['reference'] ?? '';
     $notes       = $_POST['notes'] ?? '';
+    $milestoneId = isset($_POST['milestone_id']) && $_POST['milestone_id'] !== '' ? (int)$_POST['milestone_id'] : null;
 }
 
 if (!$invoiceId || $amount <= 0) {
@@ -63,6 +65,33 @@ try {
         VALUES (?, ?, ?)
     ");
     $stmt->execute([$paymentId, $invoiceId, $amount]);
+
+    // If milestone-based payment, update milestone tracking
+    if ($milestoneId) {
+        // Validate milestone belongs to this invoice
+        $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE id = ? AND entity_type = 'invoice' AND entity_id = ? AND company_id = ?");
+        $stmt->execute([$milestoneId, $invoiceId, $companyId]);
+        $milestone = $stmt->fetch();
+
+        if (!$milestone) {
+            throw new Exception('Payment milestone not found');
+        }
+
+        $msRemaining = $milestone['amount'] - $milestone['amount_paid'];
+        if ($amount > $msRemaining + 0.01) {
+            throw new Exception('Payment amount exceeds milestone remaining (R ' . number_format($msRemaining, 2) . ')');
+        }
+
+        // Record milestone payment link
+        $stmt = $DB->prepare("INSERT INTO milestone_payments (milestone_id, payment_id, amount) VALUES (?, ?, ?)");
+        $stmt->execute([$milestoneId, $paymentId, $amount]);
+
+        // Update milestone amount_paid and status
+        $newMsPaid = $milestone['amount_paid'] + $amount;
+        $msStatus = ($newMsPaid >= $milestone['amount'] - 0.01) ? 'paid' : 'due';
+        $stmt = $DB->prepare("UPDATE payment_milestones SET amount_paid = ?, status = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([min($newMsPaid, $milestone['amount']), $msStatus, $milestoneId]);
+    }
 
     // Update invoice balance and status
     $newBalance = $invoice['balance_due'] - $amount;

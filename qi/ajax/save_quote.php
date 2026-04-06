@@ -163,7 +163,7 @@ try {
                 quote_id, item_description, quantity, unit_price, line_total, sort_order
             ) VALUES (?, ?, ?, ?, ?, ?)
         ");
-        
+
         foreach ($input['line_items'] as $index => $item) {
             $stmt->execute([
                 $quoteId,
@@ -175,7 +175,59 @@ try {
             ]);
         }
     }
-    
+
+    // Handle payment milestones
+    $milestones = $input['milestones'] ?? [];
+    $hasMilestones = !empty($milestones) && is_array($milestones) ? 1 : 0;
+
+    if ($hasMilestones) {
+        // Calculate total allocated (supports both percentage and fixed amounts)
+        $totalAllocated = 0;
+        foreach ($milestones as $ms) {
+            if (isset($ms['fixed_amount']) && $ms['fixed_amount'] !== null) {
+                $totalAllocated += floatval($ms['fixed_amount']);
+            } else {
+                $totalAllocated += $totalCalc * (floatval($ms['percentage'] ?? 0) / 100);
+            }
+        }
+        $allocatedPct = $totalCalc > 0 ? ($totalAllocated / $totalCalc) * 100 : 0;
+        if (abs($allocatedPct - 100) > 0.01) {
+            throw new Exception('Milestone amounts must add up to 100% of total (currently ' . round($allocatedPct, 2) . '%)');
+        }
+
+        // Delete existing milestones on edit
+        if ($editMode) {
+            $stmt = $DB->prepare("DELETE FROM payment_milestones WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ?");
+            $stmt->execute([$quoteId, $companyId]);
+        }
+
+        // Insert milestones
+        $msStmt = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('quote', ?, ?, ?, ?, ?, ?, 'pending', ?)");
+        foreach ($milestones as $idx => $ms) {
+            if (isset($ms['fixed_amount']) && $ms['fixed_amount'] !== null) {
+                $msAmount = round(floatval($ms['fixed_amount']), 2);
+                $pct = $totalCalc > 0 ? round(($msAmount / $totalCalc) * 100, 2) : 0;
+            } else {
+                $pct = floatval($ms['percentage'] ?? 0);
+                $msAmount = round($totalCalc * ($pct / 100), 2);
+            }
+            $msDueDate = !empty($ms['due_date']) ? $ms['due_date'] : null;
+            $msStmt->execute([
+                $quoteId,
+                $companyId,
+                $ms['label'] ?? ('Phase ' . ($idx + 1)),
+                $pct,
+                $msAmount,
+                $msDueDate,
+                $idx
+            ]);
+        }
+    }
+
+    // Update has_milestones flag
+    $stmt = $DB->prepare("UPDATE quotes SET has_milestones = ? WHERE id = ?");
+    $stmt->execute([$hasMilestones, $quoteId]);
+
     $DB->commit();
     
     echo json_encode([

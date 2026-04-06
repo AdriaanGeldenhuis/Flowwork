@@ -186,6 +186,29 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                 </div>
 
                 <div class="fw-qi__form-section">
+                    <h2 class="fw-qi__form-section-title">Payment Milestones</h2>
+                    <div class="fw-qi__milestone-toggle">
+                        <label class="fw-qi__checkbox-label">
+                            <input type="checkbox" id="enableMilestones" onchange="QI.toggleMilestones()">
+                            <span>Enable payment phases (deposit & percentage-based payments)</span>
+                        </label>
+                    </div>
+                    <div id="milestonesSection" style="display:none;">
+                        <div id="milestonesContainer"></div>
+                        <div class="fw-qi__milestone-actions">
+                            <button type="button" class="fw-qi__btn fw-qi__btn--secondary fw-qi__btn--small" onclick="QI.addMilestone()">+ Add Phase</button>
+                        </div>
+                        <div class="fw-qi__milestone-summary">
+                            <div class="fw-qi__milestone-summary-row">
+                                <span>Total allocated:</span>
+                                <strong id="milestoneTotalPct">0%</strong>
+                            </div>
+                            <div id="milestoneValidation" class="fw-qi__milestone-validation" style="display:none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fw-qi__form-section">
                     <h2 class="fw-qi__form-section-title">Terms & Notes</h2>
                     <div class="fw-qi__form-group">
                         <label class="fw-qi__label">Payment Terms</label>
@@ -277,6 +300,12 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                         line_total: line_total
                     });
                 });
+
+                // Include milestones if enabled
+                payload.milestones = QI.collectMilestones();
+                if (payload.milestones.length > 0 && !QI.validateMilestones()) {
+                    throw new Error('Payment milestone percentages must add up to 100%');
+                }
 
                 const res = await fetch('/qi/ajax/save_invoice.php', {
                     method: 'POST',

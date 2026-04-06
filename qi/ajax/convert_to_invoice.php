@@ -125,10 +125,37 @@ try {
         ]);
     }
     
-    // 6. Update quote status to converted
+    // 6. Copy payment milestones if present
+    if (!empty($quote['has_milestones'])) {
+        $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+        $stmt->execute([$quoteId, $companyId]);
+        $quoteMilestones = $stmt->fetchAll();
+
+        if (!empty($quoteMilestones)) {
+            $msInsert = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('invoice', ?, ?, ?, ?, ?, ?, 'pending', ?)");
+            foreach ($quoteMilestones as $ms) {
+                // Recalculate amount based on invoice total (same as quote total)
+                $msAmount = round($quote['total'] * ($ms['percentage'] / 100), 2);
+                $msInsert->execute([
+                    $invoiceId,
+                    $companyId,
+                    $ms['label'],
+                    $ms['percentage'],
+                    $msAmount,
+                    $ms['due_date'],
+                    $ms['sort_order']
+                ]);
+            }
+            // Set has_milestones flag on the invoice
+            $stmt = $DB->prepare("UPDATE invoices SET has_milestones = 1 WHERE id = ?");
+            $stmt->execute([$invoiceId]);
+        }
+    }
+
+    // 7. Update quote status to converted
     $stmt = $DB->prepare("UPDATE quotes SET status = 'converted', updated_at = NOW() WHERE id = ?");
     $stmt->execute([$quoteId]);
-    
+
     $DB->commit();
 
     // After creating the invoice, create/update the calendar due event

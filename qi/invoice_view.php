@@ -40,6 +40,14 @@ try {
     $stmt->execute([$invoiceId]);
     $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Fetch payment milestones
+    $milestones = [];
+    if (!empty($invoice['has_milestones'])) {
+        $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+        $stmt->execute([$invoiceId, $companyId]);
+        $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     // Current user name for greeting
     $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
     $stmt->execute([$userId]);
@@ -363,6 +371,43 @@ function format_currency($amount) {
                     <?php endif; ?>
                 </div>
 
+                <!-- Payment Milestones -->
+                <?php if (!empty($milestones)): ?>
+                    <div class="fw-qi__doc-section fw-qi__milestones-view">
+                        <h3>Payment Schedule</h3>
+                        <table class="fw-qi__doc-table fw-qi__milestones-table">
+                            <thead>
+                                <tr>
+                                    <th>Phase</th>
+                                    <th style="text-align:right;">%</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th>Due Date</th>
+                                    <th style="text-align:right;">Paid</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($milestones as $ms): ?>
+                                    <?php
+                                        $msStatusClass = 'pending';
+                                        if ($ms['status'] === 'paid') $msStatusClass = 'paid';
+                                        elseif ($ms['status'] === 'overdue') $msStatusClass = 'overdue';
+                                        elseif ($ms['status'] === 'due') $msStatusClass = 'due';
+                                    ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($ms['label']) ?></td>
+                                        <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
+                                        <td style="text-align:right;"><?= format_currency($ms['amount']) ?></td>
+                                        <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
+                                        <td style="text-align:right;"><?= format_currency($ms['amount_paid']) ?></td>
+                                        <td><span class="fw-qi__milestone-badge fw-qi__milestone-badge--<?= $msStatusClass ?>"><?= ucfirst($ms['status']) ?></span></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+
                 <!-- Payment & Bank Details -->
                 <?php if ($invoice['bank_name'] || $invoice['bank_account_number']): ?>
                     <div class="fw-qi__doc-section">
@@ -422,6 +467,21 @@ function format_currency($amount) {
                             <label class="fw-qi__label">Payment Date <span class="fw-qi__required">*</span></label>
                             <input type="date" name="payment_date" class="fw-qi__input" value="<?= date('Y-m-d') ?>" required>
                         </div>
+                        <?php if (!empty($milestones)): ?>
+                        <div class="fw-qi__form-group">
+                            <label class="fw-qi__label">Payment Phase</label>
+                            <select name="milestone_id" class="fw-qi__input" id="milestoneSelect" onchange="InvoiceView.onMilestoneSelect()">
+                                <option value="">— General payment —</option>
+                                <?php foreach ($milestones as $ms): ?>
+                                    <?php if ($ms['status'] !== 'paid'): ?>
+                                        <option value="<?= $ms['id'] ?>" data-remaining="<?= number_format($ms['amount'] - $ms['amount_paid'], 2, '.', '') ?>">
+                                            <?= htmlspecialchars($ms['label']) ?> (<?= number_format($ms['percentage'], 1) ?>% — R <?= number_format($ms['amount'] - $ms['amount_paid'], 2) ?> remaining)
+                                        </option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <?php endif; ?>
                         <div class="fw-qi__form-group">
                             <label class="fw-qi__label">Amount (R) <span class="fw-qi__required">*</span></label>
                             <input type="number" name="amount" class="fw-qi__input" min="0.01" step="0.01" placeholder="0.00" required>
@@ -466,7 +526,8 @@ function format_currency($amount) {
             invoiceId: <?= (int)$invoiceId ?>,
             customerEmail: '<?= addslashes($invoice['customer_email'] ?? '') ?>',
             customerName: '<?= addslashes($invoice['customer_name'] ?? 'Customer') ?>',
-            balanceDue: parseFloat('<?= (float)$invoice['balance_due'] ?>')
+            balanceDue: parseFloat('<?= (float)$invoice['balance_due'] ?>'),
+            hasMilestones: <?= !empty($milestones) ? 'true' : 'false' ?>
         });
     </script>
 </body>
