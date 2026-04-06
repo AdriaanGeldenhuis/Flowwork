@@ -148,6 +148,8 @@ const InvoiceView = {
         if (overlay) {
             overlay.classList.add('fw-qi__modal-overlay--active');
         }
+        // Auto-fill amount from pre-selected milestone
+        this.onMilestoneSelect();
     },
 
     /**
