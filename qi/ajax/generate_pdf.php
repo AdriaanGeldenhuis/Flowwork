@@ -18,7 +18,7 @@ if (!$id) {
     exit;
 }
 
-define('ASSET_VERSION', '2025-01-21-QI-FINAL');
+define('ASSET_VERSION', '2026-04-06-QI-v2');
 
 function fmt($amount) {
     return 'R ' . number_format((float)$amount, 2);

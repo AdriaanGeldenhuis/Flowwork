@@ -6,7 +6,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-FINAL');
+define('ASSET_VERSION', '2026-04-06-QI-v2');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
