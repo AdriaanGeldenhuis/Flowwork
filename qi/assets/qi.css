@@ -34,9 +34,9 @@
   --z-modal: 2000;
 
   /* Neon Colors */
-  --neon-yellow: #ffff00;
-  --neon-yellow-bright: #ffff33;
-  --neon-yellow-glow: rgba(255, 255, 0, 0.4);
+  --neon-yellow: #d4a017;
+  --neon-yellow-bright: #b8860b;
+  --neon-yellow-glow: rgba(212, 160, 23, 0.4);
   --neon-cyan: #00e0d6;
   --neon-green: #10b981;
   --neon-orange: #ff9900;
@@ -67,15 +67,15 @@
   --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
   --fw-shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.16);
   
-  --fw-primary: #ffff00;
-  --fw-primary-hover: #ffff33;
-  --fw-primary-glow: rgba(255, 255, 0, 0.35);
-  --fw-primary-light: rgba(255, 255, 0, 0.12);
-  --fw-primary-shadow: 0 0 20px rgba(255, 255, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.15);
+  --fw-primary: #d4a017;
+  --fw-primary-hover: #b8860b;
+  --fw-primary-glow: rgba(212, 160, 23, 0.35);
+  --fw-primary-light: rgba(212, 160, 23, 0.12);
+  --fw-primary-shadow: 0 0 20px rgba(212, 160, 23, 0.6), 0 2px 4px rgba(0, 0, 0, 0.15);
   
   --fw-highlight: rgba(255, 255, 255, 0.6);
   --fw-rim-light: rgba(255, 255, 255, 0.5);
-  --fw-glow: rgba(255, 255, 0, 0.15);
+  --fw-glow: rgba(212, 160, 23, 0.15);
   
   --fw-input-bg: #ffffff;
   --fw-input-border: rgba(0, 0, 0, 0.2);
@@ -92,35 +92,43 @@
   --fw-bg-base: #0a0c12;
   --fw-bg-secondary: #0f141b;
   --fw-bg-primary: #121824;
-  
+
   --fw-panel-bg: rgba(18, 24, 36, 0.8);
   --fw-panel-border: rgba(255, 255, 255, 0.1);
   --fw-panel-hover: rgba(30, 40, 58, 1);
-  
+
   --fw-text-primary: #e7ecf2;
   --fw-text-secondary: #c5d1e0;
   --fw-text-tertiary: #9fb0c8;
   --fw-text-muted: #8a9ab5;
-  
+
   --fw-border-base: rgba(255, 255, 255, 0.08);
   --fw-border-strong: rgba(255, 255, 255, 0.12);
   --fw-border: rgba(255, 255, 255, 0.08);
-  
+
   --fw-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4);
   --fw-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
   --fw-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6);
   --fw-shadow-xl: 0 16px 64px rgba(0, 0, 0, 0.7);
-  
-  --fw-primary-shadow: 0 0 30px rgba(255, 255, 0, 0.7), 0 4px 12px rgba(0, 0, 0, 0.3);
-  
+
+  --neon-yellow: #facc15;
+  --neon-yellow-bright: #fde047;
+  --neon-yellow-glow: rgba(250, 204, 21, 0.4);
+
+  --fw-primary: #facc15;
+  --fw-primary-hover: #fde047;
+  --fw-primary-glow: rgba(250, 204, 21, 0.35);
+  --fw-primary-light: rgba(250, 204, 21, 0.12);
+  --fw-primary-shadow: 0 0 30px rgba(250, 204, 21, 0.7), 0 4px 12px rgba(0, 0, 0, 0.3);
+
   --fw-highlight: rgba(255, 255, 255, 0.15);
   --fw-rim-light: rgba(255, 255, 255, 0.2);
-  --fw-glow: rgba(255, 255, 0, 0.25);
-  
+  --fw-glow: rgba(250, 204, 21, 0.25);
+
   --fw-input-bg: rgba(255, 255, 255, 0.05);
   --fw-input-border: rgba(255, 255, 255, 0.25);
   --fw-input-border-hover: rgba(255, 255, 255, 0.4);
-  
+
   --fw-modal-overlay: rgba(0, 0, 0, 0.85);
 }
 
@@ -669,7 +677,7 @@
   transform: translateY(-2px);
   box-shadow: 
     0 0 30px var(--fw-primary-glow),
-    0 6px 20px rgba(255, 255, 0, 0.5),
+    0 6px 20px var(--fw-primary-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
@@ -941,7 +949,7 @@ select.fw-qi__input:focus {
   max-width: 400px;
   margin-left: auto;
   padding: 20px;
-  background: rgba(255, 255, 0, 0.08);
+  background: var(--fw-primary-light);
   border-radius: var(--fw-radius-md);
   margin-top: 20px;
 }
