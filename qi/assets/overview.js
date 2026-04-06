@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===== NEON COLOUR PALETTE =====
   const NEON = {
     cyan: '#00e0d6',
-    yellow: '#ffff00',
+    yellow: isDark ? '#facc15' : '#d4a017',
     green: '#10b981',
     orange: '#ff9900',
     purple: '#8b5cf6',
@@ -235,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
           y: {
             position: 'left',
             grid: { 
-              color: isDark ? 'rgba(255, 255, 0, 0.1)' : 'rgba(255, 255, 0, 0.08)',
+              color: isDark ? 'rgba(250, 204, 21, 0.1)' : 'rgba(212, 160, 23, 0.08)',
               lineWidth: 1
             },
             ticks: {
