@@ -352,13 +352,10 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
                             <?php if (!empty($quote['customer_vat'])): ?><p style="margin:3px 0;">VAT No: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
                             <?php if (!empty($quote['customer_reg'])): ?><p style="margin:3px 0;">Reg No: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
                         </div>
-                        <?php if ($quote['project_name'] && $template !== 'classic'): ?>
-                            <p style="margin:3px 0;">Project: <?= htmlspecialchars($quote['project_name']) ?></p>
-                        <?php endif; ?>
-                    </div>
+                                            </div>
                 </div>
 
-                <?php if ($template === 'classic' && $quote['project_name']): ?>
+                <?php if ($quote['project_name']): ?>
                 <div class="fw-qi__classic-project">
                     <h2><?= htmlspecialchars($quote['project_name']) ?></h2>
                 </div>

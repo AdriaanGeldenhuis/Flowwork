@@ -40,9 +40,10 @@
   background: var(--qi-bg);
   max-width: 900px;
   margin: 40px auto;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  box-shadow: none;
+  border: 1px solid #d1d5db;
   position: relative;
-  border-radius: var(--qi-radius);
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -59,9 +60,9 @@
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 40px;
-  padding: 40px;
-  border-bottom: 4px solid var(--qi-primary);
-  background: linear-gradient(135deg, rgba(251,191,36,0.05) 0%, transparent 100%);
+  padding: 40px 40px 16px;
+  border-bottom: none;
+  background: none;
 }
 
 .fw-qi__doc-header-left {
@@ -83,23 +84,20 @@
 
 .fw-qi__doc-logo {
   max-width: var(--qi-logo-size);
-  max-height: 128px;
+  max-height: 160px;
   object-fit: contain;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .fw-qi__doc-company h1 {
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--qi-heading-color);
-  margin: 0 0 8px 0;
+  display: none;
 }
 
 .fw-qi__doc-company p {
-  margin: 3px 0;
-  font-size: 14px;
-  color: var(--qi-text-color);
-  line-height: 1.5;
+  margin: 1px 0;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.6;
 }
 
 .fw-qi__doc-company strong {
@@ -116,21 +114,11 @@
 }
 
 .fw-qi__doc-title {
-  font-size: 42px;
-  font-weight: 900;
-  color: var(--qi-heading-color);
-  margin: 0;
-  line-height: 1;
-  text-transform: uppercase;
+  display: none;
 }
 
 .fw-qi__doc-number {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--qi-text-dark);
-  padding: 8px 16px;
-  background: rgba(0,0,0,0.05);
-  border-radius: calc(var(--qi-radius) * 0.75);
+  display: none;
 }
 
 .fw-qi[data-theme="dark"] .fw-qi__doc-number {
@@ -142,32 +130,35 @@
 }
 
 .fw-qi__doc-meta h2 {
-  font-size: 22px;
-  font-weight: 800;
-  color: var(--qi-text-dark);
-  margin: 0 0 8px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--qi-heading-color);
+  margin: 0 0 4px 0;
 }
 
 .fw-qi__doc-meta p {
-  margin: 4px 0;
-  font-size: 14px;
-  color: var(--qi-text-color);
+  margin: 1px 0;
+  font-size: 13px;
+  color: #374151;
 }
 
-/* ========== DETAILS ========== */
+/* ========== PROJECT HEADING ========== */
+
+.fw-qi__classic-project {
+  padding: 14px 40px 10px;
+}
+
+.fw-qi__classic-project h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+}
+
+/* ========== DETAILS (hidden — bill to is in header) ========== */
 
 .fw-qi__doc-details {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  padding: 32px 40px;
-  background: rgba(0,0,0,0.02);
-  border-bottom: 1px solid rgba(0,0,0,0.05);
-}
-
-.fw-qi[data-theme="dark"] .fw-qi__doc-details {
-  background: rgba(255,255,255,0.02);
-  border-bottom-color: rgba(255,255,255,0.05);
+  display: none;
 }
 
 .fw-qi__doc-detail-box {
@@ -236,17 +227,24 @@
 /* ========== SECTIONS ========== */
 
 .fw-qi__doc-section {
-  padding: 32px 40px;
+  padding: 16px 40px;
 }
 
 .fw-qi__doc-section h3 {
-  font-size: 16px;
+  font-size: 11px;
   font-weight: 800;
-  color: var(--qi-text-dark);
-  margin: 0 0 20px 0;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--qi-primary);
+  color: #1f2937;
+  margin: 0 0 6px 0;
+  padding-bottom: 0;
+  border-bottom: none;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fw-qi__doc-section p {
+  font-size: 13px;
+  text-align: center;
+  color: #374151;
 }
 
 /* ========== TABLE ========== */
@@ -254,24 +252,26 @@
 .fw-qi__doc-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 16px;
-  border-radius: var(--qi-radius);
+  margin-top: 0;
+  border-radius: 0;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: none;
+  border-top: 1px solid #9ca3af;
 }
 
 .fw-qi__doc-table thead {
-  background: var(--qi-primary);
+  background: #f0f0f0;
 }
 
 .fw-qi__doc-table th {
-  padding: 14px 12px;
+  padding: 8px 12px;
   text-align: left;
   font-size: 12px;
-  font-weight: 800;
-  color: var(--qi-table-header-text);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: 700;
+  color: #1f2937;
+  text-transform: none;
+  letter-spacing: 0;
+  border-bottom: 1px solid #9ca3af;
 }
 
 .fw-qi__doc-table tbody {
@@ -279,10 +279,10 @@
 }
 
 .fw-qi__doc-table td {
-  padding: 14px 12px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
-  font-size: 14px;
-  color: var(--qi-text-dark);
+  padding: 8px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 13px;
+  color: #374151;
 }
 
 .fw-qi[data-theme="dark"] .fw-qi__doc-table td {
@@ -290,7 +290,7 @@
 }
 
 .fw-qi__doc-table tbody tr:hover {
-  background: rgba(251,191,36,0.05);
+  background: #fafafa;
 }
 
 .fw-qi__doc-table tbody tr:last-child td {
@@ -308,22 +308,22 @@
 /* ========== TOTALS ========== */
 
 .fw-qi__doc-totals {
-  max-width: 400px;
+  max-width: 340px;
   margin-left: auto;
-  margin-top: 24px;
-  padding: 20px;
-  background: rgba(251,191,36,0.08);
-  border-radius: var(--qi-radius);
-  border: 2px solid rgba(251,191,36,0.2);
+  margin-top: 8px;
+  padding: 8px 12px 8px 0;
+  background: transparent;
+  border-radius: 0;
+  border: none;
 }
 
 .fw-qi__doc-total-row {
   display: flex;
   justify-content: space-between;
-  padding: 10px 0;
-  font-size: 15px;
+  padding: 4px 0;
+  font-size: 13px;
   color: var(--qi-text-dark);
-  border-bottom: 1px solid rgba(0,0,0,0.05);
+  border-bottom: none;
 }
 
 .fw-qi[data-theme="dark"] .fw-qi__doc-total-row {
@@ -335,22 +335,29 @@
 }
 
 .fw-qi__doc-total-row span:first-child {
-  color: var(--qi-text-muted);
-  font-weight: 600;
+  font-weight: 700;
+  color: #1f2937;
 }
 
 .fw-qi__doc-total-row span:last-child {
-  font-weight: 700;
+  font-weight: 400;
+  color: #374151;
 }
 
 .fw-qi__doc-total-row--grand {
-  padding-top: 14px;
-  margin-top: 10px;
-  border-top: 2px solid var(--qi-primary) !important;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid #1f2937 !important;
   border-bottom: none !important;
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 900;
-  color: var(--qi-primary);
+  color: #1f2937;
+}
+
+.fw-qi__doc-total-row--grand span:first-child,
+.fw-qi__doc-total-row--grand span:last-child {
+  font-weight: 900;
+  color: #1f2937;
 }
 
 .fw-qi__doc-total-row--balance {
@@ -408,11 +415,11 @@
 /* ========== FOOTER ========== */
 
 .fw-qi__doc-footer {
-  padding: 24px 40px;
-  background: rgba(0,0,0,0.02);
-  border-top: 1px solid rgba(0,0,0,0.05);
+  padding: 20px 40px 40px;
+  background: transparent;
+  border-top: none;
   font-size: 13px;
-  color: var(--qi-text-muted);
+  color: #374151;
   line-height: 1.7;
   text-align: center;
 }
@@ -642,240 +649,8 @@
 
 /* ================================================================
    TEMPLATE: CLASSIC
-   Clean professional SA invoice style. No colored bars, no rounded
-   corners, no shadows — just clean business layout.
+   Base styles now match classic. No additional overrides needed.
    ================================================================ */
-
-[data-template="classic"] {
-  border-radius: 0 !important;
-  box-shadow: none;
-  border: 1px solid #d1d5db;
-}
-
-/* --- Header --- */
-[data-template="classic"] .fw-qi__doc-header {
-  background: none;
-  border-bottom: none;
-  padding: 40px 40px 16px;
-}
-
-[data-template="classic"] .fw-qi__doc-logo {
-  max-height: 160px;
-  max-width: 380px;
-  margin-bottom: 16px;
-}
-
-[data-template="classic"] .fw-qi__doc-title {
-  display: none;
-}
-
-[data-template="classic"] .fw-qi__doc-company h1 {
-  display: none;
-}
-
-[data-template="classic"] .fw-qi__doc-company p {
-  font-size: 13px;
-  color: #374151;
-  margin: 1px 0;
-  line-height: 1.6;
-}
-
-/* --- Right column (invoice #, dates, bill to) --- */
-[data-template="classic"] .fw-qi__doc-meta h2 {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--qi-heading-color);
-  margin: 0 0 4px 0;
-}
-
-[data-template="classic"] .fw-qi__doc-meta p {
-  font-size: 13px;
-  margin: 1px 0;
-  color: #374151;
-}
-
-[data-template="classic"] .fw-qi__doc-bill-to {
-  border-top: none !important;
-  margin-top: 8px !important;
-  padding-top: 4px !important;
-}
-
-[data-template="classic"] .fw-qi__doc-bill-to h3 {
-  display: none;
-}
-
-[data-template="classic"] .fw-qi__doc-bill-to p {
-  font-size: 13px !important;
-  color: #374151;
-  margin: 1px 0 !important;
-}
-
-/* --- Project heading (full-width bold line below header) --- */
-[data-template="classic"] .fw-qi__classic-project {
-  padding: 14px 40px 10px;
-}
-
-[data-template="classic"] .fw-qi__classic-project h2 {
-  font-size: 15px;
-  font-weight: 700;
-  color: #1f2937;
-  margin: 0;
-}
-
-/* --- Hide detail boxes (not used in classic) --- */
-[data-template="classic"] .fw-qi__doc-details {
-  display: none;
-}
-
-[data-template="classic"] .fw-qi__doc-detail-box {
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
-}
-
-.fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-detail-box {
-  background: transparent;
-}
-
-[data-template="classic"] .fw-qi__doc-number {
-  display: none;
-}
-
-[data-template="classic"] .fw-qi__badge {
-  display: none;
-}
-
-/* --- Table --- */
-[data-template="classic"] .fw-qi__doc-table {
-  border-radius: 0;
-  box-shadow: none;
-  border: none;
-  border-top: 1px solid #9ca3af;
-  margin-top: 0;
-}
-
-[data-template="classic"] .fw-qi__doc-table thead {
-  background: #f0f0f0;
-}
-
-[data-template="classic"] .fw-qi__doc-table th {
-  color: #1f2937;
-  font-weight: 700;
-  font-size: 12px;
-  text-transform: none;
-  letter-spacing: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid #9ca3af;
-}
-
-[data-template="classic"] .fw-qi__doc-table td {
-  padding: 8px 12px;
-  font-size: 13px;
-  border-bottom: 1px solid #e5e7eb;
-  color: #374151;
-}
-
-[data-template="classic"] .fw-qi__doc-table tbody tr:hover {
-  background: #fafafa;
-}
-
-.fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-table thead {
-  background: #374151;
-}
-
-.fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-table th {
-  color: #f9fafb;
-}
-
-.fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-table tbody tr:hover {
-  background: rgba(255,255,255,0.03);
-}
-
-/* --- Totals --- */
-[data-template="classic"] .fw-qi__doc-totals {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 8px 12px 8px 0;
-  max-width: 340px;
-}
-
-[data-template="classic"] .fw-qi__doc-total-row {
-  font-size: 13px;
-  padding: 4px 0;
-  border-bottom: none;
-}
-
-[data-template="classic"] .fw-qi__doc-total-row span:first-child {
-  font-weight: 700;
-  color: #1f2937;
-}
-
-[data-template="classic"] .fw-qi__doc-total-row span:last-child {
-  font-weight: 400;
-  color: #374151;
-}
-
-[data-template="classic"] .fw-qi__doc-total-row--grand {
-  border-top: 1px solid #1f2937 !important;
-  margin-top: 4px;
-  padding-top: 8px;
-  font-size: 16px;
-}
-
-[data-template="classic"] .fw-qi__doc-total-row--grand span:first-child,
-[data-template="classic"] .fw-qi__doc-total-row--grand span:last-child {
-  font-weight: 900;
-  color: #1f2937;
-}
-
-/* --- Sections (payment details, terms, notes) --- */
-[data-template="classic"] .fw-qi__doc-section {
-  padding: 16px 40px;
-}
-
-[data-template="classic"] .fw-qi__doc-section h3 {
-  text-transform: uppercase;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  border-bottom: none;
-  color: #1f2937;
-  margin-bottom: 6px;
-}
-
-[data-template="classic"] .fw-qi__doc-section p {
-  font-size: 13px;
-  text-align: center;
-  color: #374151;
-}
-
-/* --- Footer --- */
-[data-template="classic"] .fw-qi__doc-footer {
-  border-top: none;
-  background: transparent;
-  padding: 20px 40px 40px;
-  text-align: center;
-  font-size: 13px;
-  color: #374151;
-}
-
-[data-template="classic"] .fw-qi__doc-footer p {
-  margin: 3px 0;
-}
-
-[data-template="classic"] .fw-qi__doc-payment-highlight {
-  border-radius: 0;
-  border-left: none;
-  background: transparent;
-  padding: 0;
-}
-
-[data-template="classic"] .fw-qi__alert {
-  border-radius: 0;
-}
 
 
 /* ================================================================

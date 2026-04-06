@@ -385,13 +385,10 @@ try {
                         <p style="margin:3px 0;">Reg No: <?= htmlspecialchars($doc['customer_reg']) ?></p>
                     <?php endif; ?>
                 </div>
-                <?php if (!empty($doc['project_name']) && $template !== 'classic'): ?>
-                    <p style="margin:3px 0;">Project: <?= htmlspecialchars($doc['project_name']) ?></p>
-                <?php endif; ?>
             </div>
         </div>
 
-        <?php if ($template === 'classic' && !empty($doc['project_name'])): ?>
+        <?php if (!empty($doc['project_name'])): ?>
         <div class="fw-qi__classic-project">
             <h2><?= htmlspecialchars($doc['project_name']) ?></h2>
         </div>

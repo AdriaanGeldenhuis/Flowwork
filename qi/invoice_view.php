@@ -336,13 +336,10 @@ function format_currency($amount) {
                                 <p style="margin:3px 0;">Reg No: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
                             <?php endif; ?>
                         </div>
-                        <?php if ($invoice['project_name'] && $template !== 'classic'): ?>
-                            <p style="margin:3px 0;">Project: <?= htmlspecialchars($invoice['project_name']) ?></p>
-                        <?php endif; ?>
-                    </div>
+                                            </div>
                 </div>
 
-                <?php if ($template === 'classic' && $invoice['project_name']): ?>
+                <?php if ($invoice['project_name']): ?>
                 <div class="fw-qi__classic-project">
                     <h2><?= htmlspecialchars($invoice['project_name']) ?></h2>
                 </div>
