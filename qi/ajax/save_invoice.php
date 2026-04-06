@@ -247,10 +247,13 @@ try {
 
 } catch (Exception $e) {
     $DB->rollBack();
-    error_log("Save invoice error: " . $e->getMessage());
-    $safeMsg = ($e instanceof PDOException)
-        ? 'A database error occurred. Please try again.'
-        : $e->getMessage();
+    error_log("Save invoice error: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
+    if ($e instanceof PDOException) {
+        // Include the SQL error code for debugging
+        $safeMsg = 'A database error occurred: ' . $e->getMessage();
+    } else {
+        $safeMsg = $e->getMessage();
+    }
     echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
 
