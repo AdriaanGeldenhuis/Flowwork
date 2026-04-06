@@ -157,84 +157,114 @@ try {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 11px;
-        color: #1a1a1a;
-        background: #fff;
+        font-size: 14px;
+        color: #1f2937;
+        background: #e5e7eb;
     }
     .page {
         width: 210mm;
         min-height: 297mm;
         margin: 0 auto;
-        padding: 15mm 18mm;
         background: #fff;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
     }
 
-    /* Header */
+    /* Header — matches invoice_view grid layout */
     .header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding-bottom: 14px;
-        border-bottom: 3px solid #d4a017;
-        margin-bottom: 18px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 40px;
+        padding: 36px 40px;
+        border-bottom: 4px solid #d4a017;
+        background: linear-gradient(135deg, rgba(212,160,23,0.05) 0%, transparent 100%);
     }
-    .header-left { max-width: 55%; }
+    .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
     .company-logo {
         max-width: 200px;
-        max-height: 60px;
+        max-height: 70px;
+        object-fit: contain;
         margin-bottom: 8px;
     }
     .doc-type {
-        font-size: 20px;
+        font-size: 24px;
+        font-weight: 800;
+        color: #d4a017;
+        margin: 0 0 6px;
+    }
+    .company-name {
+        font-size: 13px;
         font-weight: 700;
-        color: #1a1a1a;
-        margin: 6px 0 4px;
+        color: #1f2937;
+        margin: 0 0 4px;
     }
     .company-info p {
-        font-size: 10px;
-        color: #444;
-        line-height: 1.5;
-        margin: 0;
+        font-size: 12px;
+        color: #374151;
+        line-height: 1.6;
+        margin: 2px 0;
     }
-    .header-right { text-align: right; }
+    .header-right {
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+    }
     .header-right h2 {
-        font-size: 18px;
-        font-weight: 700;
-        color: #1a1a1a;
-        margin-bottom: 6px;
+        font-size: 20px;
+        font-weight: 800;
+        color: #1f2937;
+        margin-bottom: 8px;
     }
     .header-right p {
-        font-size: 10px;
-        color: #555;
-        line-height: 1.6;
+        font-size: 12px;
+        color: #374151;
+        line-height: 1.8;
         margin: 0;
+    }
+    .header-right .reg-info {
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px solid #e5e7eb;
+    }
+    .header-right .reg-info p {
+        font-size: 11px;
+        color: #6b7280;
     }
 
     /* Bill To / Project boxes */
     .details {
-        display: flex;
-        gap: 20px;
-        margin-bottom: 20px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        padding: 28px 40px;
+        background: rgba(0,0,0,0.02);
+        border-bottom: 1px solid rgba(0,0,0,0.05);
     }
     .detail-box {
-        flex: 1;
-        border: 1px solid #ddd;
-        border-left: 3px solid #999;
-        border-radius: 4px;
-        padding: 12px 14px;
+        padding: 18px 20px;
+        background: #fff;
+        border-radius: 6px;
+        border-left: 3px solid #d4a017;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .detail-box h3 {
-        font-size: 9px;
-        font-weight: 700;
+        font-size: 10px;
+        font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: #666;
-        margin-bottom: 6px;
+        letter-spacing: 1px;
+        color: #d4a017;
+        margin-bottom: 10px;
     }
     .detail-box p {
-        font-size: 11px;
-        color: #1a1a1a;
-        margin: 0;
+        font-size: 13px;
+        color: #1f2937;
+        margin: 4px 0;
         line-height: 1.5;
     }
 
@@ -242,74 +272,89 @@ try {
     .items-table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 20px;
+        margin: 0;
         page-break-inside: auto;
     }
     .items-table thead {
         display: table-header-group;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     .items-table thead th {
-        background: #333;
+        background: #d4a017;
         color: #fff;
-        font-size: 9px;
-        font-weight: 700;
+        font-size: 11px;
+        font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        padding: 10px 12px;
+        padding: 14px 16px;
         text-align: left;
     }
     .items-table thead th.right { text-align: right; }
     .items-table tbody td {
-        padding: 9px 12px;
-        border-bottom: 1px solid #eee;
-        font-size: 10px;
+        padding: 13px 16px;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+        font-size: 13px;
+        color: #1f2937;
         vertical-align: top;
     }
     .items-table tbody tr {
         page-break-inside: avoid;
     }
     .items-table tbody td.right { text-align: right; }
-    .items-table tbody tr:nth-child(even) { background: #fafafa; }
+    .items-table tbody tr:hover { background: rgba(212,160,23,0.04); }
 
     /* Totals */
     .totals {
-        width: 320px;
-        margin-left: auto;
-        margin-bottom: 20px;
+        max-width: 380px;
+        margin: 24px 40px 24px auto;
+        padding: 20px;
+        background: rgba(212,160,23,0.08);
+        border-radius: 8px;
+        border: 2px solid rgba(212,160,23,0.2);
     }
     .total-row {
         display: flex;
         justify-content: space-between;
-        padding: 6px 0;
-        font-size: 11px;
-        border-bottom: 1px solid #eee;
-    }
-    .total-row.grand {
+        padding: 9px 0;
         font-size: 14px;
-        font-weight: 700;
-        border-top: 2px solid #333;
-        border-bottom: 2px solid #333;
-        padding: 10px 0;
-        margin-top: 4px;
+        color: #1f2937;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
     }
+    .total-row:last-child { border-bottom: none; }
+    .total-row span:first-child { color: #6b7280; font-weight: 600; }
+    .total-row span:last-child { font-weight: 700; }
+    .total-row.grand {
+        font-size: 20px;
+        font-weight: 900;
+        color: #d4a017;
+        border-top: 2px solid #d4a017;
+        border-bottom: none;
+        padding-top: 14px;
+        margin-top: 8px;
+    }
+    .total-row.grand span:first-child { color: #d4a017; }
+    .total-row.grand span:last-child { color: #d4a017; }
 
-    /* Sections */
+    /* Sections (payment details, terms, notes) */
     .section {
-        margin-bottom: 16px;
+        padding: 0 40px;
+        margin-bottom: 20px;
         page-break-inside: avoid;
     }
     .section h3 {
-        font-size: 11px;
-        font-weight: 700;
-        color: #333;
-        margin-bottom: 6px;
-        border-bottom: 1px solid #ddd;
-        padding-bottom: 4px;
+        font-size: 14px;
+        font-weight: 800;
+        color: #1f2937;
+        margin-bottom: 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid #d4a017;
+        text-transform: uppercase;
     }
     .section p {
-        font-size: 10px;
-        color: #444;
-        line-height: 1.6;
+        font-size: 13px;
+        color: #374151;
+        line-height: 1.7;
     }
 
     /* Print styles */
@@ -317,16 +362,25 @@ try {
         body { background: #fff; }
         .page {
             margin: 0;
-            padding: 12mm 15mm;
             width: 100%;
             min-height: auto;
+            box-shadow: none;
+            border-radius: 0;
         }
         .no-print { display: none !important; }
         .header { page-break-inside: avoid; }
         .details { page-break-inside: avoid; }
         .totals { page-break-inside: avoid; }
-        .items-table thead { display: table-header-group; }
+        .items-table thead {
+            display: table-header-group;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
         .items-table tbody tr { page-break-inside: avoid; }
+        .items-table thead th {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
     }
     @page {
         size: A4;
@@ -337,7 +391,7 @@ try {
     .print-bar {
         position: fixed;
         top: 0; left: 0; right: 0;
-        background: #333;
+        background: #1f2937;
         color: #fff;
         padding: 10px 20px;
         display: flex;
@@ -345,6 +399,7 @@ try {
         gap: 12px;
         z-index: 100;
         font-size: 13px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     .print-bar button {
         background: #d4a017;
@@ -383,6 +438,9 @@ try {
                 <img src="<?= htmlspecialchars($doc['logo_url']) ?>" alt="Logo" class="company-logo">
             <?php endif; ?>
             <div class="doc-type"><?= $docType ?></div>
+            <?php if (!empty($doc['company_name'])): ?>
+                <div class="company-name"><?= htmlspecialchars($doc['company_name']) ?></div>
+            <?php endif; ?>
             <div class="company-info">
                 <?php if ($showAddress): ?>
                     <p><?= htmlspecialchars($doc['company_address1'] ?? '') ?>
@@ -398,15 +456,6 @@ try {
                 <?php if ($showWebsite && !empty($doc['website'])): ?>
                     <p>Website: <?= htmlspecialchars($doc['website']) ?></p>
                 <?php endif; ?>
-                <?php if ($showVat && !empty($doc['vat_number'])): ?>
-                    <p>VAT No: <?= htmlspecialchars($doc['vat_number']) ?></p>
-                <?php endif; ?>
-                <?php if ($showTax && !empty($doc['tax_number'])): ?>
-                    <p>Tax No: <?= htmlspecialchars($doc['tax_number']) ?></p>
-                <?php endif; ?>
-                <?php if ($showReg && !empty($doc['reg_number'])): ?>
-                    <p>Reg No: <?= htmlspecialchars($doc['reg_number']) ?></p>
-                <?php endif; ?>
             </div>
         </div>
         <div class="header-right">
@@ -414,6 +463,19 @@ try {
             <?php foreach ($dates as $label => $value): ?>
                 <p><?= htmlspecialchars($label) ?>: <?= htmlspecialchars($value) ?></p>
             <?php endforeach; ?>
+            <?php if (($showVat && !empty($doc['vat_number'])) || ($showTax && !empty($doc['tax_number'])) || ($showReg && !empty($doc['reg_number']))): ?>
+                <div class="reg-info">
+                    <?php if ($showVat && !empty($doc['vat_number'])): ?>
+                        <p>VAT No: <?= htmlspecialchars($doc['vat_number']) ?></p>
+                    <?php endif; ?>
+                    <?php if ($showTax && !empty($doc['tax_number'])): ?>
+                        <p>Tax No: <?= htmlspecialchars($doc['tax_number']) ?></p>
+                    <?php endif; ?>
+                    <?php if ($showReg && !empty($doc['reg_number'])): ?>
+                        <p>Reg No: <?= htmlspecialchars($doc['reg_number']) ?></p>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -438,7 +500,7 @@ try {
     </div>
 
     <!-- Line Items -->
-    <table class="items-table">
+    <table class="items-table" style="margin-top:0;">
         <thead>
             <tr>
                 <th>Description</th>

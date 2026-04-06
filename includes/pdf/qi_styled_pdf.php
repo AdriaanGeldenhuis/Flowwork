@@ -153,20 +153,16 @@ class QiStyledPdfWriter
         $x = $this->marginL;
         $rightX = $this->pageW - $this->marginR;
 
-        // Accent line under header
-        $headerBottom = $this->y - 75;
-        $this->line($x, $headerBottom, $rightX, $headerBottom, 2.5, $this->accentR, $this->accentG, $this->accentB);
-
         // Document type (left)
         $docType = strtoupper($this->doc['_doc_type'] ?? 'INVOICE');
-        $this->text('F2', 18, $x, $this->y, $docType, $this->darkHeaderR, $this->darkHeaderG, $this->darkHeaderB);
+        $this->text('F2', 18, $x, $this->y, $docType, $this->accentR, $this->accentG, $this->accentB);
 
         // Company name
         $companyName = $this->doc['company_name'] ?? '';
         $this->text('F2', 11, $x, $this->y - 24, $companyName, '0.15', '0.15', '0.15');
 
-        // Company info lines
-        $infoY = $this->y - 40;
+        // Company info lines (left side — address, phone, email only)
+        $leftY = $this->y - 40;
         $infoLines = [];
         $addr1 = trim(($this->doc['company_address1'] ?? '') . ' ' . ($this->doc['company_address2'] ?? ''));
         if ($addr1) $infoLines[] = $addr1;
@@ -174,35 +170,41 @@ class QiStyledPdfWriter
         if ($cityLine && $cityLine !== ', ') $infoLines[] = $cityLine;
         if (!empty($this->doc['company_phone'])) $infoLines[] = 'Tel: ' . $this->doc['company_phone'];
         if (!empty($this->doc['company_email'])) $infoLines[] = $this->doc['company_email'];
+        if (!empty($this->doc['website'])) $infoLines[] = $this->doc['website'];
         foreach ($infoLines as $line) {
-            $this->text('F1', 8, $x, $infoY, $line, '0.35', '0.35', '0.35');
-            $infoY -= 11;
+            $this->text('F1', 8, $x, $leftY, $line, '0.35', '0.35', '0.35');
+            $leftY -= 11;
         }
 
         // Document number + dates (right side)
         $docNumber = $this->doc['_doc_title'] ?? '';
         $this->textRight('F2', 14, $rightX, $this->y, $docNumber, $this->darkHeaderR, $this->darkHeaderG, $this->darkHeaderB);
 
-        $dateY = $this->y - 22;
+        $rightY = $this->y - 22;
         $dates = $this->doc['_dates'] ?? [];
         foreach ($dates as $label => $value) {
-            $this->textRight('F1', 9, $rightX, $dateY, $label . ': ' . $value, '0.35', '0.35', '0.35');
-            $dateY -= 13;
+            $this->textRight('F1', 9, $rightX, $rightY, $label . ': ' . $value, '0.35', '0.35', '0.35');
+            $rightY -= 13;
         }
 
-        // Registration numbers
-        $regY = $dateY - 5;
+        // Registration numbers (right side, below dates)
+        $rightY -= 5;
         if (!empty($this->doc['vat_number'])) {
-            $this->textRight('F1', 8, $rightX, $regY, 'VAT: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
-            $regY -= 11;
+            $this->textRight('F1', 8, $rightX, $rightY, 'VAT: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
+            $rightY -= 11;
         }
         if (!empty($this->doc['tax_number'])) {
-            $this->textRight('F1', 8, $rightX, $regY, 'Tax: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
-            $regY -= 11;
+            $this->textRight('F1', 8, $rightX, $rightY, 'Tax: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
+            $rightY -= 11;
         }
         if (!empty($this->doc['reg_number'])) {
-            $this->textRight('F1', 8, $rightX, $regY, 'Reg: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Reg: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
+            $rightY -= 11;
         }
+
+        // Accent line — position below whichever column is taller
+        $headerBottom = min($leftY, $rightY) - 8;
+        $this->line($x, $headerBottom, $rightX, $headerBottom, 3, $this->accentR, $this->accentG, $this->accentB);
 
         $this->y = $headerBottom - 18;
     }
@@ -299,8 +301,8 @@ class QiStyledPdfWriter
 
     private function drawTableHeader(float $x, float $w, float $h, float $colDesc, float $colQty, float $colPrice, float $colTotal): void
     {
-        // Dark header bar
-        $this->rect($x, $this->y - $h, $w, $h, $this->darkHeaderR, $this->darkHeaderG, $this->darkHeaderB);
+        // Accent header bar
+        $this->rect($x, $this->y - $h, $w, $h, $this->accentR, $this->accentG, $this->accentB);
 
         $midY = $this->y - ($h * 0.6);
         $this->text('F2', 8, $x + $colDesc + 8, $midY, 'DESCRIPTION', '1', '1', '1');
@@ -332,11 +334,12 @@ class QiStyledPdfWriter
             $this->y -= $rowH;
         }
 
-        // Grand total row
-        $grandH = 26;
-        $this->rect($x, $this->y - $grandH, $boxW, $grandH, $this->darkHeaderR, $this->darkHeaderG, $this->darkHeaderB);
-        $this->text('F2', 12, $x + 8, $this->y - 17, 'TOTAL:', '1', '1', '1');
-        $this->textRight('F2', 12, $x + $boxW - 8, $this->y - 17, $this->fmt($this->doc['total'] ?? 0), '1', '1', '1');
+        // Grand total row — accent line + accent text
+        $this->line($x, $this->y, $x + $boxW, $this->y, 2, $this->accentR, $this->accentG, $this->accentB);
+        $this->y -= 4;
+        $grandH = 22;
+        $this->text('F2', 14, $x + 8, $this->y - 16, 'TOTAL:', $this->accentR, $this->accentG, $this->accentB);
+        $this->textRight('F2', 14, $x + $boxW - 8, $this->y - 16, $this->fmt($this->doc['total'] ?? 0), $this->accentR, $this->accentG, $this->accentB);
         $this->y -= ($grandH + 5);
 
         // Balance due (invoices)
