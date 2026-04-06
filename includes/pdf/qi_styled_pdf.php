@@ -47,18 +47,46 @@ class QiStyledPdfWriter
     private string $accentR;
     private string $accentG;
     private string $accentB;
-    private string $darkHeaderR = '0.2';
-    private string $darkHeaderG = '0.2';
-    private string $darkHeaderB = '0.2';
+    private string $headingR;
+    private string $headingG;
+    private string $headingB;
+    private string $textR = '0.216';
+    private string $textG = '0.255';
+    private string $textB = '0.318';
+    private string $thTextR = '1';
+    private string $thTextG = '1';
+    private string $thTextB = '1';
 
     public function __construct(array $doc, array $lines)
     {
         $this->doc = $doc;
         $this->lines = $lines;
-        // Gold accent colour (#d4a017) in 0-1 range
-        $this->accentR = sprintf('%.3f', 0xd4 / 255);
-        $this->accentG = sprintf('%.3f', 0xa0 / 255);
-        $this->accentB = sprintf('%.3f', 0x17 / 255);
+
+        // Parse branding colours from company settings
+        $primary = $doc['primary_color'] ?? '#fbbf24';
+        [$this->accentR, $this->accentG, $this->accentB] = $this->hexToRgb($primary);
+
+        $heading = $doc['qi_heading_color'] ?: $primary;
+        [$this->headingR, $this->headingG, $this->headingB] = $this->hexToRgb($heading);
+
+        if (!empty($doc['qi_text_color'])) {
+            [$this->textR, $this->textG, $this->textB] = $this->hexToRgb($doc['qi_text_color']);
+        }
+
+        if (!empty($doc['qi_table_header_text'])) {
+            [$this->thTextR, $this->thTextG, $this->thTextB] = $this->hexToRgb($doc['qi_table_header_text']);
+        }
+    }
+
+    private function hexToRgb(string $hex): array
+    {
+        $hex = ltrim($hex, '#');
+        if (strlen($hex) !== 6) $hex = 'fbbf24'; // fallback
+        return [
+            sprintf('%.3f', hexdec(substr($hex, 0, 2)) / 255),
+            sprintf('%.3f', hexdec(substr($hex, 2, 2)) / 255),
+            sprintf('%.3f', hexdec(substr($hex, 4, 2)) / 255),
+        ];
     }
 
     public function render(): string
@@ -153,9 +181,9 @@ class QiStyledPdfWriter
         $x = $this->marginL;
         $rightX = $this->pageW - $this->marginR;
 
-        // Document type (left)
+        // Document type (left) — uses heading colour
         $docType = strtoupper($this->doc['_doc_type'] ?? 'INVOICE');
-        $this->text('F2', 18, $x, $this->y, $docType, $this->accentR, $this->accentG, $this->accentB);
+        $this->text('F2', 18, $x, $this->y, $docType, $this->headingR, $this->headingG, $this->headingB);
 
         // Company name
         $companyName = $this->doc['company_name'] ?? '';
@@ -178,7 +206,7 @@ class QiStyledPdfWriter
 
         // Document number + dates (right side)
         $docNumber = $this->doc['_doc_title'] ?? '';
-        $this->textRight('F2', 14, $rightX, $this->y, $docNumber, $this->darkHeaderR, $this->darkHeaderG, $this->darkHeaderB);
+        $this->textRight('F2', 14, $rightX, $this->y, $docNumber, $this->textR, $this->textG, $this->textB);
 
         $rightY = $this->y - 22;
         $dates = $this->doc['_dates'] ?? [];
@@ -221,7 +249,7 @@ class QiStyledPdfWriter
         // Left accent bar
         $this->rect($x, $this->y - $boxH, 3, $boxH, $this->accentR, $this->accentG, $this->accentB);
 
-        $this->text('F2', 8, $x + 12, $this->y - 14, 'BILL TO', '0.45', '0.45', '0.45');
+        $this->text('F2', 8, $x + 12, $this->y - 14, 'BILL TO', $this->headingR, $this->headingG, $this->headingB);
         $this->text('F2', 10, $x + 12, $this->y - 28, $this->doc['customer_name'] ?? 'Customer', '0.1', '0.1', '0.1');
         $detailY = $this->y - 40;
         if (!empty($this->doc['customer_phone'])) {
@@ -237,7 +265,7 @@ class QiStyledPdfWriter
             $px = $x + $boxW + 20;
             $this->rect($px, $this->y - $boxH, $boxW, $boxH, '0.96', '0.96', '0.97');
             $this->rect($px, $this->y - $boxH, 3, $boxH, '0.6', '0.6', '0.65');
-            $this->text('F2', 8, $px + 12, $this->y - 14, 'PROJECT', '0.45', '0.45', '0.45');
+            $this->text('F2', 8, $px + 12, $this->y - 14, 'PROJECT', $this->headingR, $this->headingG, $this->headingB);
             $this->text('F1', 10, $px + 12, $this->y - 28, $this->doc['project_name'], '0.1', '0.1', '0.1');
         }
 
@@ -305,10 +333,10 @@ class QiStyledPdfWriter
         $this->rect($x, $this->y - $h, $w, $h, $this->accentR, $this->accentG, $this->accentB);
 
         $midY = $this->y - ($h * 0.6);
-        $this->text('F2', 8, $x + $colDesc + 8, $midY, 'DESCRIPTION', '1', '1', '1');
-        $this->textRight('F2', 8, $x + $colPrice - 8, $midY, 'QTY', '1', '1', '1');
-        $this->textRight('F2', 8, $x + $colTotal - 8, $midY, 'UNIT PRICE', '1', '1', '1');
-        $this->textRight('F2', 8, $x + $w - 8, $midY, 'LINE TOTAL', '1', '1', '1');
+        $this->text('F2', 8, $x + $colDesc + 8, $midY, 'DESCRIPTION', $this->thTextR, $this->thTextG, $this->thTextB);
+        $this->textRight('F2', 8, $x + $colPrice - 8, $midY, 'QTY', $this->thTextR, $this->thTextG, $this->thTextB);
+        $this->textRight('F2', 8, $x + $colTotal - 8, $midY, 'UNIT PRICE', $this->thTextR, $this->thTextG, $this->thTextB);
+        $this->textRight('F2', 8, $x + $w - 8, $midY, 'LINE TOTAL', $this->thTextR, $this->thTextG, $this->thTextB);
     }
 
     private function drawTotals(): void
@@ -389,7 +417,7 @@ class QiStyledPdfWriter
         $x = $this->marginL;
 
         // Title
-        $this->text('F2', 10, $x, $this->y, $title, $this->darkHeaderR, $this->darkHeaderG, $this->darkHeaderB);
+        $this->text('F2', 10, $x, $this->y, $title, $this->headingR, $this->headingG, $this->headingB);
         $this->y -= 4;
         $this->line($x, $this->y, $x + $this->contentW(), $this->y, 0.5, '0.85', '0.85', '0.85');
         $this->y -= 14;

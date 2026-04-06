@@ -35,6 +35,8 @@ try {
                     c.address_line1 AS company_address1, c.address_line2 AS company_address2,
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
+                    c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                    c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM quotes q
@@ -68,6 +70,8 @@ try {
                     c.address_line1 AS company_address1, c.address_line2 AS company_address2,
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
+                    c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                    c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
@@ -106,6 +110,8 @@ try {
                     c.address_line1 AS company_address1, c.address_line2 AS company_address2,
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
+                    c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                    c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM invoices i

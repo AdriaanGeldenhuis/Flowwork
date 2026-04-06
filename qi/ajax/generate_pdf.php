@@ -33,6 +33,8 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
+                    c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                    c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM quotes q
@@ -68,6 +70,8 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
+                    c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                    c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     i.invoice_number AS linked_invoice_number
              FROM credit_notes cn
@@ -107,6 +111,8 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
+                    c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                    c.qi_table_header_text, c.qi_bg_color,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     p.name AS project_name
              FROM invoices i
@@ -142,6 +148,14 @@ try {
     $showTax     = (int)($doc['qi_show_tax_number']      ?? 1);
     $showReg     = (int)($doc['qi_show_reg_number']      ?? 1);
 
+    // Branding colours from company settings
+    $primaryColor     = $doc['primary_color'] ?: '#fbbf24';
+    $secondaryColor   = $doc['secondary_color'] ?: '#f59e0b';
+    $headingColor     = $doc['qi_heading_color'] ?: $primaryColor;
+    $textColor        = $doc['qi_text_color'] ?: '#374151';
+    $tableHeaderText  = $doc['qi_table_header_text'] ?: '#ffffff';
+    $bgColor          = $doc['qi_bg_color'] ?: '#ffffff';
+
 } catch (Exception $e) {
     http_response_code(500);
     echo 'Error: ' . htmlspecialchars($e->getMessage());
@@ -154,18 +168,25 @@ try {
 <meta charset="UTF-8">
 <title><?= htmlspecialchars($docNumber) ?></title>
 <style>
+    :root {
+        --pdf-primary: <?= htmlspecialchars($primaryColor) ?>;
+        --pdf-heading: <?= htmlspecialchars($headingColor) ?>;
+        --pdf-text: <?= htmlspecialchars($textColor) ?>;
+        --pdf-th-text: <?= htmlspecialchars($tableHeaderText) ?>;
+        --pdf-bg: <?= htmlspecialchars($bgColor) ?>;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
         font-size: 14px;
-        color: #1f2937;
+        color: var(--pdf-text);
         background: #e5e7eb;
     }
     .page {
         width: 210mm;
         min-height: 297mm;
         margin: 0 auto;
-        background: #fff;
+        background: var(--pdf-bg);
         border-radius: 8px;
         overflow: hidden;
         box-shadow: 0 4px 20px rgba(0,0,0,0.1);
@@ -177,7 +198,7 @@ try {
         grid-template-columns: 1fr auto;
         gap: 40px;
         padding: 36px 40px;
-        border-bottom: 4px solid #d4a017;
+        border-bottom: 4px solid var(--pdf-primary);
         background: linear-gradient(135deg, rgba(212,160,23,0.05) 0%, transparent 100%);
     }
     .header-left {
@@ -194,7 +215,7 @@ try {
     .doc-type {
         font-size: 24px;
         font-weight: 800;
-        color: #d4a017;
+        color: var(--pdf-heading);
         margin: 0 0 6px;
     }
     .company-name {
@@ -250,7 +271,7 @@ try {
         padding: 18px 20px;
         background: #fff;
         border-radius: 6px;
-        border-left: 3px solid #d4a017;
+        border-left: 3px solid var(--pdf-primary);
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .detail-box h3 {
@@ -258,7 +279,7 @@ try {
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 1px;
-        color: #d4a017;
+        color: var(--pdf-heading);
         margin-bottom: 10px;
     }
     .detail-box p {
@@ -281,8 +302,8 @@ try {
         print-color-adjust: exact;
     }
     .items-table thead th {
-        background: #d4a017;
-        color: #fff;
+        background: var(--pdf-primary);
+        color: var(--pdf-th-text);
         font-size: 11px;
         font-weight: 800;
         text-transform: uppercase;
@@ -327,14 +348,14 @@ try {
     .total-row.grand {
         font-size: 20px;
         font-weight: 900;
-        color: #d4a017;
-        border-top: 2px solid #d4a017;
+        color: var(--pdf-primary);
+        border-top: 2px solid var(--pdf-primary);
         border-bottom: none;
         padding-top: 14px;
         margin-top: 8px;
     }
-    .total-row.grand span:first-child { color: #d4a017; }
-    .total-row.grand span:last-child { color: #d4a017; }
+    .total-row.grand span:first-child { color: var(--pdf-primary); }
+    .total-row.grand span:last-child { color: var(--pdf-primary); }
 
     /* Sections (payment details, terms, notes) */
     .section {
@@ -345,10 +366,10 @@ try {
     .section h3 {
         font-size: 14px;
         font-weight: 800;
-        color: #1f2937;
+        color: var(--pdf-heading);
         margin-bottom: 12px;
         padding-bottom: 6px;
-        border-bottom: 2px solid #d4a017;
+        border-bottom: 2px solid var(--pdf-primary);
         text-transform: uppercase;
     }
     .section p {
@@ -402,7 +423,7 @@ try {
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     .print-bar button {
-        background: #d4a017;
+        background: var(--pdf-primary);
         color: #000;
         border: none;
         padding: 8px 20px;
