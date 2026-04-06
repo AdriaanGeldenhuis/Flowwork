@@ -230,6 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- COMPANY TAB -->
             <div class="fw-qi__settings-panel fw-qi__settings-panel--active" data-panel="company">
                 <form method="POST" class="fw-qi__settings-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_company">
                     
                     <div class="fw-qi__form-section">
@@ -307,6 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- BANKING TAB -->
             <div class="fw-qi__settings-panel" data-panel="banking">
                 <form method="POST" class="fw-qi__settings-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_banking">
                     <div class="fw-qi__form-section">
                         <h3 class="fw-qi__form-section-title">Banking Details</h3>
@@ -332,6 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- BRANDING TAB -->
             <div class="fw-qi__settings-panel" data-panel="branding">
                 <form method="POST" class="fw-qi__settings-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_branding">
                     
                     <div class="fw-qi__form-section">
