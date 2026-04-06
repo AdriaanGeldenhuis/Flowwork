@@ -373,16 +373,16 @@ try {
                         <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
                     <?php endif; ?>
                     <?php if (!empty($doc['customer_phone'])): ?>
-                        <p style="margin:3px 0;">Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
+                        <p style="margin:3px 0;">Tel: <?= htmlspecialchars($doc['customer_phone']) ?></p>
                     <?php endif; ?>
                     <?php if (!empty($doc['customer_email'])): ?>
                         <p style="margin:3px 0;">Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
                     <?php endif; ?>
                     <?php if (!empty($doc['customer_vat'])): ?>
-                        <p style="margin:3px 0;">VAT: <?= htmlspecialchars($doc['customer_vat']) ?></p>
+                        <p style="margin:3px 0;">VAT No: <?= htmlspecialchars($doc['customer_vat']) ?></p>
                     <?php endif; ?>
                     <?php if (!empty($doc['customer_reg'])): ?>
-                        <p style="margin:3px 0;">Reg: <?= htmlspecialchars($doc['customer_reg']) ?></p>
+                        <p style="margin:3px 0;">Reg No: <?= htmlspecialchars($doc['customer_reg']) ?></p>
                     <?php endif; ?>
                 </div>
                 <?php if (!empty($doc['project_name']) && $template !== 'classic'): ?>

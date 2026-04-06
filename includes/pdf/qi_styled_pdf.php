@@ -218,15 +218,15 @@ class QiStyledPdfWriter
         // Registration numbers (right side, below dates)
         $rightY -= 5;
         if (!empty($this->doc['vat_number'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'VAT: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'VAT No: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
         if (!empty($this->doc['tax_number'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'Tax: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Tax No: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
         if (!empty($this->doc['reg_number'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'Reg: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Reg No: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
 
@@ -250,7 +250,7 @@ class QiStyledPdfWriter
             $rightY -= 11;
         }
         if (!empty($this->doc['customer_phone'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'Phone: ' . $this->doc['customer_phone'], '0.35', '0.35', '0.35');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Tel: ' . $this->doc['customer_phone'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
         if (!empty($this->doc['customer_email'])) {
@@ -258,11 +258,11 @@ class QiStyledPdfWriter
             $rightY -= 11;
         }
         if (!empty($this->doc['customer_vat'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'VAT: ' . $this->doc['customer_vat'], '0.35', '0.35', '0.35');
+            $this->textRight('F1', 8, $rightX, $rightY, 'VAT No: ' . $this->doc['customer_vat'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
         if (!empty($this->doc['customer_reg'])) {
-            $this->textRight('F1', 8, $rightX, $rightY, 'Reg: ' . $this->doc['customer_reg'], '0.35', '0.35', '0.35');
+            $this->textRight('F1', 8, $rightX, $rightY, 'Reg No: ' . $this->doc['customer_reg'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
         if (!empty($this->doc['project_name'])) {

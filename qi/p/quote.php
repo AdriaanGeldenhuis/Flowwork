@@ -177,9 +177,9 @@ try {
                                 <?php if ($quote['address_line2']): ?><p><?= htmlspecialchars($quote['address_line2']) ?></p><?php endif; ?>
                                 <?php if ($quote['city']): ?><p><?= htmlspecialchars($quote['city']) ?>, <?= htmlspecialchars($quote['postal']) ?></p><?php endif; ?>
                             <?php endif; ?>
-                            <?php if ($showReg && $quote['reg_number']): ?><p><strong>Reg:</strong> <?= htmlspecialchars($quote['reg_number']) ?></p><?php endif; ?>
+                            <?php if ($showReg && $quote['reg_number']): ?><p><strong>Reg No:</strong> <?= htmlspecialchars($quote['reg_number']) ?></p><?php endif; ?>
                             <?php if ($showTax && $quote['tax_number']): ?><p><strong>Tax:</strong> <?= htmlspecialchars($quote['tax_number']) ?></p><?php endif; ?>
-                            <?php if ($showVat && $quote['vat_number']): ?><p><strong>VAT:</strong> <?= htmlspecialchars($quote['vat_number']) ?></p><?php endif; ?>
+                            <?php if ($showVat && $quote['vat_number']): ?><p><strong>VAT No:</strong> <?= htmlspecialchars($quote['vat_number']) ?></p><?php endif; ?>
                             <?php if ($showPhone && $quote['company_phone']): ?><p><?= htmlspecialchars($quote['company_phone']) ?></p><?php endif; ?>
                             <?php if ($showEmail && $quote['company_email']): ?><p><?= htmlspecialchars($quote['company_email']) ?></p><?php endif; ?>
                             <?php if ($showWebsite && $quote['website']): ?><p><?= htmlspecialchars($quote['website']) ?></p><?php endif; ?>
@@ -198,10 +198,10 @@ try {
                             <?php if (!empty($quote['customer_address2'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address2']) ?></p><?php endif; ?>
                             <?php $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? '')); ?>
                             <?php if ($custCity && $custCity !== ', '): ?><p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
-                            <?php if ($quote['customer_phone']): ?><p style="margin:3px 0;">Phone: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
+                            <?php if ($quote['customer_phone']): ?><p style="margin:3px 0;">Tel: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
                             <?php if ($quote['customer_email']): ?><p style="margin:3px 0;">Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
-                            <?php if (!empty($quote['customer_vat'])): ?><p style="margin:3px 0;">VAT: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
-                            <?php if (!empty($quote['customer_reg'])): ?><p style="margin:3px 0;">Reg: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_vat'])): ?><p style="margin:3px 0;">VAT No: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_reg'])): ?><p style="margin:3px 0;">Reg No: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
                             <?php if ($quote['project_name']): ?><p style="margin:3px 0;"><em>Project: <?= htmlspecialchars($quote['project_name']) ?></em></p><?php endif; ?>
                         </div>
                     </div>
