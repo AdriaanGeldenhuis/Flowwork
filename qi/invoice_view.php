@@ -77,6 +77,7 @@ $logoSize = max(80, min(400, (int)($invoice['qi_logo_size'] ?? 200)));
 $logoPosition = in_array($invoice['qi_logo_position'] ?? 'left', ['left','center','right']) ? $invoice['qi_logo_position'] : 'left';
 $docTitle = htmlspecialchars($invoice['qi_invoice_title'] ?? 'INVOICE');
 $customCss = $invoice['qi_custom_css'] ?? '';
+$template = in_array($invoice['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $invoice['qi_template'] : 'modern';
 $fontFamily     = $invoice['qi_font_family'] ?? 'system-ui';
 $fontMap = [
     'system-ui'  => 'system-ui, -apple-system, sans-serif',
@@ -269,7 +270,7 @@ function format_currency($amount) {
         </header>
 
         <main class="fw-qi__main">
-            <div class="fw-qi__document">
+            <div class="fw-qi__document" data-template="<?= $template ?>">
                 <!-- Document Header -->
                 <div class="fw-qi__doc-header">
                     <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">

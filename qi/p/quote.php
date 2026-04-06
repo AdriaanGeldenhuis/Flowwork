@@ -32,6 +32,16 @@ try {
                c.qi_show_vat_number,
                c.qi_show_tax_number,
                c.qi_show_reg_number,
+               c.qi_template,
+               c.qi_quote_title,
+               c.qi_heading_color,
+               c.qi_text_color,
+               c.qi_table_header_text,
+               c.qi_bg_color,
+               c.qi_border_radius,
+               c.qi_logo_size,
+               c.qi_logo_position,
+               c.qi_custom_css,
                c.address_line1 AS company_address1,
                c.address_line2 AS company_address2,
                c.city AS company_city,
@@ -69,6 +79,16 @@ try {
     // Determine settings
     $primaryColor = sanitize_css_color($quote['primary_color'] ?? '#fbbf24');
     $secondaryColor = sanitize_css_color($quote['secondary_color'] ?? '#f59e0b', '#f59e0b');
+    $headingColor = sanitize_css_color($quote['qi_heading_color'] ?? '', $primaryColor);
+    $textColor = $quote['qi_text_color'] ?? '';
+    $tableHeaderText = $quote['qi_table_header_text'] ?? '#ffffff';
+    $bgColor = $quote['qi_bg_color'] ?? '';
+    $borderRadius = max(0, min(24, (int)($quote['qi_border_radius'] ?? 8)));
+    $logoSize = max(80, min(400, (int)($quote['qi_logo_size'] ?? 200)));
+    $logoPosition = in_array($quote['qi_logo_position'] ?? 'left', ['left','center','right']) ? $quote['qi_logo_position'] : 'left';
+    $docTitle = htmlspecialchars($quote['qi_quote_title'] ?? 'QUOTATION');
+    $template = in_array($quote['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $quote['qi_template'] : 'modern';
+    $customCss = $quote['qi_custom_css'] ?? '';
     $fontFamily = $quote['qi_font_family'] ?? 'system-ui';
     $fontMap = [
         'system-ui' => 'system-ui, -apple-system, sans-serif',
@@ -106,8 +126,15 @@ try {
             --accent-qi: <?= $primaryColor ?>;
             --accent-qi-secondary: <?= $secondaryColor ?>;
             --doc-font: <?= $fontStack ?>;
+            --qi-heading: <?= $headingColor ?>;
+            --qi-border-radius: <?= $borderRadius ?>px;
+            --qi-logo-max-w: <?= $logoSize ?>px;
+            --qi-th-text: <?= $tableHeaderText ?>;
+            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
+            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
         }
         .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+        <?= $customCss ?>
     </style>
 </head>
 <body class="fw-qi">
@@ -129,9 +156,9 @@ try {
         </header>
 
         <main class="fw-qi__main">
-            <div class="fw-qi__document">
+            <div class="fw-qi__document" data-template="<?= $template ?>">
                 <div class="fw-qi__doc-header">
-                    <div class="fw-qi__doc-header-left">
+                    <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">
                         <?php if ($quote['logo_url']): ?>
                             <img src="<?= htmlspecialchars($quote['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                         <?php endif; ?>

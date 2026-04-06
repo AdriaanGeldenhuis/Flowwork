@@ -110,6 +110,7 @@ $logoSize = max(80, min(400, (int)($quote['qi_logo_size'] ?? 200)));
 $logoPosition = in_array($quote['qi_logo_position'] ?? 'left', ['left','center','right']) ? $quote['qi_logo_position'] : 'left';
 $docTitle = htmlspecialchars($quote['qi_quote_title'] ?? 'QUOTATION');
 $customCss = $quote['qi_custom_css'] ?? '';
+$template = in_array($quote['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $quote['qi_template'] : 'modern';
 $fontFamily = $quote['qi_font_family'] ?? 'system-ui';
 
 $fontMap = [
@@ -290,7 +291,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
         </header>
 
         <main class="fw-qi__main">
-            <div class="fw-qi__document">
+            <div class="fw-qi__document" data-template="<?= $template ?>">
                 
                 <div class="fw-qi__doc-header">
                     <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">

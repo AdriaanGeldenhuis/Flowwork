@@ -83,7 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         try {
             $stmt = $DB->prepare("
                 UPDATE companies
-                SET primary_color = ?,
+                SET qi_template = ?,
+                    primary_color = ?,
                     secondary_color = ?,
                     qi_heading_color = ?,
                     qi_text_color = ?,
@@ -110,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 WHERE id = ?
             ");
             $stmt->execute([
+                in_array($_POST['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $_POST['qi_template'] : 'modern',
                 $_POST['primary_color'],
                 $_POST['secondary_color'],
                 $_POST['qi_heading_color'] ?: null,
@@ -359,68 +361,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
                     <input type="hidden" name="action" value="update_branding">
                     
+                    <?php $currentTemplate = $company['qi_template'] ?? 'modern'; ?>
                     <div class="fw-qi__form-section">
                         <h3 class="fw-qi__form-section-title">Template Style</h3>
-                        <p class="fw-qi__help-text">Choose your document layout (more coming soon)</p>
-                        
+                        <p class="fw-qi__help-text">Choose your document layout</p>
+
                         <div class="fw-qi__template-grid">
                             <label class="fw-qi__template-card">
-                                <input type="radio" name="qi_template" value="modern" checked>
+                                <input type="radio" name="qi_template" value="modern" <?= $currentTemplate === 'modern' ? 'checked' : '' ?>>
                                 <div class="fw-qi__template-preview fw-qi__template-preview--modern">
+                                    <div class="fw-qi__template-preview-stripe"></div>
                                     <div class="fw-qi__template-preview-header">Modern</div>
                                     <div class="fw-qi__template-preview-body">
                                         <div class="fw-qi__template-preview-line"></div>
                                         <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Modern (Active)</div>
+                                <div class="fw-qi__template-name">Modern</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="classic" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--classic">
-                                    <div class="fw-qi__template-preview-header">Classic</div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="classic" <?= $currentTemplate === 'classic' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--classic" style="border-radius:0;">
+                                    <div class="fw-qi__template-preview-header" style="font-style:italic;font-weight:400;border-bottom:1px solid var(--fw-border);">Classic</div>
                                     <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line"></div>
-                                        <div class="fw-qi__template-preview-line"></div>
+                                        <div class="fw-qi__template-preview-line" style="opacity:0.4;"></div>
+                                        <div class="fw-qi__template-preview-line" style="opacity:0.4;"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Classic (Soon)</div>
+                                <div class="fw-qi__template-name">Classic</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="minimal" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--minimal">
-                                    <div class="fw-qi__template-preview-header">Minimal</div>
-                                    <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short"></div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="minimal" <?= $currentTemplate === 'minimal' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--minimal" style="border-radius:0;border-color:transparent;box-shadow:none;">
+                                    <div class="fw-qi__template-preview-header" style="font-weight:300;text-transform:lowercase;letter-spacing:2px;">minimal</div>
+                                    <div class="fw-qi__template-preview-body" style="gap:12px;">
+                                        <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short" style="height:4px;opacity:0.25;"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Minimal (Soon)</div>
+                                <div class="fw-qi__template-name">Minimal</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="bold" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--bold">
-                                    <div class="fw-qi__template-preview-stripe"></div>
-                                    <div class="fw-qi__template-preview-header">Bold</div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="bold" <?= $currentTemplate === 'bold' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--bold" style="background:var(--accent-qi);border-color:var(--accent-qi);">
+                                    <div class="fw-qi__template-preview-header" style="color:#fff;font-size:20px;font-weight:900;letter-spacing:1px;">BOLD</div>
                                     <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line"></div>
+                                        <div class="fw-qi__template-preview-line" style="background:rgba(255,255,255,0.4);"></div>
+                                        <div class="fw-qi__template-preview-line fw-qi__template-preview-line--short" style="background:rgba(255,255,255,0.3);"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Bold (Soon)</div>
+                                <div class="fw-qi__template-name">Bold</div>
                             </label>
 
-                            <label class="fw-qi__template-card fw-qi__template-card--disabled">
-                                <input type="radio" name="qi_template" value="corporate" disabled>
-                                <div class="fw-qi__template-preview fw-qi__template-preview--corporate">
-                                    <div class="fw-qi__template-preview-header">Corporate</div>
+                            <label class="fw-qi__template-card">
+                                <input type="radio" name="qi_template" value="corporate" <?= $currentTemplate === 'corporate' ? 'checked' : '' ?>>
+                                <div class="fw-qi__template-preview fw-qi__template-preview--corporate" style="border-radius:0;">
+                                    <div style="height:4px;background:#1e3a5f;width:100%;"></div>
+                                    <div class="fw-qi__template-preview-header" style="color:#1e3a5f;font-size:12px;letter-spacing:2px;font-weight:700;">CORPORATE</div>
                                     <div class="fw-qi__template-preview-body">
-                                        <div class="fw-qi__template-preview-line"></div>
-                                        <div class="fw-qi__template-preview-line"></div>
+                                        <div class="fw-qi__template-preview-line" style="height:6px;"></div>
+                                        <div class="fw-qi__template-preview-line" style="height:6px;opacity:0.5;"></div>
+                                        <div class="fw-qi__template-preview-line" style="height:6px;"></div>
                                     </div>
                                 </div>
-                                <div class="fw-qi__template-name">Corporate (Soon)</div>
+                                <div class="fw-qi__template-name">Corporate</div>
                             </label>
                         </div>
                     </div>
