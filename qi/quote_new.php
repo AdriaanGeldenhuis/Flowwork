@@ -268,6 +268,7 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
 
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <!-- Quote-specific logic -->
     <script>

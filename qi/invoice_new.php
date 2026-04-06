@@ -239,6 +239,7 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
         </footer>
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi-form.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
@@ -394,7 +395,10 @@ $dueDate = date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
                 try {
                     const res = await fetch('/qi/ajax/import_from_project.php', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                        },
                         body: JSON.stringify({ board_id: parseInt(boardId) })
                     });
                     const data = await res.json();

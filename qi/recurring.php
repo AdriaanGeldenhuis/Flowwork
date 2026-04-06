@@ -272,6 +272,7 @@ $customers = $stmt->fetchAll();
         </div>
     </div>
 
+    <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         window.RecurringView = {

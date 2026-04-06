@@ -231,7 +231,7 @@ try {
     // After invoice is saved, post journal entry to general ledger (Section 11).
     try {
         // JournalPoster is located under qi/services; relative to this file go two levels up
-        require_once __DIR__ . '/../../services/JournalPoster.php';
+        require_once __DIR__ . '/../services/JournalPoster.php';
         $poster = new JournalPoster($DB, $companyId, $userId);
         $poster->postInvoice($invoiceId);
     } catch (Exception $e) {
@@ -257,7 +257,7 @@ try {
 // After the invoice has been saved and committed, hook into the calendar to create/update due events.
 if (isset($invoiceId) && isset($companyId) && isset($userId) && $invoiceId) {
     try {
-        require_once __DIR__ . '/../../services/CalendarHook.php';
+        require_once __DIR__ . '/../services/CalendarHook.php';
         $calendarHook = new CalendarHook($DB);
         // Fetch invoice number and due date
         $stmtInfo = $DB->prepare("SELECT invoice_number, due_date FROM invoices WHERE id = ? AND company_id = ?");
