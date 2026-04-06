@@ -290,44 +290,45 @@ function format_currency($amount) {
                         <?php if (!empty($creditNote['linked_invoice_number'])): ?>
                             <p>Invoice: <?= htmlspecialchars($creditNote['linked_invoice_number']) ?></p>
                         <?php endif; ?>
+
+                        <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                            <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Credit To</h3>
+                            <p style="margin:4px 0;"><strong><?= htmlspecialchars($creditNote['customer_name'] ?? 'Customer') ?></strong></p>
+                            <?php
+                                $custAddr = trim(($creditNote['customer_address1'] ?? '') . ' ' . ($creditNote['customer_address2'] ?? ''));
+                                $custCity = trim(($creditNote['customer_city'] ?? '') . ', ' . ($creditNote['customer_region'] ?? '') . ' ' . ($creditNote['customer_postal'] ?? ''));
+                            ?>
+                            <?php if ($custAddr): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p>
+                            <?php endif; ?>
+                            <?php if ($custCity && $custCity !== ', '): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_phone'])): ?>
+                                <p style="margin:3px 0;">Phone: <?= htmlspecialchars($creditNote['customer_phone']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_email'])): ?>
+                                <p style="margin:3px 0;">Email: <?= htmlspecialchars($creditNote['customer_email']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_vat'])): ?>
+                                <p style="margin:3px 0;">VAT: <?= htmlspecialchars($creditNote['customer_vat']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($creditNote['customer_reg'])): ?>
+                                <p style="margin:3px 0;">Reg: <?= htmlspecialchars($creditNote['customer_reg']) ?></p>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Customer Details -->
+                <!-- Reason -->
+                <?php if (!empty($creditNote['reason'])): ?>
                 <div class="fw-qi__doc-details">
                     <div class="fw-qi__doc-detail-box">
-                        <h3>Credit To</h3>
-                        <p><strong><?= htmlspecialchars($creditNote['customer_name'] ?? 'Customer') ?></strong></p>
-                        <?php
-                            $custAddr = trim(($creditNote['customer_address1'] ?? '') . ' ' . ($creditNote['customer_address2'] ?? ''));
-                            $custCity = trim(($creditNote['customer_city'] ?? '') . ', ' . ($creditNote['customer_region'] ?? '') . ' ' . ($creditNote['customer_postal'] ?? ''));
-                        ?>
-                        <?php if ($custAddr): ?>
-                            <p><?= htmlspecialchars($custAddr) ?></p>
-                        <?php endif; ?>
-                        <?php if ($custCity && $custCity !== ', '): ?>
-                            <p><?= htmlspecialchars($custCity) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($creditNote['customer_phone'])): ?>
-                            <p>Phone: <?= htmlspecialchars($creditNote['customer_phone']) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($creditNote['customer_email'])): ?>
-                            <p>Email: <?= htmlspecialchars($creditNote['customer_email']) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($creditNote['customer_vat'])): ?>
-                            <p>VAT: <?= htmlspecialchars($creditNote['customer_vat']) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($creditNote['customer_reg'])): ?>
-                            <p>Reg: <?= htmlspecialchars($creditNote['customer_reg']) ?></p>
-                        <?php endif; ?>
+                        <h3>Reason</h3>
+                        <p><?= nl2br(htmlspecialchars($creditNote['reason'])) ?></p>
                     </div>
-                    <?php if (!empty($creditNote['reason'])): ?>
-                        <div class="fw-qi__doc-detail-box">
-                            <h3>Reason</h3>
-                            <p><?= nl2br(htmlspecialchars($creditNote['reason'])) ?></p>
-                        </div>
-                    <?php endif; ?>
                 </div>
+                <?php endif; ?>
 
                 <!-- Line Items Table -->
                 <table class="fw-qi__doc-table">

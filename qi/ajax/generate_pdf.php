@@ -358,44 +358,45 @@ try {
                 <?php foreach ($dates as $label => $value): ?>
                     <p><?= htmlspecialchars($label) ?>: <?= htmlspecialchars($value) ?></p>
                 <?php endforeach; ?>
+
+                <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                    <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
+                    <p style="margin:4px 0;"><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
+                    <?php
+                        $custAddr = trim(($doc['customer_address1'] ?? '') . ' ' . ($doc['customer_address2'] ?? ''));
+                        $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? ''));
+                    ?>
+                    <?php if ($custAddr): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p>
+                    <?php endif; ?>
+                    <?php if ($custCity && $custCity !== ', '): ?>
+                        <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_phone'])): ?>
+                        <p style="margin:3px 0;">Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_email'])): ?>
+                        <p style="margin:3px 0;">Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_vat'])): ?>
+                        <p style="margin:3px 0;">VAT: <?= htmlspecialchars($doc['customer_vat']) ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($doc['customer_reg'])): ?>
+                        <p style="margin:3px 0;">Reg: <?= htmlspecialchars($doc['customer_reg']) ?></p>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
 
-        <!-- Customer & Project Details -->
+        <!-- Project Details -->
+        <?php if (!empty($doc['project_name'])): ?>
         <div class="fw-qi__doc-details">
             <div class="fw-qi__doc-detail-box">
-                <h3>Bill To</h3>
-                <p><strong><?= htmlspecialchars($doc['customer_name'] ?? 'Customer') ?></strong></p>
-                <?php
-                    $custAddr = trim(($doc['customer_address1'] ?? '') . ' ' . ($doc['customer_address2'] ?? ''));
-                    $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? ''));
-                ?>
-                <?php if ($custAddr): ?>
-                    <p><?= htmlspecialchars($custAddr) ?></p>
-                <?php endif; ?>
-                <?php if ($custCity && $custCity !== ', '): ?>
-                    <p><?= htmlspecialchars($custCity) ?></p>
-                <?php endif; ?>
-                <?php if (!empty($doc['customer_phone'])): ?>
-                    <p>Phone: <?= htmlspecialchars($doc['customer_phone']) ?></p>
-                <?php endif; ?>
-                <?php if (!empty($doc['customer_email'])): ?>
-                    <p>Email: <?= htmlspecialchars($doc['customer_email']) ?></p>
-                <?php endif; ?>
-                <?php if (!empty($doc['customer_vat'])): ?>
-                    <p>VAT: <?= htmlspecialchars($doc['customer_vat']) ?></p>
-                <?php endif; ?>
-                <?php if (!empty($doc['customer_reg'])): ?>
-                    <p>Reg: <?= htmlspecialchars($doc['customer_reg']) ?></p>
-                <?php endif; ?>
+                <h3>Project</h3>
+                <p><?= htmlspecialchars($doc['project_name']) ?></p>
             </div>
-            <?php if (!empty($doc['project_name'])): ?>
-                <div class="fw-qi__doc-detail-box">
-                    <h3>Project</h3>
-                    <p><?= htmlspecialchars($doc['project_name']) ?></p>
-                </div>
-            <?php endif; ?>
         </div>
+        <?php endif; ?>
 
         <!-- Line Items Table -->
         <table class="fw-qi__doc-table">

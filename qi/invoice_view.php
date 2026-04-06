@@ -307,44 +307,45 @@ function format_currency($amount) {
                         <p>Issue Date: <?= htmlspecialchars(date('d M Y', strtotime($invoice['issue_date']))) ?></p>
                         <p>Due Date: <?= htmlspecialchars(date('d M Y', strtotime($invoice['due_date']))) ?></p>
                         <p>Status: <?= htmlspecialchars(ucfirst($invoice['status'])) ?></p>
+
+                        <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                            <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
+                            <p style="margin:4px 0;"><strong><?= htmlspecialchars($invoice['customer_name'] ?? 'Customer') ?></strong></p>
+                            <?php
+                                $custAddr = trim(($invoice['customer_address1'] ?? '') . ' ' . ($invoice['customer_address2'] ?? ''));
+                                $custCity = trim(($invoice['customer_city'] ?? '') . ', ' . ($invoice['customer_region'] ?? '') . ' ' . ($invoice['customer_postal'] ?? ''));
+                            ?>
+                            <?php if ($custAddr): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p>
+                            <?php endif; ?>
+                            <?php if ($custCity && $custCity !== ', '): ?>
+                                <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($invoice['customer_phone'])): ?>
+                                <p style="margin:3px 0;">Phone: <?= htmlspecialchars($invoice['customer_phone']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($invoice['customer_email'])): ?>
+                                <p style="margin:3px 0;">Email: <?= htmlspecialchars($invoice['customer_email']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($invoice['customer_vat'])): ?>
+                                <p style="margin:3px 0;">VAT: <?= htmlspecialchars($invoice['customer_vat']) ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($invoice['customer_reg'])): ?>
+                                <p style="margin:3px 0;">Reg: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Customer & Project Details -->
+                <!-- Project Details -->
+                <?php if ($invoice['project_name']): ?>
                 <div class="fw-qi__doc-details">
                     <div class="fw-qi__doc-detail-box">
-                        <h3>Bill To</h3>
-                        <p><strong><?= htmlspecialchars($invoice['customer_name'] ?? 'Customer') ?></strong></p>
-                        <?php
-                            $custAddr = trim(($invoice['customer_address1'] ?? '') . ' ' . ($invoice['customer_address2'] ?? ''));
-                            $custCity = trim(($invoice['customer_city'] ?? '') . ', ' . ($invoice['customer_region'] ?? '') . ' ' . ($invoice['customer_postal'] ?? ''));
-                        ?>
-                        <?php if ($custAddr): ?>
-                            <p><?= htmlspecialchars($custAddr) ?></p>
-                        <?php endif; ?>
-                        <?php if ($custCity && $custCity !== ', '): ?>
-                            <p><?= htmlspecialchars($custCity) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($invoice['customer_phone'])): ?>
-                            <p>Phone: <?= htmlspecialchars($invoice['customer_phone']) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($invoice['customer_email'])): ?>
-                            <p>Email: <?= htmlspecialchars($invoice['customer_email']) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($invoice['customer_vat'])): ?>
-                            <p>VAT: <?= htmlspecialchars($invoice['customer_vat']) ?></p>
-                        <?php endif; ?>
-                        <?php if (!empty($invoice['customer_reg'])): ?>
-                            <p>Reg: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
-                        <?php endif; ?>
+                        <h3>Project</h3>
+                        <p><?= htmlspecialchars($invoice['project_name']) ?></p>
                     </div>
-                    <?php if ($invoice['project_name']): ?>
-                        <div class="fw-qi__doc-detail-box">
-                            <h3>Project</h3>
-                            <p><?= htmlspecialchars($invoice['project_name']) ?></p>
-                        </div>
-                    <?php endif; ?>
                 </div>
+                <?php endif; ?>
 
                 <!-- Line Items Table -->
                 <table class="fw-qi__doc-table">

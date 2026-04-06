@@ -190,22 +190,23 @@ try {
                         <div class="fw-qi__doc-ref"><strong>Quote #:</strong> <?= htmlspecialchars($quote['quote_number']) ?></div>
                         <div class="fw-qi__doc-ref"><strong>Date:</strong> <?= htmlspecialchars($quote['issue_date']) ?></div>
                         <div class="fw-qi__doc-ref"><strong>Valid Until:</strong> <?= htmlspecialchars($quote['expiry_date']) ?></div>
+
+                        <div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
+                            <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Quote To</h3>
+                            <p style="margin:4px 0;"><strong><?= htmlspecialchars($quote['customer_name']) ?></strong></p>
+                            <?php
+                                $custAddr = trim(($quote['customer_address1'] ?? '') . ' ' . ($quote['customer_address2'] ?? ''));
+                                $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? ''));
+                            ?>
+                            <?php if ($custAddr): ?><p style="margin:3px 0;"><?= htmlspecialchars($custAddr) ?></p><?php endif; ?>
+                            <?php if ($custCity && $custCity !== ', '): ?><p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
+                            <?php if ($quote['customer_phone']): ?><p style="margin:3px 0;">Phone: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
+                            <?php if ($quote['customer_email']): ?><p style="margin:3px 0;">Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_vat'])): ?><p style="margin:3px 0;">VAT: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
+                            <?php if (!empty($quote['customer_reg'])): ?><p style="margin:3px 0;">Reg: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
+                            <?php if ($quote['project_name']): ?><p style="margin:3px 0;"><em>Project: <?= htmlspecialchars($quote['project_name']) ?></em></p><?php endif; ?>
+                        </div>
                     </div>
-                </div>
-                <div class="fw-qi__doc-section">
-                    <h3>Quote To</h3>
-                    <p><strong><?= htmlspecialchars($quote['customer_name']) ?></strong></p>
-                    <?php
-                        $custAddr = trim(($quote['customer_address1'] ?? '') . ' ' . ($quote['customer_address2'] ?? ''));
-                        $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? ''));
-                    ?>
-                    <?php if ($custAddr): ?><p><?= htmlspecialchars($custAddr) ?></p><?php endif; ?>
-                    <?php if ($custCity && $custCity !== ', '): ?><p><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
-                    <?php if ($quote['customer_phone']): ?><p>Phone: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
-                    <?php if ($quote['customer_email']): ?><p>Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
-                    <?php if (!empty($quote['customer_vat'])): ?><p>VAT: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
-                    <?php if (!empty($quote['customer_reg'])): ?><p>Reg: <?= htmlspecialchars($quote['customer_reg']) ?></p><?php endif; ?>
-                    <?php if ($quote['project_name']): ?><p><em>Project: <?= htmlspecialchars($quote['project_name']) ?></em></p><?php endif; ?>
                 </div>
                 <div class="fw-qi__doc-section">
                     <table class="fw-qi__doc-table">

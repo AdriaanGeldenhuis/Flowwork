@@ -230,6 +230,39 @@ class QiStyledPdfWriter
             $rightY -= 11;
         }
 
+        // Bill To (right side, below status/dates)
+        $rightY -= 8;
+        $this->textRight('F2', 8, $rightX, $rightY, 'BILL TO', $this->headingR, $this->headingG, $this->headingB);
+        $rightY -= 13;
+        $this->textRight('F2', 9, $rightX, $rightY, $this->doc['customer_name'] ?? 'Customer', '0.1', '0.1', '0.1');
+        $rightY -= 12;
+        $custAddr = trim(($this->doc['customer_address1'] ?? '') . ' ' . ($this->doc['customer_address2'] ?? ''));
+        $custCity = trim(($this->doc['customer_city'] ?? '') . ', ' . ($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? ''));
+        if ($custAddr) {
+            $this->textRight('F1', 8, $rightX, $rightY, $custAddr, '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if ($custCity && $custCity !== ', ') {
+            $this->textRight('F1', 8, $rightX, $rightY, $custCity, '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_phone'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Phone: ' . $this->doc['customer_phone'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_email'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Email: ' . $this->doc['customer_email'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_vat'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'VAT: ' . $this->doc['customer_vat'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+        if (!empty($this->doc['customer_reg'])) {
+            $this->textRight('F1', 8, $rightX, $rightY, 'Reg: ' . $this->doc['customer_reg'], '0.35', '0.35', '0.35');
+            $rightY -= 11;
+        }
+
         // Accent line — position below whichever column is taller
         $headerBottom = min($leftY, $rightY) - 8;
         $this->line($x, $headerBottom, $rightX, $headerBottom, 3, $this->accentR, $this->accentG, $this->accentB);
@@ -239,64 +272,22 @@ class QiStyledPdfWriter
 
     private function drawDetails(): void
     {
-        $x = $this->marginL;
-        $boxW = ($this->contentW() - 20) / 2;
+        // Bill To is now in the header (right side, under status).
+        // Only draw Project box if applicable.
+        if (empty($this->doc['project_name'])) {
+            return;
+        }
 
-        // Calculate Bill To box height dynamically
-        $billLines = 2; // title + name
-        $custAddr = trim(($this->doc['customer_address1'] ?? '') . ' ' . ($this->doc['customer_address2'] ?? ''));
-        $custCity = trim(($this->doc['customer_city'] ?? '') . ', ' . ($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? ''));
-        if ($custAddr) $billLines++;
-        if ($custCity && $custCity !== ', ') $billLines++;
-        if (!empty($this->doc['customer_phone'])) $billLines++;
-        if (!empty($this->doc['customer_email'])) $billLines++;
-        if (!empty($this->doc['customer_vat'])) $billLines++;
-        if (!empty($this->doc['customer_reg'])) $billLines++;
-        $boxH = max(55, $billLines * 11 + 22);
+        $x = $this->marginL;
+        $boxW = $this->contentW() / 2;
+        $boxH = 40;
 
         $this->checkSpace($boxH + 18);
 
-        // Bill To box
         $this->rect($x, $this->y - $boxH, $boxW, $boxH, '0.96', '0.96', '0.97');
-        // Left accent bar
-        $this->rect($x, $this->y - $boxH, 3, $boxH, $this->accentR, $this->accentG, $this->accentB);
-
-        $this->text('F2', 8, $x + 12, $this->y - 14, 'BILL TO', $this->headingR, $this->headingG, $this->headingB);
-        $this->text('F2', 10, $x + 12, $this->y - 28, $this->doc['customer_name'] ?? 'Customer', '0.1', '0.1', '0.1');
-        $detailY = $this->y - 40;
-        if ($custAddr) {
-            $this->text('F1', 8, $x + 12, $detailY, $custAddr, '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-        if ($custCity && $custCity !== ', ') {
-            $this->text('F1', 8, $x + 12, $detailY, $custCity, '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-        if (!empty($this->doc['customer_phone'])) {
-            $this->text('F1', 8, $x + 12, $detailY, 'Phone: ' . $this->doc['customer_phone'], '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-        if (!empty($this->doc['customer_email'])) {
-            $this->text('F1', 8, $x + 12, $detailY, 'Email: ' . $this->doc['customer_email'], '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-        if (!empty($this->doc['customer_vat'])) {
-            $this->text('F1', 8, $x + 12, $detailY, 'VAT: ' . $this->doc['customer_vat'], '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-        if (!empty($this->doc['customer_reg'])) {
-            $this->text('F1', 8, $x + 12, $detailY, 'Reg: ' . $this->doc['customer_reg'], '0.35', '0.35', '0.35');
-            $detailY -= 11;
-        }
-
-        // Project box (if applicable)
-        if (!empty($this->doc['project_name'])) {
-            $px = $x + $boxW + 20;
-            $this->rect($px, $this->y - $boxH, $boxW, $boxH, '0.96', '0.96', '0.97');
-            $this->rect($px, $this->y - $boxH, 3, $boxH, '0.6', '0.6', '0.65');
-            $this->text('F2', 8, $px + 12, $this->y - 14, 'PROJECT', $this->headingR, $this->headingG, $this->headingB);
-            $this->text('F1', 10, $px + 12, $this->y - 28, $this->doc['project_name'], '0.1', '0.1', '0.1');
-        }
+        $this->rect($x, $this->y - $boxH, 3, $boxH, '0.6', '0.6', '0.65');
+        $this->text('F2', 8, $x + 12, $this->y - 14, 'PROJECT', $this->headingR, $this->headingG, $this->headingB);
+        $this->text('F1', 10, $x + 12, $this->y - 28, $this->doc['project_name'], '0.1', '0.1', '0.1');
 
         $this->y -= ($boxH + 18);
     }
