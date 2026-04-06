@@ -10,7 +10,9 @@ const DB_USER = 'flowwwqmnt_1';
 const DB_PASS = '3CLkvJsAM52Xvh7Urf2E';
 
 // Session
-const SESSION_NAME = 'FLOWWORKSESSID';
+const SESSION_NAME       = 'FLOWWORKSESSID';
+const SESSION_LIFETIME   = 86400;   // 24 hours
+const REMEMBER_ME_EXPIRY = 604800;  // 7 days
 
 // Error handling
 if (APP_ENV === 'production') {

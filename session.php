@@ -5,7 +5,7 @@ require_once __DIR__ . '/config.php';
 $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
 session_name(SESSION_NAME);
 session_set_cookie_params([
-  'lifetime' => 0,
+  'lifetime' => SESSION_LIFETIME,
   'path'     => '/',
   'domain'   => '',
   'secure'   => $https,
@@ -13,6 +13,7 @@ session_set_cookie_params([
   'samesite' => 'Lax',
 ]);
 ini_set('session.use_strict_mode', '1');
+ini_set('session.gc_maxlifetime', (string)SESSION_LIFETIME);
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
