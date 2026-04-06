@@ -101,6 +101,15 @@ $canConvert = $quote['status'] === 'accepted';
 
 $primaryColor = sanitize_css_color($quote['primary_color'] ?? '#fbbf24');
 $secondaryColor = sanitize_css_color($quote['secondary_color'] ?? '#f59e0b', '#f59e0b');
+$headingColor = sanitize_css_color($quote['qi_heading_color'] ?? '', $primaryColor);
+$textColor = $quote['qi_text_color'] ?? '';
+$tableHeaderText = $quote['qi_table_header_text'] ?? '#ffffff';
+$bgColor = $quote['qi_bg_color'] ?? '';
+$borderRadius = max(0, min(24, (int)($quote['qi_border_radius'] ?? 8)));
+$logoSize = max(80, min(400, (int)($quote['qi_logo_size'] ?? 200)));
+$logoPosition = in_array($quote['qi_logo_position'] ?? 'left', ['left','center','right']) ? $quote['qi_logo_position'] : 'left';
+$docTitle = htmlspecialchars($quote['qi_quote_title'] ?? 'QUOTATION');
+$customCss = $quote['qi_custom_css'] ?? '';
 $fontFamily = $quote['qi_font_family'] ?? 'system-ui';
 
 $fontMap = [
@@ -140,22 +149,15 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
             --accent-qi: <?= $primaryColor ?>;
             --accent-qi-secondary: <?= $secondaryColor ?>;
             --doc-font: <?= $fontStack ?>;
+            --qi-heading: <?= $headingColor ?>;
+            --qi-border-radius: <?= $borderRadius ?>px;
+            --qi-logo-max-w: <?= $logoSize ?>px;
+            --qi-th-text: <?= $tableHeaderText ?>;
+            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
+            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
         }
         .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
-        .fw-qi__doc-title { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-company h1 { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-company strong { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-table thead { background: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-header { border-bottom-color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-section h3 { border-bottom-color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-detail-box { border-left-color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-detail-box h3 { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-total-row--grand { color: <?= $primaryColor ?> !important; border-top-color: <?= $primaryColor ?> !important; }
-        @media print {
-            .fw-qi__doc-table thead { background: <?= $primaryColor ?> !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .fw-qi__doc-title { color: <?= $primaryColor ?> !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .fw-qi__doc-company h1 { color: <?= $primaryColor ?> !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
+        <?= $customCss ?>
     </style>
 </head>
 <body class="fw-qi">
@@ -291,7 +293,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
             <div class="fw-qi__document">
                 
                 <div class="fw-qi__doc-header">
-                    <div class="fw-qi__doc-header-left">
+                    <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">
                         <?php if ($quote['logo_url']): ?>
                             <img src="<?= htmlspecialchars($quote['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                         <?php endif; ?>
@@ -311,7 +313,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
                         </div>
                     </div>
                     <div class="fw-qi__doc-header-right">
-                        <h2 class="fw-qi__doc-title">QUOTATION</h2>
+                        <h2 class="fw-qi__doc-title"><?= $docTitle ?></h2>
                         <div class="fw-qi__doc-number"><?= htmlspecialchars($quote['quote_number']) ?></div>
                         <span class="fw-qi__badge fw-qi__badge--<?= $quote['status'] ?>"><?= strtoupper($quote['status']) ?></span>
                     </div>

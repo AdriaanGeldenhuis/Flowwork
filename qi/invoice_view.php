@@ -68,6 +68,15 @@ $canDelete = ($invoice['status'] === 'draft');
 // Colour and font customisation
 $primaryColor   = sanitize_css_color($invoice['primary_color'] ?? '#fbbf24');
 $secondaryColor = sanitize_css_color($invoice['secondary_color'] ?? '#f59e0b', '#f59e0b');
+$headingColor = sanitize_css_color($invoice['qi_heading_color'] ?? '', $primaryColor);
+$textColor = $invoice['qi_text_color'] ?? '';
+$tableHeaderText = $invoice['qi_table_header_text'] ?? '#ffffff';
+$bgColor = $invoice['qi_bg_color'] ?? '';
+$borderRadius = max(0, min(24, (int)($invoice['qi_border_radius'] ?? 8)));
+$logoSize = max(80, min(400, (int)($invoice['qi_logo_size'] ?? 200)));
+$logoPosition = in_array($invoice['qi_logo_position'] ?? 'left', ['left','center','right']) ? $invoice['qi_logo_position'] : 'left';
+$docTitle = htmlspecialchars($invoice['qi_invoice_title'] ?? 'INVOICE');
+$customCss = $invoice['qi_custom_css'] ?? '';
 $fontFamily     = $invoice['qi_font_family'] ?? 'system-ui';
 $fontMap = [
     'system-ui'  => 'system-ui, -apple-system, sans-serif',
@@ -112,22 +121,15 @@ function format_currency($amount) {
             --accent-qi: <?= $primaryColor ?>;
             --accent-qi-secondary: <?= $secondaryColor ?>;
             --doc-font: <?= $fontStack ?>;
+            --qi-heading: <?= $headingColor ?>;
+            --qi-border-radius: <?= $borderRadius ?>px;
+            --qi-logo-max-w: <?= $logoSize ?>px;
+            --qi-th-text: <?= $tableHeaderText ?>;
+            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
+            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
         }
         .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
-        .fw-qi__doc-title { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-company h1 { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-company strong { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-table thead { background: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-header { border-bottom-color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-section h3 { border-bottom-color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-detail-box { border-left-color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-detail-box h3 { color: <?= $primaryColor ?> !important; }
-        .fw-qi__doc-total-row--grand { color: <?= $primaryColor ?> !important; border-top-color: <?= $primaryColor ?> !important; }
-        @media print {
-            .fw-qi__doc-table thead { background: <?= $primaryColor ?> !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .fw-qi__doc-title { color: <?= $primaryColor ?> !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .fw-qi__doc-company h1 { color: <?= $primaryColor ?> !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
+        <?= $customCss ?>
     </style>
 </head>
 <body class="fw-qi">
@@ -270,12 +272,12 @@ function format_currency($amount) {
             <div class="fw-qi__document">
                 <!-- Document Header -->
                 <div class="fw-qi__doc-header">
-                    <div class="fw-qi__doc-header-left">
+                    <div class="fw-qi__doc-header-left<?= $logoPosition !== 'left' ? ' fw-qi__doc-header-left--' . $logoPosition : '' ?>">
                         <?php if ($invoice['logo_url']): ?>
                             <img src="<?= htmlspecialchars($invoice['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                         <?php endif; ?>
                     <div class="fw-qi__doc-company">
-                        <h1 class="fw-qi__doc-title">Invoice</h1>
+                        <h1 class="fw-qi__doc-title"><?= $docTitle ?></h1>
                         <?php if ($showAddress): ?>
                             <p><?= htmlspecialchars($invoice['company_address1']) ?><br><?= htmlspecialchars($invoice['company_address2']) ?><br><?= htmlspecialchars($invoice['company_city']) ?>, <?= htmlspecialchars($invoice['company_region']) ?> <?= htmlspecialchars($invoice['company_postal']) ?></p>
                         <?php endif; ?>
