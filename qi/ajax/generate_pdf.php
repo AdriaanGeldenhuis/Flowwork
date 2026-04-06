@@ -294,8 +294,22 @@ try {
             min-height: auto;
             margin: 0;
             box-shadow: none !important;
+            border: none !important;
             border-radius: 0;
             page-break-after: always;
+        }
+        /* Force two-column header in print (override mobile breakpoint) */
+        .fw-qi__doc-header {
+            grid-template-columns: 1fr auto !important;
+            gap: 40px !important;
+            padding: 40px 40px 16px !important;
+        }
+        .fw-qi__doc-meta {
+            text-align: right !important;
+        }
+        .fw-qi__doc-logo {
+            max-width: 480px !important;
+            max-height: 160px !important;
         }
         .fw-qi__doc-header { page-break-inside: avoid; }
         .fw-qi__doc-details { page-break-inside: avoid; }
