@@ -342,6 +342,12 @@ function format_currency($amount) {
                     </div>
                 </div>
 
+                <?php if ($template === 'classic' && $invoice['project_name']): ?>
+                <div class="fw-qi__classic-project">
+                    <h2><?= htmlspecialchars($invoice['project_name']) ?></h2>
+                </div>
+                <?php endif; ?>
+
                 <!-- Line Items Table -->
                 <table class="fw-qi__doc-table">
                     <thead>

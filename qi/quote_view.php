@@ -358,6 +358,12 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
                     </div>
                 </div>
 
+                <?php if ($template === 'classic' && $quote['project_name']): ?>
+                <div class="fw-qi__classic-project">
+                    <h2><?= htmlspecialchars($quote['project_name']) ?></h2>
+                </div>
+                <?php endif; ?>
+
                 <div class="fw-qi__doc-section">
                     <h3>Items</h3>
                     <table class="fw-qi__doc-table">

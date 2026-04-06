@@ -391,6 +391,12 @@ try {
             </div>
         </div>
 
+        <?php if ($template === 'classic' && !empty($doc['project_name'])): ?>
+        <div class="fw-qi__classic-project">
+            <h2><?= htmlspecialchars($doc['project_name']) ?></h2>
+        </div>
+        <?php endif; ?>
+
         <!-- Line Items Table -->
         <table class="fw-qi__doc-table">
             <thead>

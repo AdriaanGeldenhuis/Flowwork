@@ -642,109 +642,235 @@
 
 /* ================================================================
    TEMPLATE: CLASSIC
-   Traditional, professional, clean lines, no rounded corners
+   Clean professional SA invoice style. No colored bars, no rounded
+   corners, no shadows — just clean business layout.
    ================================================================ */
 
 [data-template="classic"] {
   border-radius: 0 !important;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  box-shadow: none;
+  border: 1px solid #d1d5db;
 }
 
+/* --- Header --- */
 [data-template="classic"] .fw-qi__doc-header {
   background: none;
-  border-bottom: 1px solid #d1d5db;
-  padding: 36px 40px;
+  border-bottom: none;
+  padding: 40px 40px 16px;
+}
+
+[data-template="classic"] .fw-qi__doc-logo {
+  max-height: 160px;
+  max-width: 380px;
+  margin-bottom: 16px;
 }
 
 [data-template="classic"] .fw-qi__doc-title {
-  font-size: 36px;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
-  border-bottom: 2px solid var(--qi-primary);
-  padding-bottom: 6px;
-  display: inline-block;
+  display: none;
 }
 
 [data-template="classic"] .fw-qi__doc-company h1 {
+  display: none;
+}
+
+[data-template="classic"] .fw-qi__doc-company p {
+  font-size: 13px;
+  color: #374151;
+  margin: 1px 0;
+  line-height: 1.6;
+}
+
+/* --- Right column (invoice #, dates, bill to) --- */
+[data-template="classic"] .fw-qi__doc-meta h2 {
+  font-size: 15px;
   font-weight: 700;
-  font-size: 22px;
+  color: var(--qi-heading-color);
+  margin: 0 0 4px 0;
+}
+
+[data-template="classic"] .fw-qi__doc-meta p {
+  font-size: 13px;
+  margin: 1px 0;
+  color: #374151;
+}
+
+[data-template="classic"] .fw-qi__doc-bill-to {
+  border-top: none !important;
+  margin-top: 8px !important;
+  padding-top: 4px !important;
+}
+
+[data-template="classic"] .fw-qi__doc-bill-to h3 {
+  display: none;
+}
+
+[data-template="classic"] .fw-qi__doc-bill-to p {
+  font-size: 13px !important;
+  color: #374151;
+  margin: 1px 0 !important;
+}
+
+/* --- Project heading (full-width bold line below header) --- */
+[data-template="classic"] .fw-qi__classic-project {
+  padding: 14px 40px 10px;
+}
+
+[data-template="classic"] .fw-qi__classic-project h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+}
+
+/* --- Hide detail boxes (not used in classic) --- */
+[data-template="classic"] .fw-qi__doc-details {
+  display: none;
 }
 
 [data-template="classic"] .fw-qi__doc-detail-box {
-  border-left: none;
-  border-top: 2px solid var(--qi-primary);
-  border-radius: 0;
+  border: none;
   box-shadow: none;
   background: transparent;
-  padding: 16px 0;
+  border-radius: 0;
+  padding: 0;
 }
 
 .fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-detail-box {
   background: transparent;
 }
 
+[data-template="classic"] .fw-qi__doc-number {
+  display: none;
+}
+
+[data-template="classic"] .fw-qi__badge {
+  display: none;
+}
+
+/* --- Table --- */
 [data-template="classic"] .fw-qi__doc-table {
   border-radius: 0;
   box-shadow: none;
-  border: 1px solid #d1d5db;
+  border: none;
+  border-top: 1px solid #9ca3af;
+  margin-top: 0;
 }
 
 [data-template="classic"] .fw-qi__doc-table thead {
-  background: #f3f4f6;
+  background: #f0f0f0;
 }
 
 [data-template="classic"] .fw-qi__doc-table th {
-  color: var(--qi-text-dark);
+  color: #1f2937;
   font-weight: 700;
+  font-size: 12px;
   text-transform: none;
   letter-spacing: 0;
-  border-bottom: 2px solid #d1d5db;
+  padding: 8px 12px;
+  border-bottom: 1px solid #9ca3af;
+}
+
+[data-template="classic"] .fw-qi__doc-table td {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #374151;
+}
+
+[data-template="classic"] .fw-qi__doc-table tbody tr:hover {
+  background: #fafafa;
 }
 
 .fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-table thead {
   background: #374151;
 }
 
-[data-template="classic"] .fw-qi__doc-table td {
-  border-bottom: 1px solid #e5e7eb;
-}
-
-[data-template="classic"] .fw-qi__doc-table tbody tr:hover {
-  background: #f9fafb;
+.fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-table th {
+  color: #f9fafb;
 }
 
 .fw-qi[data-theme="dark"] [data-template="classic"] .fw-qi__doc-table tbody tr:hover {
   background: rgba(255,255,255,0.03);
 }
 
+/* --- Totals --- */
 [data-template="classic"] .fw-qi__doc-totals {
   background: transparent;
-  border: 1px solid #d1d5db;
+  border: none;
   border-radius: 0;
+  padding: 8px 0;
+  max-width: 340px;
+}
+
+[data-template="classic"] .fw-qi__doc-total-row {
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: none;
+}
+
+[data-template="classic"] .fw-qi__doc-total-row span:first-child {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+[data-template="classic"] .fw-qi__doc-total-row span:last-child {
+  font-weight: 400;
+  color: #374151;
 }
 
 [data-template="classic"] .fw-qi__doc-total-row--grand {
-  border-top: 2px solid var(--qi-primary) !important;
+  border-top: 1px solid #1f2937 !important;
+  margin-top: 4px;
+  padding-top: 8px;
+  font-size: 16px;
+}
+
+[data-template="classic"] .fw-qi__doc-total-row--grand span:first-child,
+[data-template="classic"] .fw-qi__doc-total-row--grand span:last-child {
+  font-weight: 900;
+  color: #1f2937;
+}
+
+/* --- Sections (payment details, terms, notes) --- */
+[data-template="classic"] .fw-qi__doc-section {
+  padding: 16px 40px;
 }
 
 [data-template="classic"] .fw-qi__doc-section h3 {
-  text-transform: none;
-  font-size: 15px;
-  font-weight: 700;
-  border-bottom: 1px solid #d1d5db;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  border-bottom: none;
+  color: #1f2937;
+  margin-bottom: 6px;
 }
 
-[data-template="classic"] .fw-qi__doc-number {
-  border-radius: 0;
+[data-template="classic"] .fw-qi__doc-section p {
+  font-size: 13px;
+  text-align: center;
+  color: #374151;
 }
 
+/* --- Footer --- */
 [data-template="classic"] .fw-qi__doc-footer {
-  border-top: 1px solid #d1d5db;
+  border-top: none;
+  background: transparent;
+  padding: 20px 40px 40px;
+  text-align: center;
+  font-size: 13px;
+  color: #374151;
+}
+
+[data-template="classic"] .fw-qi__doc-footer p {
+  margin: 3px 0;
 }
 
 [data-template="classic"] .fw-qi__doc-payment-highlight {
   border-radius: 0;
+  border-left: none;
+  background: transparent;
+  padding: 0;
 }
 
 [data-template="classic"] .fw-qi__alert {
