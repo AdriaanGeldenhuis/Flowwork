@@ -266,6 +266,13 @@ try {
     .print-bar a:hover { color: #fff; }
     .page-spacer { height: 50px; }
 
+    /* Force all colors to print exactly as shown on screen */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
     /* Print media */
     @media print {
         body { background: #fff; }
@@ -281,15 +288,7 @@ try {
         .fw-qi__doc-header { page-break-inside: avoid; }
         .fw-qi__doc-details { page-break-inside: avoid; }
         .fw-qi__doc-totals { page-break-inside: avoid; }
-        .fw-qi__doc-table thead {
-            display: table-header-group;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-        .fw-qi__doc-table th {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
+        .fw-qi__doc-table thead { display: table-header-group; }
         .fw-qi__doc-table tbody tr { page-break-inside: avoid; }
     }
     @page {
