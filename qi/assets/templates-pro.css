@@ -83,7 +83,7 @@
 }
 
 .fw-qi__doc-logo {
-  max-width: var(--qi-logo-size);
+  max-width: 480px;
   max-height: 160px;
   object-fit: contain;
   margin-bottom: 16px;
