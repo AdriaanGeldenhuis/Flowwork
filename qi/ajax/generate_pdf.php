@@ -71,6 +71,7 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $milestones = [];
 
     } elseif ($type === 'credit_note') {
         $stmt = $DB->prepare(
@@ -117,6 +118,7 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM credit_note_lines WHERE credit_note_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $milestones = [];
 
     } else {
         // Invoice
@@ -161,6 +163,14 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Fetch payment milestones
+        $milestones = [];
+        if (!empty($doc['has_milestones'])) {
+            $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+            $stmt->execute([$id, $companyId]);
+            $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
     }
 
     // Display toggles
@@ -457,6 +467,50 @@ try {
                 </div>
             <?php endif; ?>
         </div>
+
+        <!-- Payment Milestones -->
+        <?php if (!empty($milestones)): ?>
+            <div class="fw-qi__doc-section">
+                <h3>Payment Schedule</h3>
+                <table class="fw-qi__doc-table">
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th style="text-align:right;">%</th>
+                            <th style="text-align:right;">Amount</th>
+                            <th>Due Date</th>
+                            <th style="text-align:right;">Paid</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                            $nowPayableId = null;
+                            foreach ($milestones as $ms) {
+                                if ($ms['status'] !== 'paid') { $nowPayableId = $ms['id']; break; }
+                            }
+                        ?>
+                        <?php foreach ($milestones as $ms): ?>
+                            <?php
+                                $isNowPayable = ($nowPayableId !== null && $ms['id'] == $nowPayableId);
+                                if ($ms['status'] === 'paid') { $msStatusLabel = 'Paid'; }
+                                elseif ($ms['status'] === 'overdue') { $msStatusLabel = 'Overdue'; }
+                                elseif ($isNowPayable) { $msStatusLabel = 'Now Payable'; }
+                                else { $msStatusLabel = 'Upcoming'; }
+                            ?>
+                            <tr>
+                                <td><?= htmlspecialchars($ms['label']) ?></td>
+                                <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
+                                <td style="text-align:right;"><?= fmt($ms['amount']) ?></td>
+                                <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
+                                <td style="text-align:right;"><?= fmt($ms['amount_paid']) ?></td>
+                                <td><?= $msStatusLabel ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
 
         <!-- Payment & Bank Details -->
         <?php if (!empty($doc['bank_name']) || !empty($doc['bank_account_number'])): ?>
