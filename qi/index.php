@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-06-QI-v2');
+define('ASSET_VERSION', '2026-04-07-QI-crm-look');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -144,20 +144,23 @@ $counts = $stmt->fetch();
             <!-- Only show toolbar if NOT on overview tab -->
             <?php if ($activeTab !== 'overview'): ?>
                 <div class="fw-qi__toolbar">
-                    <div class="fw-qi__search-wrapper">
-                        <svg class="fw-qi__search-icon" viewBox="0 0 24 24" fill="none">
-                            <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
-                            <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <input 
-                            type="search" 
-                            class="fw-qi__search" 
-                            placeholder="Search by number, customer..." 
-                            id="searchInput"
-                            autocomplete="off"
-                        >
+                    <div class="fw-qi__toolbar-left">
+                        <div class="fw-qi__search-wrapper">
+                            <svg class="fw-qi__search-icon" viewBox="0 0 24 24" fill="none">
+                                <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+                                <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                            <input
+                                type="search"
+                                class="fw-qi__search"
+                                placeholder="Search by number, customer..."
+                                id="searchInput"
+                                autocomplete="off"
+                            >
+                        </div>
                     </div>
-                    
+
+                    <div class="fw-qi__toolbar-right">
                     <select class="fw-qi__filter" id="filterStatus">
                         <option value="">All Statuses</option>
                         <?php if ($activeTab === 'quotes'): ?>
@@ -190,6 +193,7 @@ $counts = $stmt->fetch();
                     <button class="fw-qi__btn fw-qi__btn--primary" onclick="QIIndex.createNew()">
                         + New <?= ucfirst(rtrim($activeTab, 's')) ?>
                     </button>
+                    </div><!-- /.fw-qi__toolbar-right -->
                 </div>
             <?php endif; ?>
 
