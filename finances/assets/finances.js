@@ -6,30 +6,42 @@
 
   console.log('Finance.js loaded');
 
-  // ========== THEME MANAGEMENT (FIXED) ==========
+  // ========== THEME MANAGEMENT (global cookie: fw_theme) ==========
+  const THEME_COOKIE_NAME = 'fw_theme';
   const themeToggle = document.getElementById('themeToggle');
   const root = document.querySelector('.fw-finance');
 
   console.log('Theme toggle:', themeToggle);
   console.log('Root element:', root);
 
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? match[2] : null;
+  }
+
+  function setCookie(name, value, days = 365) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = name + '=' + value + ';expires=' + date.toUTCString() + ';path=/;SameSite=Lax';
+  }
+
   function initTheme() {
     if (!root) return;
-    
-    const savedTheme = localStorage.getItem('fw-finance-theme') || 'light';
+
+    const savedTheme = getCookie(THEME_COOKIE_NAME) || 'light';
     console.log('Loading saved theme:', savedTheme);
     applyTheme(savedTheme, false);
   }
 
   function applyTheme(theme, save = true) {
     if (!root) return;
-    
+
     root.setAttribute('data-theme', theme);
     console.log('Applied theme:', theme);
-    
+
     if (save) {
-      localStorage.setItem('fw-finance-theme', theme);
-      console.log('Saved theme to localStorage:', theme);
+      setCookie(THEME_COOKIE_NAME, theme);
+      console.log('Saved theme to cookie:', theme);
     }
   }
 
