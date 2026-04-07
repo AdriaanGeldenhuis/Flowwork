@@ -11,7 +11,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-07-QI-mobile-v3');
+define('ASSET_VERSION', '2026-04-07-QI-pinch');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -106,7 +106,7 @@ function format_currency($amount) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=940">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($invoice['invoice_number']) ?> – <?= htmlspecialchars($invoice['company_name']) ?></title>
 
@@ -130,11 +130,27 @@ function format_currency($amount) {
             <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
         }
         .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
-        /* Force the page to be at least as wide as the desktop document so
-           that on phones (with viewport meta width=940) the browser scales
-           the whole invoice view down to fit, producing an exact miniature
-           of the PC layout. Scoped to this page only via inline style. */
-        html, body, .fw-qi__main, .fw-qi__container { min-width: 940px; }
+
+        /* The invoice document always renders the desktop layout at a fixed
+           940px wide. On phones it sits inside .fw-qi__doc-viewport which
+           CSS-zooms it down to fit the screen and lets the user pinch to
+           zoom in/out (handled by the pinch script at the bottom of this
+           page). The app shell (header, footer, modal) keeps the normal
+           device-width viewport, so it stays usable. */
+        .fw-qi__doc-viewport {
+            width: 100%;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x pan-y pinch-zoom;
+            background: #e5e7eb;
+        }
+        .fw-qi[data-theme="dark"] .fw-qi__doc-viewport { background: #111827; }
+        .fw-qi__doc-viewport .fw-qi__document {
+            width: 940px;
+            max-width: none;
+            margin: 0 auto;
+            zoom: var(--qi-zoom, 1);
+        }
         <?= $customCss ?>
     </style>
 </head>
@@ -275,6 +291,7 @@ function format_currency($amount) {
         </header>
 
         <main class="fw-qi__main">
+            <div class="fw-qi__doc-viewport" id="docViewport">
             <div class="fw-qi__document" data-template="<?= $template ?>">
                 <!-- Document Header -->
                 <div class="fw-qi__doc-header">
@@ -500,6 +517,7 @@ function format_currency($amount) {
                     </div>
                 <?php endif; ?>
             </div>
+            </div><!-- /.fw-qi__doc-viewport -->
         </main>
 
         <footer class="fw-qi__footer">
@@ -583,6 +601,75 @@ function format_currency($amount) {
             balanceDue: parseFloat('<?= (float)$invoice['balance_due'] ?>'),
             hasMilestones: <?= !empty($milestones) ? 'true' : 'false' ?>
         });
+    </script>
+    <script>
+        // Pinch-to-zoom for the invoice document only (app shell unaffected).
+        // The document is fixed at 940px wide and CSS-zoomed via --qi-zoom.
+        // Initial zoom fits it to the viewport on phones; two-finger pinch
+        // updates the zoom variable live.
+        (function () {
+            const viewport = document.getElementById('docViewport');
+            if (!viewport) return;
+            const doc = viewport.querySelector('.fw-qi__document');
+            if (!doc) return;
+
+            const DOC_WIDTH = 940;
+            const MIN_ZOOM = 0.25;
+            const MAX_ZOOM = 3;
+
+            function clamp(z) { return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z)); }
+            function getZoom() {
+                return parseFloat(doc.style.getPropertyValue('--qi-zoom')) || 1;
+            }
+            function setZoom(z) {
+                doc.style.setProperty('--qi-zoom', clamp(z));
+            }
+
+            // Fit-to-screen on initial load (and only when the viewport is
+            // narrower than the document — desktop stays at 1:1).
+            function fitToScreen() {
+                const w = viewport.clientWidth;
+                if (w > 0 && w < DOC_WIDTH) {
+                    setZoom(w / DOC_WIDTH);
+                } else {
+                    setZoom(1);
+                }
+            }
+            fitToScreen();
+            window.addEventListener('orientationchange', fitToScreen);
+
+            // Two-finger pinch handling
+            let pinchStartDist = 0;
+            let pinchStartZoom = 1;
+
+            function distance(t) {
+                const dx = t[0].clientX - t[1].clientX;
+                const dy = t[0].clientY - t[1].clientY;
+                return Math.hypot(dx, dy);
+            }
+
+            viewport.addEventListener('touchstart', function (e) {
+                if (e.touches.length === 2) {
+                    pinchStartDist = distance(e.touches);
+                    pinchStartZoom = getZoom();
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            viewport.addEventListener('touchmove', function (e) {
+                if (e.touches.length === 2 && pinchStartDist > 0) {
+                    const d = distance(e.touches);
+                    setZoom(pinchStartZoom * (d / pinchStartDist));
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            viewport.addEventListener('touchend', function (e) {
+                if (e.touches.length < 2) {
+                    pinchStartDist = 0;
+                }
+            });
+        })();
     </script>
 </body>
 </html>
