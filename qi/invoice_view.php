@@ -11,7 +11,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-06-QI-v2');
+define('ASSET_VERSION', '2026-04-07-QI-mobile');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -346,6 +346,7 @@ function format_currency($amount) {
                 <?php endif; ?>
 
                 <!-- Line Items Table -->
+                <div class="fw-qi__doc-table-wrap">
                 <table class="fw-qi__doc-table">
                     <thead>
                         <tr>
@@ -366,6 +367,7 @@ function format_currency($amount) {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
 
                 <!-- Totals Summary -->
                 <div class="fw-qi__doc-totals">
@@ -399,6 +401,7 @@ function format_currency($amount) {
                 <?php if (!empty($milestones)): ?>
                     <div class="fw-qi__doc-section fw-qi__milestones-view">
                         <h3>Payment Schedule</h3>
+                        <div class="fw-qi__doc-table-wrap">
                         <table class="fw-qi__doc-table fw-qi__milestones-table">
                             <thead>
                                 <tr>
@@ -449,6 +452,7 @@ function format_currency($amount) {
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 <?php endif; ?>
 

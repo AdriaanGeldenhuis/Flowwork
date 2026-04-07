@@ -305,6 +305,13 @@
   text-align: right !important;
 }
 
+.fw-qi__doc-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ========== TOTALS ========== */
 
 .fw-qi__doc-totals {
@@ -605,6 +612,81 @@
     margin: 0 0 16px 0;
     padding: 12px 16px;
     font-size: 13px;
+  }
+
+  /* Stop the page from ever scrolling sideways */
+  html,
+  body,
+  .fw-qi__main,
+  .fw-qi__document {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* Doc-meta / Bill To: left-align (single column now) and wrap long tokens */
+  .fw-qi__doc-meta,
+  .fw-qi__doc-meta h2,
+  .fw-qi__doc-meta p,
+  .fw-qi__doc-bill-to,
+  .fw-qi__doc-bill-to p {
+    text-align: left;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-width: 0;
+  }
+
+  /* Tighter section padding so 40px gutters don't eat the screen */
+  .fw-qi__doc-header,
+  .fw-qi__classic-project,
+  .fw-qi__doc-section {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* Tables shrink-fit, with horizontal scroll inside the wrapper if needed */
+  .fw-qi__doc-table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+  }
+  .fw-qi__doc-table thead,
+  .fw-qi__doc-table tbody,
+  .fw-qi__doc-table tr {
+    width: 100%;
+  }
+  .fw-qi__doc-table th,
+  .fw-qi__doc-table td {
+    padding: 8px 6px;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Milestones table is 6 cols — keep the badges intact, scroll within wrapper */
+  .fw-qi__milestones-table {
+    min-width: 520px;
+  }
+
+  /* Totals never extend past the right edge */
+  .fw-qi__doc-totals {
+    max-width: 100%;
+    margin-left: 0;
+    padding: 12px 16px 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .fw-qi__doc-header {
+    padding: 16px;
+    gap: 12px;
+  }
+  .fw-qi__doc-meta h2 {
+    font-size: 14px;
+  }
+  .fw-qi__doc-table th,
+  .fw-qi__doc-table td {
+    font-size: 10.5px;
+    padding: 6px 4px;
   }
 }
 
