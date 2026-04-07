@@ -33,16 +33,28 @@
         cell.textContent = value || '';
         break;
         
-      case 'number':
+      case 'number': {
         if (value !== null && value !== '') {
-          const span = document.createElement('span');
-          span.className = 'fw-cell-number';
-          span.textContent = value;
-          cell.appendChild(span);
+          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+          const cfg = col && col.config ? JSON.parse(col.config) : {};
+          const affix = cfg.affix || '';
+          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
+          const num = parseFloat(value);
+          let formatted = value;
+          if (!isNaN(num)) {
+            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+            if (cfg.format === 'percentage') formatted += '%';
+          }
+          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
+          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
+          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
+      }
         
       case 'status':
         if (value) {
@@ -164,16 +176,27 @@
         }
         break;
         
-      case 'formula':
+      case 'formula': {
         if (value !== null && value !== '') {
-          const span = document.createElement('span');
-          span.className = 'fw-cell-formula';
-          span.textContent = value;
-          cell.appendChild(span);
+          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+          const cfg = col && col.config ? JSON.parse(col.config) : {};
+          const affix = cfg.affix || '';
+          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
+          const num = parseFloat(value);
+          let formatted = value;
+          if (!isNaN(num)) {
+            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+          }
+          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
+          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
+          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
         } else {
           cell.textContent = '—';
         }
         break;
+      }
         
       default:
         cell.textContent = value || '';
@@ -414,23 +437,30 @@
         }
       }
       
-      const formatted = result.toLocaleString('en-US', {
+      let formatted = result.toLocaleString('en-US', {
         minimumFractionDigits: precision,
         maximumFractionDigits: precision
       });
-      
+
+      const affix = config.affix || '';
+      const affixPos = config.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+      if (affix) {
+        const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+        formatted = affixPos === 'prefix' ? affix + sep + formatted : formatted + sep + affix;
+      }
+
       aggCell.innerHTML = `
         <span class="fw-agg-value">
           <span class="fw-agg-type">${aggType.toUpperCase()}</span>
           ${formatted}
         </span>
       `;
-      
+
       // Flash effect
       aggCell.classList.add('fw-cell-updated');
       setTimeout(() => aggCell.classList.remove('fw-cell-updated'), 600);
     });
-    
+
     console.log('✅ Group aggregations updated');
   };
 
@@ -483,11 +513,18 @@
         }
       }
       
-      const formatted = result.toLocaleString('en-US', {
+      let formatted = result.toLocaleString('en-US', {
         minimumFractionDigits: precision,
         maximumFractionDigits: precision
       });
-      
+
+      const affix = config.affix || '';
+      const affixPos = config.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+      if (affix) {
+        const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+        formatted = affixPos === 'prefix' ? affix + sep + formatted : formatted + sep + affix;
+      }
+
       aggCell.innerHTML = `
         <span class="fw-agg-value fw-board-agg-value">
           <span class="fw-agg-type">${aggType.toUpperCase()}</span>

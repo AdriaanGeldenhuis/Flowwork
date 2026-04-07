@@ -251,7 +251,7 @@ $stmt->execute([$COMPANY_ID]);
 $companyName = $stmt->fetchColumn() ?: 'Company';
 
 // Asset version for cache busting
-define('ASSET_VERSION', '2025-01-21-v8');
+define('ASSET_VERSION', '2025-01-21-v9');
 
 ?>
 <!doctype html>
