@@ -63,21 +63,10 @@ $settings = [
     'finance_require_approval' => getCRMSetting('finance_require_approval', '1'),
 ];
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Finance Settings – Admin</title>
-    <link rel="stylesheet" href="/admin/style.css?v=2025-01-21-1">
-</head>
-<body>
-<div class="fw-admin">
-    <?php include __DIR__ . '/_nav.php'; ?>
-
-    <main class="fw-admin__main">
-        <div class="fw-admin__container">
-
+<?php
+  $pageTitle = 'Finance Settings – Admin';
+  include __DIR__ . '/_layout_top.php';
+?>
             <header class="fw-admin__page-header">
                 <div>
                     <h1 class="fw-admin__page-title">Finance Settings</h1>
@@ -203,11 +192,4 @@ $settings = [
                     </div>
                 </div>
             </form>
-
-        </div>
-    </main>
-</div>
-
-<script src="/admin/admin.js?v=2025-01-21-1"></script>
-</body>
-</html>
+<?php include __DIR__ . '/_layout_bottom.php'; ?>

@@ -30,10 +30,10 @@
   /* Neon Colors - UPDATED: Softer Green */
   --neon-cyan: #00e0d6;
   --neon-yellow: #ffff00;
-  --neon-green: #10b981;
-  --neon-green-glow: rgba(16, 185, 129, 0.3);
+  --neon-green: #4ade80;
+  --neon-green-glow: rgba(74, 222, 128, 0.3);
   --neon-orange: #ff9900;
-  --neon-purple: #8b5cf6;
+  --neon-purple: #4ade80;
   --neon-pink: #ff1dce;
   --neon-magenta: #ff00ff;
   --neon-red: #ff0000;
@@ -47,10 +47,15 @@
   --z-modal: 2000;
 
   /* ===== LIGHT THEME ===== */
-  --fw-bg-base: #f5f7fa;
+  /* Background tokens kept identical to /home/style.css so the finance
+     module visually matches the home dashboard. */
+  --fw-bg-base: #f5f6f8;
   --fw-bg-secondary: #e8ecf1;
   --fw-bg-primary: #ffffff;
-  
+  --fw-bg-radial:
+    radial-gradient(circle at 20% 20%, rgba(74, 222, 128, 0.10), transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(56, 255, 18, 0.06), transparent 50%);
+
   --fw-panel-bg: rgba(255, 255, 255, 0.7);
   --fw-panel-border: rgba(255, 255, 255, 0.9);
   --fw-panel-hover: rgba(248, 250, 252, 1);
@@ -69,14 +74,17 @@
   --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
   --fw-shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.16);
   
-  --fw-primary: #8b5cf6;
-  --fw-primary-hover: #7c3aed;
-  --fw-primary-glow: rgba(139, 92, 246, 0.25);
-  --fw-primary-light: rgba(139, 92, 246, 0.12);
-  
+  /* Primary accent: a lighter, more neon green that matches the home
+     finance tile (--accent-finance: #38ff12). #4ade80 is bright enough
+     to read as text on white, and #38ff12 is reserved for glow halos. */
+  --fw-primary: #4ade80;
+  --fw-primary-hover: #22c55e;
+  --fw-primary-glow: rgba(56, 255, 18, 0.35);
+  --fw-primary-light: rgba(74, 222, 128, 0.14);
+
   --fw-highlight: rgba(255, 255, 255, 0.6);
   --fw-rim-light: rgba(255, 255, 255, 0.5);
-  --fw-glow: rgba(139, 92, 246, 0.15);
+  --fw-glow: rgba(56, 255, 18, 0.18);
   
   --fw-input-bg: #ffffff;
   --fw-input-border: rgba(0, 0, 0, 0.2);
@@ -87,10 +95,14 @@
 
 /* ===== DARK THEME ===== */
 .fw-finance[data-theme="dark"] {
+  /* Background tokens kept identical to /home/style.css dark theme. */
   --fw-bg-base: #0a0c12;
   --fw-bg-secondary: #0f141b;
   --fw-bg-primary: #121824;
-  
+  --fw-bg-radial:
+    radial-gradient(circle at 20% 20%, rgba(74, 222, 128, 0.12), transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(56, 255, 18, 0.08), transparent 50%);
+
   --fw-panel-bg: rgba(18, 24, 36, 0.8);
   --fw-panel-border: rgba(255, 255, 255, 0.1);
   --fw-panel-hover: rgba(30, 40, 58, 1);
@@ -111,7 +123,7 @@
   
   --fw-highlight: rgba(255, 255, 255, 0.15);
   --fw-rim-light: rgba(255, 255, 255, 0.2);
-  --fw-glow: rgba(139, 92, 246, 0.25);
+  --fw-glow: rgba(56, 255, 18, 0.28);
   
   --fw-input-bg: rgba(255, 255, 255, 0.05);
   --fw-input-border: rgba(255, 255, 255, 0.2);
@@ -134,14 +146,26 @@
   font-size: 16px;
   line-height: 1.6;
   color: var(--fw-text-primary);
-  background: 
-    radial-gradient(1400px 700px at 18% -8%, var(--fw-primary-glow), transparent 60%),
-    radial-gradient(1200px 600px at 85% 5%, rgba(0, 224, 214, 0.08), transparent 55%),
-    var(--fw-bg-base);
+  /* Same approach as /home/style.css: solid base color + a radial overlay
+     defined by --fw-bg-radial. Both tokens come from the theme block above
+     and share the home dashboard's exact values. */
+  background: var(--fw-bg-base);
+  background-image: var(--fw-bg-radial);
   min-height: 100vh;
   transition: background 0.4s ease, color 0.3s ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Make sure the html/body wrapper doesn't leak white. Some sub-pages use
+   <main class="fw-finance"> inside an unstyled <body>. */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #f5f6f8;
+}
+html[data-theme="dark"], body[data-theme="dark"] {
+  background: #0a0c12;
 }
 
 /* ===== SCROLLBAR ===== */
@@ -180,7 +204,7 @@
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--fw-panel-border);
-  box-shadow: 0px 0px 20px #8b5cf6;
+  box-shadow: 0px 0px 20px #38ff12;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -214,9 +238,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--neon-purple), var(--neon-cyan));
+  background: linear-gradient(135deg, #4ade80, #38ff12);
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3), inset 0 1px 2px rgba(255,255,255,.3);
+  box-shadow: 0 4px 12px rgba(56, 255, 18, 0.45), inset 0 1px 2px rgba(255,255,255,.3);
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
@@ -1219,7 +1243,7 @@ select.fw-finance__input:focus {
 }
 
 .fw-finance__alert--success {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(74, 222, 128, 0.1);
   border: 1px solid var(--neon-green);
   color: var(--neon-green);
 }
@@ -1276,7 +1300,7 @@ select.fw-finance__input:focus {
 }
 
 .fw-finance__badge--prepared {
-  background: #8b5cf6;
+  background: #4ade80;
 }
 
 .fw-finance__badge--filed {
@@ -2370,7 +2394,7 @@ table.bva-table thead th {
 }
 
 .fw-finance__bank-transaction-status--matched {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(74, 222, 128, 0.1);
   color: var(--neon-green);
   border: 1px solid var(--neon-green);
 }
@@ -2666,7 +2690,7 @@ table.bva-table thead th {
 }
 
 .fw-finance__match-indicator--suggested {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(74, 222, 128, 0.1);
   color: var(--fw-primary);
 }
 
@@ -2799,8 +2823,8 @@ select.fw-finance__input option:checked {
 .fw-finance[data-theme="dark"] .fw-finance__input option:checked,
 .fw-finance[data-theme="dark"] select.fw-finance__input option:hover,
 .fw-finance[data-theme="dark"] select.fw-finance__input option:checked {
-  background: rgba(139, 92, 246, 0.25);
-  color: #a78bfa;
+  background: rgba(74, 222, 128, 0.25);
+  color: #34d399;
 }
 
 /* Disabled options */
@@ -2889,8 +2913,8 @@ select.fw-finance__input optgroup {
 
 .fw-finance[data-theme="dark"] .fw-finance__input optgroup,
 .fw-finance[data-theme="dark"] select.fw-finance__input optgroup {
-  color: #a78bfa;
-  background: rgba(139, 92, 246, 0.1);
+  color: #34d399;
+  background: rgba(74, 222, 128, 0.1);
 }
 
 /* ===== IMPROVED DROPDOWN STYLING ===== */
@@ -2926,14 +2950,14 @@ select.fw-finance__input,
 .fw-finance__input:hover,
 select.fw-finance__input:hover,
 .fw-finance__filter:hover {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%238b5cf6' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%234ade80' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
 }
 
 /* Focus state */
 .fw-finance__input:focus,
 select.fw-finance__input:focus,
 .fw-finance__filter:focus {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%238b5cf6' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%234ade80' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
 }
 
 /* ===== DROPDOWN OPTIONS - HIGH CONTRAST ===== */
@@ -2965,7 +2989,7 @@ select.fw-finance__input option:hover,
 select.fw-finance__input option:checked,
 .fw-finance__filter option:hover,
 .fw-finance__filter option:checked {
-  background: #8b5cf6;
+  background: #4ade80;
   color: #ffffff;
   font-weight: 600;
 }
@@ -2977,7 +3001,7 @@ select.fw-finance__input option:checked,
 .fw-finance[data-theme="dark"] select.fw-finance__input option:checked,
 .fw-finance[data-theme="dark"] .fw-finance__filter option:hover,
 .fw-finance[data-theme="dark"] .fw-finance__filter option:checked {
-  background: #8b5cf6;
+  background: #4ade80;
   color: #ffffff;
   font-weight: 600;
 }
@@ -3019,17 +3043,17 @@ select.fw-finance__input option[value=""],
 select.fw-finance__input optgroup,
 .fw-finance__filter optgroup {
   font-weight: 700;
-  color: #8b5cf6;
+  color: #4ade80;
   font-style: normal;
   padding: 8px 12px;
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(74, 222, 128, 0.1);
 }
 
 .fw-finance[data-theme="dark"] .fw-finance__input optgroup,
 .fw-finance[data-theme="dark"] select.fw-finance__input optgroup,
 .fw-finance[data-theme="dark"] .fw-finance__filter optgroup {
-  color: #a78bfa;
-  background: rgba(139, 92, 246, 0.15);
+  color: #34d399;
+  background: rgba(74, 222, 128, 0.15);
 }
 
 /* ===== SELECT MULTIPLE (if used) ===== */

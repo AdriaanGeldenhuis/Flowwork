@@ -61,21 +61,10 @@ $stmt = $DB->prepare("SELECT id, first_name, last_name FROM users WHERE company_
 $stmt->execute([$companyId]);
 $users = $stmt->fetchAll();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audit Log – Admin</title>
-    <link rel="stylesheet" href="/admin/style.css?v=2025-01-21-1">
-</head>
-<body>
-<div class="fw-admin">
-    <?php include __DIR__ . '/_nav.php'; ?>
-    
-    <main class="fw-admin__main">
-        <div class="fw-admin__container">
-            
+<?php
+  $pageTitle = 'Audit Log – Admin';
+  include __DIR__ . '/_layout_top.php';
+?>
             <header class="fw-admin__page-header">
                 <div>
                     <h1 class="fw-admin__page-title">Audit Log</h1>
@@ -193,12 +182,6 @@ $users = $stmt->fetchAll();
                 </div>
                 <?php endif; ?>
             </div>
-
-        </div>
-    </main>
-</div>
-
-<script src="/admin/admin.js?v=2025-01-21-1"></script>
 <script>
 function exportAuditLog() {
     const params = new URLSearchParams(window.location.search);
@@ -206,5 +189,4 @@ function exportAuditLog() {
     window.location.href = '/admin/api.php?' + params.toString();
 }
 </script>
-</body>
-</html>
+<?php include __DIR__ . '/_layout_bottom.php'; ?>

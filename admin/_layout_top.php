@@ -1,0 +1,33 @@
+<?php
+// /admin/_layout_top.php
+// Shared opening markup for every admin page: <html>, <head>, <body
+// class="fw-admin">, the global header, sidebar nav and main container.
+//
+// Inputs (set by caller before include):
+//   $pageTitle  - string used in <title>
+//   $company    - associative array (must have 'name'); falls back to session
+//   $user       - associative array, optional 'first_name'; falls back to session
+
+$initialTheme = (($_COOKIE['fw_theme'] ?? 'light') === 'dark') ? 'dark' : 'light';
+$pageTitle    = $pageTitle ?? 'Admin';
+$companyName  = $company['name']      ?? ($_SESSION['company_name']    ?? 'Your Company');
+$firstName    = $user['first_name']   ?? ($_SESSION['user_first_name'] ?? 'Welcome');
+?><!DOCTYPE html>
+<html lang="en" data-theme="<?= $initialTheme ?>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= htmlspecialchars($pageTitle) ?></title>
+    <link rel="stylesheet" href="/admin/style.css?v=2026-04-07-2">
+</head>
+<body class="fw-admin" data-theme="<?= $initialTheme ?>">
+<?php
+  $headerScope = 'fw-admin';
+  $companyLogo = null;
+  include __DIR__ . '/../includes/_global_header.php';
+?>
+<div class="fw-admin__shell">
+    <?php include __DIR__ . '/_nav.php'; ?>
+
+    <main class="fw-admin__main">
+        <div class="fw-admin__container">

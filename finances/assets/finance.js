@@ -4,29 +4,46 @@
 (function() {
   'use strict';
 
-  // Theme Management
+  // Theme Management — uses the shared fw_theme cookie so /finances/
+  // sub-pages stay in sync with the rest of the app.
+  const THEME_COOKIE_NAME = 'fw_theme';
   const themeToggle = document.getElementById('themeToggle');
   const themeIndicator = document.getElementById('themeIndicator');
   const root = document.querySelector('.fw-finance');
 
-  function initTheme() {
-    const savedTheme = localStorage.getItem('fw-finance-theme') || 'light';
-    applyTheme(savedTheme);
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? match[2] : null;
   }
 
-  function applyTheme(theme) {
+  function setCookie(name, value, days = 365) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = name + '=' + value + ';expires=' + date.toUTCString() + ';path=/;SameSite=Lax';
+  }
+
+  function initTheme() {
+    if (!root) return;
+    const savedTheme = getCookie(THEME_COOKIE_NAME) || 'light';
+    applyTheme(savedTheme, false);
+  }
+
+  function applyTheme(theme, save = true) {
+    if (!root) return;
     root.setAttribute('data-theme', theme);
     if (themeIndicator) {
       themeIndicator.textContent = `Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`;
     }
-    localStorage.setItem('fw-finance-theme', theme);
+    if (save) setCookie(THEME_COOKIE_NAME, theme);
   }
+
+  initTheme();
 
   if (themeToggle) {
     themeToggle.addEventListener('click', () => {
       const currentTheme = root.getAttribute('data-theme') || 'light';
       const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-      applyTheme(newTheme);
+      applyTheme(newTheme, true);
     });
   }
 

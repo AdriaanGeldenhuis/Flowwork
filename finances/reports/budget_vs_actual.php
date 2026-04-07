@@ -9,7 +9,7 @@ require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../permissions.php';
 requireRoles(['admin', 'bookkeeper', 'viewer']);
 
-define('ASSET_VERSION', '2025-01-21-BUDGET-VS-ACTUAL');
+define('ASSET_VERSION', '2026-04-07-FIN-3');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];

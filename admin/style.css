@@ -52,20 +52,225 @@
 }
 
 /* ========== BASE LAYOUT ========== */
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+/* Pre-paint background on <html> via the data-theme attribute set by the
+   inline script in admin/index.php. Prevents the white edge that used to
+   show before the .fw-admin variables loaded. */
+html { background: #f5f6f8; }
+html[data-theme="dark"] { background: #0a0c12; }
+
 .fw-admin {
-  display: flex;
   min-height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--fw-text-primary);
   background: var(--fw-bg-base);
-  margin: 0;
-  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .fw-admin *, .fw-admin *::before, .fw-admin *::after {
   box-sizing: border-box;
+}
+
+.fw-admin__shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ========== GLOBAL HEADER (shared with home/projects/finances pattern) ========== */
+.fw-admin__header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-spacing-lg);
+  padding: var(--fw-spacing-md) var(--fw-spacing-xl);
+  background: var(--fw-panel-bg);
+  border-bottom: 1px solid var(--fw-border);
+  box-shadow: var(--fw-shadow-sm);
+  z-index: 2;
+}
+
+.fw-admin__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-md);
+}
+
+.fw-admin__logo-tile {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+  border-radius: var(--fw-radius-md);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3), inset 0 1px 2px rgba(255,255,255,.3);
+  position: relative;
+  overflow: hidden;
+}
+.fw-admin__logo-tile svg {
+  width: 28px;
+  height: 28px;
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.2));
+}
+.fw-admin__company-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+}
+
+.fw-admin__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fw-admin__company-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+  line-height: 1.2;
+}
+.fw-admin__app-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fw-text-muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.fw-admin__greeting {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  flex: 1;
+  text-align: center;
+}
+.fw-admin__greeting-name {
+  color: #8b5cf6;
+}
+
+.fw-admin__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-sm);
+}
+
+.fw-admin__home-link {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  cursor: pointer;
+  transition: all .2s ease;
+  color: var(--fw-text-primary);
+  text-decoration: none;
+}
+.fw-admin__home-link:hover {
+  background: var(--fw-hover-bg);
+  box-shadow: var(--fw-shadow-sm);
+  transform: translateY(-1px);
+  color: #8b5cf6;
+}
+.fw-admin__home-link:focus {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+.fw-admin__home-link svg {
+  width: 20px;
+  height: 20px;
+}
+
+.fw-admin__menu-wrapper { position: relative; }
+
+.fw-admin__kebab-toggle {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  cursor: pointer;
+  transition: all .2s ease;
+  color: var(--fw-text-primary);
+}
+.fw-admin__kebab-toggle:hover {
+  background: var(--fw-hover-bg);
+  box-shadow: var(--fw-shadow-sm);
+  transform: translateY(-1px);
+}
+.fw-admin__kebab-toggle:focus {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
+.fw-admin__kebab-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-md);
+  box-shadow: var(--fw-shadow-lg);
+  min-width: 180px;
+  padding: var(--fw-spacing-xs);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: all .2s ease;
+  z-index: 100;
+}
+.fw-admin__kebab-menu[aria-hidden="false"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.fw-admin__kebab-item {
+  display: block;
+  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  color: var(--fw-text-primary);
+  text-decoration: none;
+  border-radius: var(--fw-radius-sm);
+  transition: all .15s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+.fw-admin__kebab-item:hover,
+.fw-admin__kebab-item:focus {
+  background: var(--fw-hover-bg);
+  color: #8b5cf6;
+  outline: none;
+}
+
+@media (max-width: 768px) {
+  .fw-admin__header {
+    flex-direction: column;
+    gap: var(--fw-spacing-md);
+    padding: var(--fw-spacing-md);
+  }
+  .fw-admin__greeting {
+    order: -1;
+    text-align: left;
+  }
+  .fw-admin__controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* ========== NAVIGATION ========== */
@@ -77,28 +282,13 @@
   flex-shrink: 0;
 }
 
-.fw-admin__nav-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--fw-spacing-lg);
-  border-bottom: 1px solid var(--fw-border);
-}
-
-.fw-admin__nav-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--fw-text-primary);
-}
-
 .fw-admin__theme-toggle {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: var(--fw-panel-bg);
   border: 1px solid var(--fw-border);
   border-radius: var(--fw-radius-md);
   cursor: pointer;
@@ -109,11 +299,18 @@
 
 .fw-admin__theme-toggle:hover {
   background: var(--fw-hover-bg);
+  box-shadow: var(--fw-shadow-sm);
+  transform: translateY(-1px);
+}
+
+.fw-admin__theme-toggle:focus {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
 }
 
 .fw-admin__theme-icon {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   transition: opacity 0.2s ease;
 }
 

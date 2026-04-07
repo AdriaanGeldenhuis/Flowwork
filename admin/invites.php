@@ -99,21 +99,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invites – Admin</title>
-    <link rel="stylesheet" href="/admin/style.css?v=2025-01-21-1">
-</head>
-<body>
-<div class="fw-admin">
-    <?php include __DIR__ . '/_nav.php'; ?>
-    
-    <main class="fw-admin__main">
-        <div class="fw-admin__container">
-            
+<?php
+  $pageTitle = 'Invites – Admin';
+  include __DIR__ . '/_layout_top.php';
+?>
             <header class="fw-admin__page-header">
                 <div>
                     <h1 class="fw-admin__page-title">Invites & Access Links</h1>
@@ -227,11 +216,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </table>
                 </div>
             </div>
-
-        </div>
-    </main>
-</div>
-
 <!-- Send Invite Modal -->
 <div class="fw-admin__modal" id="modalInvite" aria-hidden="true">
     <div class="fw-admin__modal-backdrop"></div>
@@ -281,8 +265,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </form>
     </div>
 </div>
-
-<script src="/admin/admin.js?v=2025-01-21-1"></script>
 <script>
 // Open modal
 document.getElementById('btnSendInvite')?.addEventListener('click', () => {
@@ -341,5 +323,4 @@ async function revokeInvite(inviteId) {
     }
 }
 </script>
-</body>
-</html>
+<?php include __DIR__ . '/_layout_bottom.php'; ?>

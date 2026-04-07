@@ -8,7 +8,7 @@ require_once __DIR__ . '/permissions.php';
 // Only admin, bookkeeper or viewer roles may access the finance dashboard. Members/pos users should use other modules.
 requireRoles(['admin', 'bookkeeper', 'viewer']);
 
-define('ASSET_VERSION', '2025-01-21-FIN-1');
+define('ASSET_VERSION', '2026-04-07-FIN-3');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];

@@ -6,7 +6,7 @@ $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
 // Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
+$stmt = $DB->prepare("SELECT role, first_name FROM users WHERE id = ? AND company_id = ?");
 $stmt->execute([$userId, $companyId]);
 $user = $stmt->fetch();
 
@@ -50,32 +50,16 @@ $stmt = $DB->prepare("
 $stmt->execute([$companyId]);
 $recentActivity = $stmt->fetchAll();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard – <?= htmlspecialchars($company['name']) ?></title>
-    <link rel="stylesheet" href="/admin/style.css?v=2025-01-21-1">
-</head>
-<body>
-<div class="fw-admin">
-    <?php include __DIR__ . '/_nav.php'; ?>
-    
-    <main class="fw-admin__main">
-        <div class="fw-admin__container">
+<?php
+  $pageTitle = 'Admin Dashboard – ' . $company['name'];
+  include __DIR__ . '/_layout_top.php';
+?>
             
             <header class="fw-admin__page-header">
                 <div>
                     <h1 class="fw-admin__page-title">Admin Dashboard</h1>
                     <p class="fw-admin__page-subtitle">Overview and quick actions</p>
                 </div>
-                <a href="/home.php" class="fw-admin__btn-secondary">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M19 12H5M12 19l-7-7 7-7"/>
-                    </svg>
-                    Back to Home
-                </a>
             </header>
 
             <!-- Stats Grid -->
@@ -206,10 +190,4 @@ $recentActivity = $stmt->fetchAll();
                     <?php endif; ?>
                 </div>
             </div>
-        </div>
-    </main>
-</div>
-
-<script src="/admin/admin.js?v=2025-01-21-1"></script>
-</body>
-</html>
+<?php include __DIR__ . '/_layout_bottom.php'; ?>
