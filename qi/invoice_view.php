@@ -11,7 +11,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-07-QI-mobile');
+define('ASSET_VERSION', '2026-04-07-QI-mobile-v3');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -130,6 +130,11 @@ function format_currency($amount) {
             <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
         }
         .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+        /* Force the page to be at least as wide as the desktop document so
+           that on phones (with viewport meta width=940) the browser scales
+           the whole invoice view down to fit, producing an exact miniature
+           of the PC layout. Scoped to this page only via inline style. */
+        html, body, .fw-qi__main, .fw-qi__container { min-width: 940px; }
         <?= $customCss ?>
     </style>
 </head>
