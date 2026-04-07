@@ -724,7 +724,14 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                                 
                                                 $precision = $config['precision'] ?? 2;
                                                 $formatted = number_format($result, $precision, '.', ',');
-                                                
+
+                                                $affix = isset($config['affix']) ? (string)$config['affix'] : '';
+                                                $affixPos = (isset($config['affixPosition']) && $config['affixPosition'] === 'suffix') ? 'suffix' : 'prefix';
+                                                if ($affix !== '') {
+                                                    $affixHtml = htmlspecialchars($affix);
+                                                    $formatted = $affixPos === 'prefix' ? $affixHtml . $formatted : $formatted . $affixHtml;
+                                                }
+
                                                 echo '<span class="fw-agg-value">';
                                                 echo '<span class="fw-agg-type">' . strtoupper($aggType) . '</span>';
                                                 echo $formatted;
@@ -875,7 +882,14 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                             
                                             $precision = $config['precision'] ?? 2;
                                             $formatted = number_format($result, $precision, '.', ',');
-                                            
+
+                                            $affix = isset($config['affix']) ? (string)$config['affix'] : '';
+                                            $affixPos = (isset($config['affixPosition']) && $config['affixPosition'] === 'suffix') ? 'suffix' : 'prefix';
+                                            if ($affix !== '') {
+                                                $affixHtml = htmlspecialchars($affix);
+                                                $formatted = $affixPos === 'prefix' ? $affixHtml . $formatted : $formatted . $affixHtml;
+                                            }
+
                                             echo '<span class="fw-agg-value fw-board-agg-value">';
                                             echo '<span class="fw-agg-type">' . strtoupper($aggType) . '</span>';
                                             echo '<strong>' . $formatted . '</strong>';
