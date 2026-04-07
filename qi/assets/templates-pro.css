@@ -1103,3 +1103,100 @@
     font-size: 22px;
   }
 }
+
+/* ========== FORCE LIGHT THEME INSIDE THE DOCUMENT ==========
+   The app shell can be in dark mode, but the invoice/quote document
+   itself is a printable artifact and must always render with light
+   styling so it stays readable and matches the PDF output. This block
+   undoes every dark-mode override that targets anything inside
+   .fw-qi__document. */
+.fw-qi[data-theme="dark"] .fw-qi__document {
+  background: #ffffff !important;
+  color: #374151 !important;
+  --qi-bg: #ffffff;
+  --qi-doc-bg: #ffffff;
+  --qi-text-color: #374151;
+  --qi-text: #374151;
+  --qi-text-dark: #1f2937;
+  --qi-text-dk: #1f2937;
+  --qi-text-muted: #6b7280;
+  border-color: #d1d5db !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document,
+.fw-qi[data-theme="dark"] .fw-qi__document * {
+  color-scheme: light;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-company p,
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-meta p,
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-bill-to p {
+  color: #374151 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table thead {
+  background: #f0f0f0 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table th {
+  color: #1f2937 !important;
+  border-bottom-color: #9ca3af !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table td {
+  color: #374151 !important;
+  border-bottom-color: #e5e7eb !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table tbody {
+  background: #ffffff !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table tbody tr:hover {
+  background: #fafafa !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row,
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row span {
+  color: #374151 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row span:first-child,
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row--grand,
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row--grand span {
+  color: #1f2937 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-detail-box {
+  background: #ffffff !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__payment-detail-row {
+  border-bottom-color: rgba(0,0,0,0.05) !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-footer {
+  background: #f3f4f6 !important;
+  border-top-color: #e5e7eb !important;
+  color: #374151 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-number {
+  background: rgba(0,0,0,0.05) !important;
+}
+/* Milestone rows / badges inside the document — restore light variants */
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-row--active {
+  background: #fffbeb !important;
+  border-left-color: #f59e0b !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-badge--pending {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-badge--due {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-badge--paid {
+  background: #d1fae5 !important;
+  color: #065f46 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-badge--overdue {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-badge--upcoming {
+  background: #e2e8f0 !important;
+  color: #94a3b8 !important;
+}
+.fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__milestone-badge--now-payable {
+  background: #f59e0b !important;
+  color: #ffffff !important;
+}
