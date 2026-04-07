@@ -73,7 +73,8 @@
 
       const affix = config.affix || '';
       const affixPos = config.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-      const display = affix ? (affixPos === 'prefix' ? affix + formatted : formatted + affix) : formatted;
+      const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+      const display = affix ? (affixPos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
 
       // Update cell in DOM
       const cell = document.querySelector(`td[data-item-id="${itemId}"][data-column-id="${col.column_id}"]`);

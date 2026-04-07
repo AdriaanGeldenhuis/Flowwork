@@ -96,7 +96,8 @@ elseif ($col['type'] === 'number' || $col['type'] === 'formula'):
         $displayValue = htmlspecialchars($value);
         if ($affix !== '') {
             $affixHtml = htmlspecialchars($affix);
-            $displayValue = $affixPos === 'prefix' ? $affixHtml . $displayValue : $displayValue . $affixHtml;
+            $sep = '<span style="display:inline-block;width:0.25em;"></span>';
+            $displayValue = $affixPos === 'prefix' ? $affixHtml . $sep . $displayValue : $displayValue . $sep . $affixHtml;
         }
         ?>
         <span class="fw-cell-number"><?= $displayValue ?></span>

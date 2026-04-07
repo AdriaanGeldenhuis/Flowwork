@@ -887,7 +887,8 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                             $affixPos = (isset($config['affixPosition']) && $config['affixPosition'] === 'suffix') ? 'suffix' : 'prefix';
                                             if ($affix !== '') {
                                                 $affixHtml = htmlspecialchars($affix);
-                                                $formatted = $affixPos === 'prefix' ? $affixHtml . $formatted : $formatted . $affixHtml;
+                                                $sep = '<span style="display:inline-block;width:0.25em;"></span>';
+                                                $formatted = $affixPos === 'prefix' ? $affixHtml . $sep . $formatted : $formatted . $sep . $affixHtml;
                                             }
 
                                             echo '<span class="fw-agg-value fw-board-agg-value">';

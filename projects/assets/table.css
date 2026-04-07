@@ -409,6 +409,26 @@ th[data-column-id] {
   background: var(--interactive-hover);
 }
 
+/* Thin light separators between all column cells (rows, summary, header) */
+.fw-item-row > td,
+.fw-agg-row > td,
+.fw-item-row > th,
+.fw-agg-row > th {
+  border-right: 1px solid rgba(127, 127, 127, 0.12);
+}
+
+.fw-item-row > td:last-child,
+.fw-agg-row > td:last-child {
+  border-right: none;
+}
+
+thead tr > th {
+  border-right: 1px solid rgba(127, 127, 127, 0.12);
+}
+thead tr > th:last-child {
+  border-right: none;
+}
+
 .fw-cell-edit-btn {
   transition: opacity var(--transition-fast);
 }

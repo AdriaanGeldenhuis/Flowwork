@@ -556,7 +556,8 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           const cfg = col && col.config ? JSON.parse(col.config) : {};
           const affix = cfg.affix || '';
           const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-          const display = affix ? (pos === 'prefix' ? affix + value : value + affix) : value;
+          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+          const display = affix ? (pos === 'prefix' ? affix + sep + value : value + sep + affix) : value;
           cell.innerHTML = `<span class="fw-cell-number">${display}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
