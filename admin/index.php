@@ -6,7 +6,7 @@ $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
 // Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
+$stmt = $DB->prepare("SELECT role, first_name FROM users WHERE id = ? AND company_id = ?");
 $stmt->execute([$userId, $companyId]);
 $user = $stmt->fetch();
 
@@ -56,12 +56,25 @@ $recentActivity = $stmt->fetchAll();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard – <?= htmlspecialchars($company['name']) ?></title>
-    <link rel="stylesheet" href="/admin/style.css?v=2025-01-21-1">
+    <link rel="stylesheet" href="/admin/style.css?v=2026-04-07-1">
+    <?php $initialTheme = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light'; ?>
+    <script>
+      // Mirror the server-rendered theme onto <html> so the html background
+      // rule in style.css applies before .fw-admin paints.
+      document.documentElement.setAttribute('data-theme', '<?= $initialTheme ?>');
+    </script>
 </head>
-<body>
-<div class="fw-admin">
+<body class="fw-admin" data-theme="<?= $initialTheme ?>">
+<?php
+  $headerScope = 'fw-admin';
+  $companyName = $company['name'] ?? null;
+  $firstName   = $user['first_name'] ?? null;
+  $companyLogo = null;
+  include __DIR__ . '/../includes/_global_header.php';
+?>
+<div class="fw-admin__shell">
     <?php include __DIR__ . '/_nav.php'; ?>
-    
+
     <main class="fw-admin__main">
         <div class="fw-admin__container">
             
@@ -210,6 +223,6 @@ $recentActivity = $stmt->fetchAll();
     </main>
 </div>
 
-<script src="/admin/admin.js?v=2025-01-21-1"></script>
+<script src="/admin/admin.js?v=2026-04-07-1"></script>
 </body>
 </html>

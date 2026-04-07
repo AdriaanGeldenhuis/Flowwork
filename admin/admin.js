@@ -6,16 +6,18 @@
   // ========== THEME TOGGLE ==========
   function initTheme() {
     const toggle = document.getElementById('themeToggle');
-    const body = document.querySelector('.fw-admin');
-    
+    const body = document.body;
+
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || 'light';
-    body.setAttribute('data-theme', theme);
+    // Initial theme is already applied server-side via data-theme on <body>
+    // and <html> (see admin/index.php). Just sync our local var to it.
+    let theme = body.getAttribute('data-theme') || getCookie(THEME_COOKIE) || 'light';
 
     toggle.addEventListener('click', () => {
       theme = theme === 'dark' ? 'light' : 'dark';
       body.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-theme', theme);
       setCookie(THEME_COOKIE, theme, 365);
     });
   }
