@@ -251,7 +251,7 @@ $stmt->execute([$COMPANY_ID]);
 $companyName = $stmt->fetchColumn() ?: 'Company';
 
 // Asset version for cache busting
-define('ASSET_VERSION', '2025-01-21-v8');
+define('ASSET_VERSION', '2025-01-21-v9');
 
 ?>
 <!doctype html>
@@ -586,6 +586,10 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                         <th data-column-id="<?= $col['column_id'] ?>"
                                             data-type="<?= htmlspecialchars($col['type']) ?>">
                                             <div class="fw-col-header">
+                                                <input type="text"
+                                                       class="fw-col-name-input"
+                                                       value="<?= htmlspecialchars($col['name']) ?>"
+                                                       onblur="BoardApp.updateColumnName(<?= $col['column_id'] ?>, this.value)" />
                                                 <button class="fw-icon-btn fw-col-menu-btn" onclick="BoardApp.showColumnMenu(<?= $col['column_id'] ?>, event)">
                                                     <svg width="14" height="14" fill="currentColor">
                                                         <circle cx="7" cy="3" r="1.2"/>
@@ -593,10 +597,6 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                                         <circle cx="7" cy="11" r="1.2"/>
                                                     </svg>
                                                 </button>
-                                                <input type="text"
-                                                       class="fw-col-name-input"
-                                                       value="<?= htmlspecialchars($col['name']) ?>"
-                                                       onblur="BoardApp.updateColumnName(<?= $col['column_id'] ?>, this.value)" />
                                             </div>
                                             <div class="fw-col-resize" data-column-id="<?= $col['column_id'] ?>"></div>
                                         </th>
@@ -724,7 +724,14 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                                 
                                                 $precision = $config['precision'] ?? 2;
                                                 $formatted = number_format($result, $precision, '.', ',');
-                                                
+
+                                                $affix = isset($config['affix']) ? (string)$config['affix'] : '';
+                                                $affixPos = (isset($config['affixPosition']) && $config['affixPosition'] === 'suffix') ? 'suffix' : 'prefix';
+                                                if ($affix !== '') {
+                                                    $affixHtml = htmlspecialchars($affix);
+                                                    $formatted = $affixPos === 'prefix' ? $affixHtml . $formatted : $formatted . $affixHtml;
+                                                }
+
                                                 echo '<span class="fw-agg-value">';
                                                 echo '<span class="fw-agg-type">' . strtoupper($aggType) . '</span>';
                                                 echo $formatted;
@@ -875,7 +882,15 @@ define('ASSET_VERSION', '2025-01-21-v8');
                                             
                                             $precision = $config['precision'] ?? 2;
                                             $formatted = number_format($result, $precision, '.', ',');
-                                            
+
+                                            $affix = isset($config['affix']) ? (string)$config['affix'] : '';
+                                            $affixPos = (isset($config['affixPosition']) && $config['affixPosition'] === 'suffix') ? 'suffix' : 'prefix';
+                                            if ($affix !== '') {
+                                                $affixHtml = htmlspecialchars($affix);
+                                                $sep = '<span style="display:inline-block;width:0.25em;"></span>';
+                                                $formatted = $affixPos === 'prefix' ? $affixHtml . $sep . $formatted : $formatted . $sep . $affixHtml;
+                                            }
+
                                             echo '<span class="fw-agg-value fw-board-agg-value">';
                                             echo '<span class="fw-agg-type">' . strtoupper($aggType) . '</span>';
                                             echo '<strong>' . $formatted . '</strong>';

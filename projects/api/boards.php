@@ -250,7 +250,7 @@ try {
             // does not exist in the DB enum; the frontend interprets this type
             // specially and stores attachments via board_item_attachments.  It is
             // stored as type text in the DB.
-            $allowedTypes = ['status','people','date','timeline','text','longtext','number','dropdown','checkbox','tags','link','email','phone','formula','progress','files'];
+            $allowedTypes = ['status','people','date','timeline','text','longtext','number','dropdown','checkbox','tags','link','email','phone','formula','progress','priority','supplier','files'];
             if (!in_array($type, $allowedTypes, true)) respond_error('Invalid column type');
             require_board_role($boardId, 'manager');
             // Determine the next position within this board

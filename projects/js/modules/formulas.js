@@ -68,13 +68,18 @@
       }
       
       const formatted = Number(result).toFixed(precision);
-      
+
       console.log('Result:', formatted);
-      
+
+      const affix = config.affix || '';
+      const affixPos = config.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+      const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+      const display = affix ? (affixPos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
+
       // Update cell in DOM
       const cell = document.querySelector(`td[data-item-id="${itemId}"][data-column-id="${col.column_id}"]`);
       if (cell) {
-        cell.innerHTML = `<span class="fw-cell-number">${formatted}</span>`;
+        cell.innerHTML = `<span class="fw-cell-number">${display}</span>`;
       }
       
       // Update in memory (for cascading formulas)
