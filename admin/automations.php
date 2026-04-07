@@ -64,21 +64,10 @@ $s = [
     'auto_daily_digest' => getCRMSetting('auto_daily_digest', '0'),
 ];
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automations – Admin</title>
-    <link rel="stylesheet" href="/admin/style.css?v=2025-01-21-1">
-</head>
-<body>
-<div class="fw-admin">
-    <?php include __DIR__ . '/_nav.php'; ?>
-
-    <main class="fw-admin__main">
-        <div class="fw-admin__container">
-
+<?php
+  $pageTitle = 'Automations – Admin';
+  include __DIR__ . '/_layout_top.php';
+?>
             <header class="fw-admin__page-header">
                 <div>
                     <h1 class="fw-admin__page-title">Automations</h1>
@@ -191,11 +180,4 @@ $s = [
                     </div>
                 </div>
             </form>
-
-        </div>
-    </main>
-</div>
-
-<script src="/admin/admin.js?v=2025-01-21-1"></script>
-</body>
-</html>
+<?php include __DIR__ . '/_layout_bottom.php'; ?>

@@ -165,6 +165,35 @@ html[data-theme="dark"] { background: #0a0c12; }
   gap: var(--fw-spacing-sm);
 }
 
+.fw-admin__home-link {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  cursor: pointer;
+  transition: all .2s ease;
+  color: var(--fw-text-primary);
+  text-decoration: none;
+}
+.fw-admin__home-link:hover {
+  background: var(--fw-hover-bg);
+  box-shadow: var(--fw-shadow-sm);
+  transform: translateY(-1px);
+  color: #8b5cf6;
+}
+.fw-admin__home-link:focus {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+.fw-admin__home-link svg {
+  width: 20px;
+  height: 20px;
+}
+
 .fw-admin__menu-wrapper { position: relative; }
 
 .fw-admin__kebab-toggle {
