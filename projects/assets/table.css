@@ -437,6 +437,167 @@ thead tr > th:last-child {
   opacity: 1 !important;
 }
 
+/* ===== NUMBER CELL ===== */
+.fw-cell-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.fw-cell-number--negative {
+  color: #ef4444;
+}
+
+/* ===== CHECKBOX CELL ===== */
+.fw-cell-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-default);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 700;
+  color: transparent;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+.fw-cell-checkbox--checked {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+/* ===== DATE CELL HIGHLIGHTS ===== */
+.fw-date-pill--overdue {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+.fw-date-pill--today {
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: #3b82f6 !important;
+  border: 1px solid rgba(59, 130, 246, 0.3) !important;
+  font-weight: 600;
+}
+.fw-date-pill--soon {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+/* ===== TIMELINE CELL ===== */
+.fw-timeline-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  min-width: 0;
+}
+.fw-timeline-pill--active {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+.fw-timeline-pill--overdue {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.fw-timeline-bar {
+  height: 4px;
+  background: rgba(127, 127, 127, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.fw-timeline-bar-fill {
+  height: 100%;
+  background: var(--primary, #8b5cf6);
+  transition: width 0.3s;
+}
+.fw-timeline-pill--active .fw-timeline-bar-fill {
+  background: #3b82f6;
+}
+.fw-timeline-pill--overdue .fw-timeline-bar-fill {
+  background: #ef4444;
+}
+.fw-timeline-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.fw-timeline-days {
+  margin-left: auto;
+  padding: 1px 6px;
+  background: rgba(127, 127, 127, 0.15);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ===== PROGRESS CELL ===== */
+.fw-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.fw-progress-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(127, 127, 127, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.fw-progress-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s;
+}
+.fw-progress-label {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ===== DROPDOWN PILL ===== */
+.fw-dropdown-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ===== FILES CELL ===== */
+.fw-files-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.1);
+  cursor: help;
+}
+
+/* ===== LONGTEXT CELL ===== */
+.fw-cell-longtext {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.4;
+  max-height: 60px;
+  white-space: normal;
+}
+
 .fw-cell-empty {
   display: inline-flex;
   align-items: center;

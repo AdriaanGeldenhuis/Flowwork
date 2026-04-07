@@ -354,8 +354,10 @@
 
   // ===== CHECKBOX EDITOR =====
   function editCheckbox(itemId, columnId, cellElement) {
-    const currentValue = cellElement.textContent.includes('✅') ? '1' : '0';
-    const newValue = currentValue === '1' ? '0' : '1';
+    const checked = cellElement.querySelector('.fw-cell-checkbox--checked') !== null
+      || cellElement.textContent.includes('✓')
+      || cellElement.textContent.includes('✅');
+    const newValue = checked ? '0' : '1';
     window.BoardApp.saveCellValue(itemId, columnId, newValue);
   }
 
@@ -551,14 +553,22 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
         break;
         
       case 'number': {
-        if (value) {
+        if (value !== '' && value !== null && value !== undefined) {
           const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
           const cfg = col && col.config ? JSON.parse(col.config) : {};
           const affix = cfg.affix || '';
           const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
+          const num = parseFloat(value);
+          let formatted = value;
+          if (!isNaN(num)) {
+            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+            if (cfg.format === 'percentage') formatted += '%';
+          }
           const sep = '<span style="display:inline-block;width:0.25em;"></span>';
-          const display = affix ? (pos === 'prefix' ? affix + sep + value : value + sep + affix) : value;
-          cell.innerHTML = `<span class="fw-cell-number">${display}</span>`;
+          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
+          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
+          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
@@ -628,12 +638,18 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
         }
         break;
         
-      case 'date':
+      case 'date': {
         if (value) {
           const date = new Date(value);
           const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const todayMs = new Date(new Date().toDateString()).getTime();
+          const valMs = new Date(value.substring(0, 10)).getTime();
+          let cls = 'fw-date-pill';
+          if (valMs < todayMs) cls += ' fw-date-pill--overdue';
+          else if (valMs === todayMs) cls += ' fw-date-pill--today';
+          else if (valMs < todayMs + 86400000 * 3) cls += ' fw-date-pill--soon';
           cell.innerHTML = `
-            <div class="fw-date-pill">
+            <div class="${cls}">
               <svg width="14" height="14" fill="currentColor">
                 <rect x="2" y="3" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
                 <path d="M2 5h10M5 1v3M9 1v3"/>
@@ -645,67 +661,124 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
-        
-      case 'checkbox':
-        cell.innerHTML = value === '1' ? '✅' : '☐';
+      }
+
+      case 'checkbox': {
+        const checked = value === '1';
+        cell.innerHTML = `<span class="fw-cell-checkbox ${checked ? 'fw-cell-checkbox--checked' : ''}">${checked ? '✓' : ''}</span>`;
         break;
-        
-      case 'progress':
-        if (value) {
-          const percent = parseInt(value);
+      }
+
+      case 'progress': {
+        if (value !== '' && value !== null && value !== undefined) {
+          const pct = Math.max(0, Math.min(100, parseInt(value)));
+          let color;
+          if (pct >= 100) color = '#10b981';
+          else if (pct >= 70) color = '#22c55e';
+          else if (pct >= 40) color = '#eab308';
+          else if (pct >= 15) color = '#f97316';
+          else color = '#ef4444';
           cell.innerHTML = `
-            <div style="display:flex;align-items:center;gap:8px;">
-              <div style="flex:1;height:8px;background:rgba(255,255,255,0.1);border-radius:8px;overflow:hidden;">
-                <div style="height:100%;background:var(--accent-primary);width:${percent}%;"></div>
+            <div class="fw-progress-wrap">
+              <div class="fw-progress-track">
+                <div class="fw-progress-fill" style="width:${pct}%;background:${color};"></div>
               </div>
-              <span style="font-size:12px;font-weight:600;min-width:40px;">${percent}%</span>
+              <span class="fw-progress-label" style="color:${color};">${pct}%</span>
             </div>
           `;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
-        
+      }
+
       case 'link':
         if (value) {
-          cell.innerHTML = `<a href="${value}" target="_blank" style="color:var(--accent-primary);text-decoration:underline;">🔗 Link</a>`;
+          const display = value.replace(/^https?:\/\//, '');
+          cell.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+              <a href="${value}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 ${display}</a>
+              <button type="button" class="fw-cell-edit-btn" title="Edit link" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
+            </div>
+          `;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
-        
+
       case 'email':
         if (value) {
-          cell.innerHTML = `<a href="mailto:${value}" style="color:var(--accent-primary);">✉️ ${value}</a>`;
+          cell.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:0;">
+              <a href="mailto:${value}" title="${value}" style="color:var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">✉️ ${value}</a>
+              <button type="button" class="fw-cell-edit-btn" title="Edit email" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;flex-shrink:0;">✏️</button>
+            </div>
+          `;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
-        
+
       case 'phone':
         if (value) {
-          cell.innerHTML = `<a href="tel:${value}" style="color:var(--accent-primary);">📞 ${value}</a>`;
+          const digits = value.replace(/\D/g, '');
+          let formatted = value;
+          if (digits.length === 10 && digits[0] === '0') {
+            formatted = digits.slice(0, 3) + ' ' + digits.slice(3, 6) + ' ' + digits.slice(6);
+          } else if (digits.length === 11 && digits.startsWith('27')) {
+            formatted = '+27 ' + digits.slice(2, 4) + ' ' + digits.slice(4, 7) + ' ' + digits.slice(7);
+          }
+          cell.innerHTML = `
+            <div style="display:flex;align-items:center;gap:6px;justify-content:space-between;min-width:0;">
+              <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+                <a href="tel:${value}" style="color:var(--primary);white-space:nowrap;">📞 ${formatted}</a>
+                <a href="https://wa.me/${digits}" target="_blank" rel="noopener" title="WhatsApp" style="text-decoration:none;font-size:14px;">💬</a>
+              </div>
+              <button type="button" class="fw-cell-edit-btn" title="Edit phone" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;flex-shrink:0;">✏️</button>
+            </div>
+          `;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
-        
-      case 'tags':
+
+      case 'tags': {
         if (value) {
+          const palette = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6','#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899','#f43f5e'];
+          const hash = (s) => { let h=0; for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; };
           const tags = value.split(',').map(t => t.trim()).filter(t => t);
-          cell.innerHTML = tags.map(tag => `<span class="fw-tag">${tag}</span>`).join('');
+          cell.innerHTML = '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + tags.map(tag => {
+            const color = palette[hash(tag) % palette.length];
+            return `<span class="fw-tag" style="background:${color}22;color:${color};border:1px solid ${color}55;">${tag}</span>`;
+          }).join('') + '</div>';
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
-        
-      case 'timeline':
+      }
+
+      case 'timeline': {
         if (value) {
           try {
             const timeline = JSON.parse(value);
-            const start = new Date(timeline.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const end = new Date(timeline.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            cell.innerHTML = `<span class="fw-timeline-pill">📅 ${start} → ${end}</span>`;
+            const startTs = new Date(timeline.start).getTime();
+            const endTs = new Date(timeline.end).getTime();
+            const todayTs = new Date(new Date().toDateString()).getTime();
+            const totalDays = Math.max(1, Math.round((endTs - startTs) / 86400000) + 1);
+            let pct = 0;
+            if (todayTs <= startTs) pct = 0;
+            else if (todayTs >= endTs) pct = 100;
+            else pct = Math.round(((todayTs - startTs) / Math.max(1, endTs - startTs)) * 100);
+            let cls = 'fw-timeline-pill';
+            if (todayTs > endTs) cls += ' fw-timeline-pill--overdue';
+            else if (todayTs >= startTs) cls += ' fw-timeline-pill--active';
+            const fmt = (d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            cell.innerHTML = `
+              <div class="${cls}">
+                <div class="fw-timeline-bar"><div class="fw-timeline-bar-fill" style="width:${pct}%;"></div></div>
+                <div class="fw-timeline-label">${fmt(timeline.start)} → ${fmt(timeline.end)} <span class="fw-timeline-days">${totalDays}d</span></div>
+              </div>
+            `;
           } catch (e) {
             cell.innerHTML = '<button class="fw-cell-empty">+</button>';
           }
@@ -713,6 +786,22 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
         break;
+      }
+
+      case 'dropdown': {
+        if (value) {
+          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+          const cfg = col && col.config ? JSON.parse(col.config) : {};
+          const optionColors = cfg.optionColors || {};
+          const palette = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6','#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899'];
+          const hash = (s) => { let h=0; for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; };
+          const color = optionColors[value] || palette[hash(value) % palette.length];
+          cell.innerHTML = `<span class="fw-dropdown-pill" style="background:${color}22;color:${color};border:1px solid ${color}55;">${value}</span>`;
+        } else {
+          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
+        }
+        break;
+      }
         
       default:
         cell.innerHTML = value ? value : '<button class="fw-cell-empty">+</button>';
