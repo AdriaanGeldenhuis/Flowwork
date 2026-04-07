@@ -23,7 +23,7 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 // Restrict to admin users
 requireRoles(['admin']);
 
-define('ASSET_VERSION', '2025-01-21-FIN-1');
+define('ASSET_VERSION', '2026-04-07-FIN-2');
 
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;
