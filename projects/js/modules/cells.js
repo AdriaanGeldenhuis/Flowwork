@@ -13,6 +13,13 @@
   // ===== MAIN EDIT CELL FUNCTION =====
   window.BoardApp.editCell = function(itemId, columnId, columnType, event) {
     if (!event) return;
+
+    // As die gebruiker op 'n anchor tag gekliek het (link/email/phone),
+    // laat die browser die link volg in plaas van die edit modal open
+    if (event.target.closest('a')) {
+      return;
+    }
+
     event.stopPropagation();
     
     const cellElement = event.currentTarget || event.target.closest('.fw-cell');
