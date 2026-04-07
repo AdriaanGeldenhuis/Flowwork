@@ -116,7 +116,7 @@ elseif ($col['type'] === 'tags'):
 elseif ($col['type'] === 'link'):
     if ($value): ?>
         <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
-            <a href="<?= htmlspecialchars($value) ?>" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;">🔗 Link</a>
+            <a href="<?= htmlspecialchars($value) ?>" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 <?= htmlspecialchars(preg_replace('#^https?://#', '', $value)) ?></a>
             <button type="button" class="fw-cell-edit-btn" title="Edit link" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
         </div>
     <?php else: ?>
