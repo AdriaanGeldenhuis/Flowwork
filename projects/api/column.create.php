@@ -28,7 +28,7 @@ if (!$boardId) respond_error('Board ID required');
 if (!$name)    respond_error('Column name required');
 
 // Must match DB enum
-$allowedTypes = ['status','people','date','timeline','text','longtext','number','dropdown','checkbox','tags','link','email','phone','formula','progress'];
+$allowedTypes = ['status','people','date','timeline','text','longtext','number','dropdown','checkbox','tags','link','email','phone','formula','progress','priority','supplier','files'];
 if (!in_array($type, $allowedTypes, true)) respond_error('Invalid column type');
 
 require_board_role($boardId, 'manager');
