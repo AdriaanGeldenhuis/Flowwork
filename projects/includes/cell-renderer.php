@@ -89,8 +89,17 @@ elseif ($col['type'] === 'date'):
 
 // Number & Formula Cell
 elseif ($col['type'] === 'number' || $col['type'] === 'formula'):
-    if ($value !== null && $value !== ''): ?>
-        <span class="fw-cell-number"><?= htmlspecialchars($value) ?></span>
+    if ($value !== null && $value !== ''):
+        $colCfg = !empty($col['config']) ? json_decode($col['config'], true) : [];
+        $affix = isset($colCfg['affix']) ? (string)$colCfg['affix'] : '';
+        $affixPos = (isset($colCfg['affixPosition']) && $colCfg['affixPosition'] === 'suffix') ? 'suffix' : 'prefix';
+        $displayValue = htmlspecialchars($value);
+        if ($affix !== '') {
+            $affixHtml = htmlspecialchars($affix);
+            $displayValue = $affixPos === 'prefix' ? $affixHtml . $displayValue : $displayValue . $affixHtml;
+        }
+        ?>
+        <span class="fw-cell-number"><?= $displayValue ?></span>
     <?php else: ?>
         <button class="fw-cell-empty">+</button>
     <?php endif;

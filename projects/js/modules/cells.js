@@ -550,9 +550,19 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
         cell.innerHTML = value ? value : '<button class="fw-cell-empty">+</button>';
         break;
         
-      case 'number':
-        cell.innerHTML = value ? `<span class="fw-cell-number">${value}</span>` : '<button class="fw-cell-empty">+</button>';
+      case 'number': {
+        if (value) {
+          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+          const cfg = col && col.config ? JSON.parse(col.config) : {};
+          const affix = cfg.affix || '';
+          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+          const display = affix ? (pos === 'prefix' ? affix + value : value + affix) : value;
+          cell.innerHTML = `<span class="fw-cell-number">${display}</span>`;
+        } else {
+          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
+        }
         break;
+      }
         
       case 'status':
         if (value) {

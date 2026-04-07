@@ -817,14 +817,27 @@ Option 3</textarea>
             <label>Decimal Places</label>
             <input type="number" id="settingPrecision" class="fw-input" value="${config.precision || 2}" min="0" max="10" />
           </div>
-          
+
+          <div class="fw-form-group">
+            <label>Prefix / Suffix Character (e.g. R, $, %)</label>
+            <input type="text" id="settingAffix" class="fw-input" value="${(config.affix || '').replace(/"/g, '&quot;')}" placeholder="Leave empty for none" maxlength="8" />
+          </div>
+
+          <div class="fw-form-group">
+            <label>Position</label>
+            <select id="settingAffixPosition" class="fw-input">
+              <option value="prefix" ${(config.affixPosition || 'prefix') === 'prefix' ? 'selected' : ''}>Before value (R 100)</option>
+              <option value="suffix" ${config.affixPosition === 'suffix' ? 'selected' : ''}>After value (100 kg)</option>
+            </select>
+          </div>
+
           <div class="fw-form-group">
             <label>Column Width (pixels)</label>
             <input type="number" id="settingWidth" class="fw-input" value="${column.width}" min="80" max="500" />
           </div>
         `;
         break;
-        
+
       case 'text':
         settingsHtml = `
           <div class="fw-form-group">
@@ -839,6 +852,44 @@ Option 3</textarea>
         `;
         break;
         
+      case 'formula':
+        settingsHtml = `
+          <div class="fw-form-group">
+            <label>Column Name</label>
+            <input type="text" id="settingName" class="fw-input" value="${column.name}" />
+          </div>
+
+          <div class="fw-form-group">
+            <label>Formula</label>
+            <input type="text" id="settingFormula" class="fw-input" value="${(config.formula || '').replace(/"/g, '&quot;')}" placeholder="{Quantity} * {Price}" />
+            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">Use the Edit Formula option for the full formula builder.</p>
+          </div>
+
+          <div class="fw-form-group">
+            <label>Decimal Places</label>
+            <input type="number" id="settingPrecision" class="fw-input" value="${config.precision || 2}" min="0" max="10" />
+          </div>
+
+          <div class="fw-form-group">
+            <label>Prefix / Suffix Character (e.g. R, $, %)</label>
+            <input type="text" id="settingAffix" class="fw-input" value="${(config.affix || '').replace(/"/g, '&quot;')}" placeholder="Leave empty for none" maxlength="8" />
+          </div>
+
+          <div class="fw-form-group">
+            <label>Position</label>
+            <select id="settingAffixPosition" class="fw-input">
+              <option value="prefix" ${(config.affixPosition || 'prefix') === 'prefix' ? 'selected' : ''}>Before value (R 100)</option>
+              <option value="suffix" ${config.affixPosition === 'suffix' ? 'selected' : ''}>After value (100 kg)</option>
+            </select>
+          </div>
+
+          <div class="fw-form-group">
+            <label>Column Width (pixels)</label>
+            <input type="number" id="settingWidth" class="fw-input" value="${column.width}" min="80" max="500" />
+          </div>
+        `;
+        break;
+
       case 'dropdown':
         const options = config.options || [];
         settingsHtml = `
@@ -920,7 +971,19 @@ Option 3</textarea>
     if (columnType === 'number') {
       const format = document.getElementById('settingFormat')?.value || 'decimal';
       const precision = parseInt(document.getElementById('settingPrecision')?.value) || 2;
-      data.config = JSON.stringify({ format, precision, agg: 'sum' });
+      const affix = document.getElementById('settingAffix')?.value || '';
+      const affixPosition = document.getElementById('settingAffixPosition')?.value || 'prefix';
+      data.config = JSON.stringify({ format, precision, agg: 'sum', affix, affixPosition });
+    } else if (columnType === 'formula') {
+      const existing = (() => {
+        const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+        return col && col.config ? JSON.parse(col.config) : {};
+      })();
+      const formula = document.getElementById('settingFormula')?.value || existing.formula || '';
+      const precision = parseInt(document.getElementById('settingPrecision')?.value) || 2;
+      const affix = document.getElementById('settingAffix')?.value || '';
+      const affixPosition = document.getElementById('settingAffixPosition')?.value || 'prefix';
+      data.config = JSON.stringify({ formula, precision, agg: 'sum', affix, affixPosition });
     } else if (columnType === 'dropdown') {
       const optionsText = document.getElementById('settingOptions')?.value || '';
       const options = optionsText.split('\n').map(o => o.trim()).filter(o => o);
