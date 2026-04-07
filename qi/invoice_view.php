@@ -106,7 +106,7 @@ function format_currency($amount) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=940">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($invoice['invoice_number']) ?> – <?= htmlspecialchars($invoice['company_name']) ?></title>
 
