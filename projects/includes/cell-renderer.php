@@ -115,7 +115,10 @@ elseif ($col['type'] === 'tags'):
 // Link Cell
 elseif ($col['type'] === 'link'):
     if ($value): ?>
-        <a href="<?= htmlspecialchars($value) ?>" target="_blank" style="color:var(--primary);text-decoration:underline;">🔗 Link</a>
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <a href="<?= htmlspecialchars($value) ?>" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;">🔗 Link</a>
+            <button type="button" class="fw-cell-edit-btn" title="Edit link" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
+        </div>
     <?php else: ?>
         <button class="fw-cell-empty">+</button>
     <?php endif;
@@ -123,7 +126,10 @@ elseif ($col['type'] === 'link'):
 // Email Cell
 elseif ($col['type'] === 'email'):
     if ($value): ?>
-        <a href="mailto:<?= htmlspecialchars($value) ?>" style="color:var(--primary);">✉️ <?= htmlspecialchars($value) ?></a>
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <a href="mailto:<?= htmlspecialchars($value) ?>" style="color:var(--primary);">✉️ <?= htmlspecialchars($value) ?></a>
+            <button type="button" class="fw-cell-edit-btn" title="Edit email" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
+        </div>
     <?php else: ?>
         <button class="fw-cell-empty">+</button>
     <?php endif;
@@ -131,7 +137,10 @@ elseif ($col['type'] === 'email'):
 // Phone Cell
 elseif ($col['type'] === 'phone'):
     if ($value): ?>
-        <a href="tel:<?= htmlspecialchars($value) ?>" style="color:var(--primary);">📞 <?= htmlspecialchars($value) ?></a>
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <a href="tel:<?= htmlspecialchars($value) ?>" style="color:var(--primary);">📞 <?= htmlspecialchars($value) ?></a>
+            <button type="button" class="fw-cell-edit-btn" title="Edit phone" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
+        </div>
     <?php else: ?>
         <button class="fw-cell-empty">+</button>
     <?php endif;

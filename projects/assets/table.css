@@ -409,6 +409,14 @@ th[data-column-id] {
   background: var(--interactive-hover);
 }
 
+.fw-cell-edit-btn {
+  transition: opacity var(--transition-fast);
+}
+
+.fw-cell:hover .fw-cell-edit-btn {
+  opacity: 1 !important;
+}
+
 .fw-cell-empty {
   display: inline-flex;
   align-items: center;
