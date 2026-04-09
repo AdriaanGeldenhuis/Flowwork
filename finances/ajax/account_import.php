@@ -1,0 +1,170 @@
+<?php
+// /finances/ajax/account_import.php — CSV bulk import (admin only)
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Csrf.php';
+require_once __DIR__ . '/../lib/CoaSchema.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin']);
+
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
+    exit;
+}
+
+Csrf::validate();
+
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
+
+// Accept multipart file upload
+if (!isset($_FILES['csv']) || $_FILES['csv']['error'] !== UPLOAD_ERR_OK) {
+    echo json_encode(['ok' => false, 'error' => 'No CSV file uploaded']);
+    exit;
+}
+
+$handle = fopen($_FILES['csv']['tmp_name'], 'r');
+if (!$handle) {
+    echo json_encode(['ok' => false, 'error' => 'Cannot read uploaded file']);
+    exit;
+}
+
+// Expected header: code,name,type,subtype,normal_balance,parent_code,tax_code,description
+$header = fgetcsv($handle);
+if (!$header) {
+    fclose($handle);
+    echo json_encode(['ok' => false, 'error' => 'Empty CSV file']);
+    exit;
+}
+
+// Normalize header
+$header = array_map(fn($h) => strtolower(trim($h)), $header);
+$requiredCols = ['code', 'name', 'type'];
+foreach ($requiredCols as $col) {
+    if (!in_array($col, $header)) {
+        fclose($handle);
+        echo json_encode(['ok' => false, 'error' => "Missing required CSV column: $col"]);
+        exit;
+    }
+}
+
+$rows = [];
+$lineNum = 1;
+$errors = [];
+
+while (($data = fgetcsv($handle)) !== false) {
+    $lineNum++;
+    if (count($data) !== count($header)) {
+        $errors[] = "Row $lineNum: column count mismatch (expected " . count($header) . ", got " . count($data) . ")";
+        continue;
+    }
+    $row = array_combine($header, $data);
+
+    $code     = trim($row['code'] ?? '');
+    $name     = trim($row['name'] ?? '');
+    $type     = strtolower(trim($row['type'] ?? ''));
+    $subtype  = strtolower(trim($row['subtype'] ?? ''));
+    $normal   = strtolower(trim($row['normal_balance'] ?? ''));
+    $parentCode = trim($row['parent_code'] ?? '');
+    $desc     = trim($row['description'] ?? '');
+
+    if (!$code || !$name || !$type) {
+        $errors[] = "Row $lineNum: code, name, type are required";
+        continue;
+    }
+    if (!in_array($type, ['asset', 'liability', 'equity', 'revenue', 'expense'], true)) {
+        $errors[] = "Row $lineNum: invalid type '$type'";
+        continue;
+    }
+    if (!$normal) $normal = CoaSchema::defaultNormalBalance($type);
+    if (!in_array($normal, ['debit', 'credit'], true)) {
+        $errors[] = "Row $lineNum: invalid normal_balance '$normal'";
+        continue;
+    }
+    if ($subtype && !CoaSchema::isValidSubtype($type, $subtype)) {
+        $errors[] = "Row $lineNum: invalid subtype '$subtype' for type '$type'";
+        continue;
+    }
+    if (!CoaSchema::isCodeInBand($type, $code)) {
+        $errors[] = "Row $lineNum: code '$code' outside valid range for type '$type'";
+        continue;
+    }
+
+    $rows[] = [
+        'code' => $code, 'name' => $name, 'type' => $type,
+        'subtype' => $subtype, 'normal' => $normal,
+        'parent_code' => $parentCode, 'desc' => $desc,
+    ];
+}
+fclose($handle);
+
+if (!empty($errors)) {
+    echo json_encode(['ok' => false, 'error' => 'Validation failed', 'details' => $errors]);
+    exit;
+}
+
+if (empty($rows)) {
+    echo json_encode(['ok' => false, 'error' => 'No data rows found']);
+    exit;
+}
+
+try {
+    $DB->beginTransaction();
+
+    $inserted = 0;
+    foreach ($rows as $row) {
+        // Check duplicate
+        $stmt = $DB->prepare("SELECT COUNT(*) FROM gl_accounts WHERE company_id = ? AND account_code = ?");
+        $stmt->execute([$companyId, $row['code']]);
+        if ($stmt->fetchColumn() > 0) {
+            throw new Exception("Account code '{$row['code']}' already exists");
+        }
+
+        // Resolve parent
+        $parentId = null;
+        if ($row['parent_code']) {
+            $stmt = $DB->prepare("SELECT account_id, account_type FROM gl_accounts WHERE company_id = ? AND account_code = ?");
+            $stmt->execute([$companyId, $row['parent_code']]);
+            $parent = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$parent) throw new Exception("Row '{$row['code']}': parent code '{$row['parent_code']}' not found");
+            if ($parent['account_type'] !== $row['type']) throw new Exception("Row '{$row['code']}': parent type mismatch");
+            $parentId = $parent['account_id'];
+        }
+
+        $stmt = $DB->prepare("
+            INSERT INTO gl_accounts (
+                company_id, account_code, account_name, description,
+                account_type, normal_balance, account_subtype,
+                parent_id, is_system, is_active, currency,
+                created_by, updated_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'ZAR', ?, ?, NOW(), NOW())
+        ");
+        $stmt->execute([
+            $companyId, $row['code'], $row['name'], $row['desc'],
+            $row['type'], $row['normal'], $row['subtype'],
+            $parentId, $userId, $userId
+        ]);
+        $inserted++;
+    }
+
+    // Audit
+    $stmt = $DB->prepare("
+        INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+        VALUES (?, ?, 'accounts_imported', ?, ?, NOW())
+    ");
+    $stmt->execute([
+        $companyId, $userId,
+        json_encode(['count' => $inserted]),
+        $_SERVER['REMOTE_ADDR'] ?? null
+    ]);
+
+    $DB->commit();
+    echo json_encode(['ok' => true, 'data' => ['imported' => $inserted]]);
+
+} catch (Exception $e) {
+    $DB->rollBack();
+    error_log("Account import error: " . $e->getMessage());
+    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+}

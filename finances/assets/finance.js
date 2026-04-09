@@ -95,6 +95,14 @@
         credentials: 'same-origin'
       };
 
+      // Attach CSRF token on state-changing requests
+      if (method !== 'GET') {
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        if (csrfMeta) {
+          options.headers['X-CSRF-Token'] = csrfMeta.content;
+        }
+      }
+
       if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
         options.body = JSON.stringify(data);
       }
