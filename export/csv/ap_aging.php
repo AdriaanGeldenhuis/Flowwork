@@ -16,8 +16,10 @@ if (!$companyId) {
     exit;
 }
 
+$asOfStr = $_GET['date'] ?? date('Y-m-d');
+
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="ap_aging.csv"');
+header('Content-Disposition: attachment; filename="ap_aging_' . $asOfStr . '.csv"');
 
 // Query each bill with its payments and credit allocations
 $stmt = $DB->prepare(
@@ -42,7 +44,7 @@ $stmt = $DB->prepare(
 $stmt->execute([$companyId, $companyId, $companyId]);
 $bills = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$asOf = new DateTimeImmutable('today');
+$asOf = new DateTimeImmutable($asOfStr);
 $suppliers = [];
 foreach ($bills as $row) {
     $sid   = (int)$row['supplier_id'];

@@ -1,5 +1,5 @@
 // /finances/assets/reports.js
-// Financial Reports Module
+// Financial Reports Module — SARS Compliant
 
 (function() {
   'use strict';
@@ -12,6 +12,8 @@
   // DOM Elements
   const reportTypeBtns = document.querySelectorAll('.fw-finance__report-type-btn');
   const reportDate = document.getElementById('reportDate');
+  const reportStartDate = document.getElementById('reportStartDate');
+  const startDateFilterGroup = document.getElementById('startDateFilterGroup');
   const accountFilter = document.getElementById('accountFilter');
   const projectFilter = document.getElementById('projectFilter');
   const accountFilterGroup = document.getElementById('accountFilterGroup');
@@ -24,48 +26,95 @@
   // Exports elements
   const exportsContent = document.getElementById('exportsContent');
   const exportsDate    = document.getElementById('exportsDate');
-  // Export links for AR/AP aging
   const arCsvLink      = document.getElementById('arCsv');
   const arPdfLink      = document.getElementById('arPdf');
   const apCsvLink      = document.getElementById('apCsv');
   const apPdfLink      = document.getElementById('apPdf');
 
-  // Update export links with selected date for aging reports
+  // VAT export elements
+  const vatCsvLink     = document.getElementById('vatCsv');
+  const vatPdfLink     = document.getElementById('vatPdf');
+  const exportsVatStart = document.getElementById('exportsVatStart');
+  const exportsVatEnd   = document.getElementById('exportsVatEnd');
+
+  // HTML escape utility to prevent XSS
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  // Render SARS-compliant report header with company info
+  function renderReportHeader(meta, title, dateInfo) {
+    if (!meta) return '';
+    let html = '<div class="fw-finance__report-header">';
+    html += '<h1 class="fw-finance__report-title">' + escapeHtml(meta.company_name) + '</h1>';
+
+    // Company registration details
+    const details = [];
+    if (meta.reg_number) details.push('Reg No: ' + escapeHtml(meta.reg_number));
+    if (meta.vat_number) details.push('VAT No: ' + escapeHtml(meta.vat_number));
+    if (meta.tax_number) details.push('Tax No: ' + escapeHtml(meta.tax_number));
+    if (details.length > 0) {
+      html += '<p class="fw-finance__report-company-details">' + details.join(' &nbsp;|&nbsp; ') + '</p>';
+    }
+
+    html += '<h2 class="fw-finance__report-subtitle">' + escapeHtml(title) + '</h2>';
+    html += '<p class="fw-finance__report-date">' + escapeHtml(dateInfo) + '</p>';
+
+    // Prepared by and generation timestamp
+    if (meta.prepared_by || meta.generated_at) {
+      let footer = '';
+      if (meta.prepared_by) footer += 'Prepared by: ' + escapeHtml(meta.prepared_by);
+      if (meta.generated_at) {
+        const genDate = new Date(meta.generated_at);
+        if (footer) footer += ' &nbsp;|&nbsp; ';
+        footer += 'Generated: ' + genDate.toLocaleString('en-ZA');
+      }
+      html += '<p class="fw-finance__report-prepared">' + footer + '</p>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  // Update export links with selected date for aging reports and VAT period
   function updateExportLinks() {
-    if (!exportsDate) return;
-    const d = exportsDate.value;
-    // Build URLs with or without date parameter
-    if (arCsvLink) {
-      arCsvLink.href = d ? `/export/csv/ar_aging.php?date=${encodeURIComponent(d)}` : '/export/csv/ar_aging.php';
+    if (exportsDate) {
+      const d = exportsDate.value;
+      if (arCsvLink) arCsvLink.href = d ? '/export/csv/ar_aging.php?date=' + encodeURIComponent(d) : '/export/csv/ar_aging.php';
+      if (arPdfLink) arPdfLink.href = d ? '/export/pdf/ar_aging.php?date=' + encodeURIComponent(d) : '/export/pdf/ar_aging.php';
+      if (apCsvLink) apCsvLink.href = d ? '/export/csv/ap_aging.php?date=' + encodeURIComponent(d) : '/export/csv/ap_aging.php';
+      if (apPdfLink) apPdfLink.href = d ? '/export/pdf/ap_aging.php?date=' + encodeURIComponent(d) : '/export/pdf/ap_aging.php';
     }
-    if (arPdfLink) {
-      arPdfLink.href = d ? `/export/pdf/ar_aging.php?date=${encodeURIComponent(d)}` : '/export/pdf/ar_aging.php';
+    // Update VAT export links with date range
+    const vs = exportsVatStart ? exportsVatStart.value : '';
+    const ve = exportsVatEnd ? exportsVatEnd.value : '';
+    if (vatCsvLink) {
+      vatCsvLink.href = (vs && ve) ? '/export/csv/vat_summary.php?start_date=' + encodeURIComponent(vs) + '&end_date=' + encodeURIComponent(ve) : '/export/csv/vat_summary.php';
     }
-    if (apCsvLink) {
-      apCsvLink.href = d ? `/export/csv/ap_aging.php?date=${encodeURIComponent(d)}` : '/export/csv/ap_aging.php';
-    }
-    if (apPdfLink) {
-      apPdfLink.href = d ? `/export/pdf/ap_aging.php?date=${encodeURIComponent(d)}` : '/export/pdf/ap_aging.php';
+    if (vatPdfLink) {
+      vatPdfLink.href = (vs && ve) ? '/export/pdf/vat_summary.php?start_date=' + encodeURIComponent(vs) + '&end_date=' + encodeURIComponent(ve) : '/export/pdf/vat_summary.php';
     }
   }
 
-  // Bind export date change handler
-  if (exportsDate) {
-    exportsDate.addEventListener('change', updateExportLinks);
-    // Initialize export links on load
-    updateExportLinks();
-  }
+  if (exportsDate) exportsDate.addEventListener('change', updateExportLinks);
+  if (exportsVatStart) exportsVatStart.addEventListener('change', updateExportLinks);
+  if (exportsVatEnd) exportsVatEnd.addEventListener('change', updateExportLinks);
+  updateExportLinks();
 
   // Load Accounts and Projects
   async function loadFilters() {
-    // Load accounts
     const accResult = await FinanceAPI.request('/finances/ajax/account_list.php');
     if (accResult.ok) {
       accounts = accResult.data;
       populateAccountFilter();
     }
 
-    // Load projects
     try {
       const projResult = await FinanceAPI.request('/projects/api.php?action=list');
       if (projResult.ok) {
@@ -77,20 +126,18 @@
     }
   }
 
-  // Populate Account Filter
   function populateAccountFilter() {
     let html = '<option value="">All Accounts</option>';
     accounts.forEach(acc => {
-      html += `<option value="${acc.account_id}">${acc.account_code} - ${acc.account_name}</option>`;
+      html += '<option value="' + escapeHtml(acc.account_id) + '">' + escapeHtml(acc.account_code) + ' - ' + escapeHtml(acc.account_name) + '</option>';
     });
     accountFilter.innerHTML = html;
   }
 
-  // Populate Project Filter
   function populateProjectFilter() {
     let html = '<option value="">All Projects</option>';
     projects.forEach(proj => {
-      html += `<option value="${proj.project_id}">${proj.name}</option>`;
+      html += '<option value="' + escapeHtml(proj.project_id) + '">' + escapeHtml(proj.name) + '</option>';
     });
     projectFilter.innerHTML = html;
   }
@@ -101,37 +148,29 @@
       reportTypeBtns.forEach(b => b.classList.remove('fw-finance__report-type-btn--active'));
       btn.classList.add('fw-finance__report-type-btn--active');
       currentReport = btn.dataset.report;
-      
+
       // Show/hide filters based on report type
-      if (currentReport === 'gl-detail') {
-        accountFilterGroup.style.display = 'block';
-        projectFilterGroup.style.display = 'block';
-      } else {
-        accountFilterGroup.style.display = 'none';
-        projectFilterGroup.style.display = 'none';
-      }
+      const showStartDate = (currentReport === 'pl' || currentReport === 'gl-detail');
+      if (startDateFilterGroup) startDateFilterGroup.style.display = showStartDate ? 'block' : 'none';
+      accountFilterGroup.style.display = (currentReport === 'gl-detail') ? 'block' : 'none';
+      projectFilterGroup.style.display = (currentReport === 'gl-detail') ? 'block' : 'none';
 
       // Special handling for Exports tab
       if (currentReport === 'exports') {
-        // Hide standard report UI and show exports content
         if (runReportBtn) runReportBtn.style.display = 'none';
         if (exportBtn) exportBtn.style.display = 'none';
         reportContent.style.display = 'none';
         if (exportsContent) exportsContent.style.display = 'block';
-        // Initialize export links with current date
         updateExportLinks();
-        // Clear any report info text
         reportInfo.textContent = '';
         return;
       } else {
-        // Restore standard report UI
         if (runReportBtn) runReportBtn.style.display = '';
         if (exportBtn) exportBtn.style.display = '';
         reportContent.style.display = '';
         if (exportsContent) exportsContent.style.display = 'none';
       }
 
-      // Clear previous report
       reportContent.innerHTML = '<div class="fw-finance__empty-state">Click "Run Report" to generate</div>';
       exportBtn.disabled = true;
       reportInfo.textContent = '';
@@ -141,6 +180,7 @@
   // Run Report
   async function runReport() {
     const date = reportDate.value;
+    const startDate = reportStartDate ? reportStartDate.value : '';
     const accountId = accountFilter.value;
     const projectId = projectFilter.value;
 
@@ -161,6 +201,7 @@
         break;
       case 'pl':
         endpoint = '/finances/ajax/report_pl.php';
+        if (startDate) params.append('start_date', startDate);
         break;
       case 'balance-sheet':
         endpoint = '/finances/ajax/report_balance_sheet.php';
@@ -169,334 +210,305 @@
         endpoint = '/finances/ajax/report_gl_detail.php';
         if (accountId) params.append('account_id', accountId);
         if (projectId) params.append('project_id', projectId);
+        if (startDate) params.append('start_date', startDate);
         break;
     }
 
-    const result = await FinanceAPI.request(`${endpoint}?${params}`);
+    const result = await FinanceAPI.request(endpoint + '?' + params);
 
     if (result.ok) {
       reportData = result.data;
       renderReport();
       exportBtn.disabled = false;
-      reportInfo.textContent = `Generated: ${new Date().toLocaleString()}`;
+      reportInfo.textContent = 'Generated: ' + new Date().toLocaleString();
     } else {
-      reportContent.innerHTML = `<div class="fw-finance__empty-state">Error: ${result.error || 'Failed to generate report'}</div>`;
+      reportContent.innerHTML = '<div class="fw-finance__empty-state">Error: ' + escapeHtml(result.error || 'Failed to generate report') + '</div>';
     }
   }
 
   // Render Report
   function renderReport() {
     switch (currentReport) {
-      case 'trial-balance':
-        renderTrialBalance();
-        break;
-      case 'pl':
-        renderProfitLoss();
-        break;
-      case 'balance-sheet':
-        renderBalanceSheet();
-        break;
-      case 'gl-detail':
-        renderGLDetail();
-        break;
+      case 'trial-balance':  renderTrialBalance(); break;
+      case 'pl':             renderProfitLoss(); break;
+      case 'balance-sheet':  renderBalanceSheet(); break;
+      case 'gl-detail':      renderGLDetail(); break;
     }
+  }
+
+  // Helper: render a section of accounts
+  function renderAccountSection(accounts, sectionTitle, indentLevel) {
+    let html = '';
+    const indent = indentLevel || 1;
+    const padding = (indent * 2) + 'rem';
+
+    if (sectionTitle) {
+      html += '<tr class="fw-finance__report-section-header"><td colspan="2"><strong>' + escapeHtml(sectionTitle) + '</strong></td></tr>';
+    }
+
+    accounts.forEach(acc => {
+      const balance = parseInt(acc.balance_cents) || 0;
+      html += '<tr>';
+      html += '<td style="padding-left: ' + padding + ';">' + escapeHtml(acc.account_name) + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + formatCurrency(balance) + '</td>';
+      html += '</tr>';
+    });
+
+    return html;
   }
 
   // Render Trial Balance
   function renderTrialBalance() {
-    const { company_name, date, accounts } = reportData;
+    const data = reportData;
+    const meta = data.report_meta;
 
-    let html = `
-      <div class="fw-finance__report-header">
-        <h1 class="fw-finance__report-title">${company_name}</h1>
-        <h2 class="fw-finance__report-subtitle">Trial Balance</h2>
-        <p class="fw-finance__report-date">As at ${formatDate(date)}</p>
-      </div>
+    let html = renderReportHeader(meta, 'Trial Balance', 'As at ' + formatDate(data.date));
 
-      <table class="fw-finance__report-table">
-        <thead>
-          <tr>
-            <th>Account Code</th>
-            <th>Account Name</th>
-            <th class="fw-finance__report-table-number">Debit</th>
-            <th class="fw-finance__report-table-number">Credit</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
+    html += '<table class="fw-finance__report-table"><thead><tr>';
+    html += '<th>Account Code</th><th>Account Name</th>';
+    html += '<th class="fw-finance__report-table-number">Debit</th>';
+    html += '<th class="fw-finance__report-table-number">Credit</th>';
+    html += '</tr></thead><tbody>';
 
     let totalDebit = 0;
     let totalCredit = 0;
 
-    accounts.forEach(acc => {
+    data.accounts.forEach(acc => {
       const debitCents = parseInt(acc.debit_cents) || 0;
       const creditCents = parseInt(acc.credit_cents) || 0;
-      
       totalDebit += debitCents;
       totalCredit += creditCents;
 
-      html += `
-        <tr>
-          <td>${acc.account_code}</td>
-          <td>${acc.account_name}</td>
-          <td class="fw-finance__report-table-number">${debitCents > 0 ? formatCurrency(debitCents) : '-'}</td>
-          <td class="fw-finance__report-table-number">${creditCents > 0 ? formatCurrency(creditCents) : '-'}</td>
-        </tr>
-      `;
+      html += '<tr>';
+      html += '<td>' + escapeHtml(acc.account_code) + '</td>';
+      html += '<td>' + escapeHtml(acc.account_name) + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + (debitCents > 0 ? formatCurrency(debitCents) : '-') + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + (creditCents > 0 ? formatCurrency(creditCents) : '-') + '</td>';
+      html += '</tr>';
     });
 
-    html += `
-        </tbody>
-        <tfoot>
-          <tr class="fw-finance__report-table-total">
-            <td colspan="2"><strong>Total</strong></td>
-            <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalDebit)}</strong></td>
-            <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalCredit)}</strong></td>
-          </tr>
-        </tfoot>
-      </table>
+    html += '</tbody><tfoot>';
+    html += '<tr class="fw-finance__report-table-total">';
+    html += '<td colspan="2"><strong>Total</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(totalDebit) + '</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(totalCredit) + '</strong></td>';
+    html += '</tr></tfoot></table>';
 
-      ${totalDebit !== totalCredit ? `
-        <div class="fw-finance__alert fw-finance__alert--danger" style="margin-top: 1rem;">
-          ⚠️ Trial Balance is OUT OF BALANCE by ${formatCurrency(Math.abs(totalDebit - totalCredit))}
-        </div>
-      ` : `
-        <div class="fw-finance__alert fw-finance__alert--success" style="margin-top: 1rem;">
-          ✓ Trial Balance is IN BALANCE
-        </div>
-      `}
-    `;
+    if (totalDebit !== totalCredit) {
+      html += '<div class="fw-finance__alert fw-finance__alert--danger" style="margin-top: 1rem;">Trial Balance is OUT OF BALANCE by ' + formatCurrency(Math.abs(totalDebit - totalCredit)) + '</div>';
+    } else {
+      html += '<div class="fw-finance__alert fw-finance__alert--success" style="margin-top: 1rem;">Trial Balance is IN BALANCE</div>';
+    }
 
     reportContent.innerHTML = html;
   }
 
-  // Render Profit & Loss
+  // Render SARS-Compliant Profit & Loss
   function renderProfitLoss() {
-    const { company_name, date, revenue, expenses, net_income_cents } = reportData;
+    const data = reportData;
+    const meta = data.report_meta;
+    const dateInfo = 'For the period ' + formatDate(data.start_date) + ' to ' + formatDate(data.end_date || data.date);
 
-    let html = `
-      <div class="fw-finance__report-header">
-        <h1 class="fw-finance__report-title">${company_name}</h1>
-        <h2 class="fw-finance__report-subtitle">Profit & Loss Statement</h2>
-        <p class="fw-finance__report-date">For period ending ${formatDate(date)}</p>
-      </div>
+    let html = renderReportHeader(meta, 'Income Statement', dateInfo);
 
-      <table class="fw-finance__report-table">
-        <tbody>
-          <tr class="fw-finance__report-section-header">
-            <td colspan="2"><strong>REVENUE</strong></td>
-          </tr>
-    `;
+    html += '<table class="fw-finance__report-table"><tbody>';
 
-    let totalRevenue = 0;
-    revenue.forEach(acc => {
-      const balance = parseInt(acc.balance_cents) || 0;
-      totalRevenue += balance;
-      html += `
-        <tr>
-          <td style="padding-left: 2rem;">${acc.account_name}</td>
-          <td class="fw-finance__report-table-number">${formatCurrency(balance)}</td>
-        </tr>
-      `;
-    });
+    // REVENUE
+    html += renderAccountSection(data.revenue, 'REVENUE');
+    html += '<tr class="fw-finance__report-subtotal"><td><strong>Total Revenue</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_revenue_cents) + '</strong></td></tr>';
 
-    html += `
-      <tr class="fw-finance__report-subtotal">
-        <td><strong>Total Revenue</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalRevenue)}</strong></td>
-      </tr>
-      <tr class="fw-finance__report-section-header">
-        <td colspan="2"><strong>EXPENSES</strong></td>
-      </tr>
-    `;
+    // COST OF SALES
+    if (data.cost_of_sales && data.cost_of_sales.length > 0) {
+      html += renderAccountSection(data.cost_of_sales, 'COST OF SALES');
+      html += '<tr class="fw-finance__report-subtotal"><td><strong>Total Cost of Sales</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_cost_of_sales_cents) + '</strong></td></tr>';
+    }
 
-    let totalExpenses = 0;
-    expenses.forEach(acc => {
-      const balance = parseInt(acc.balance_cents) || 0;
-      totalExpenses += balance;
-      html += `
-        <tr>
-          <td style="padding-left: 2rem;">${acc.account_name}</td>
-          <td class="fw-finance__report-table-number">${formatCurrency(balance)}</td>
-        </tr>
-      `;
-    });
+    // GROSS PROFIT
+    html += '<tr class="fw-finance__report-table-total"><td><strong>GROSS PROFIT</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.gross_profit_cents) + '</strong></td></tr>';
 
-    html += `
-      <tr class="fw-finance__report-subtotal">
-        <td><strong>Total Expenses</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalExpenses)}</strong></td>
-      </tr>
-      <tr class="fw-finance__report-table-total">
-        <td><strong>NET INCOME</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(net_income_cents)}</strong></td>
-      </tr>
-        </tbody>
-      </table>
-    `;
+    // OPERATING EXPENSES
+    if (data.operating_expenses && data.operating_expenses.length > 0) {
+      html += renderAccountSection(data.operating_expenses, 'OPERATING EXPENSES');
+      html += '<tr class="fw-finance__report-subtotal"><td><strong>Total Operating Expenses</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_operating_expenses_cents) + '</strong></td></tr>';
+    }
 
+    // OPERATING PROFIT
+    html += '<tr class="fw-finance__report-table-total"><td><strong>OPERATING PROFIT</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.operating_profit_cents) + '</strong></td></tr>';
+
+    // OTHER INCOME
+    if (data.other_income && data.other_income.length > 0) {
+      html += renderAccountSection(data.other_income, 'OTHER INCOME');
+      html += '<tr class="fw-finance__report-subtotal"><td><strong>Total Other Income</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_other_income_cents) + '</strong></td></tr>';
+    }
+
+    // FINANCE COSTS
+    if (data.finance_costs && data.finance_costs.length > 0) {
+      html += renderAccountSection(data.finance_costs, 'FINANCE COSTS');
+      html += '<tr class="fw-finance__report-subtotal"><td><strong>Total Finance Costs</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_finance_costs_cents) + '</strong></td></tr>';
+    }
+
+    // PROFIT BEFORE TAX
+    html += '<tr class="fw-finance__report-table-total"><td><strong>PROFIT BEFORE TAX</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.profit_before_tax_cents) + '</strong></td></tr>';
+
+    // TAX EXPENSE
+    if (data.tax_expense && data.tax_expense.length > 0) {
+      html += renderAccountSection(data.tax_expense, 'TAX EXPENSE');
+      html += '<tr class="fw-finance__report-subtotal"><td><strong>Total Tax Expense</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_tax_expense_cents) + '</strong></td></tr>';
+    }
+
+    // NET PROFIT AFTER TAX
+    html += '<tr class="fw-finance__report-table-total" style="border-top: 3px double var(--fw-border);">';
+    html += '<td><strong>NET PROFIT AFTER TAX</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.net_profit_after_tax_cents) + '</strong></td></tr>';
+
+    html += '</tbody></table>';
     reportContent.innerHTML = html;
   }
 
-  // Render Balance Sheet
+  // Render IFRS/SARS-Compliant Balance Sheet
   function renderBalanceSheet() {
-    const { company_name, date, assets, liabilities, equity, total_assets_cents, total_liabilities_equity_cents } = reportData;
+    const data = reportData;
+    const meta = data.report_meta;
 
-    let html = `
-      <div class="fw-finance__report-header">
-        <h1 class="fw-finance__report-title">${company_name}</h1>
-        <h2 class="fw-finance__report-subtitle">Balance Sheet</h2>
-        <p class="fw-finance__report-date">As at ${formatDate(date)}</p>
-      </div>
+    let html = renderReportHeader(meta, 'Statement of Financial Position', 'As at ' + formatDate(data.date));
 
-      <table class="fw-finance__report-table">
-        <tbody>
-          <tr class="fw-finance__report-section-header">
-            <td colspan="2"><strong>ASSETS</strong></td>
-          </tr>
-    `;
+    html += '<table class="fw-finance__report-table"><tbody>';
 
-    let totalAssets = 0;
-    assets.forEach(acc => {
-      const balance = parseInt(acc.balance_cents) || 0;
-      totalAssets += balance;
-      html += `
-        <tr>
-          <td style="padding-left: 2rem;">${acc.account_name}</td>
-          <td class="fw-finance__report-table-number">${formatCurrency(balance)}</td>
-        </tr>
-      `;
+    // ASSETS
+    html += '<tr class="fw-finance__report-section-header"><td colspan="2"><strong>ASSETS</strong></td></tr>';
+
+    // Current Assets
+    if (data.current_assets && data.current_assets.length > 0) {
+      html += '<tr class="fw-finance__report-section-header"><td colspan="2" style="padding-left: 1rem;"><em>Current Assets</em></td></tr>';
+      data.current_assets.forEach(acc => {
+        html += '<tr><td style="padding-left: 3rem;">' + escapeHtml(acc.account_name) + '</td>';
+        html += '<td class="fw-finance__report-table-number">' + formatCurrency(acc.balance_cents) + '</td></tr>';
+      });
+      html += '<tr class="fw-finance__report-subtotal"><td style="padding-left: 1rem;"><strong>Total Current Assets</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_current_assets_cents) + '</strong></td></tr>';
+    }
+
+    // Non-Current Assets
+    if (data.non_current_assets && data.non_current_assets.length > 0) {
+      html += '<tr class="fw-finance__report-section-header"><td colspan="2" style="padding-left: 1rem;"><em>Non-Current Assets</em></td></tr>';
+      data.non_current_assets.forEach(acc => {
+        html += '<tr><td style="padding-left: 3rem;">' + escapeHtml(acc.account_name) + '</td>';
+        html += '<td class="fw-finance__report-table-number">' + formatCurrency(acc.balance_cents) + '</td></tr>';
+      });
+      html += '<tr class="fw-finance__report-subtotal"><td style="padding-left: 1rem;"><strong>Total Non-Current Assets</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_non_current_assets_cents) + '</strong></td></tr>';
+    }
+
+    html += '<tr class="fw-finance__report-table-total"><td><strong>TOTAL ASSETS</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_assets_cents) + '</strong></td></tr>';
+
+    // LIABILITIES
+    html += '<tr class="fw-finance__report-section-header"><td colspan="2"><strong>LIABILITIES</strong></td></tr>';
+
+    // Current Liabilities
+    if (data.current_liabilities && data.current_liabilities.length > 0) {
+      html += '<tr class="fw-finance__report-section-header"><td colspan="2" style="padding-left: 1rem;"><em>Current Liabilities</em></td></tr>';
+      data.current_liabilities.forEach(acc => {
+        html += '<tr><td style="padding-left: 3rem;">' + escapeHtml(acc.account_name) + '</td>';
+        html += '<td class="fw-finance__report-table-number">' + formatCurrency(acc.balance_cents) + '</td></tr>';
+      });
+      html += '<tr class="fw-finance__report-subtotal"><td style="padding-left: 1rem;"><strong>Total Current Liabilities</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_current_liabilities_cents) + '</strong></td></tr>';
+    }
+
+    // Non-Current Liabilities
+    if (data.non_current_liabilities && data.non_current_liabilities.length > 0) {
+      html += '<tr class="fw-finance__report-section-header"><td colspan="2" style="padding-left: 1rem;"><em>Non-Current Liabilities</em></td></tr>';
+      data.non_current_liabilities.forEach(acc => {
+        html += '<tr><td style="padding-left: 3rem;">' + escapeHtml(acc.account_name) + '</td>';
+        html += '<td class="fw-finance__report-table-number">' + formatCurrency(acc.balance_cents) + '</td></tr>';
+      });
+      html += '<tr class="fw-finance__report-subtotal"><td style="padding-left: 1rem;"><strong>Total Non-Current Liabilities</strong></td>';
+      html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_non_current_liabilities_cents) + '</strong></td></tr>';
+    }
+
+    html += '<tr class="fw-finance__report-subtotal"><td><strong>TOTAL LIABILITIES</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_liabilities_cents) + '</strong></td></tr>';
+
+    // EQUITY
+    html += '<tr class="fw-finance__report-section-header"><td colspan="2"><strong>EQUITY</strong></td></tr>';
+    data.equity.forEach(acc => {
+      html += '<tr><td style="padding-left: 2rem;">' + escapeHtml(acc.account_name) + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + formatCurrency(acc.balance_cents) + '</td></tr>';
     });
+    html += '<tr class="fw-finance__report-subtotal"><td><strong>TOTAL EQUITY</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_equity_cents) + '</strong></td></tr>';
 
-    html += `
-      <tr class="fw-finance__report-subtotal">
-        <td><strong>Total Assets</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalAssets)}</strong></td>
-      </tr>
-      <tr class="fw-finance__report-section-header">
-        <td colspan="2"><strong>LIABILITIES</strong></td>
-      </tr>
-    `;
+    // TOTAL L&E
+    html += '<tr class="fw-finance__report-table-total" style="border-top: 3px double var(--fw-border);">';
+    html += '<td><strong>TOTAL LIABILITIES &amp; EQUITY</strong></td>';
+    html += '<td class="fw-finance__report-table-number"><strong>' + formatCurrency(data.total_liabilities_equity_cents) + '</strong></td></tr>';
 
-    let totalLiabilities = 0;
-    liabilities.forEach(acc => {
-      const balance = parseInt(acc.balance_cents) || 0;
-      totalLiabilities += balance;
-      html += `
-        <tr>
-          <td style="padding-left: 2rem;">${acc.account_name}</td>
-          <td class="fw-finance__report-table-number">${formatCurrency(balance)}</td>
-        </tr>
-      `;
-    });
+    html += '</tbody></table>';
 
-    html += `
-      <tr class="fw-finance__report-subtotal">
-        <td><strong>Total Liabilities</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalLiabilities)}</strong></td>
-      </tr>
-      <tr class="fw-finance__report-section-header">
-        <td colspan="2"><strong>EQUITY</strong></td>
-      </tr>
-    `;
-
-    let totalEquity = 0;
-    equity.forEach(acc => {
-      const balance = parseInt(acc.balance_cents) || 0;
-      totalEquity += balance;
-      html += `
-        <tr>
-          <td style="padding-left: 2rem;">${acc.account_name}</td>
-          <td class="fw-finance__report-table-number">${formatCurrency(balance)}</td>
-        </tr>
-      `;
-    });
-
-    html += `
-      <tr class="fw-finance__report-subtotal">
-        <td><strong>Total Equity</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalEquity)}</strong></td>
-      </tr>
-      <tr class="fw-finance__report-table-total">
-        <td><strong>TOTAL LIABILITIES & EQUITY</strong></td>
-        <td class="fw-finance__report-table-number"><strong>${formatCurrency(totalLiabilities + totalEquity)}</strong></td>
-      </tr>
-        </tbody>
-      </table>
-
-      ${totalAssets !== (totalLiabilities + totalEquity) ? `
-        <div class="fw-finance__alert fw-finance__alert--danger" style="margin-top: 1rem;">
-          ⚠️ Balance Sheet is OUT OF BALANCE by ${formatCurrency(Math.abs(totalAssets - (totalLiabilities + totalEquity)))}
-        </div>
-      ` : `
-        <div class="fw-finance__alert fw-finance__alert--success" style="margin-top: 1rem;">
-          ✓ Balance Sheet is IN BALANCE
-        </div>
-      `}
-    `;
+    // Balance check
+    if (data.total_assets_cents !== data.total_liabilities_equity_cents) {
+      html += '<div class="fw-finance__alert fw-finance__alert--danger" style="margin-top: 1rem;">Balance Sheet is OUT OF BALANCE by ' + formatCurrency(Math.abs(data.total_assets_cents - data.total_liabilities_equity_cents)) + '</div>';
+    } else {
+      html += '<div class="fw-finance__alert fw-finance__alert--success" style="margin-top: 1rem;">Balance Sheet is IN BALANCE</div>';
+    }
 
     reportContent.innerHTML = html;
   }
 
   // Render GL Detail
   function renderGLDetail() {
-    const { company_name, date, account, transactions, opening_balance_cents, closing_balance_cents } = reportData;
+    const data = reportData;
+    const meta = data.report_meta;
 
-    let html = `
-      <div class="fw-finance__report-header">
-        <h1 class="fw-finance__report-title">${company_name}</h1>
-        <h2 class="fw-finance__report-subtitle">General Ledger Detail</h2>
-        <p class="fw-finance__report-date">Account: ${account.account_code} - ${account.account_name}</p>
-        <p class="fw-finance__report-date">Period ending ${formatDate(date)}</p>
-      </div>
+    let html = renderReportHeader(meta, 'General Ledger Detail',
+      'Account: ' + (data.account ? data.account.account_code + ' - ' + data.account.account_name : '') +
+      ' | Period ending ' + formatDate(data.date));
 
-      <div class="fw-finance__report-balance-row">
-        <span>Opening Balance:</span>
-        <span class="fw-finance__report-table-number"><strong>${formatCurrency(opening_balance_cents)}</strong></span>
-      </div>
+    html += '<div class="fw-finance__report-balance-row">';
+    html += '<span>Opening Balance:</span>';
+    html += '<span class="fw-finance__report-table-number"><strong>' + formatCurrency(data.opening_balance_cents) + '</strong></span>';
+    html += '</div>';
 
-      <table class="fw-finance__report-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Description</th>
-            <th>Reference</th>
-            <th class="fw-finance__report-table-number">Debit</th>
-            <th class="fw-finance__report-table-number">Credit</th>
-            <th class="fw-finance__report-table-number">Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
+    html += '<table class="fw-finance__report-table"><thead><tr>';
+    html += '<th>Date</th><th>Description</th><th>Reference</th>';
+    html += '<th class="fw-finance__report-table-number">Debit</th>';
+    html += '<th class="fw-finance__report-table-number">Credit</th>';
+    html += '<th class="fw-finance__report-table-number">Balance</th>';
+    html += '</tr></thead><tbody>';
 
-    let runningBalance = parseInt(opening_balance_cents);
+    let runningBalance = parseInt(data.opening_balance_cents);
 
-    transactions.forEach(tx => {
+    data.transactions.forEach(tx => {
       const debitCents = parseInt(tx.debit_cents) || 0;
       const creditCents = parseInt(tx.credit_cents) || 0;
       runningBalance += (debitCents - creditCents);
 
-      html += `
-        <tr>
-          <td>${formatDate(tx.entry_date)}</td>
-          <td>${tx.description || tx.memo || '-'}</td>
-          <td>${tx.reference || '-'}</td>
-          <td class="fw-finance__report-table-number">${debitCents > 0 ? formatCurrency(debitCents) : '-'}</td>
-          <td class="fw-finance__report-table-number">${creditCents > 0 ? formatCurrency(creditCents) : '-'}</td>
-          <td class="fw-finance__report-table-number">${formatCurrency(runningBalance)}</td>
-        </tr>
-      `;
+      html += '<tr>';
+      html += '<td>' + escapeHtml(formatDate(tx.entry_date)) + '</td>';
+      html += '<td>' + escapeHtml(tx.description || tx.memo || '-') + '</td>';
+      html += '<td>' + escapeHtml(tx.reference || '-') + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + (debitCents > 0 ? formatCurrency(debitCents) : '-') + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + (creditCents > 0 ? formatCurrency(creditCents) : '-') + '</td>';
+      html += '<td class="fw-finance__report-table-number">' + formatCurrency(runningBalance) + '</td>';
+      html += '</tr>';
     });
 
-    html += `
-        </tbody>
-      </table>
+    html += '</tbody></table>';
 
-      <div class="fw-finance__report-balance-row" style="margin-top: 1rem;">
-        <span>Closing Balance:</span>
-        <span class="fw-finance__report-table-number"><strong>${formatCurrency(closing_balance_cents)}</strong></span>
-      </div>
-    `;
+    html += '<div class="fw-finance__report-balance-row" style="margin-top: 1rem;">';
+    html += '<span>Closing Balance:</span>';
+    html += '<span class="fw-finance__report-table-number"><strong>' + formatCurrency(data.closing_balance_cents) + '</strong></span>';
+    html += '</div>';
 
     reportContent.innerHTML = html;
   }
@@ -506,43 +518,66 @@
     if (!reportData) return;
 
     let csv = '';
-    let filename = `${currentReport}-${reportDate.value}.csv`;
+    let filename = currentReport + '-' + reportDate.value + '.csv';
 
     switch (currentReport) {
       case 'trial-balance':
         csv = 'Account Code,Account Name,Debit,Credit\n';
         reportData.accounts.forEach(acc => {
-          csv += `"${acc.account_code}","${acc.account_name}",${acc.debit_cents/100},${acc.credit_cents/100}\n`;
+          csv += '"' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.debit_cents / 100).toFixed(2) + ',' + (acc.credit_cents / 100).toFixed(2) + '\n';
         });
         break;
 
       case 'pl':
-        csv = 'Account,Amount\n';
-        csv += 'REVENUE\n';
-        reportData.revenue.forEach(acc => {
-          csv += `"${acc.account_name}",${acc.balance_cents/100}\n`;
+        csv = 'Section,Account Code,Account Name,Amount\n';
+        (reportData.revenue || []).forEach(acc => {
+          csv += '"Revenue","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
-        csv += 'EXPENSES\n';
-        reportData.expenses.forEach(acc => {
-          csv += `"${acc.account_name}",${acc.balance_cents/100}\n`;
+        csv += '"","","Total Revenue",' + (reportData.total_revenue_cents / 100).toFixed(2) + '\n';
+        (reportData.cost_of_sales || []).forEach(acc => {
+          csv += '"Cost of Sales","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
-        csv += `NET INCOME,${reportData.net_income_cents/100}\n`;
+        csv += '"","","Gross Profit",' + (reportData.gross_profit_cents / 100).toFixed(2) + '\n';
+        (reportData.operating_expenses || []).forEach(acc => {
+          csv += '"Operating Expenses","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+        });
+        csv += '"","","Operating Profit",' + (reportData.operating_profit_cents / 100).toFixed(2) + '\n';
+        (reportData.other_income || []).forEach(acc => {
+          csv += '"Other Income","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+        });
+        (reportData.finance_costs || []).forEach(acc => {
+          csv += '"Finance Costs","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+        });
+        csv += '"","","Profit Before Tax",' + (reportData.profit_before_tax_cents / 100).toFixed(2) + '\n';
+        (reportData.tax_expense || []).forEach(acc => {
+          csv += '"Tax Expense","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+        });
+        csv += '"","","Net Profit After Tax",' + (reportData.net_profit_after_tax_cents / 100).toFixed(2) + '\n';
         break;
 
       case 'balance-sheet':
-        csv = 'Account,Amount\n';
-        csv += 'ASSETS\n';
-        reportData.assets.forEach(acc => {
-          csv += `"${acc.account_name}",${acc.balance_cents/100}\n`;
+        csv = 'Section,Account Name,Amount\n';
+        (reportData.current_assets || []).forEach(acc => {
+          csv += '"Current Assets","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
-        csv += 'LIABILITIES\n';
-        reportData.liabilities.forEach(acc => {
-          csv += `"${acc.account_name}",${acc.balance_cents/100}\n`;
+        csv += '"","Total Current Assets",' + ((reportData.total_current_assets_cents || 0) / 100).toFixed(2) + '\n';
+        (reportData.non_current_assets || []).forEach(acc => {
+          csv += '"Non-Current Assets","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
-        csv += 'EQUITY\n';
-        reportData.equity.forEach(acc => {
-          csv += `"${acc.account_name}",${acc.balance_cents/100}\n`;
+        csv += '"","Total Non-Current Assets",' + ((reportData.total_non_current_assets_cents || 0) / 100).toFixed(2) + '\n';
+        csv += '"","TOTAL ASSETS",' + ((reportData.total_assets_cents || 0) / 100).toFixed(2) + '\n';
+        (reportData.current_liabilities || []).forEach(acc => {
+          csv += '"Current Liabilities","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
+        csv += '"","Total Current Liabilities",' + ((reportData.total_current_liabilities_cents || 0) / 100).toFixed(2) + '\n';
+        (reportData.non_current_liabilities || []).forEach(acc => {
+          csv += '"Non-Current Liabilities","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+        });
+        csv += '"","Total Non-Current Liabilities",' + ((reportData.total_non_current_liabilities_cents || 0) / 100).toFixed(2) + '\n';
+        (reportData.equity || []).forEach(acc => {
+          csv += '"Equity","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+        });
+        csv += '"","TOTAL EQUITY",' + ((reportData.total_equity_cents || 0) / 100).toFixed(2) + '\n';
         break;
 
       case 'gl-detail':
@@ -552,7 +587,7 @@
           const debit = parseInt(tx.debit_cents) || 0;
           const credit = parseInt(tx.credit_cents) || 0;
           balance += (debit - credit);
-          csv += `"${tx.entry_date}","${tx.description || tx.memo}","${tx.reference || ''}",${debit/100},${credit/100},${balance/100}\n`;
+          csv += '"' + (tx.entry_date || '') + '","' + (tx.description || tx.memo || '').replace(/"/g, '""') + '","' + (tx.reference || '').replace(/"/g, '""') + '",' + (debit / 100).toFixed(2) + ',' + (credit / 100).toFixed(2) + ',' + (balance / 100).toFixed(2) + '\n';
         });
         break;
     }
@@ -567,13 +602,8 @@
   }
 
   // Event Listeners
-  if (runReportBtn) {
-    runReportBtn.addEventListener('click', runReport);
-  }
-
-  if (exportBtn) {
-    exportBtn.addEventListener('click', exportToCSV);
-  }
+  if (runReportBtn) runReportBtn.addEventListener('click', runReport);
+  if (exportBtn) exportBtn.addEventListener('click', exportToCSV);
 
   // Initialize
   document.addEventListener('DOMContentLoaded', () => {

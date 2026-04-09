@@ -5,11 +5,13 @@ require_method('GET');
 // /finances/ajax/report_gl_detail.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
 
-$companyId = $_SESSION['company_id'];
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
 $date      = $_GET['date'] ?? date('Y-m-d');
 $accountId = $_GET['account_id'] ?? null;
 $projectId = $_GET['project_id'] ?? null;
@@ -97,9 +99,12 @@ try {
         ];
     }
 
+    $meta = getReportMeta($DB, $companyId, $userId);
+
     echo json_encode([
         'ok' => true,
         'data' => [
+            'report_meta'  => $meta,
             'company_name' => $companyName,
             'date'         => $date,
             'account'      => $account,

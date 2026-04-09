@@ -17,6 +17,13 @@ if (!$companyId) {
     exit;
 }
 
+// Fetch company info for header
+$stmtC = $DB->prepare("SELECT name, reg_number, vat_number FROM companies WHERE id = ?");
+$stmtC->execute([$companyId]);
+$company = $stmtC->fetch(PDO::FETCH_ASSOC);
+
+$asOfStr = $_GET['date'] ?? date('Y-m-d');
+
 // Fetch bills and compute outstanding balances
 $stmt = $DB->prepare(
     "SELECT b.id, b.supplier_id, b.due_date, b.total,
@@ -40,7 +47,7 @@ $stmt = $DB->prepare(
 $stmt->execute([$companyId, $companyId, $companyId]);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$asOf     = new DateTimeImmutable('today');
+$asOf     = new DateTimeImmutable($asOfStr);
 $suppliers = [];
 foreach ($rows as $row) {
     $sid = (int)$row['supplier_id'];
@@ -97,7 +104,9 @@ uasort($suppliers, function ($a, $b) {
 
 // Build lines for PDF
 $lines = [];
-$lines[] = 'Accounts Payable Aging Report';
+$lines[] = ($company['name'] ?? '') . ' - Accounts Payable Aging Report';
+if (!empty($company['reg_number'])) $lines[] = 'Reg No: ' . $company['reg_number'];
+if (!empty($company['vat_number'])) $lines[] = 'VAT No: ' . $company['vat_number'];
 $lines[] = 'As of ' . $asOf->format('Y-m-d');
 $lines[] = '';
 $lines[] = sprintf("%-30s %10s %10s %10s %10s %10s %12s", 'Supplier', 'Current', '1-30', '31-60', '61-90', '90+', 'Total');

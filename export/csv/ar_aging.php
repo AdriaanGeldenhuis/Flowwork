@@ -16,15 +16,17 @@ if (!$companyId) {
     exit;
 }
 
+$asOfStr = $_GET['date'] ?? date('Y-m-d');
+
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="ar_aging.csv"');
+header('Content-Disposition: attachment; filename="ar_aging_' . $asOfStr . '.csv"');
 
 // Pull open invoices with a positive balance
 $stmt = $DB->prepare("SELECT id, customer_id, due_date, balance_due FROM invoices WHERE company_id = ? AND status != 'paid' AND balance_due > 0");
 $stmt->execute([$companyId]);
 $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$asOf   = new DateTimeImmutable('today');
+$asOf = new DateTimeImmutable($asOfStr);
 $buckets = [];
 
 foreach ($invoices as $inv) {

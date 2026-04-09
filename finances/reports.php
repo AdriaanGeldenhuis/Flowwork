@@ -7,7 +7,7 @@ require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/permissions.php';
 requireRoles(['admin', 'bookkeeper', 'viewer']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-09-FIN-4');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -131,11 +131,21 @@ $companyName = $company['name'] ?? 'Company';
 
                 <!-- Report Filters -->
                 <div class="fw-finance__report-filters">
+                    <div class="fw-finance__filter-group" id="startDateFilterGroup" style="display: none;">
+                        <label class="fw-finance__label">Period Start</label>
+                        <input
+                            type="date"
+                            class="fw-finance__filter"
+                            id="reportStartDate"
+                            value="<?= date('Y-01-01') ?>"
+                        >
+                    </div>
+
                     <div class="fw-finance__filter-group">
                         <label class="fw-finance__label">As at Date / Period End</label>
-                        <input 
-                            type="date" 
-                            class="fw-finance__filter" 
+                        <input
+                            type="date"
+                            class="fw-finance__filter"
                             id="reportDate"
                             value="<?= date('Y-m-d') ?>"
                         >
@@ -178,6 +188,13 @@ $companyName = $company['name'] ?? 'Company';
                         <input type="date" class="fw-finance__filter" id="exportsDate" value="<?= date('Y-m-d') ?>">
                         <small>Select date for AR/AP Aging exports</small>
                     </div>
+                    <div class="fw-finance__filter-group" style="margin-top: 0.5rem;">
+                        <label class="fw-finance__label">VAT Period Start</label>
+                        <input type="date" class="fw-finance__filter" id="exportsVatStart" value="<?= date('Y-01-01') ?>">
+                        <label class="fw-finance__label" style="margin-top: 0.25rem;">VAT Period End</label>
+                        <input type="date" class="fw-finance__filter" id="exportsVatEnd" value="<?= date('Y-m-d') ?>">
+                        <small>Select period for VAT Summary exports</small>
+                    </div>
                     <div class="fw-finance__exports-list">
                         <!-- AR Aging export links -->
                         <div class="fw-finance__exports-item">
@@ -207,8 +224,8 @@ $companyName = $company['name'] ?? 'Company';
                         <div class="fw-finance__exports-item">
                             <span>VAT Summary</span>
                             <span>
-                                <a href="/export/csv/vat_summary.php" class="fw-finance__link">CSV</a>
-                                <a href="/export/pdf/vat_summary.php" class="fw-finance__link" target="_blank">PDF</a>
+                                <a href="/export/csv/vat_summary.php" class="fw-finance__link" id="vatCsv">CSV</a>
+                                <a href="/export/pdf/vat_summary.php" class="fw-finance__link" id="vatPdf" target="_blank">PDF</a>
                             </span>
                         </div>
                         <!-- Payroll Summary export links -->

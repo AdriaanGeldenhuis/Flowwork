@@ -8,10 +8,12 @@ require_method('GET');
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/lib/AccountsMap.php';
+require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
 $startDate = $_GET['start_date'] ?? date('Y-01-01');
 $endDate   = $_GET['end_date'] ?? date('Y-m-d');
 
@@ -70,7 +72,13 @@ try {
         'input_vat_cents'  => intval(round($totalIn * 100)),
         'net_vat_cents'    => intval(round($totalNet * 100))
     ];
-    echo json_encode(['ok' => true, 'data' => ['periods' => $data, 'totals' => $totals]]);
+    $meta = getReportMeta($DB, $companyId, $userId);
+    echo json_encode(['ok' => true, 'data' => [
+        'report_meta' => $meta,
+        'vat_number'  => $meta['vat_number'],
+        'periods'     => $data,
+        'totals'      => $totals,
+    ]]);
 } catch (Exception $e) {
     error_log('VAT summary report error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
