@@ -946,6 +946,21 @@ html[data-theme="dark"], body[data-theme="dark"] {
 }
 
 /* ===== CHART OF ACCOUNTS — COLUMN LAYOUT ===== */
+.fw-finance__account-group {
+  margin-bottom: var(--fw-spacing-lg);
+}
+
+.fw-finance__account-group-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--fw-primary);
+  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  border-bottom: 2px solid var(--fw-border-base);
+  margin-bottom: var(--fw-spacing-xs);
+}
+
 .fw-finance__account-colheader {
   display: grid;
   grid-template-columns: 80px 1fr 130px 50px 120px 90px;

@@ -35,7 +35,7 @@
   // --- Client-side subtype map (mirrors CoaSchema.php) -----------------------
   const SUBTYPES_BY_TYPE = {
     asset: ['bank','cash','accounts_receivable','inventory','prepayment','current_asset','fixed_asset','accumulated_depreciation','intangible_asset','investment','non_current_asset'],
-    liability: ['accounts_payable','vat_control','paye_liability','uif_liability','sdl_liability','income_tax_payable','provisional_tax','dividends_tax_payable','current_liability','non_current_liability','loan'],
+    liability: ['accounts_payable','vat_control','paye_liability','uif_liability','sdl_liability','income_tax_payable','provisional_tax','dividends_tax_payable','current_liability','loan','non_current_liability'],
     equity: ['share_capital','retained_earnings','current_year_earnings','drawings'],
     revenue: ['operating_revenue','other_income','interest_income','dividend_income','forex_gain'],
     expense: ['cost_of_sales','operating_expense','payroll_expense','depreciation','finance_cost','forex_loss','tax_expense'],
@@ -407,12 +407,13 @@
   function exportToCSV() {
     const filtered = filterAccounts();
     let csv = 'Code,Name,Type,Subtype,Normal Balance,Parent Code,Tax Code,YTD Balance,Active,System,Locked,Control\n';
+    const esc = s => '"' + String(s || '').replace(/"/g, '""') + '"';
     filtered.forEach(a => {
       const parent = a.parent_id ? (accounts.find(p => p.account_id == a.parent_id)?.account_code || '') : '';
       csv += [
-        '"' + a.account_code + '"', '"' + a.account_name + '"', '"' + a.account_type + '"',
-        '"' + (a.account_subtype || '') + '"', '"' + (a.normal_balance || '') + '"',
-        '"' + parent + '"', '"' + (a.tax_code_id || '') + '"',
+        esc(a.account_code), esc(a.account_name), esc(a.account_type),
+        esc(a.account_subtype), esc(a.normal_balance),
+        esc(parent), esc(a.tax_code_id),
         a.ytd_balance || 0, a.is_active == 1 ? 'Yes' : 'No',
         a.is_system == 1 ? 'Yes' : 'No', a.is_locked == 1 ? 'Yes' : 'No',
         a.is_control == 1 ? 'Yes' : 'No',

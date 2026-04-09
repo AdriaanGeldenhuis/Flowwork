@@ -138,6 +138,7 @@ class CoaSchema {
             FROM journal_lines jl
             JOIN journal_entries je ON je.id = jl.journal_id
             WHERE je.company_id = ?
+              AND je.status = 'posted'
               AND jl.account_code = ?
         ");
         $stmt->execute([$companyId, $accountCode]);
