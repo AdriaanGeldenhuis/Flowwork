@@ -5,7 +5,10 @@
   'use strict';
 
   let invoices = [];
+  let filteredInvoices = [];
   let currentTab = 'invoices';
+  let currentPage = 1;
+  const pageSize = 25;
 
   // DOM Elements
   const tabButtons = document.querySelectorAll('.fw-finance__tab');
@@ -15,93 +18,175 @@
   const filterStatus = document.getElementById('filterStatus');
   const syncAllBtn = document.getElementById('syncAllBtn');
   const invoiceCount = document.getElementById('invoiceCount');
+  const pagination = document.getElementById('pagination');
 
-  // Load Invoices
+  // ─── Load Invoices ────────────────────────────────────────────────
+
   async function loadInvoices() {
     invoiceList.innerHTML = '<div class="fw-finance__loading">Loading invoices...</div>';
 
     const result = await FinanceAPI.request('/finances/ajax/ar_invoice_list.php');
-    
+
     if (result.ok) {
       invoices = result.data;
-      renderInvoices();
-      updateInvoiceCount();
+      applyFilters();
     } else {
       invoiceList.innerHTML = '<div class="fw-finance__empty-state">Failed to load invoices</div>';
     }
   }
 
-  // Render Invoices
+  // ─── Filter & Search ──────────────────────────────────────────────
+
+  function applyFilters() {
+    const searchTerm = (searchInput ? searchInput.value : '').toLowerCase().trim();
+    const statusFilter = filterStatus ? filterStatus.value : '';
+
+    filteredInvoices = invoices.filter(function(inv) {
+      if (statusFilter && inv.status !== statusFilter) return false;
+      if (searchTerm) {
+        const haystack = [
+          inv.invoice_number,
+          inv.customer_name
+        ].join(' ').toLowerCase();
+        if (haystack.indexOf(searchTerm) === -1) return false;
+      }
+      return true;
+    });
+
+    currentPage = 1;
+    renderInvoices();
+    renderPagination();
+    updateInvoiceCount();
+  }
+
+  // ─── Render Invoice Cards ─────────────────────────────────────────
+
   function renderInvoices() {
-    if (invoices.length === 0) {
-      invoiceList.innerHTML = '<div class="fw-finance__empty-state">No invoices found</div>';
+    if (filteredInvoices.length === 0) {
+      invoiceList.innerHTML = '<div class="fw-finance__empty-state">' +
+        '<div style="font-size:32px;margin-bottom:12px">' +
+          '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4">' +
+            '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>' +
+            '<polyline points="14 2 14 8 20 8"/>' +
+            '<line x1="16" y1="13" x2="8" y2="13"/>' +
+            '<line x1="16" y1="17" x2="8" y2="17"/>' +
+          '</svg>' +
+        '</div>' +
+        'No invoices found' +
+      '</div>';
       return;
     }
 
-    const html = invoices.map(inv => `
-      <div class="fw-finance__ar-card">
-        <div class="fw-finance__ar-card-header">
-          <div>
-            <strong>${inv.invoice_number}</strong>
-            <span class="fw-finance__badge fw-finance__badge--${inv.status}">${inv.status}</span>
-          </div>
-          <div class="fw-finance__ar-card-amount">R ${parseFloat(inv.total).toFixed(2)}</div>
-        </div>
-        <div class="fw-finance__ar-card-body">
-          <div>Customer: ${inv.customer_name || 'Unknown'}</div>
-          <div>Date: ${formatDate(inv.issue_date)} | Due: ${formatDate(inv.due_date)}</div>
-          <div>Balance: R ${parseFloat(inv.balance_due).toFixed(2)}</div>
-        </div>
-        <div class="fw-finance__ar-card-actions">
-          ${inv.journal_id ? `
-            <button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary" disabled>
-              ✓ Synced to GL
-            </button>
-          ` : `
-            <button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--primary sync-invoice" data-id="${inv.id}">
-              Sync to GL
-            </button>
-          `}
-          <a href="/finances/ar/invoice_view.php?id=${inv.id}" class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary" target="_blank">
-            View Invoice
-          </a>
-        </div>
-      </div>
-    `).join('');
+    var start = (currentPage - 1) * pageSize;
+    var end = start + pageSize;
+    var pageInvoices = filteredInvoices.slice(start, end);
+
+    var html = pageInvoices.map(function(inv) {
+      var syncBtn = '';
+      if (inv.journal_id) {
+        syncBtn = '<button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary" disabled>' +
+          'Synced to GL</button>';
+      } else {
+        syncBtn = '<button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--primary sync-invoice" data-id="' + inv.id + '">' +
+          'Sync to GL</button>';
+      }
+
+      return '<div class="fw-finance__ar-card">' +
+        '<div class="fw-finance__ar-card-header">' +
+          '<div class="fw-finance__ar-card-header-left">' +
+            '<span class="fw-finance__ar-card-number">' + escapeHtml(inv.invoice_number) + '</span>' +
+            '<span class="fw-finance__badge fw-finance__badge--' + escapeHtml(inv.status) + '">' + escapeHtml(inv.status) + '</span>' +
+          '</div>' +
+          '<div class="fw-finance__ar-card-amount">R ' + parseFloat(inv.total).toFixed(2) + '</div>' +
+        '</div>' +
+        '<div class="fw-finance__ar-card-body">' +
+          '<div class="fw-finance__ar-card-customer">' + escapeHtml(inv.customer_name || 'Unknown') + '</div>' +
+          '<div class="fw-finance__ar-card-dates">' +
+            'Issued: ' + formatDate(inv.issue_date) + ' &middot; Due: ' + formatDate(inv.due_date) +
+          '</div>' +
+          '<div class="fw-finance__ar-card-balance">Balance: R ' + parseFloat(inv.balance_due).toFixed(2) + '</div>' +
+        '</div>' +
+        '<div class="fw-finance__ar-card-actions">' +
+          syncBtn +
+          '<a href="/finances/ar/invoice_view.php?id=' + inv.id + '" class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary">' +
+            'View Invoice</a>' +
+        '</div>' +
+      '</div>';
+    }).join('');
 
     invoiceList.innerHTML = html;
     attachInvoiceEvents();
   }
 
-  // Attach Events
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  // ─── Pagination ───────────────────────────────────────────────────
+
+  function renderPagination() {
+    if (!pagination) return;
+
+    var totalPages = Math.ceil(filteredInvoices.length / pageSize);
+    if (totalPages <= 1) {
+      pagination.innerHTML = '';
+      return;
+    }
+
+    var html = '';
+    html += '<button class="fw-finance__page-btn" ' + (currentPage <= 1 ? 'disabled' : '') + ' data-page="' + (currentPage - 1) + '">&laquo; Prev</button>';
+    html += '<span class="fw-finance__page-info">Page ' + currentPage + ' of ' + totalPages + '</span>';
+    html += '<button class="fw-finance__page-btn" ' + (currentPage >= totalPages ? 'disabled' : '') + ' data-page="' + (currentPage + 1) + '">Next &raquo;</button>';
+
+    pagination.innerHTML = html;
+
+    pagination.querySelectorAll('.fw-finance__page-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var page = parseInt(btn.dataset.page, 10);
+        var totalP = Math.ceil(filteredInvoices.length / pageSize);
+        if (page >= 1 && page <= totalP) {
+          currentPage = page;
+          renderInvoices();
+          renderPagination();
+        }
+      });
+    });
+  }
+
+  // ─── Attach Events ────────────────────────────────────────────────
+
   function attachInvoiceEvents() {
-    document.querySelectorAll('.sync-invoice').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const invoiceId = btn.dataset.id;
+    document.querySelectorAll('.sync-invoice').forEach(function(btn) {
+      btn.addEventListener('click', async function() {
+        var invoiceId = btn.dataset.id;
         await syncInvoiceToGL(invoiceId);
       });
     });
   }
 
-  // Sync Invoice to GL
+  // ─── Sync Invoice to GL ───────────────────────────────────────────
+
   async function syncInvoiceToGL(invoiceId) {
     if (!confirm('Post this invoice to the General Ledger?')) return;
 
-    const result = await FinanceAPI.request('/finances/ajax/ar_sync_invoice.php', 'POST', { invoice_id: invoiceId });
+    var result = await FinanceAPI.request('/finances/ajax/ar_sync_invoice.php', 'POST', { invoice_id: invoiceId });
 
     if (result.ok) {
-      alert('Invoice synced to GL successfully');
+      showMessage('invoiceList', 'Invoice synced to GL successfully', 'success');
       loadInvoices();
     } else {
       alert('Error: ' + (result.error || 'Failed to sync invoice'));
     }
   }
 
-  // Sync All Invoices
+  // ─── Sync All Invoices ────────────────────────────────────────────
+
   async function syncAllInvoices() {
     if (!confirm('Sync ALL unsynced invoices to the General Ledger?')) return;
 
-    const unsyncedIds = invoices.filter(inv => !inv.journal_id).map(inv => inv.id);
+    var unsyncedIds = invoices.filter(function(inv) { return !inv.journal_id; }).map(function(inv) { return inv.id; });
 
     if (unsyncedIds.length === 0) {
       alert('No unsynced invoices found');
@@ -109,26 +194,35 @@
     }
 
     syncAllBtn.disabled = true;
-    syncAllBtn.innerHTML = '⏳ Syncing...';
+    syncAllBtn.textContent = 'Syncing...';
 
-    let successCount = 0;
-    for (const id of unsyncedIds) {
-      const result = await FinanceAPI.request('/finances/ajax/ar_sync_invoice.php', 'POST', { invoice_id: id });
+    var successCount = 0;
+    for (var i = 0; i < unsyncedIds.length; i++) {
+      var result = await FinanceAPI.request('/finances/ajax/ar_sync_invoice.php', 'POST', { invoice_id: unsyncedIds[i] });
       if (result.ok) successCount++;
     }
 
     syncAllBtn.disabled = false;
-    syncAllBtn.innerHTML = '🔄 Sync All to GL';
+    syncAllBtn.textContent = 'Sync All to GL';
 
-    alert(`Synced ${successCount} of ${unsyncedIds.length} invoices`);
+    alert('Synced ' + successCount + ' of ' + unsyncedIds.length + ' invoices');
     loadInvoices();
   }
 
-  // Load Aging Report
+  // ─── Update Invoice Count ─────────────────────────────────────────
+
+  function updateInvoiceCount() {
+    if (invoiceCount) {
+      invoiceCount.textContent = filteredInvoices.length + ' invoice' + (filteredInvoices.length !== 1 ? 's' : '');
+    }
+  }
+
+  // ─── Load Aging Report ────────────────────────────────────────────
+
   async function loadAgingReport() {
     agingReport.innerHTML = '<div class="fw-finance__loading">Loading aging report...</div>';
 
-    const result = await FinanceAPI.request('/finances/ajax/ar_aging.php');
+    var result = await FinanceAPI.request('/finances/ajax/ar_aging.php');
 
     if (result.ok) {
       renderAgingReport(result.data);
@@ -137,39 +231,27 @@
     }
   }
 
-  // Render Aging Report
   function renderAgingReport(data) {
-    let html = `
-      <div class="fw-finance__report-header">
-        <h2 class="fw-finance__report-subtitle">Accounts Receivable Aging</h2>
-        <p class="fw-finance__report-date">As at ${formatDate(new Date().toISOString().split('T')[0])}</p>
-      </div>
+    var html = '' +
+      '<div class="fw-finance__report-header">' +
+        '<h2 class="fw-finance__report-subtitle">Accounts Receivable Aging</h2>' +
+        '<p class="fw-finance__report-date">As at ' + formatDate(new Date().toISOString().split('T')[0]) + '</p>' +
+      '</div>' +
+      '<table class="fw-finance__report-table">' +
+        '<thead><tr>' +
+          '<th>Customer</th>' +
+          '<th class="fw-finance__report-table-number">Current</th>' +
+          '<th class="fw-finance__report-table-number">1-30 Days</th>' +
+          '<th class="fw-finance__report-table-number">31-60 Days</th>' +
+          '<th class="fw-finance__report-table-number">61-90 Days</th>' +
+          '<th class="fw-finance__report-table-number">90+ Days</th>' +
+          '<th class="fw-finance__report-table-number">Total</th>' +
+        '</tr></thead>' +
+        '<tbody>';
 
-      <table class="fw-finance__report-table">
-        <thead>
-          <tr>
-            <th>Customer</th>
-            <th class="fw-finance__report-table-number">Current</th>
-            <th class="fw-finance__report-table-number">1-30 Days</th>
-            <th class="fw-finance__report-table-number">31-60 Days</th>
-            <th class="fw-finance__report-table-number">61-90 Days</th>
-            <th class="fw-finance__report-table-number">90+ Days</th>
-            <th class="fw-finance__report-table-number">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
+    var totals = { current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, days_90_plus: 0, total: 0 };
 
-    let totals = {
-      current: 0,
-      days_1_30: 0,
-      days_31_60: 0,
-      days_61_90: 0,
-      days_90_plus: 0,
-      total: 0
-    };
-
-    data.forEach(row => {
+    data.forEach(function(row) {
       totals.current += parseFloat(row.current || 0);
       totals.days_1_30 += parseFloat(row.days_1_30 || 0);
       totals.days_31_60 += parseFloat(row.days_31_60 || 0);
@@ -177,53 +259,42 @@
       totals.days_90_plus += parseFloat(row.days_90_plus || 0);
       totals.total += parseFloat(row.total || 0);
 
-      html += `
-        <tr>
-          <td>${row.customer_name}</td>
-          <td class="fw-finance__report-table-number">R ${parseFloat(row.current || 0).toFixed(2)}</td>
-          <td class="fw-finance__report-table-number">R ${parseFloat(row.days_1_30 || 0).toFixed(2)}</td>
-          <td class="fw-finance__report-table-number">R ${parseFloat(row.days_31_60 || 0).toFixed(2)}</td>
-          <td class="fw-finance__report-table-number">R ${parseFloat(row.days_61_90 || 0).toFixed(2)}</td>
-          <td class="fw-finance__report-table-number">R ${parseFloat(row.days_90_plus || 0).toFixed(2)}</td>
-          <td class="fw-finance__report-table-number"><strong>R ${parseFloat(row.total || 0).toFixed(2)}</strong></td>
-        </tr>
-      `;
+      html += '<tr>' +
+        '<td>' + escapeHtml(row.customer_name) + '</td>' +
+        '<td class="fw-finance__report-table-number">R ' + parseFloat(row.current || 0).toFixed(2) + '</td>' +
+        '<td class="fw-finance__report-table-number">R ' + parseFloat(row.days_1_30 || 0).toFixed(2) + '</td>' +
+        '<td class="fw-finance__report-table-number">R ' + parseFloat(row.days_31_60 || 0).toFixed(2) + '</td>' +
+        '<td class="fw-finance__report-table-number">R ' + parseFloat(row.days_61_90 || 0).toFixed(2) + '</td>' +
+        '<td class="fw-finance__report-table-number">R ' + parseFloat(row.days_90_plus || 0).toFixed(2) + '</td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + parseFloat(row.total || 0).toFixed(2) + '</strong></td>' +
+      '</tr>';
     });
 
-    html += `
-        </tbody>
-        <tfoot>
-          <tr class="fw-finance__report-table-total">
-            <td><strong>Total</strong></td>
-            <td class="fw-finance__report-table-number"><strong>R ${totals.current.toFixed(2)}</strong></td>
-            <td class="fw-finance__report-table-number"><strong>R ${totals.days_1_30.toFixed(2)}</strong></td>
-            <td class="fw-finance__report-table-number"><strong>R ${totals.days_31_60.toFixed(2)}</strong></td>
-            <td class="fw-finance__report-table-number"><strong>R ${totals.days_61_90.toFixed(2)}</strong></td>
-            <td class="fw-finance__report-table-number"><strong>R ${totals.days_90_plus.toFixed(2)}</strong></td>
-            <td class="fw-finance__report-table-number"><strong>R ${totals.total.toFixed(2)}</strong></td>
-          </tr>
-        </tfoot>
-      </table>
-    `;
+    html += '</tbody>' +
+      '<tfoot><tr class="fw-finance__report-table-total">' +
+        '<td><strong>Total</strong></td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + totals.current.toFixed(2) + '</strong></td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + totals.days_1_30.toFixed(2) + '</strong></td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + totals.days_31_60.toFixed(2) + '</strong></td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + totals.days_61_90.toFixed(2) + '</strong></td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + totals.days_90_plus.toFixed(2) + '</strong></td>' +
+        '<td class="fw-finance__report-table-number"><strong>R ' + totals.total.toFixed(2) + '</strong></td>' +
+      '</tr></tfoot></table>';
 
     agingReport.innerHTML = html;
   }
 
-  // Update Invoice Count
-  function updateInvoiceCount() {
-    invoiceCount.textContent = `${invoices.length} invoice${invoices.length !== 1 ? 's' : ''}`;
-  }
+  // ─── Tab Switching ────────────────────────────────────────────────
 
-  // Tab Switching
-  tabButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
+  tabButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var tab = btn.dataset.tab;
       currentTab = tab;
 
-      tabButtons.forEach(b => b.classList.remove('fw-finance__tab--active'));
+      tabButtons.forEach(function(b) { b.classList.remove('fw-finance__tab--active'); });
       btn.classList.add('fw-finance__tab--active');
 
-      document.querySelectorAll('.fw-finance__tab-panel').forEach(panel => {
+      document.querySelectorAll('.fw-finance__tab-panel').forEach(function(panel) {
         panel.classList.remove('fw-finance__tab-panel--active');
       });
 
@@ -232,17 +303,35 @@
       } else if (tab === 'aging') {
         document.getElementById('agingPanel').classList.add('fw-finance__tab-panel--active');
         loadAgingReport();
+      } else if (tab === 'statements') {
+        document.getElementById('statementsPanel').classList.add('fw-finance__tab-panel--active');
+      } else if (tab === 'reminders') {
+        document.getElementById('remindersPanel').classList.add('fw-finance__tab-panel--active');
       }
     });
   });
 
-  // Event Listeners
+  // ─── Event Listeners ──────────────────────────────────────────────
+
   if (syncAllBtn) {
     syncAllBtn.addEventListener('click', syncAllInvoices);
   }
 
-  // Initialize
-  document.addEventListener('DOMContentLoaded', () => {
+  if (searchInput) {
+    searchInput.addEventListener('input', debounce(function() {
+      applyFilters();
+    }, 300));
+  }
+
+  if (filterStatus) {
+    filterStatus.addEventListener('change', function() {
+      applyFilters();
+    });
+  }
+
+  // ─── Initialize ───────────────────────────────────────────────────
+
+  document.addEventListener('DOMContentLoaded', function() {
     loadInvoices();
   });
 

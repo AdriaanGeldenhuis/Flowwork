@@ -1669,6 +1669,15 @@ select.fw-finance__input:focus {
   box-shadow: 0 0 16px var(--neon-green-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
+.fw-finance__badge--viewed {
+  background: #8b5cf6;
+}
+
+.fw-finance__badge--cancelled {
+  background: #6b7280;
+  opacity: 0.7;
+}
+
 /* ===== BANK ACCOUNTS GRID ===== */
 .fw-finance__bank-accounts-grid {
   display: grid;
@@ -3525,4 +3534,447 @@ select.fw-finance__input:valid {
 
 .fw-finance[data-theme="dark"] .fw-finance__input[type="date"] {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23c5d1e0' d='M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1zm1 2v8h8V4H4zm2 1h1v1H6V5zm2 0h1v1H8V5zm2 0h1v1h-1V5zM6 7h1v1H6V7zm2 0h1v1H8V7zm2 0h1v1h-1V7zM6 9h1v1H6V9zm2 0h1v1H8V9zm2 0h1v1h-1V9z'/%3E%3C/svg%3E");
+}
+
+/* ===== AR INVOICE CARDS ===== */
+.fw-finance__ar-card {
+  padding: var(--fw-spacing-lg);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-shadow-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.fw-finance__ar-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+}
+
+.fw-finance__ar-card:hover {
+  border-color: var(--fw-primary);
+  box-shadow: var(--fw-shadow-lg);
+  transform: translateY(-2px);
+}
+
+.fw-finance__ar-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.fw-finance__ar-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fw-finance__ar-card-number {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+}
+
+.fw-finance__ar-card-amount {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fw-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.fw-finance__ar-card-body {
+  font-size: 13px;
+  color: var(--fw-text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.fw-finance__ar-card-customer {
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin-bottom: 2px;
+}
+
+.fw-finance__ar-card-dates {
+  font-size: 12px;
+  color: var(--fw-text-tertiary);
+}
+
+.fw-finance__ar-card-balance {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.fw-finance__ar-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fw-border-base);
+}
+
+/* ===== AR INVOICE VIEW (SARS-COMPLIANT TAX INVOICE) ===== */
+.fw-finance__invoice {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-xl);
+  padding: var(--fw-spacing-2xl);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--fw-shadow-lg);
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.fw-finance__invoice-type {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--fw-text-primary);
+  margin-bottom: var(--fw-spacing-lg);
+  padding-bottom: var(--fw-spacing-md);
+  border-bottom: 3px solid var(--fw-primary);
+}
+
+.fw-finance__invoice-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--fw-spacing-xl);
+  margin-bottom: var(--fw-spacing-xl);
+}
+
+.fw-finance__invoice-party {
+  min-width: 0;
+}
+
+.fw-finance__invoice-party-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--fw-primary);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--fw-border-base);
+}
+
+.fw-finance__invoice-party-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+  margin-bottom: 4px;
+}
+
+.fw-finance__invoice-party-detail {
+  font-size: 13px;
+  color: var(--fw-text-secondary);
+  line-height: 1.6;
+}
+
+.fw-finance__invoice-party-detail strong {
+  color: var(--fw-text-primary);
+  font-weight: 600;
+}
+
+.fw-finance__invoice-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: var(--fw-spacing-xl);
+  padding: var(--fw-spacing-lg);
+  background: var(--fw-bg-secondary);
+  border-radius: var(--fw-radius-lg);
+  border: 1px solid var(--fw-border-base);
+}
+
+.fw-finance__invoice-meta-item {
+  min-width: 0;
+}
+
+.fw-finance__invoice-meta-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fw-text-muted);
+  margin-bottom: 4px;
+}
+
+.fw-finance__invoice-meta-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  word-break: break-word;
+}
+
+/* Invoice Lines Table */
+.fw-finance__invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--fw-spacing-xl);
+}
+
+.fw-finance__invoice-table th {
+  background: var(--fw-bg-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fw-text-muted);
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 2px solid var(--fw-border-base);
+}
+
+.fw-finance__invoice-table td {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--fw-text-primary);
+  border-bottom: 1px solid var(--fw-border-base);
+  vertical-align: top;
+}
+
+.fw-finance__invoice-table th.num,
+.fw-finance__invoice-table td.num {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+}
+
+.fw-finance__invoice-table tbody tr:hover {
+  background: var(--fw-panel-hover);
+}
+
+.fw-finance__invoice-table tfoot td {
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: none;
+}
+
+.fw-finance__invoice-table tfoot tr:last-child td {
+  font-size: 16px;
+  font-weight: 700;
+  padding-top: 12px;
+  border-top: 2px solid var(--fw-border-base);
+}
+
+/* Invoice Totals */
+.fw-finance__invoice-totals {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--fw-spacing-xl);
+}
+
+.fw-finance__invoice-totals-table {
+  width: 320px;
+  border-collapse: collapse;
+}
+
+.fw-finance__invoice-totals-table td {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--fw-text-secondary);
+}
+
+.fw-finance__invoice-totals-table td:last-child {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+}
+
+.fw-finance__invoice-totals-table tr.total {
+  border-top: 2px solid var(--fw-primary);
+}
+
+.fw-finance__invoice-totals-table tr.total td {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+  padding-top: 12px;
+}
+
+.fw-finance__invoice-totals-table tr.balance td {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fw-primary);
+  padding-top: 8px;
+}
+
+/* Invoice Footer Sections */
+.fw-finance__invoice-section {
+  margin-bottom: var(--fw-spacing-lg);
+  padding: var(--fw-spacing-lg);
+  background: var(--fw-bg-secondary);
+  border-radius: var(--fw-radius-lg);
+  border: 1px solid var(--fw-border-base);
+}
+
+.fw-finance__invoice-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fw-primary);
+  margin-bottom: 8px;
+}
+
+.fw-finance__invoice-section-body {
+  font-size: 13px;
+  color: var(--fw-text-secondary);
+  line-height: 1.6;
+}
+
+.fw-finance__invoice-section-body strong {
+  color: var(--fw-text-primary);
+}
+
+/* Invoice Action Bar */
+.fw-finance__invoice-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: var(--fw-spacing-xl);
+}
+
+.fw-finance__invoice-actions-right {
+  display: flex;
+  gap: 8px;
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+  body {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  .fw-finance__header,
+  .fw-finance__footer,
+  .fw-finance__invoice-actions,
+  .fw-finance__controls,
+  .fw-finance__back-btn,
+  .fw-finance__home-btn,
+  .fw-finance__theme-toggle {
+    display: none !important;
+  }
+
+  .fw-finance {
+    background: #fff !important;
+  }
+
+  .fw-finance__container {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .fw-finance__invoice {
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    padding: 20px !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    max-width: 100% !important;
+  }
+
+  .fw-finance__invoice-type {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
+
+  .fw-finance__invoice-party-label {
+    color: #000 !important;
+  }
+
+  .fw-finance__invoice-meta {
+    background: #f5f5f5 !important;
+    border-color: #ccc !important;
+  }
+
+  .fw-finance__invoice-table th {
+    background: #f0f0f0 !important;
+    color: #333 !important;
+    border-color: #ccc !important;
+  }
+
+  .fw-finance__invoice-table td {
+    color: #000 !important;
+    border-color: #ddd !important;
+  }
+
+  .fw-finance__invoice-totals-table tr.total td {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
+
+  .fw-finance__invoice-section {
+    background: #f9f9f9 !important;
+    border-color: #ccc !important;
+  }
+
+  .fw-finance__invoice-section-title {
+    color: #000 !important;
+  }
+
+  .fw-finance__invoice-section-body,
+  .fw-finance__invoice-party-detail,
+  .fw-finance__invoice-party-name,
+  .fw-finance__invoice-meta-value,
+  .fw-finance__invoice-meta-label {
+    color: #000 !important;
+  }
+}
+
+/* ===== RESPONSIVE AR INVOICE ===== */
+@media (max-width: 768px) {
+  .fw-finance__invoice {
+    padding: var(--fw-spacing-lg);
+  }
+
+  .fw-finance__invoice-parties {
+    grid-template-columns: 1fr;
+    gap: var(--fw-spacing-lg);
+  }
+
+  .fw-finance__invoice-type {
+    font-size: 22px;
+  }
+
+  .fw-finance__invoice-table th,
+  .fw-finance__invoice-table td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .fw-finance__invoice-totals-table {
+    width: 100%;
+  }
+
+  .fw-finance__invoice-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fw-finance__invoice-actions-right {
+    justify-content: flex-end;
+  }
+
+  .fw-finance__ar-card-actions {
+    flex-wrap: wrap;
+  }
 }

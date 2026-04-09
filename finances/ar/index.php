@@ -2,8 +2,9 @@
 // /finances/ar/index.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-09-AR-2');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -38,6 +39,7 @@ $stats = $stmt->fetch();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Accounts Receivable – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -176,8 +178,10 @@ $stats = $stmt->fetch();
                                 <option value="">All Statuses</option>
                                 <option value="draft">Draft</option>
                                 <option value="sent">Sent</option>
+                                <option value="viewed">Viewed</option>
                                 <option value="paid">Paid</option>
                                 <option value="overdue">Overdue</option>
+                                <option value="cancelled">Cancelled</option>
                             </select>
 
                             <button class="fw-finance__btn fw-finance__btn--primary" id="syncAllBtn">
@@ -189,6 +193,9 @@ $stats = $stmt->fetch();
                         <div class="fw-finance__list" id="invoiceList">
                             <div class="fw-finance__loading">Loading invoices...</div>
                         </div>
+
+                        <!-- Pagination -->
+                        <div class="fw-finance__pagination" id="pagination"></div>
 
                     </div>
 
