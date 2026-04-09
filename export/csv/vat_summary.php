@@ -18,6 +18,9 @@ if (!$companyId) {
     exit;
 }
 
+$startDate = $_GET['start_date'] ?? null;
+$endDate   = $_GET['end_date'] ?? null;
+
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="vat_summary.csv"');
 
@@ -26,17 +29,21 @@ $accountsMap = new AccountsMap($DB, (int)$companyId);
 $vatOutCode = $accountsMap->get('finance_vat_output_account_id', '2120');
 $vatInCode  = $accountsMap->get('finance_vat_input_account_id', '2130');
 
-// Aggregate VAT balances
-$stmt = $DB->prepare(
-    "SELECT
-        COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.credit - jl.debit) ELSE 0 END),0) AS output_vat,
-        COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.debit - jl.credit) ELSE 0 END),0) AS input_vat
+// Aggregate VAT balances, optionally filtered by date range
+$sql = "SELECT
+        COALESCE(SUM(CASE WHEN jl.account_code = ? THEN (jl.credit - jl.debit) ELSE 0 END),0) AS output_vat,
+        COALESCE(SUM(CASE WHEN jl.account_code = ? THEN (jl.debit - jl.credit) ELSE 0 END),0) AS input_vat
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_id
-     JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
-     WHERE je.company_id = ? AND je.status = 'posted'"
-);
-$stmt->execute([$vatOutCode, $vatInCode, $companyId]);
+     WHERE je.company_id = ? AND je.status = 'posted'";
+$params = [$vatOutCode, $vatInCode, $companyId];
+if ($startDate && $endDate) {
+    $sql .= " AND je.entry_date BETWEEN ? AND ?";
+    $params[] = $startDate;
+    $params[] = $endDate;
+}
+$stmt = $DB->prepare($sql);
+$stmt->execute($params);
 $row = $stmt->fetch(PDO::FETCH_ASSOC);
 $outputVat = (float)($row['output_vat'] ?? 0);
 $inputVat  = (float)($row['input_vat'] ?? 0);
@@ -44,8 +51,11 @@ $netVat    = $outputVat - $inputVat;
 
 $out = fopen('php://output', 'w');
 fputcsv($out, ['Description', 'Amount']);
-fputcsv($out, ['Output VAT', number_format($outputVat, 2, '.', '')]);
-fputcsv($out, ['Input VAT', number_format($inputVat, 2, '.', '')]);
+if ($startDate && $endDate) {
+    fputcsv($out, ['Period', $startDate . ' to ' . $endDate]);
+}
+fputcsv($out, ['Output VAT (Standard Rate)', number_format($outputVat, 2, '.', '')]);
+fputcsv($out, ['Input VAT (Standard Rate)', number_format($inputVat, 2, '.', '')]);
 fputcsv($out, ['Net VAT Due', number_format($netVat, 2, '.', '')]);
 fclose($out);
 exit;

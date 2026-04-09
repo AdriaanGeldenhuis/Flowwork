@@ -5,17 +5,17 @@ require_method('GET');
 // /finances/ajax/report_trial_balance.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
 $date = $_GET['date'] ?? date('Y-m-d');
 
 try {
-    // Get company name
-    $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-    $stmt->execute([$companyId]);
-    $companyName = $stmt->fetchColumn();
+    $meta = getReportMeta($DB, $companyId, $userId);
+    $companyName = $meta['company_name'];
 
     // Get all accounts with balances. Since journal_lines stores account_code rather than account_id, we join on account_code.
     // We sum debit and credit amounts up to the given date. Multiply by 100 to convert to cents for the frontend.
@@ -76,6 +76,7 @@ try {
     echo json_encode([
         'ok' => true,
         'data' => [
+            'report_meta' => $meta,
             'company_name' => $companyName,
             'date' => $date,
             'accounts' => $formattedAccounts

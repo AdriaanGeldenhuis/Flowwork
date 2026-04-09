@@ -160,6 +160,10 @@ $firstName = $stmt->fetchColumn() ?: 'User';
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         });
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
         function renderReport(data) {
             let html = '';
             html += '<table class="report-table">';
@@ -168,7 +172,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
             let totals = { current:0, days_1_30:0, days_31_60:0, days_61_90:0, days_90_plus:0, total:0 };
             data.forEach(row => {
                 html += '<tr>';
-                html += '<td>' + row.supplier_name + '</td>';
+                html += '<td>' + escapeHtml(row.supplier_name) + '</td>';
                 ['current','days_1_30','days_31_60','days_61_90','days_90_plus','total'].forEach(key => {
                     const val = parseFloat(row[key] || 0);
                     totals[key] += val;

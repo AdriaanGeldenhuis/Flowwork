@@ -16,12 +16,19 @@ if (!$companyId) {
     exit;
 }
 
+// Fetch company info for header
+$stmtC = $DB->prepare("SELECT name, reg_number, vat_number FROM companies WHERE id = ?");
+$stmtC->execute([$companyId]);
+$company = $stmtC->fetch(PDO::FETCH_ASSOC);
+
+$asOfStr = $_GET['date'] ?? date('Y-m-d');
+
 // Compute aging buckets
 $stmt = $DB->prepare("SELECT id, customer_id, due_date, balance_due FROM invoices WHERE company_id = ? AND status != 'paid' AND balance_due > 0");
 $stmt->execute([$companyId]);
 $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$asOf   = new DateTimeImmutable('today');
+$asOf = new DateTimeImmutable($asOfStr);
 $buckets = [];
 foreach ($invoices as $inv) {
     $cid  = (int)$inv['customer_id'];
@@ -75,7 +82,9 @@ uasort($buckets, function ($a, $b) {
 
 // Build lines for PDF
 $lines = [];
-$lines[] = 'Accounts Receivable Aging Report';
+$lines[] = ($company['name'] ?? '') . ' - Accounts Receivable Aging Report';
+if (!empty($company['reg_number'])) $lines[] = 'Reg No: ' . $company['reg_number'];
+if (!empty($company['vat_number'])) $lines[] = 'VAT No: ' . $company['vat_number'];
 $lines[] = 'As of ' . $asOf->format('Y-m-d');
 $lines[] = '';
 $lines[] = sprintf("%-30s %10s %10s %10s %10s %10s %12s", 'Customer', 'Current', '1-30', '31-60', '61-90', '90+', 'Total');

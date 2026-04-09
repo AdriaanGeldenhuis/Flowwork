@@ -8,10 +8,12 @@ require_method('GET');
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/lib/AccountsMap.php';
+require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
 $startDate = $_GET['start_date'] ?? date('Y-01-01');
 $endDate   = $_GET['end_date'] ?? date('Y-m-d');
 
@@ -69,7 +71,7 @@ try {
     // Compute Net Income for period using P&L logic (revenues - expenses)
     $sqlNI = "SELECT
             COALESCE(SUM(CASE WHEN ga.account_type = 'revenue' THEN (jl.credit - jl.debit)
-                               WHEN ga.account_type = 'expense' THEN (jl.debit - jl.credit)
+                               WHEN ga.account_type = 'expense' THEN -(jl.debit - jl.credit)
                                ELSE 0 END), 0) AS net
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_id = je.id
@@ -147,8 +149,11 @@ try {
     // Net cash flow
     $netCash = $operating + $investingChange + $financingChange;
 
+    $meta = getReportMeta($DB, $companyId, $userId);
+
     // Convert to cents for output
     $result = [
+        'report_meta'       => $meta,
         'start_date'        => $startDate,
         'end_date'          => $endDate,
         'net_income_cents'  => intval(round($netIncome * 100)),

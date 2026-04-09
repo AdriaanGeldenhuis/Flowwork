@@ -16,16 +16,21 @@ if (!$companyId) {
 }
 
 // Fetch payroll runs with aggregates
+// Fetch company info for header
+$stmtC = $DB->prepare("SELECT name, reg_number, vat_number FROM companies WHERE id = ?");
+$stmtC->execute([$companyId]);
+$company = $stmtC->fetch(PDO::FETCH_ASSOC);
+
 $stmt = $DB->prepare(
     "SELECT pr.id, pr.pay_date, pr.period_start, pr.period_end, pr.status,
             COUNT(pre.id) AS employees,
-            COALESCE(SUM(pre.gross_pay),0) AS gross_pay,
-            COALESCE(SUM(pre.paye),0) AS paye,
-            COALESCE(SUM(pre.uif),0) AS uif,
-            COALESCE(SUM(pre.sdl),0) AS sdl,
-            COALESCE(SUM(pre.net_pay),0) AS net_pay
+            COALESCE(SUM(pre.gross_cents),0) AS gross_cents,
+            COALESCE(SUM(pre.paye_cents),0) AS paye_cents,
+            COALESCE(SUM(pre.uif_employee_cents),0) AS uif_cents,
+            COALESCE(SUM(pre.sdl_cents),0) AS sdl_cents,
+            COALESCE(SUM(pre.net_cents),0) AS net_cents
        FROM pay_runs pr
-  LEFT JOIN pay_run_employees pre ON pre.pay_run_id = pr.id
+  LEFT JOIN pay_run_employees pre ON pre.run_id = pr.id
       WHERE pr.company_id = ?
    GROUP BY pr.id
    ORDER BY pr.pay_date DESC"
@@ -34,7 +39,9 @@ $stmt->execute([$companyId]);
 $runs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $lines = [];
-$lines[] = 'Payroll Summary Report';
+$lines[] = ($company['name'] ?? '') . ' - Payroll Summary Report';
+if (!empty($company['reg_number'])) $lines[] = 'Reg No: ' . $company['reg_number'];
+if (!empty($company['vat_number'])) $lines[] = 'VAT No: ' . $company['vat_number'];
 $lines[] = 'As of ' . (new DateTimeImmutable('today'))->format('Y-m-d');
 $lines[] = '';
 $lines[] = sprintf("%-8s %-12s %-21s %10s %12s %10s %10s %10s %8s", 'Run #', 'Pay Date', 'Period', 'Emp', 'Gross', 'PAYE', 'UIF', 'SDL', 'Net');
@@ -50,11 +57,11 @@ foreach ($runs as $run) {
         $run['pay_date'],
         mb_strimwidth($period, 0, 21, '…'),
         (int)$run['employees'],
-        number_format((float)$run['gross_pay'], 2, '.', ''),
-        number_format((float)$run['paye'], 2, '.', ''),
-        number_format((float)$run['uif'], 2, '.', ''),
-        number_format((float)$run['sdl'], 2, '.', ''),
-        number_format((float)$run['net_pay'], 2, '.', '')
+        number_format((float)$run['gross_cents'] / 100, 2, '.', ''),
+        number_format((float)$run['paye_cents'] / 100, 2, '.', ''),
+        number_format((float)$run['uif_cents'] / 100, 2, '.', ''),
+        number_format((float)$run['sdl_cents'] / 100, 2, '.', ''),
+        number_format((float)$run['net_cents'] / 100, 2, '.', '')
     );
 }
 
