@@ -63,6 +63,17 @@ if (round($totalDebits, 2) !== round($totalCredits, 2)) {
 if (mb_strlen($reference) > 100) $reference = mb_substr($reference, 0, 100);
 if (mb_strlen($memo) > 255) $memo = mb_substr($memo, 0, 255);
 
+// Validate account codes exist and allow manual journals
+$accountCodes = array_unique(array_map(fn($l) => trim($l['account_code'] ?? ''), $lines));
+$placeholders = implode(',', array_fill(0, count($accountCodes), '?'));
+$stmt = $DB->prepare("SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_code IN ($placeholders) AND is_active = 1 AND allow_manual_journal = 1");
+$stmt->execute(array_merge([$companyId], array_values($accountCodes)));
+$validCodes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+$invalidCodes = array_diff($accountCodes, $validCodes);
+if (!empty($invalidCodes)) {
+    json_error('Invalid or restricted account code(s): ' . implode(', ', $invalidCodes));
+}
+
 try {
     $DB->beginTransaction();
 

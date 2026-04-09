@@ -90,7 +90,7 @@
   async function loadAccounts() {
     const result = await FinanceAPI.request('/finances/ajax/account_list.php');
     if (result && result.ok) {
-      accounts = result.data.filter(a => a.is_active == 1);
+      accounts = result.data.filter(a => a.is_active == 1 && a.allow_manual_journal == 1);
     }
   }
 
