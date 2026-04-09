@@ -1,0 +1,133 @@
+<?php
+// /finances/ajax/journal_save.php — Create or update a draft journal entry
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/http.php';
+require_once __DIR__ . '/../lib/Csrf.php';
+require_once __DIR__ . '/../permissions.php';
+
+require_method('POST');
+Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
+
+header('Content-Type: application/json');
+
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId || !$userId) { json_error('Not authorised', 403); }
+
+$input = json_decode(file_get_contents('php://input'), true);
+
+$journalId  = !empty($input['journal_id']) ? (int)$input['journal_id'] : null;
+$entryDate  = trim($input['entry_date'] ?? '');
+$reference  = trim($input['reference'] ?? '');
+$memo       = trim($input['memo'] ?? '');
+$lines      = $input['lines'] ?? [];
+
+// --- Validation ---
+if (!$entryDate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $entryDate)) {
+    json_error('Valid entry date is required');
+}
+
+if (!is_array($lines) || count($lines) < 2) {
+    json_error('Journal must have at least 2 lines');
+}
+
+$totalDebits  = 0;
+$totalCredits = 0;
+foreach ($lines as $i => $line) {
+    $code = trim($line['account_code'] ?? '');
+    if (!$code) {
+        json_error('Line ' . ($i + 1) . ': account code is required');
+    }
+    $debit  = round((float)($line['debit'] ?? 0), 2);
+    $credit = round((float)($line['credit'] ?? 0), 2);
+    if ($debit < 0 || $credit < 0) {
+        json_error('Line ' . ($i + 1) . ': amounts cannot be negative');
+    }
+    if ($debit == 0 && $credit == 0) {
+        json_error('Line ' . ($i + 1) . ': debit or credit is required');
+    }
+    if ($debit > 0 && $credit > 0) {
+        json_error('Line ' . ($i + 1) . ': a line cannot have both debit and credit');
+    }
+    $totalDebits  += $debit;
+    $totalCredits += $credit;
+}
+
+if (round($totalDebits, 2) !== round($totalCredits, 2)) {
+    json_error('Journal is not balanced: debits (' . number_format($totalDebits, 2) . ') != credits (' . number_format($totalCredits, 2) . ')');
+}
+
+// Cap field lengths
+if (mb_strlen($reference) > 100) $reference = mb_substr($reference, 0, 100);
+if (mb_strlen($memo) > 255) $memo = mb_substr($memo, 0, 255);
+
+try {
+    $DB->beginTransaction();
+
+    if ($journalId) {
+        // --- UPDATE existing draft ---
+        $stmt = $DB->prepare("SELECT status FROM journal_entries WHERE id = ? AND company_id = ?");
+        $stmt->execute([$journalId, $companyId]);
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$existing) { throw new Exception('Journal not found'); }
+        if ($existing['status'] !== 'draft') {
+            throw new Exception('Only draft journals can be edited');
+        }
+
+        $stmt = $DB->prepare("
+            UPDATE journal_entries
+            SET entry_date = ?, reference = ?, description = ?, updated_at = NOW()
+            WHERE id = ? AND company_id = ?
+        ");
+        $stmt->execute([$entryDate, $reference, $memo, $journalId, $companyId]);
+
+        // Delete old lines and re-insert
+        $stmt = $DB->prepare("DELETE FROM journal_lines WHERE journal_id = ?");
+        $stmt->execute([$journalId]);
+
+    } else {
+        // --- INSERT new journal ---
+        $stmt = $DB->prepare("
+            INSERT INTO journal_entries
+                (company_id, entry_date, reference, description, module, status, created_by, created_at)
+            VALUES (?, ?, ?, ?, 'manual', 'draft', ?, NOW())
+        ");
+        $stmt->execute([$companyId, $entryDate, $reference, $memo, $userId]);
+        $journalId = (int)$DB->lastInsertId();
+    }
+
+    // --- Insert lines ---
+    $lineStmt = $DB->prepare("
+        INSERT INTO journal_lines
+            (journal_id, account_code, description, debit, credit)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    foreach ($lines as $line) {
+        $lineStmt->execute([
+            $journalId,
+            trim($line['account_code']),
+            trim($line['description'] ?? ''),
+            round((float)($line['debit'] ?? 0), 2),
+            round((float)($line['credit'] ?? 0), 2)
+        ]);
+    }
+
+    // --- Audit ---
+    require_once __DIR__ . '/../lib/Audit.php';
+    Audit::log($input['journal_id'] ? 'journal_updated' : 'journal_created', [
+        'journal_id' => $journalId,
+        'entry_date' => $entryDate,
+        'lines'      => count($lines)
+    ]);
+
+    $DB->commit();
+
+    echo json_encode(['ok' => true, 'data' => ['journal_id' => $journalId]]);
+
+} catch (Exception $e) {
+    $DB->rollBack();
+    error_log("Journal save error: " . $e->getMessage());
+    json_error($e->getMessage());
+}
