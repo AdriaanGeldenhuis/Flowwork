@@ -236,8 +236,9 @@
     }
   }
 
-  // Helper: render a section of accounts
+  // Helper: render a section of accounts (null-safe)
   function renderAccountSection(accounts, sectionTitle, indentLevel) {
+    if (!accounts || !accounts.length) return '';
     let html = '';
     const indent = indentLevel || 1;
     const padding = (indent * 2) + 'rem';
@@ -273,7 +274,7 @@
     let totalDebit = 0;
     let totalCredit = 0;
 
-    data.accounts.forEach(acc => {
+    (data.accounts || []).forEach(acc => {
       const debitCents = parseInt(acc.debit_cents) || 0;
       const creditCents = parseInt(acc.credit_cents) || 0;
       totalDebit += debitCents;
@@ -441,7 +442,7 @@
 
     // EQUITY
     html += '<tr class="fw-finance__report-section-header"><td colspan="2"><strong>EQUITY</strong></td></tr>';
-    data.equity.forEach(acc => {
+    (data.equity || []).forEach(acc => {
       html += '<tr><td style="padding-left: 2rem;">' + escapeHtml(acc.account_name) + '</td>';
       html += '<td class="fw-finance__report-table-number">' + formatCurrency(acc.balance_cents) + '</td></tr>';
     });
@@ -486,9 +487,9 @@
     html += '<th class="fw-finance__report-table-number">Balance</th>';
     html += '</tr></thead><tbody>';
 
-    let runningBalance = parseInt(data.opening_balance_cents);
+    let runningBalance = parseInt(data.opening_balance_cents) || 0;
 
-    data.transactions.forEach(tx => {
+    (data.transactions || []).forEach(tx => {
       const debitCents = parseInt(tx.debit_cents) || 0;
       const creditCents = parseInt(tx.credit_cents) || 0;
       runningBalance += (debitCents - creditCents);
@@ -523,7 +524,7 @@
     switch (currentReport) {
       case 'trial-balance':
         csv = 'Account Code,Account Name,Debit,Credit\n';
-        reportData.accounts.forEach(acc => {
+        (reportData.accounts || []).forEach(acc => {
           csv += '"' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.debit_cents / 100).toFixed(2) + ',' + (acc.credit_cents / 100).toFixed(2) + '\n';
         });
         break;
@@ -582,8 +583,8 @@
 
       case 'gl-detail':
         csv = 'Date,Description,Reference,Debit,Credit,Balance\n';
-        let balance = parseInt(reportData.opening_balance_cents);
-        reportData.transactions.forEach(tx => {
+        let balance = parseInt(reportData.opening_balance_cents) || 0;
+        (reportData.transactions || []).forEach(tx => {
           const debit = parseInt(tx.debit_cents) || 0;
           const credit = parseInt(tx.credit_cents) || 0;
           balance += (debit - credit);
