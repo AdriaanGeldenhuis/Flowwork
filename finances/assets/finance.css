@@ -945,6 +945,143 @@ html[data-theme="dark"], body[data-theme="dark"] {
   letter-spacing: 0.5px;
 }
 
+/* ===== CHART OF ACCOUNTS — COLUMN LAYOUT ===== */
+.fw-finance__account-group {
+  margin-bottom: var(--fw-spacing-lg);
+}
+
+.fw-finance__account-group-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--fw-primary);
+  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  border-bottom: 2px solid var(--fw-border-base);
+  margin-bottom: var(--fw-spacing-xs);
+}
+
+.fw-finance__account-colheader {
+  display: grid;
+  grid-template-columns: 80px 1fr 130px 50px 120px 90px;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fw-text-tertiary);
+  border-bottom: 1px solid var(--fw-border-base);
+}
+
+.fw-finance__account-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 130px 50px 120px 90px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-border-base);
+  border-radius: var(--fw-radius-sm);
+  transition: all var(--fw-transition-base);
+  font-size: 13px;
+}
+
+.fw-finance__account-row:hover {
+  background: var(--fw-panel-hover);
+  border-color: var(--fw-primary);
+  box-shadow: var(--fw-shadow-sm);
+}
+
+.fw-finance__account-row--child {
+  background: transparent;
+  border-color: transparent;
+}
+
+.fw-finance__col-code {
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  color: var(--fw-primary);
+  font-size: 12px;
+}
+
+.fw-finance__col-name {
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fw-finance__col-subtype {
+  font-size: 11px;
+  color: var(--fw-text-secondary);
+}
+
+.fw-finance__col-normal {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--fw-text-tertiary);
+}
+
+.fw-finance__col-balance {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  text-align: right;
+  color: var(--fw-text-secondary);
+}
+
+.fw-finance__bal--positive { color: var(--neon-green); }
+.fw-finance__bal--negative { color: #ef4444; }
+
+.fw-finance__col-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* COA-specific badges */
+.fw-finance__badge--sars {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+.fw-finance__badge--control {
+  background: #6366f1;
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+.fw-finance__badge--system {
+  background: #64748b;
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+/* Textarea in modal */
+.fw-finance__textarea {
+  resize: vertical;
+  min-height: 48px;
+  font-family: inherit;
+}
+
+@media (max-width: 768px) {
+  .fw-finance__account-colheader,
+  .fw-finance__account-row {
+    grid-template-columns: 60px 1fr 60px 90px;
+  }
+  .fw-finance__col-subtype,
+  .fw-finance__col-normal {
+    display: none;
+  }
+}
+
 /* ===== JOURNAL LIST ===== */
 .fw-finance__journal-list {
   display: flex;

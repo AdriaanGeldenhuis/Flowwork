@@ -31,8 +31,8 @@ $stmt->execute([$companyId]);
 $accountCount = $stmt->fetch()['cnt'];
 
 if ($accountCount == 0) {
-    // Seed default accounts
-    $stmtSeed = $DB->prepare("CALL seed_default_accounts(?)");
+    // Seed SARS-aligned chart of accounts for new companies
+    $stmtSeed = $DB->prepare("CALL seed_sars_chart_of_accounts(?)");
     $stmtSeed->execute([$companyId]);
 }
 ?>
