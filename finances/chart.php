@@ -1,41 +1,41 @@
 <?php
-// /finances/chart.php
+// /finances/chart.php — SARS bookkeeping-grade Chart of Accounts
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
-
-// Include permissions helper and restrict access to admins and bookkeepers
 require_once __DIR__ . '/permissions.php';
+require_once __DIR__ . '/lib/Csrf.php';
 requireRoles(['admin', 'bookkeeper']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-09-FIN-COA-1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
+$userRole = $_SESSION['role'] ?? 'viewer';
 
-// Fetch user info
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
 $stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
+$firstName = ($stmt->fetch())['first_name'] ?? 'User';
 
-// Fetch company name
 $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
 $stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
+$companyName = ($stmt->fetch())['name'] ?? 'Company';
+
+$csrfToken = Csrf::token();
+$isAdmin = ($userRole === 'admin');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <title>Chart of Accounts – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body>
     <main class="fw-finance">
         <div class="fw-finance__container">
-            
+
             <!-- Header -->
             <header class="fw-finance__header">
                 <div class="fw-finance__brand">
@@ -60,14 +60,14 @@ $companyName = $company['name'] ?? 'Company';
                             <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </a>
-                    
+
                     <a href="/" class="fw-finance__home-btn" title="Home">
                         <svg viewBox="0 0 24 24" fill="none">
                             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                             <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </a>
-                    
+
                     <button class="fw-finance__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                         <svg class="fw-finance__theme-icon fw-finance__theme-icon--light" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
@@ -89,17 +89,17 @@ $companyName = $company['name'] ?? 'Company';
 
             <!-- Main Content -->
             <div class="fw-finance__main">
-                
+
                 <!-- Toolbar -->
                 <div class="fw-finance__toolbar">
-                    <input 
-                        type="search" 
-                        class="fw-finance__search" 
-                        placeholder="Search accounts..." 
+                    <input
+                        type="search"
+                        class="fw-finance__search"
+                        placeholder="Search accounts..."
                         id="searchInput"
                         autocomplete="off"
                     >
-                    
+
                     <select class="fw-finance__filter" id="filterType">
                         <option value="">All Types</option>
                         <option value="asset">Assets</option>
@@ -118,10 +118,17 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__btn fw-finance__btn--primary" id="addAccountBtn">
                         + New Account
                     </button>
-                    
+
                     <button class="fw-finance__btn fw-finance__btn--secondary" id="exportBtn">
                         Export CSV
                     </button>
+
+                    <?php if ($isAdmin): ?>
+                    <button class="fw-finance__btn fw-finance__btn--secondary" id="importBtn" title="Import accounts from CSV (admin only)">
+                        Import CSV
+                    </button>
+                    <input type="file" id="importFile" accept=".csv" style="display:none">
+                    <?php endif; ?>
                 </div>
 
                 <!-- Accounts Tree -->
@@ -156,16 +163,16 @@ $companyName = $company['name'] ?? 'Company';
             <div class="fw-finance__modal-body">
                 <form id="accountForm">
                     <input type="hidden" id="accountId" name="account_id">
-                    
+
                     <div class="fw-finance__form-row">
                         <div class="fw-finance__form-group">
                             <label class="fw-finance__label">
                                 Account Code <span class="fw-finance__required">*</span>
                             </label>
-                            <input 
-                                type="text" 
-                                class="fw-finance__input" 
-                                id="accountCode" 
+                            <input
+                                type="text"
+                                class="fw-finance__input"
+                                id="accountCode"
                                 name="account_code"
                                 required
                                 maxlength="20"
@@ -191,15 +198,31 @@ $companyName = $company['name'] ?? 'Company';
                         <label class="fw-finance__label">
                             Account Name <span class="fw-finance__required">*</span>
                         </label>
-                        <input 
-                            type="text" 
-                            class="fw-finance__input" 
-                            id="accountName" 
+                        <input
+                            type="text"
+                            class="fw-finance__input"
+                            id="accountName"
                             name="account_name"
                             required
                             maxlength="255"
                             placeholder="e.g. Bank - FNB Cheque"
                         >
+                    </div>
+
+                    <div class="fw-finance__form-row">
+                        <div class="fw-finance__form-group">
+                            <label class="fw-finance__label">Account Subtype</label>
+                            <select class="fw-finance__input" id="accountSubtype" name="account_subtype">
+                                <option value="">Select subtype...</option>
+                            </select>
+                        </div>
+                        <div class="fw-finance__form-group">
+                            <label class="fw-finance__label">Normal Balance</label>
+                            <select class="fw-finance__input" id="normalBalance" name="normal_balance">
+                                <option value="debit">Debit</option>
+                                <option value="credit">Credit</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="fw-finance__form-row">
@@ -218,11 +241,23 @@ $companyName = $company['name'] ?? 'Company';
                     </div>
 
                     <div class="fw-finance__form-group">
+                        <label class="fw-finance__label">Description</label>
+                        <textarea
+                            class="fw-finance__input fw-finance__textarea"
+                            id="accountDescription"
+                            name="description"
+                            maxlength="500"
+                            rows="2"
+                            placeholder="Optional guidance for this account..."
+                        ></textarea>
+                    </div>
+
+                    <div class="fw-finance__form-group">
                         <label class="fw-finance__checkbox-wrapper">
-                            <input 
-                                type="checkbox" 
-                                class="fw-finance__checkbox" 
-                                id="isActive" 
+                            <input
+                                type="checkbox"
+                                class="fw-finance__checkbox"
+                                id="isActive"
                                 name="is_active"
                                 checked
                             >
@@ -244,6 +279,13 @@ $companyName = $company['name'] ?? 'Company';
         </div>
     </div>
 
+    <script>
+        // Server-side config passed to chart.js
+        window.__COA_CONFIG = {
+            isAdmin: <?= $isAdmin ? 'true' : 'false' ?>,
+            csrfToken: <?= json_encode($csrfToken) ?>
+        };
+    </script>
     <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/finances/assets/chart.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
