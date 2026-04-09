@@ -29,6 +29,12 @@ try {
             je.reference,
             je.status,
             je.created_at,
+            je.reversed_by_journal_id,
+            je.reverses_journal_id,
+            je.approved_by,
+            je.approved_at,
+            je.posted_by,
+            je.posted_at,
             u.first_name,
             u.last_name
         FROM journal_entries je

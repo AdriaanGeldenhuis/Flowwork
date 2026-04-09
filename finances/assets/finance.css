@@ -1186,6 +1186,19 @@ html[data-theme="dark"], body[data-theme="dark"] {
   border: 1px solid rgba(74, 222, 128, 0.3);
 }
 
+.fw-finance__journal-status--reversed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  text-decoration: line-through;
+}
+
+.fw-finance__journal-status--reversal {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
 .fw-finance__journal-memo {
   font-size: 15px;
   font-weight: 500;

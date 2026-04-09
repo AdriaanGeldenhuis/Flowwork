@@ -124,6 +124,8 @@
             <span class="fw-finance__journal-date">${formatDate(journal.entry_date)}</span>
             <div class="fw-finance__journal-badges">
               ${journal.module ? `<span class="fw-finance__journal-module">${escapeHtml(journal.module)}</span>` : ''}
+              ${journal.reversed_by_journal_id ? `<span class="fw-finance__journal-status fw-finance__journal-status--reversed">Reversed</span>` : ''}
+              ${journal.reverses_journal_id ? `<span class="fw-finance__journal-status fw-finance__journal-status--reversal">Reversal</span>` : ''}
               <span class="fw-finance__journal-status fw-finance__journal-status--${statusClass(journal.status)}">${statusLabel(journal.status)}</span>
             </div>
           </div>
@@ -223,6 +225,26 @@
           <div class="fw-finance__view-label">Created At</div>
           <div class="fw-finance__view-value">${formatDate(j.created_at)}</div>
         </div>
+        ${j.approved_at ? `
+        <div class="fw-finance__view-field">
+          <div class="fw-finance__view-label">Approved At</div>
+          <div class="fw-finance__view-value">${formatDate(j.approved_at)}</div>
+        </div>` : ''}
+        ${j.posted_at ? `
+        <div class="fw-finance__view-field">
+          <div class="fw-finance__view-label">Posted At</div>
+          <div class="fw-finance__view-value">${formatDate(j.posted_at)}</div>
+        </div>` : ''}
+        ${j.reversed_by_journal_id ? `
+        <div class="fw-finance__view-field" style="grid-column: 1 / -1">
+          <div class="fw-finance__view-label" style="color:#ef4444">Reversed</div>
+          <div class="fw-finance__view-value" style="color:#ef4444">This journal was reversed by Journal #${j.reversed_by_journal_id}</div>
+        </div>` : ''}
+        ${j.reverses_journal_id ? `
+        <div class="fw-finance__view-field" style="grid-column: 1 / -1">
+          <div class="fw-finance__view-label" style="color:#f59e0b">Reversal Of</div>
+          <div class="fw-finance__view-value">This journal reverses Journal #${j.reverses_journal_id}</div>
+        </div>` : ''}
       </div>
     `;
 
@@ -266,6 +288,10 @@
       buttons += `
         <button type="button" class="fw-finance__btn fw-finance__btn--primary" id="viewPostBtn" data-id="${j.journal_id}">Post to GL</button>
       `;
+    } else if (j.status === 'posted' && !j.reversed_by_journal_id) {
+      buttons += `
+        <button type="button" class="fw-finance__btn fw-finance__btn--danger" id="viewReverseBtn" data-id="${j.journal_id}">Reverse</button>
+      `;
     }
 
     footer.innerHTML = buttons;
@@ -288,12 +314,22 @@
     const deleteBtn = document.getElementById('viewDeleteBtn');
     if (deleteBtn) deleteBtn.addEventListener('click', () => deleteJournal(deleteBtn.dataset.id));
 
+    const reverseBtn = document.getElementById('viewReverseBtn');
+    if (reverseBtn) reverseBtn.addEventListener('click', () => reverseJournal(reverseBtn.dataset.id));
+
     FinanceModal.open('viewModal');
   }
 
-  // ─── Approve / Post / Delete ───────────────────────────────────────
+  // ─── Approve / Post / Delete / Reverse ──────────────────────────────
+
+  function disableActionButtons() {
+    document.querySelectorAll('#viewModalFooter .fw-finance__btn').forEach(btn => {
+      btn.disabled = true;
+    });
+  }
 
   async function approveJournal(journalId) {
+    disableActionButtons();
     const result = await FinanceAPI.request('/finances/ajax/journal_approve.php', 'POST', { journal_id: parseInt(journalId, 10) });
     if (result && result.ok) {
       showMessage('viewMessage', 'Journal approved successfully', 'success');
@@ -307,6 +343,7 @@
   }
 
   async function postJournal(journalId) {
+    disableActionButtons();
     const result = await FinanceAPI.request('/finances/ajax/journal_post.php', 'POST', { journal_id: parseInt(journalId, 10) });
     if (result && result.ok) {
       showMessage('viewMessage', 'Journal posted to GL successfully', 'success');
@@ -321,12 +358,36 @@
 
   async function deleteJournal(journalId) {
     if (!confirm('Delete this draft journal? This cannot be undone.')) return;
+    disableActionButtons();
     const result = await FinanceAPI.request('/finances/ajax/journal_delete.php', 'POST', { journal_id: parseInt(journalId, 10) });
     if (result && result.ok) {
       FinanceModal.close('viewModal');
       loadJournals();
     } else {
       showMessage('viewMessage', result?.error || 'Failed to delete', 'error');
+    }
+  }
+
+  async function reverseJournal(journalId) {
+    const reason = prompt('Reason for reversal (required for SARS audit trail):');
+    if (reason === null) return; // cancelled
+    if (!reason.trim()) {
+      showMessage('viewMessage', 'A reason is required for SARS compliance', 'error');
+      return;
+    }
+    disableActionButtons();
+    const result = await FinanceAPI.request('/finances/ajax/journal_reverse.php', 'POST', {
+      journal_id: parseInt(journalId, 10),
+      reason: reason.trim()
+    });
+    if (result && result.ok) {
+      showMessage('viewMessage', 'Journal reversed successfully (Reversal #' + result.data.reversal_journal_id + ')', 'success');
+      setTimeout(() => {
+        FinanceModal.close('viewModal');
+        loadJournals();
+      }, 1200);
+    } else {
+      showMessage('viewMessage', result?.error || 'Failed to reverse journal', 'error');
     }
   }
 

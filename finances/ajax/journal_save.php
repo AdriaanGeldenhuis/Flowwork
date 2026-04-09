@@ -1,5 +1,6 @@
 <?php
 // /finances/ajax/journal_save.php — Create or update a draft journal entry
+// SARS-compliant: audit trail, balance validation (cents-precise), account restrictions
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/http.php';
@@ -18,7 +19,8 @@ if (!$companyId || !$userId) { json_error('Not authorised', 403); }
 
 $input = json_decode(file_get_contents('php://input'), true);
 
-$journalId  = !empty($input['journal_id']) ? (int)$input['journal_id'] : null;
+$isUpdate   = !empty($input['journal_id']);
+$journalId  = $isUpdate ? (int)$input['journal_id'] : null;
 $entryDate  = trim($input['entry_date'] ?? '');
 $reference  = trim($input['reference'] ?? '');
 $memo       = trim($input['memo'] ?? '');
@@ -29,12 +31,18 @@ if (!$entryDate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $entryDate)) {
     json_error('Valid entry date is required');
 }
 
+// Verify the date is a real calendar date
+$dateObj = DateTime::createFromFormat('Y-m-d', $entryDate);
+if (!$dateObj || $dateObj->format('Y-m-d') !== $entryDate) {
+    json_error('Invalid calendar date: ' . $entryDate);
+}
+
 if (!is_array($lines) || count($lines) < 2) {
     json_error('Journal must have at least 2 lines');
 }
 
-$totalDebits  = 0;
-$totalCredits = 0;
+$totalDebitCents  = 0;
+$totalCreditCents = 0;
 foreach ($lines as $i => $line) {
     $code = trim($line['account_code'] ?? '');
     if (!$code) {
@@ -51,12 +59,13 @@ foreach ($lines as $i => $line) {
     if ($debit > 0 && $credit > 0) {
         json_error('Line ' . ($i + 1) . ': a line cannot have both debit and credit');
     }
-    $totalDebits  += $debit;
-    $totalCredits += $credit;
+    // Use integer cents for precise comparison (SARS requirement)
+    $totalDebitCents  += (int)round($debit * 100);
+    $totalCreditCents += (int)round($credit * 100);
 }
 
-if (round($totalDebits, 2) !== round($totalCredits, 2)) {
-    json_error('Journal is not balanced: debits (' . number_format($totalDebits, 2) . ') != credits (' . number_format($totalCredits, 2) . ')');
+if ($totalDebitCents !== $totalCreditCents) {
+    json_error('Journal is not balanced: debits (' . number_format($totalDebitCents / 100, 2) . ') != credits (' . number_format($totalCreditCents / 100, 2) . ')');
 }
 
 // Cap field lengths
@@ -77,9 +86,9 @@ if (!empty($invalidCodes)) {
 try {
     $DB->beginTransaction();
 
-    if ($journalId) {
+    if ($isUpdate && $journalId) {
         // --- UPDATE existing draft ---
-        $stmt = $DB->prepare("SELECT status FROM journal_entries WHERE id = ? AND company_id = ?");
+        $stmt = $DB->prepare("SELECT status, reference, description, entry_date FROM journal_entries WHERE id = ? AND company_id = ?");
         $stmt->execute([$journalId, $companyId]);
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$existing) { throw new Exception('Journal not found'); }
@@ -89,7 +98,7 @@ try {
 
         $stmt = $DB->prepare("
             UPDATE journal_entries
-            SET entry_date = ?, reference = ?, description = ?, updated_at = NOW()
+            SET entry_date = ?, reference = ?, description = ?
             WHERE id = ? AND company_id = ?
         ");
         $stmt->execute([$entryDate, $reference, $memo, $journalId, $companyId]);
@@ -100,10 +109,18 @@ try {
 
     } else {
         // --- INSERT new journal ---
+        // Auto-generate reference if not provided (SARS sequential numbering)
+        if (!$reference) {
+            $stmt = $DB->prepare("SELECT MAX(CAST(SUBSTRING(reference, 5) AS UNSIGNED)) FROM journal_entries WHERE company_id = ? AND reference LIKE 'JNL-%'");
+            $stmt->execute([$companyId]);
+            $maxNum = (int)$stmt->fetchColumn();
+            $reference = 'JNL-' . str_pad($maxNum + 1, 4, '0', STR_PAD_LEFT);
+        }
+
         $stmt = $DB->prepare("
             INSERT INTO journal_entries
-                (company_id, entry_date, reference, description, module, status, created_by, created_at)
-            VALUES (?, ?, ?, ?, 'manual', 'draft', ?, NOW())
+                (company_id, entry_date, reference, description, module, source_type, status, created_by, created_at)
+            VALUES (?, ?, ?, ?, 'manual', 'manual', 'draft', ?, NOW())
         ");
         $stmt->execute([$companyId, $entryDate, $reference, $memo, $userId]);
         $journalId = (int)$DB->lastInsertId();
@@ -125,17 +142,28 @@ try {
         ]);
     }
 
-    // --- Audit ---
+    // --- Audit (SARS: full trail with amounts and accounts) ---
     require_once __DIR__ . '/../lib/Audit.php';
-    Audit::log($input['journal_id'] ? 'journal_updated' : 'journal_created', [
-        'journal_id' => $journalId,
-        'entry_date' => $entryDate,
-        'lines'      => count($lines)
-    ]);
+    $auditDetails = [
+        'journal_id'   => $journalId,
+        'entry_date'   => $entryDate,
+        'reference'    => $reference,
+        'total_amount' => number_format($totalDebitCents / 100, 2),
+        'line_count'   => count($lines),
+        'accounts'     => array_values($accountCodes)
+    ];
+    if ($isUpdate) {
+        $auditDetails['changes'] = [
+            'entry_date' => [$existing['entry_date'], $entryDate],
+            'reference'  => [$existing['reference'], $reference],
+            'memo'       => [$existing['description'], $memo]
+        ];
+    }
+    Audit::log($isUpdate ? 'journal_updated' : 'journal_created', $auditDetails);
 
     $DB->commit();
 
-    echo json_encode(['ok' => true, 'data' => ['journal_id' => $journalId]]);
+    echo json_encode(['ok' => true, 'data' => ['journal_id' => $journalId, 'reference' => $reference]]);
 
 } catch (Exception $e) {
     $DB->rollBack();

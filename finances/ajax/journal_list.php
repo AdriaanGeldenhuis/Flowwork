@@ -69,6 +69,8 @@ try {
             je.ref_type,
             je.ref_id,
             je.status,
+            je.reversed_by_journal_id,
+            je.reverses_journal_id,
             je.created_at,
             je.created_by,
             u.first_name AS created_first_name,

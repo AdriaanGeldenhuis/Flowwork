@@ -21,12 +21,17 @@ $journalId = isset($input['journal_id']) ? (int)$input['journal_id'] : 0;
 if ($journalId <= 0) { json_error('Invalid journal_id'); }
 
 try {
-    $stmt = $DB->prepare("SELECT status FROM journal_entries WHERE id = ? AND company_id = ?");
+    $stmt = $DB->prepare("SELECT status, entry_date, reference, description FROM journal_entries WHERE id = ? AND company_id = ?");
     $stmt->execute([$journalId, $companyId]);
-    $status = $stmt->fetchColumn();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$status) { json_error('Journal not found', 404); }
-    if ($status !== 'draft') { json_error('Only draft journals can be deleted', 409); }
+    if (!$row) { json_error('Journal not found', 404); }
+    if ($row['status'] !== 'draft') { json_error('Only draft journals can be deleted', 409); }
+
+    // Capture line details before deletion for SARS audit trail
+    $stmt = $DB->prepare("SELECT account_code, debit, credit FROM journal_lines WHERE journal_id = ?");
+    $stmt->execute([$journalId]);
+    $deletedLines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $DB->beginTransaction();
 
@@ -37,7 +42,14 @@ try {
     $stmt->execute([$journalId, $companyId]);
 
     require_once __DIR__ . '/../lib/Audit.php';
-    Audit::log('journal_deleted', ['journal_id' => $journalId]);
+    Audit::log('journal_deleted', [
+        'journal_id'  => $journalId,
+        'entry_date'  => $row['entry_date'],
+        'reference'   => $row['reference'],
+        'description' => $row['description'],
+        'line_count'  => count($deletedLines),
+        'lines'       => $deletedLines
+    ]);
 
     $DB->commit();
 
