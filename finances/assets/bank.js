@@ -591,7 +591,7 @@
     var html = '';
     result.transactions.forEach(function(tx, idx) {
       var isDebit = tx.amount_cents < 0;
-      var amountClass = isDebit ? 'color:#ef4444' : 'color:var(--neon-green, #4ade80)';
+      var amountClass = isDebit ? 'color:#ef4444' : 'color:var(--neon-green, #38ff12)';
       html += '<tr>'
         + '<td><input type="checkbox" class="pdf-tx-check" data-idx="' + idx + '" checked></td>'
         + '<td>' + escapeHtml(tx.tx_date || '') + '</td>'
