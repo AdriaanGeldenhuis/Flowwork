@@ -60,27 +60,7 @@
   const accountCount   = document.getElementById('accountCount');
 
   // --- Helpers ---------------------------------------------------------------
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function formatBalance(amount) {
-    if (amount === 0 || amount === null || amount === undefined) return '-';
-    const abs = Math.abs(amount);
-    const formatted = 'R ' + abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return amount < 0 ? '(' + formatted + ')' : formatted;
-  }
-
-  function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func(...args), wait);
-    };
-  }
+  // escapeHtml() and debounce() are provided globally by finance.js
 
   function showMessage(elementId, message, type) {
     const el = document.getElementById(elementId);
@@ -88,6 +68,13 @@
     el.className = 'fw-finance__alert fw-finance__alert--' + type;
     el.textContent = message;
     el.style.display = 'block';
+  }
+
+  function formatBalance(amount) {
+    if (amount === 0 || amount === null || amount === undefined) return '-';
+    const abs = Math.abs(amount);
+    const formatted = 'R ' + abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return amount < 0 ? '(' + formatted + ')' : formatted;
   }
 
   // --- Data Loading ----------------------------------------------------------
@@ -406,20 +393,27 @@
   // --- Export CSV (enhanced) -------------------------------------------------
   function exportToCSV() {
     const filtered = filterAccounts();
-    let csv = 'Code,Name,Type,Subtype,Normal Balance,Parent Code,Tax Code,YTD Balance,Active,System,Locked,Control\n';
-    const esc = s => '"' + String(s || '').replace(/"/g, '""') + '"';
+    let csv = 'Code,Name,Type,Subtype,Normal Balance,Parent Code,Tax Code,AFS Line Code,Description,YTD Balance,Active,System,Locked,Control\n';
+    // CSV-safe escape: quote value and neutralise spreadsheet formula injection
+    const esc = s => {
+      let v = String(s ?? '');
+      if (/^[=+\-@\t\r]/.test(v)) v = '\t' + v;     // neutralise formula
+      return '"' + v.replace(/"/g, '""') + '"';
+    };
     filtered.forEach(a => {
       const parent = a.parent_id ? (accounts.find(p => p.account_id == a.parent_id)?.account_code || '') : '';
+      const tc = a.tax_code_id ? (taxCodes.find(t => t.tax_code_id == a.tax_code_id)?.code || '') : '';
       csv += [
         esc(a.account_code), esc(a.account_name), esc(a.account_type),
         esc(a.account_subtype), esc(a.normal_balance),
-        esc(parent), esc(a.tax_code_id),
+        esc(parent), esc(tc), esc(a.afs_line_code),
+        esc(a.description),
         a.ytd_balance || 0, a.is_active == 1 ? 'Yes' : 'No',
         a.is_system == 1 ? 'Yes' : 'No', a.is_locked == 1 ? 'Yes' : 'No',
         a.is_control == 1 ? 'Yes' : 'No',
       ].join(',') + '\n';
     });
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

@@ -19,7 +19,7 @@ Csrf::validate();
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
 $input     = json_decode(file_get_contents('php://input'), true);
-$accountId = $input['account_id'] ?? null;
+$accountId = (int)($input['account_id'] ?? 0);
 
 if (!$accountId) {
     echo json_encode(['ok' => false, 'error' => 'Account ID required']);
@@ -40,10 +40,16 @@ try {
     if ($account['is_system'])  throw new Exception('Cannot delete a system account. Deactivate instead.');
     if ($account['is_locked'])  throw new Exception('Cannot delete a SARS-statutory / locked account');
 
-    // Check for any journal lines referencing this account
-    $lineCount = CoaSchema::postedLineCount($DB, $companyId, $account['account_code']);
-    if ($lineCount > 0) {
-        throw new Exception('Cannot delete — account has ' . $lineCount . ' journal line(s). Deactivate instead.');
+    // Check for posted journal lines
+    $postedCount = CoaSchema::postedLineCount($DB, $companyId, $account['account_code']);
+    if ($postedCount > 0) {
+        throw new Exception('Cannot delete — account has ' . $postedCount . ' posted journal line(s). Deactivate instead.');
+    }
+
+    // Check for draft/prepared journal lines that would be orphaned
+    $allCount = CoaSchema::allLineCount($DB, $companyId, $account['account_code']);
+    if ($allCount > 0) {
+        throw new Exception('Cannot delete — account has ' . $allCount . ' draft/prepared journal line(s). Delete or reassign them first.');
     }
 
     // Check for children
