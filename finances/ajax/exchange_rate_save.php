@@ -15,6 +15,8 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
     if (file_exists($permPath)) require_once $permPath;
 }
 
+require_once __DIR__ . '/../lib/Csrf.php';
+
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -22,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+Csrf::validate();
 requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'] ?? null;

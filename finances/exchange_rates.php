@@ -20,6 +20,9 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 
 requireRoles(['admin', 'bookkeeper']);
 
+require_once __DIR__ . '/lib/Csrf.php';
+$csrfToken = Csrf::token();
+
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
@@ -41,6 +44,7 @@ $commonCurrencies = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KE
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <title>Exchange Rates</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 2rem; background-color: #f8f9fa; }
@@ -137,9 +141,12 @@ document.getElementById('rateForm').addEventListener('submit', async function(e)
     msg.textContent = '';
 
     try {
+        const hdrs = { 'Content-Type': 'application/json' };
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        if (csrfMeta) hdrs['X-CSRF-Token'] = csrfMeta.content;
         const res = await fetch('/finances/ajax/exchange_rate_save.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: hdrs,
             body: JSON.stringify({ currency_code: currency, rate_date: date, rate_to_zar: rate })
         });
         const data = await res.json();

@@ -219,20 +219,19 @@ try {
     $journalId = (int)$DB->lastInsertId();
 
     // Insert journal lines
-    $sortOrder = 1;
     foreach ($lines as $line) {
         $debit  = $line['debit_cents'] / 100;
         $credit = $line['credit_cents'] / 100;
         if ($debit == 0 && $credit == 0) continue;
 
         $stmt = $DB->prepare(
-            "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, sort_order)
-             VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit)
+             VALUES (?, ?, ?, ?, ?)"
         );
         $lineDesc = ($line['account_code'] === $retainedCode)
             ? 'Net income transfer to Retained Earnings'
             : 'Close ' . $line['account_code'] . ' – ' . $line['account_name'];
-        $stmt->execute([$journalId, $line['account_code'], $lineDesc, $debit, $credit, $sortOrder++]);
+        $stmt->execute([$journalId, $line['account_code'], $lineDesc, $debit, $credit]);
     }
 
     // Audit log

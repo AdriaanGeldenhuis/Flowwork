@@ -34,12 +34,12 @@ class TaxInvoiceValidator
     {
         $issues = [];
 
-        // Fetch invoice
+        // Fetch invoice with customer from crm_accounts
         $stmt = $this->db->prepare(
-            "SELECT i.*, c.name AS customer_name, c.vat_number AS customer_vat,
-                    c.email AS customer_email, c.address AS customer_address
+            "SELECT i.*, c.name AS customer_name, c.vat_no AS customer_vat,
+                    c.email AS customer_email
              FROM invoices i
-             LEFT JOIN customers c ON c.id = i.customer_id
+             LEFT JOIN crm_accounts c ON c.id = i.customer_id
              WHERE i.id = ? AND i.company_id = ?"
         );
         $stmt->execute([$invoiceId, $this->companyId]);
@@ -117,8 +117,8 @@ class TaxInvoiceValidator
             foreach ($lines as $idx => $line) {
                 $lineNum = $idx + 1;
 
-                // Description required
-                if (empty($line['item_description']) && empty($line['description'])) {
+                // Description required (item_description is the column in invoice_lines)
+                if (empty($line['item_description'])) {
                     $issues[] = [
                         'field' => 'line_' . $lineNum . '_description',
                         'message' => "Line $lineNum: Description of goods/services missing (SARS Section 20(4)(e))",
@@ -127,7 +127,7 @@ class TaxInvoiceValidator
                 }
 
                 // Tax rate should be explicit (not null)
-                if (!isset($line['tax_rate']) && !isset($line['vat_rate'])) {
+                if (!isset($line['tax_rate'])) {
                     $issues[] = [
                         'field' => 'line_' . $lineNum . '_tax_rate',
                         'message' => "Line $lineNum: VAT rate not specified (SARS Section 20(4)(f))",
