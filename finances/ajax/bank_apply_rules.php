@@ -107,17 +107,20 @@ try {
                 $journalId = (int)$DB->lastInsertId();
                 // Calculate amount in decimal
                 $amount = abs(intval($tx['amount_cents'])) / 100;
-                // Determine bank account code if available
+                // Resolve bank GL account code — skip if not configured (prevents unbalanced journals)
                 $bankAccountCode = null;
                 if (!empty($tx['bank_gl_account_id'])) {
                     $lookup = $DB->prepare("SELECT account_code FROM gl_accounts WHERE account_id = ? AND company_id = ?");
                     $lookup->execute([$tx['bank_gl_account_id'], $companyId]);
                     $bankAccountCode = $lookup->fetchColumn() ?: null;
                 }
+                if (!$bankAccountCode) {
+                    continue; // Skip — bank GL account not configured, would create unbalanced journal
+                }
                 // Determine rule account code
                 $ruleAccountCode = $rule['rule_account_code'];
                 if (!$ruleAccountCode) {
-                    throw new Exception('GL account code not found for rule ' . $rule['id']);
+                    continue; // Skip — rule GL account not resolved
                 }
                 // Insert journal lines with tax code for SARS VAT tracking
                 $ruleTaxCodeId = !empty($rule['tax_code_id']) ? (int)$rule['tax_code_id'] : null;
@@ -126,16 +129,12 @@ try {
                 );
                 if (intval($tx['amount_cents']) > 0) {
                     // Money IN: Dr bank, Cr rule account
-                    if ($bankAccountCode) {
-                        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, null, $reference]);
-                    }
+                    $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, null, $reference]);
                     $lineStmt->execute([$journalId, $ruleAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $ruleTaxCodeId, $reference]);
                 } else {
                     // Money OUT: Dr rule account, Cr bank
                     $lineStmt->execute([$journalId, $ruleAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $ruleTaxCodeId, $reference]);
-                    if ($bankAccountCode) {
-                        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), null, $reference]);
-                    }
+                    $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), null, $reference]);
                 }
                 // Mark transaction as matched
                 $stmtU = $DB->prepare(
@@ -146,6 +145,18 @@ try {
                 break; // Stop checking further rules for this transaction
             }
         }
+    }
+    // Audit log for bulk rule application
+    if ($matchCount > 0) {
+        $audit = $DB->prepare(
+            "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp) VALUES (?, ?, 'bank_rules_applied', ?, ?, NOW())"
+        );
+        $audit->execute([
+            $companyId,
+            $userId,
+            json_encode(['matched_count' => $matchCount]),
+            $_SERVER['REMOTE_ADDR'] ?? null
+        ]);
     }
     $DB->commit();
     echo json_encode(['ok' => true, 'matched' => $matchCount]);

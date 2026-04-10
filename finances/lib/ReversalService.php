@@ -32,8 +32,8 @@ class ReversalService
             return null;
         }
 
-        // Fetch lines
-        $lines = $this->db->prepare("SELECT account_code, debit, credit, description FROM journal_lines WHERE journal_id = ?");
+        // Fetch lines (include tax_code_id for SARS VAT audit trail)
+        $lines = $this->db->prepare("SELECT account_code, debit, credit, description, tax_code_id FROM journal_lines WHERE journal_id = ?");
         $lines->execute([$journalId]);
         $rows = $lines->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) { return null; }
@@ -47,15 +47,16 @@ class ReversalService
         $ins->execute([$this->companyId, $date, $desc, $journalId, $journalId, $userId, $userId, $journalId]);
         $revId = (int)$this->db->lastInsertId();
 
-        // Insert reversing lines with swapped amounts
-        $insL = $this->db->prepare("INSERT INTO journal_lines (journal_id, account_code, debit, credit, description) VALUES (?, ?, ?, ?, ?)");
+        // Insert reversing lines with swapped amounts (preserve tax_code_id for SARS VAT trail)
+        $insL = $this->db->prepare("INSERT INTO journal_lines (journal_id, account_code, debit, credit, description, tax_code_id) VALUES (?, ?, ?, ?, ?, ?)");
         foreach ($rows as $r) {
             $insL->execute([
                 $revId,
                 $r['account_code'],
                 $r['credit'],  // swap: original credit becomes debit
                 $r['debit'],   // swap: original debit becomes credit
-                'Reversal'
+                'Reversal',
+                $r['tax_code_id'] ?? null
             ]);
         }
 
