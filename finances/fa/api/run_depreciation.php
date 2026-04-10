@@ -141,10 +141,12 @@ try {
     $posting = new PostingService($DB, $companyId, $userId);
     $posting->postDepreciation($runId);
     // Only update asset accumulated depreciation AFTER successful posting
+    $DB->beginTransaction();
     $updAsset = $DB->prepare("UPDATE gl_fixed_assets SET accumulated_depreciation_cents = accumulated_depreciation_cents + ? WHERE asset_id = ? AND company_id = ?");
     foreach ($lines as $ln) {
         $updAsset->execute([$ln['amount_cents'], $ln['asset_id'], $companyId]);
     }
+    $DB->commit();
     $total = $totalCents / 100.0;
     // Audit log
     $stmt = $DB->prepare(

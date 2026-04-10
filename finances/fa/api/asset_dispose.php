@@ -10,7 +10,9 @@ require_once __DIR__ . '/../../../auth_gate.php';
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
-    json_error('Error');
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
+    exit;
 }
 
 // CSRF validation
@@ -32,7 +34,8 @@ header('Content-Type: application/json');
 // Parse JSON input
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data) {
-    json_error('Error');
+    echo json_encode(['success' => false, 'message' => 'Invalid request body']);
+    exit;
 }
 
 try {
