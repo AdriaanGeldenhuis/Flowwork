@@ -133,6 +133,19 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <small style="color:var(--fw-text-secondary);">SARS: Credit notes must reference the original tax invoice</small>
                 </label>
                 <label>
+                    Reason Code <small style="color:var(--fw-text-secondary);">(SARS requirement)</small>
+                    <select id="reasonCode" required>
+                        <option value="">Select reason</option>
+                        <option value="return">Goods Returned</option>
+                        <option value="discount">Discount / Rebate</option>
+                        <option value="correction">Invoice Correction</option>
+                        <option value="damaged">Damaged / Defective Goods</option>
+                        <option value="cancellation">Order Cancellation</option>
+                        <option value="vat_adjustment">VAT Adjustment</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+                <label>
                     Notes
                     <textarea id="notes" rows="2"></textarea>
                 </label>
@@ -271,11 +284,13 @@ document.getElementById('creditForm').addEventListener('submit', async function(
     }
     var fullNotes = refBillText ? (refBillText + (notes ? '\n' + notes : '')) : notes;
 
+    var reasonCode = document.getElementById('reasonCode').value;
     var data = {
         header: {
             supplier_id: parseInt(supplierId),
             credit_number: creditNumber,
             issue_date: issueDate,
+            reason_code: reasonCode,
             notes: fullNotes
         },
         lines: lines
