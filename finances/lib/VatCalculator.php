@@ -100,7 +100,7 @@ class VatCalculator
 
         // --- Input VAT: split capital goods vs other ---
         // Capital goods = journal lines on VAT input account where a sibling
-        // line on the same journal debits a fixed asset account (14xx)
+        // line on the same journal debits a fixed asset account (account_subtype='fixed_asset')
         $stmt = $db->prepare(
             "SELECT
                 CASE

@@ -161,7 +161,17 @@ $status    = strtolower($asset['status']);
                 <div id="disposeMessage"></div>
             </form>
             <?php else: ?>
-            <p>This asset has been disposed.</p>
+            <h3>Disposal Information</h3>
+            <dl class="fw-finance__details">
+                <dt>Disposal Date</dt>
+                <dd><?= $asset['disposal_date'] ? htmlspecialchars($asset['disposal_date']) : '-' ?></dd>
+                <dt>Disposal Proceeds</dt>
+                <dd>R <?= $asset['disposal_proceeds_cents'] ? number_format($asset['disposal_proceeds_cents'] / 100, 2) : '0.00' ?></dd>
+                <?php if ($asset['disposal_journal_id']): ?>
+                <dt>Journal Entry</dt>
+                <dd><a href="/finances/journals.php?jid=<?= (int)$asset['disposal_journal_id'] ?>">View Journal</a></dd>
+                <?php endif; ?>
+            </dl>
             <?php endif; ?>
         </div>
         <footer class="fw-finance__footer">

@@ -21,6 +21,8 @@ requireRoles(['admin', 'bookkeeper']);
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
+header('Content-Type: application/json');
+
 // Read input
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data) {

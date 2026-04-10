@@ -123,25 +123,28 @@ try {
     if (empty($lines)) {
         throw new Exception('No depreciable amounts calculated for this month');
     }
-    // Create run and insert lines
+    // Create run and insert lines (do NOT update asset accum yet - wait for PostingService)
     $DB->beginTransaction();
     // Insert run
     $stmt = $DB->prepare("INSERT INTO fa_depreciation_runs (company_id, run_month, status, created_by, created_at) VALUES (?, ?, 'draft', ?, NOW())");
     $stmt->execute([$companyId, $runMonthDate, $userId]);
     $runId = (int)$DB->lastInsertId();
-    // Insert lines and update assets
+    // Insert lines only
     $insLine = $DB->prepare("INSERT INTO fa_depreciation_lines (run_id, asset_id, amount_cents) VALUES (?, ?, ?)");
-    $updAsset = $DB->prepare("UPDATE gl_fixed_assets SET accumulated_depreciation_cents = accumulated_depreciation_cents + ? WHERE asset_id = ? AND company_id = ?");
     $totalCents = 0;
     foreach ($lines as $ln) {
         $insLine->execute([$runId, $ln['asset_id'], $ln['amount_cents']]);
-        $updAsset->execute([$ln['amount_cents'], $ln['asset_id'], $companyId]);
         $totalCents += $ln['amount_cents'];
     }
     $DB->commit();
-    // Post the run via PostingService
+    // Post the run via PostingService (creates journal, marks run as posted)
     $posting = new PostingService($DB, $companyId, $userId);
     $posting->postDepreciation($runId);
+    // Only update asset accumulated depreciation AFTER successful posting
+    $updAsset = $DB->prepare("UPDATE gl_fixed_assets SET accumulated_depreciation_cents = accumulated_depreciation_cents + ? WHERE asset_id = ? AND company_id = ?");
+    foreach ($lines as $ln) {
+        $updAsset->execute([$ln['amount_cents'], $ln['asset_id'], $companyId]);
+    }
     $total = $totalCents / 100.0;
     // Audit log
     $stmt = $DB->prepare(
