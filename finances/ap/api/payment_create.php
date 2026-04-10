@@ -50,6 +50,29 @@ if ($totalAmount <= 0) {
     exit;
 }
 
+// SARS: Validate allocations don't exceed outstanding balance per bill
+foreach ($allocations as $al) {
+    $bId = isset($al['bill_id']) ? (int)$al['bill_id'] : 0;
+    $amt = isset($al['amount']) ? (float)$al['amount'] : 0.0;
+    if ($bId && $amt > 0) {
+        $stmtBal = $DB->prepare(
+            "SELECT b.total,
+                    COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?), 0) AS paid,
+                    COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = ?), 0) AS credited
+             FROM ap_bills b WHERE b.id = ? AND b.company_id = ?"
+        );
+        $stmtBal->execute([$bId, $bId, $bId, $companyId]);
+        $row = $stmtBal->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
+            if ($amt > $remaining + 0.01) {
+                echo json_encode(['ok' => false, 'error' => 'Payment of R' . number_format($amt, 2) . ' exceeds outstanding balance of R' . number_format($remaining, 2) . ' on bill #' . $bId]);
+                exit;
+            }
+        }
+    }
+}
+
 try {
     $DB->beginTransaction();
     // Insert payment header

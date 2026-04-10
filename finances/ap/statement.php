@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -165,10 +165,10 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 html += '<tbody>';
                 lines.forEach(function(row) {
                     html += '<tr>';
-                    html += '<td>' + row.date + '</td>';
-                    html += '<td>' + row.type + '</td>';
-                    html += '<td>' + row.reference + '</td>';
-                    html += '<td>' + row.description + '</td>';
+                    html += '<td>' + escapeHtml(row.date) + '</td>';
+                    html += '<td>' + escapeHtml(row.type) + '</td>';
+                    html += '<td>' + escapeHtml(row.reference) + '</td>';
+                    html += '<td>' + escapeHtml(row.description) + '</td>';
                     html += '<td class="debit">' + (row.debit ? parseFloat(row.debit).toFixed(2) : '') + '</td>';
                     html += '<td class="credit">' + (row.credit ? parseFloat(row.credit).toFixed(2) : '') + '</td>';
                     html += '<td class="balance">' + parseFloat(row.balance).toFixed(2) + '</td>';

@@ -39,6 +39,28 @@ class PostingService
     }
 
     /**
+     * Resolve the tax_code_id for an AP line based on its tax rate.
+     * Returns the INPUT code for 15%, ZERO for 0% explicit, EXEMPT for null/exempt, or null if not found.
+     */
+    private function resolveInputTaxCodeId(float $taxRate): ?int
+    {
+        if ($taxRate >= 14.99) {
+            $code = 'INPUT';
+        } elseif ($taxRate > 0.0001) {
+            // Non-standard rate - try INPUT as best match
+            $code = 'INPUT';
+        } else {
+            $code = 'ZERO';
+        }
+        $stmt = $this->db->prepare(
+            "SELECT tax_code_id FROM gl_tax_codes WHERE company_id = ? AND code = ? AND is_active = 1 LIMIT 1"
+        );
+        $stmt->execute([$this->companyId, $code]);
+        $id = $stmt->fetchColumn();
+        return $id ? (int)$id : null;
+    }
+
+    /**
      * Remove an existing journal entry by id. This helper deletes the entry
      * and its associated lines. Use this prior to re-posting a transaction
      * that has already been posted. If the period of the entry is locked
@@ -919,6 +941,9 @@ class PostingService
                     $acctCode = $this->accounts->get('finance_expense_account_id', '5000');
                 }
             }
+            // Resolve tax code for SARS VAT201 linkage
+            $lineTaxCodeId = $this->resolveInputTaxCodeId($taxRate);
+
             $journalLines[] = [
                 'account_code' => $acctCode,
                 'description'  => $li['item_description'] ?: ($invItemId ? 'Inventory purchase' : 'AP expense'),
@@ -927,13 +952,15 @@ class PostingService
                 'project_id'   => null,
                 'board_id'     => !empty($li['project_board_id']) ? (int)$li['project_board_id'] : null,
                 'item_id'      => !empty($li['project_item_id']) ? (int)$li['project_item_id'] : null,
-                'supplier_id'  => (int)$bill['supplier_id']
+                'supplier_id'  => (int)$bill['supplier_id'],
+                'tax_code_id'  => $lineTaxCodeId
             ];
             $totalNet += $net;
             $totalVat += $vat;
         }
         // VAT Input line if applicable
         if ($totalVat > 0.0001) {
+            $inputTaxCodeId = $this->resolveInputTaxCodeId(15.0);
             $journalLines[] = [
                 'account_code' => $vatInCode,
                 'description'  => 'VAT Input - ' . ($bill['vendor_invoice_number'] ?: 'AP Bill'),
@@ -942,7 +969,8 @@ class PostingService
                 'project_id'   => null,
                 'board_id'     => null,
                 'item_id'      => null,
-                'supplier_id'  => (int)$bill['supplier_id']
+                'supplier_id'  => (int)$bill['supplier_id'],
+                'tax_code_id'  => $inputTaxCodeId
             ];
         }
         // Credit AP for gross (net + VAT)
@@ -955,7 +983,8 @@ class PostingService
             'project_id'   => null,
             'board_id'     => null,
             'item_id'      => null,
-            'supplier_id'  => (int)$bill['supplier_id']
+            'supplier_id'  => (int)$bill['supplier_id'],
+            'tax_code_id'  => null
         ];
         // Now post journal
         $this->db->beginTransaction();
@@ -979,10 +1008,10 @@ class PostingService
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
-            // Insert journal lines
+            // Insert journal lines (with SARS tax_code_id linkage)
             $stmtLine = $this->db->prepare(
                 "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, project_id, board_id, item_id, tax_code_id, customer_id, supplier_id, reference)\n"
-                . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)"
+                . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)"
             );
             foreach ($journalLines as $jl) {
                 $stmtLine->execute([
@@ -994,15 +1023,26 @@ class PostingService
                     $jl['project_id'],
                     $jl['board_id'],
                     $jl['item_id'],
+                    $jl['tax_code_id'],
                     $jl['supplier_id'],
                     $reference
                 ]);
             }
             // Update bill journal and status
+            $oldStatus = $bill['status'];
             $stmt = $this->db->prepare(
                 "UPDATE ap_bills SET journal_id = ?, status = 'posted' WHERE id = ? AND company_id = ?"
             );
             $stmt->execute([$journalId, $billId, $this->companyId]);
+
+            // SARS audit trail for bill status change
+            require_once __DIR__ . '/Audit.php';
+            Audit::log('ap_bill_status_change', [
+                'bill_id' => $billId,
+                'from' => $oldStatus,
+                'to' => 'posted',
+                'journal_id' => $journalId
+            ]);
             $this->db->commit();
         } catch (Exception $e) {
             $this->db->rollBack();
@@ -1160,6 +1200,14 @@ class PostingService
                             "UPDATE ap_bills SET status = 'paid' WHERE id = ? AND company_id = ?"
                         );
                         $stmtUpd->execute([$bId, $this->companyId]);
+                        // SARS audit trail
+                        require_once __DIR__ . '/Audit.php';
+                        Audit::log('ap_bill_status_change', [
+                            'bill_id' => (int)$bId,
+                            'from' => 'posted',
+                            'to' => 'paid',
+                            'payment_id' => $paymentId
+                        ]);
                     }
                 }
             }

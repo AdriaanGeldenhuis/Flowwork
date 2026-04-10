@@ -7,7 +7,10 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
+
+require_once __DIR__ . '/../lib/Csrf.php';
+$csrfToken = Csrf::token();
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -72,6 +75,7 @@ $companyName = $company['name'] ?? 'Company';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vendor Credit Detail – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .summary-table {
@@ -263,9 +267,12 @@ document.getElementById('applyBtn').addEventListener('click', async function() {
     }
     const payload = { credit_id: creditId, allocations: allocs };
     try {
+        var hdrs = { 'Content-Type': 'application/json' };
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        if (csrfMeta) hdrs['X-CSRF-Token'] = csrfMeta.content;
         const res = await fetch('/finances/ap/api/vendor_credit_post.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: hdrs,
             body: JSON.stringify(payload)
         });
         const result = await res.json();

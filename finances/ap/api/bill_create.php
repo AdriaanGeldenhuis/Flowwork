@@ -45,6 +45,18 @@ $tax         = isset($header['tax']) ? (float)$header['tax'] : 0.0;
 $total       = (float)$header['total'];
 $notes       = $header['notes'] ?? null;
 
+// SARS: Capture and validate supplier VAT number
+$vendorVat   = isset($header['vendor_vat']) ? trim($header['vendor_vat']) : null;
+if ($vendorVat !== null && $vendorVat !== '') {
+    // SA VAT numbers: 10 digits starting with 4
+    if (!preg_match('/^4\d{9}$/', $vendorVat)) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid supplier VAT number format (must be 10 digits starting with 4)']);
+        exit;
+    }
+} else {
+    $vendorVat = null;
+}
+
 // Compute fingerprint to avoid duplicates: invoice number + date + total + supplier
 $hash = sha1($invoiceNo . '|' . $invoiceDate . '|' . $total . '|' . $supplierId);
 
@@ -62,12 +74,13 @@ try {
     $stmt = $DB->prepare(
         "INSERT INTO ap_bills (company_id, supplier_id, vendor_invoice_number, vendor_vat, issue_date, due_date,\n"
         . "currency, subtotal, tax, total, status, ocr_id, file_id, hash_fingerprint, journal_id, notes, created_by, created_at)\n"
-        . "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'draft', NULL, NULL, ?, NULL, ?, ?, NOW())"
+        . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, NULL, ?, NULL, ?, ?, NOW())"
     );
     $stmt->execute([
         $companyId,
         $supplierId,
         $invoiceNo,
+        $vendorVat,
         $invoiceDate,
         $dueDate,
         $currency,

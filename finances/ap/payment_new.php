@@ -7,7 +7,10 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
+
+require_once __DIR__ . '/../lib/Csrf.php';
+$csrfToken = Csrf::token();
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -43,6 +46,7 @@ $bankAccounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Record Supplier Payment – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__form {
@@ -248,9 +252,12 @@ document.getElementById('paymentForm').addEventListener('submit', async function
         allocations: allocations
     };
     try {
+        var hdrs = { 'Content-Type': 'application/json' };
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        if (csrfMeta) hdrs['X-CSRF-Token'] = csrfMeta.content;
         const res = await fetch('/finances/ap/api/payment_create.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: hdrs,
             body: JSON.stringify(payload)
         });
         const result = await res.json();

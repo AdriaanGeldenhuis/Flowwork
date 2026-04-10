@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -101,7 +101,7 @@ async function loadAging() {
         html += '<thead><tr><th>Supplier</th><th class="amount">Current</th><th class="amount">1–30</th><th class="amount">31–60</th><th class="amount">61–90</th><th class="amount">90+</th><th class="amount">Total</th></tr></thead><tbody>';
         rows.forEach(r => {
             html += '<tr>' +
-                '<td>' + (r.supplier_name || '') + '</td>' +
+                '<td>' + escapeHtml(r.supplier_name) + '</td>' +
                 '<td class="amount">' + parseFloat(r.current).toFixed(2) + '</td>' +
                 '<td class="amount">' + parseFloat(r.days_1_30).toFixed(2) + '</td>' +
                 '<td class="amount">' + parseFloat(r.days_31_60).toFixed(2) + '</td>' +

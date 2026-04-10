@@ -5,12 +5,14 @@ require_once __DIR__ . '/../../auth_gate.php';
 
 // Include permissions helper and restrict access to admins and bookkeepers
 require_once __DIR__ . '/../permissions.php';
-requireRoles(['admin', 'bookkeeper']);
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
+$userRole = $_SESSION['role'] ?? 'viewer';
+$canWrite = in_array($userRole, ['admin', 'bookkeeper']);
 
 // Fetch user info
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
@@ -24,8 +26,14 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Note: We'll use the receipt_file table as proxy for bills
-// In production you'd have a proper bills table
+// Fetch suppliers for statement/matching forms
+$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND status = 'active' ORDER BY name");
+$stmt->execute([$companyId]);
+$suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// CSRF token for JS
+require_once __DIR__ . '/../lib/Csrf.php';
+$csrfToken = Csrf::token();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -34,6 +42,7 @@ $companyName = $company['name'] ?? 'Company';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accounts Payable – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
 </head>
 <body>
     <main class="fw-finance">
@@ -163,12 +172,7 @@ $companyName = $company['name'] ?? 'Company';
                     
                     <!-- Manual Entry Tab -->
                     <div class="fw-finance__tab-panel fw-finance__tab-panel--active" id="manualPanel">
-                        
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            💡 <strong>Quick Manual Bill Posting:</strong> Use this to quickly post supplier bills directly to GL.
-                        </div>
-
-                        <!-- Manual Bill Form -->
+                        <?php if ($canWrite): ?>
                         <div class="fw-finance__form-card">
                             <h3 class="fw-finance__form-card-title">Post Supplier Bill</h3>
                             <form id="manualBillForm">
@@ -184,7 +188,6 @@ $companyName = $company['name'] ?? 'Company';
                                         <input type="date" class="fw-finance__input" id="billDate" value="<?= date('Y-m-d') ?>" required>
                                     </div>
                                 </div>
-
                                 <div class="fw-finance__form-row">
                                     <div class="fw-finance__form-group">
                                         <label class="fw-finance__label">Invoice Number</label>
@@ -195,7 +198,6 @@ $companyName = $company['name'] ?? 'Company';
                                         <input type="date" class="fw-finance__input" id="dueDate">
                                     </div>
                                 </div>
-
                                 <div class="fw-finance__form-row">
                                     <div class="fw-finance__form-group">
                                         <label class="fw-finance__label">Expense Account <span class="fw-finance__required">*</span></label>
@@ -208,7 +210,6 @@ $companyName = $company['name'] ?? 'Company';
                                         <input type="number" class="fw-finance__input" id="billAmount" step="0.01" required>
                                     </div>
                                 </div>
-
                                 <div class="fw-finance__form-row">
                                     <div class="fw-finance__form-group">
                                         <label class="fw-finance__label">VAT Amount</label>
@@ -220,95 +221,127 @@ $companyName = $company['name'] ?? 'Company';
                                         <input type="number" class="fw-finance__input" id="totalAmount" step="0.01" readonly>
                                     </div>
                                 </div>
-
                                 <div class="fw-finance__form-group">
                                     <label class="fw-finance__label">Description</label>
                                     <textarea class="fw-finance__textarea" id="description" rows="2" placeholder="What is this bill for?"></textarea>
                                 </div>
-
                                 <div id="billFormMessage"></div>
-
                                 <div class="fw-finance__form-actions">
-                                    <button type="submit" class="fw-finance__btn fw-finance__btn--primary">
-                                        Post Bill to GL
-                                    </button>
+                                    <button type="submit" class="fw-finance__btn fw-finance__btn--primary">Post Bill to GL</button>
                                 </div>
                             </form>
                         </div>
-
+                        <?php else: ?>
+                        <div class="fw-finance__empty-state">You do not have permission to create bills. Please use the other tabs to view AP data.</div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Receipts Module Tab -->
                     <div class="fw-finance__tab-panel" id="receiptsPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            📄 <strong>Integration with Receipts Module:</strong> Coming soon - sync approved bills from your receipts/AP workflow.
-                        </div>
+                        <div id="receiptsContent"><div class="fw-finance__loading">Loading receipts...</div></div>
                     </div>
 
                     <!-- Bills List Tab -->
                     <div class="fw-finance__tab-panel" id="billsPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            📋 <strong>Bills List:</strong> View and manage all supplier bills.
+                        <div class="fw-finance__toolbar" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+                            <input type="search" class="fw-finance__input" placeholder="Search bills..." id="billSearchInput" style="max-width:250px;">
+                            <select class="fw-finance__input" id="billStatusFilter" style="max-width:180px;">
+                                <option value="">All Statuses</option>
+                                <option value="draft">Draft</option>
+                                <option value="review">Review</option>
+                                <option value="approved">Approved</option>
+                                <option value="posted">Posted</option>
+                                <option value="paid">Paid</option>
+                                <option value="blocked">Blocked</option>
+                            </select>
+                            <?php if ($canWrite): ?>
+                            <a href="/finances/ap/bill_new.php" class="fw-finance__btn fw-finance__btn--primary">+ New Bill</a>
+                            <?php endif; ?>
                         </div>
-                        <div class="fw-finance__empty-state">
-                            Bills list functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ap/bills_list.php</small>
-                        </div>
+                        <div id="billsListContent"><div class="fw-finance__loading">Loading bills...</div></div>
                     </div>
 
                     <!-- Payments Tab -->
                     <div class="fw-finance__tab-panel" id="paymentsPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            💳 <strong>Payments:</strong> Record and track payments to suppliers.
+                        <div class="fw-finance__toolbar" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+                            <select class="fw-finance__input" id="paymentSupplierFilter" style="max-width:250px;">
+                                <option value="">All Suppliers</option>
+                                <?php foreach ($suppliers as $sup): ?>
+                                <option value="<?= (int)$sup['id'] ?>"><?= htmlspecialchars($sup['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if ($canWrite): ?>
+                            <a href="/finances/ap/payment_new.php" class="fw-finance__btn fw-finance__btn--primary">+ New Payment</a>
+                            <?php endif; ?>
                         </div>
-                        <div class="fw-finance__empty-state">
-                            Payment functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ap/payment_list.php</small>
-                        </div>
+                        <div id="paymentsListContent"><div class="fw-finance__loading">Loading payments...</div></div>
                     </div>
 
                     <!-- Vendor Credits Tab -->
                     <div class="fw-finance__tab-panel" id="creditsPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            🔖 <strong>Vendor Credits:</strong> Manage credit notes from suppliers.
+                        <div class="fw-finance__toolbar" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+                            <select class="fw-finance__input" id="creditStatusFilter" style="max-width:180px;">
+                                <option value="">All Statuses</option>
+                                <option value="draft">Draft</option>
+                                <option value="applied">Applied</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                            <?php if ($canWrite): ?>
+                            <a href="/finances/ap/vendor_credit_new.php" class="fw-finance__btn fw-finance__btn--primary">+ New Credit</a>
+                            <?php endif; ?>
                         </div>
-                        <div class="fw-finance__empty-state">
-                            Vendor credits functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ap/vendor_credit_new.php</small>
-                        </div>
+                        <div id="creditsListContent"><div class="fw-finance__loading">Loading vendor credits...</div></div>
                     </div>
 
                     <!-- Aging Tab -->
                     <div class="fw-finance__tab-panel" id="agingPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            📊 <strong>Aging Report:</strong> View outstanding payables by age.
-                        </div>
-                        <div class="fw-finance__empty-state">
-                            Aging report will be loaded here.
-                            <br><small>This will integrate with /finances/ap/aging.php</small>
-                        </div>
+                        <div id="agingContent"><div class="fw-finance__loading">Loading aging report...</div></div>
                     </div>
 
                     <!-- Statements Tab -->
                     <div class="fw-finance__tab-panel" id="statementsPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            📄 <strong>Vendor Statements:</strong> View statements from suppliers.
+                        <div class="fw-finance__toolbar" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end;">
+                            <label style="display:flex;flex-direction:column;font-size:0.875rem;">
+                                Supplier
+                                <select class="fw-finance__input" id="stmtSupplierSelect" style="min-width:200px;">
+                                    <option value="">Select Supplier</option>
+                                    <?php foreach ($suppliers as $sup): ?>
+                                    <option value="<?= (int)$sup['id'] ?>"><?= htmlspecialchars($sup['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label style="display:flex;flex-direction:column;font-size:0.875rem;">
+                                From
+                                <input type="date" class="fw-finance__input" id="stmtStartDate">
+                            </label>
+                            <label style="display:flex;flex-direction:column;font-size:0.875rem;">
+                                To
+                                <input type="date" class="fw-finance__input" id="stmtEndDate">
+                            </label>
+                            <button class="fw-finance__btn fw-finance__btn--primary" id="stmtGenerateBtn">Generate</button>
                         </div>
-                        <div class="fw-finance__empty-state">
-                            Statements functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ap/statement.php</small>
-                        </div>
+                        <div id="statementsContent"></div>
                     </div>
 
                     <!-- 3-Way Match Tab -->
                     <div class="fw-finance__tab-panel" id="threewayPanel">
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            🔍 <strong>3-Way Match:</strong> Match purchase orders, receipts, and invoices.
+                        <?php if ($canWrite): ?>
+                        <div class="fw-finance__toolbar" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end;">
+                            <label style="display:flex;flex-direction:column;font-size:0.875rem;">
+                                Supplier
+                                <select class="fw-finance__input" id="twSupplierSelect" style="min-width:200px;">
+                                    <option value="">Select Supplier</option>
+                                    <?php foreach ($suppliers as $sup): ?>
+                                    <option value="<?= (int)$sup['id'] ?>"><?= htmlspecialchars($sup['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <button class="fw-finance__btn" id="twLoadBtn">Load Lines</button>
                         </div>
-                        <div class="fw-finance__empty-state">
-                            3-Way match functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ap/three_way_match.php</small>
-                        </div>
+                        <div id="threewayContent"></div>
+                        <?php else: ?>
+                        <div class="fw-finance__empty-state">You do not have permission to perform 3-way matching.</div>
+                        <?php endif; ?>
                     </div>
 
                 </div>
@@ -324,6 +357,7 @@ $companyName = $company['name'] ?? 'Company';
         </div>
     </main>
 
+    <script>window.AP_CONFIG = { canWrite: <?= $canWrite ? 'true' : 'false' ?> };</script>
     <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/finances/assets/ap.js?v=<?= ASSET_VERSION ?>"></script>
 </body>

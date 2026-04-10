@@ -57,6 +57,29 @@ try {
         echo json_encode(['ok' => false, 'error' => 'Allocations exceed credit total']);
         exit;
     }
+    // SARS: Validate credit allocations don't exceed outstanding balance per bill
+    foreach ($allocs as $a) {
+        $bId = isset($a['bill_id']) ? (int)$a['bill_id'] : 0;
+        $amt = isset($a['amount']) ? (float)$a['amount'] : 0.0;
+        if ($bId && $amt > 0) {
+            $stmtBal = $DB->prepare(
+                "SELECT b.total,
+                        COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?), 0) AS paid,
+                        COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = ?), 0) AS credited
+                 FROM ap_bills b WHERE b.id = ? AND b.company_id = ?"
+            );
+            $stmtBal->execute([$bId, $bId, $bId, $companyId]);
+            $row = $stmtBal->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
+                if ($amt > $remaining + 0.01) {
+                    echo json_encode(['ok' => false, 'error' => 'Credit allocation exceeds outstanding balance on bill #' . $bId]);
+                    exit;
+                }
+            }
+        }
+    }
+
     // Begin DB transaction
     $DB->beginTransaction();
     // Insert allocations
