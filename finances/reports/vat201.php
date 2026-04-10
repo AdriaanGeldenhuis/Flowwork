@@ -26,7 +26,7 @@ $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
 // Load company info
-$stmt = $DB->prepare("SELECT name, vat_number, reg_number, tax_reference FROM companies WHERE id = ?");
+$stmt = $DB->prepare("SELECT name, vat_number, reg_number, IFNULL(tax_reference, '') AS tax_reference FROM companies WHERE id = ?");
 $stmt->execute([$companyId]);
 $company = $stmt->fetch(PDO::FETCH_ASSOC);
 

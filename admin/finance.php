@@ -36,6 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             setCRMSetting($key, $value);
         }
 
+        // Save SARS company registration fields to companies table
+        $stmt = $DB->prepare(
+            "UPDATE companies SET vat_number = ?, reg_number = ?, tax_reference = ? WHERE id = ?"
+        );
+        $stmt->execute([
+            trim($_POST['company_vat_number'] ?? ''),
+            trim($_POST['company_reg_number'] ?? ''),
+            trim($_POST['company_tax_reference'] ?? ''),
+            $companyId
+        ]);
+
         // Log audit
         $stmt = $DB->prepare("
             INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
@@ -48,6 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $error = $e->getMessage();
     }
 }
+
+// Load company SARS details
+$stmt = $DB->prepare("SELECT vat_number, reg_number, tax_reference FROM companies WHERE id = ?");
+$stmt->execute([$companyId]);
+$companyDetails = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
 // Load current settings
 $settings = [
@@ -154,6 +170,27 @@ $settings = [
                                 <input type="checkbox" name="finance_auto_reconcile" value="1" <?= $settings['finance_auto_reconcile'] === '1' ? 'checked' : '' ?>>
                                 <span>Enable automatic bank reconciliation matching</span>
                             </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SARS Registration -->
+                <div class="fw-admin__card">
+                    <h2 class="fw-admin__card-title">SARS Registration</h2>
+                    <div class="fw-admin__form-grid">
+                        <div class="fw-admin__form-group">
+                            <label class="fw-admin__label">VAT Registration Number</label>
+                            <input type="text" name="company_vat_number" class="fw-admin__input" value="<?= htmlspecialchars($companyDetails['vat_number'] ?? '') ?>" placeholder="e.g. 4123456789">
+                        </div>
+
+                        <div class="fw-admin__form-group">
+                            <label class="fw-admin__label">Company Registration (CIPC)</label>
+                            <input type="text" name="company_reg_number" class="fw-admin__input" value="<?= htmlspecialchars($companyDetails['reg_number'] ?? '') ?>" placeholder="e.g. 2020/123456/07">
+                        </div>
+
+                        <div class="fw-admin__form-group">
+                            <label class="fw-admin__label">Income Tax Reference Number</label>
+                            <input type="text" name="company_tax_reference" class="fw-admin__input" value="<?= htmlspecialchars($companyDetails['tax_reference'] ?? '') ?>" placeholder="e.g. 9123456789">
                         </div>
                     </div>
                 </div>
