@@ -37,7 +37,8 @@ if (!$handle) {
     exit;
 }
 
-// Expected header: code,name,type,subtype,normal_balance,parent_code,tax_code,description
+// Expected header: code,name,type,subtype,normal_balance,parent_code,tax_code,afs_line_code,description
+// Spaces in headers are normalised to underscores (e.g. "Normal Balance" → "normal_balance")
 $header = fgetcsv($handle);
 if (!$header) {
     fclose($handle);
@@ -45,8 +46,9 @@ if (!$header) {
     exit;
 }
 
-// Normalize header
-$header = array_map(fn($h) => strtolower(trim($h)), $header);
+// Normalize header: lowercase, trim, and convert spaces to underscores
+// so exported CSVs ("Normal Balance") map to expected keys ("normal_balance")
+$header = array_map(fn($h) => str_replace(' ', '_', strtolower(trim($h))), $header);
 $requiredCols = ['code', 'name', 'type'];
 foreach ($requiredCols as $col) {
     if (!in_array($col, $header)) {
