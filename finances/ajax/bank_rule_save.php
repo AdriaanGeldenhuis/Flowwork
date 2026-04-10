@@ -2,11 +2,21 @@
 // /finances/ajax/bank_rule_save.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
+    exit;
+}
+
+Csrf::validate();
+
+// Role check
+$role = strtolower($_SESSION['role'] ?? 'member');
+if (!in_array($role, ['admin', 'bookkeeper'])) {
+    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
 
@@ -20,6 +30,7 @@ $matchField = $input['match_field'] ?? 'description';
 $matchOperator = $input['match_operator'] ?? 'contains';
 $matchValue = trim($input['match_value'] ?? '');
 $glAccountId = $input['gl_account_id'] ?? null;
+$taxCodeId = !empty($input['tax_code_id']) ? (int)$input['tax_code_id'] : null;
 $descriptionTemplate = trim($input['description_template'] ?? '');
 
 if (!$ruleName || !$matchValue || !$glAccountId) {
@@ -33,8 +44,8 @@ try {
     $stmt = $DB->prepare("
         INSERT INTO gl_bank_rules (
             company_id, rule_name, match_field, match_operator, match_value,
-            gl_account_id, description_template, priority, is_active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 100, 1, NOW())
+            gl_account_id, tax_code_id, description_template, priority, is_active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 100, 1, NOW())
     ");
     $stmt->execute([
         $companyId,
@@ -43,6 +54,7 @@ try {
         $matchOperator,
         $matchValue,
         $glAccountId,
+        $taxCodeId,
         $descriptionTemplate
     ]);
 

@@ -6,15 +6,10 @@
 // transactions remain on or before the statement date. Only finance
 // administrators (admin/bookkeeper) may perform this action.
 
-// Load init and auth from either /app or project root.
-$__fin_root = realpath(__DIR__ . '/../../');
-if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
-    require_once $__fin_root . '/app/init.php';
-    require_once $__fin_root . '/app/auth_gate.php';
-} else {
-    require_once $__fin_root . '/init.php';
-    require_once $__fin_root . '/auth_gate.php';
-}
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
+
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -23,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
+
+Csrf::validate();
 
 // Check user role
 $role = $_SESSION['role'] ?? 'member';
@@ -42,6 +39,12 @@ $closingBalance  = isset($input['closing_balance']) ? (float)$input['closing_bal
 
 if (!$bankAccountId || !$statementDate) {
     echo json_encode(['ok' => false, 'error' => 'Missing bank_account_id or statement_date']);
+    exit;
+}
+
+// Validate date format
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $statementDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid date format (expected YYYY-MM-DD)']);
     exit;
 }
 

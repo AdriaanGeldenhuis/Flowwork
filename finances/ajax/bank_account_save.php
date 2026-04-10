@@ -2,11 +2,21 @@
 // /finances/ajax/bank_account_save.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
+    exit;
+}
+
+Csrf::validate();
+
+// Role check
+$role = strtolower($_SESSION['role'] ?? 'member');
+if (!in_array($role, ['admin', 'bookkeeper'])) {
+    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
 
@@ -26,6 +36,16 @@ if (!$name) {
     exit;
 }
 
+// Validate GL account belongs to this company
+if ($glAccountId) {
+    $stmt = $DB->prepare("SELECT account_id FROM gl_accounts WHERE account_id = ? AND company_id = ?");
+    $stmt->execute([$glAccountId, $companyId]);
+    if (!$stmt->fetch()) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid GL account']);
+        exit;
+    }
+}
+
 try {
     $DB->beginTransaction();
 
@@ -34,8 +54,8 @@ try {
     $stmt = $DB->prepare("
         INSERT INTO gl_bank_accounts (
             company_id, name, bank_name, account_no, gl_account_id,
-            opening_balance_cents, current_balance_cents, is_active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())
+            opening_balance_cents, current_balance_cents, currency, is_active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ZAR', 1, NOW())
     ");
     $stmt->execute([
         $companyId,

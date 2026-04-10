@@ -5,6 +5,13 @@ require_once __DIR__ . '/../../auth_gate.php';
 
 header('Content-Type: application/json');
 
+// Role check
+$role = strtolower($_SESSION['role'] ?? 'member');
+if (!in_array($role, ['admin', 'bookkeeper', 'viewer'])) {
+    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
+    exit;
+}
+
 $companyId = $_SESSION['company_id'];
 
 try {
