@@ -508,10 +508,10 @@ html[data-theme="dark"], body[data-theme="dark"] {
   color: var(--fw-primary);
   margin-bottom: 4px;
   text-shadow:
-    -0.5px -0.5px 0 #000,
-     0.5px -0.5px 0 #000,
-    -0.5px  0.5px 0 #000,
-     0.5px  0.5px 0 #000;
+    -0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+    -0.5px  0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px  0.5px 1px rgba(51, 51, 51, 0.45);
   position: relative;
   z-index: 2;
 }
@@ -2674,10 +2674,10 @@ table.bva-table thead th {
   color: var(--fw-primary);
   font-family: 'Courier New', monospace;
   text-shadow:
-    -0.5px -0.5px 0 #000,
-     0.5px -0.5px 0 #000,
-    -0.5px  0.5px 0 #000,
-     0.5px  0.5px 0 #000;
+    -0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+    -0.5px  0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px  0.5px 1px rgba(51, 51, 51, 0.45);
   line-height: 1.2;
 }
 
@@ -2758,10 +2758,10 @@ table.bva-table thead th {
 .fw-finance__bank-transaction-amount--credit {
   color: var(--neon-green);
   text-shadow:
-    -0.5px -0.5px 0 #000,
-     0.5px -0.5px 0 #000,
-    -0.5px  0.5px 0 #000,
-     0.5px  0.5px 0 #000;
+    -0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+    -0.5px  0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px  0.5px 1px rgba(51, 51, 51, 0.45);
 }
 
 .fw-finance__bank-transaction-amount--debit {
@@ -4122,16 +4122,16 @@ select.fw-finance__input optgroup,
 select.fw-finance__input option:hover,
 select.fw-finance__input option:checked,
 .fw-finance__input[type="file"]::file-selector-button {
-  -webkit-text-stroke: 0.5px #000;
+  -webkit-text-stroke: 0.5px rgba(51, 51, 51, 0.4);
   paint-order: stroke fill;
   text-shadow:
-    -0.5px -0.5px 0 #000,
-     0.5px -0.5px 0 #000,
-    -0.5px  0.5px 0 #000,
-     0.5px  0.5px 0 #000;
+    -0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px -0.5px 1px rgba(51, 51, 51, 0.45),
+    -0.5px  0.5px 1px rgba(51, 51, 51, 0.45),
+     0.5px  0.5px 1px rgba(51, 51, 51, 0.45);
 }
 
-/* Dark mode: swap black outline for green glow */
+/* Dark mode: swap charcoal outline for green glow */
 .fw-finance[data-theme="dark"] .fw-finance__greeting-name,
 .fw-finance[data-theme="dark"] .fw-finance__stat-value,
 .fw-finance[data-theme="dark"] .fw-finance__bal--positive,
