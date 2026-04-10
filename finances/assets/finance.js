@@ -196,8 +196,24 @@
         document.querySelector('#apStat .fw-finance__stat-value').textContent = 
           formatCurrency(stats.ap_cents || 0);
         
-        document.querySelector('#vatStat .fw-finance__stat-value').textContent = 
+        document.querySelector('#vatStat .fw-finance__stat-value').textContent =
           formatCurrency(stats.vat_due_cents || 0);
+
+        // Bank reconciliation counter
+        var bankEl = document.querySelector('#bankStat .fw-finance__stat-value');
+        if (bankEl) {
+          var count = stats.bank_unrec_count || 0;
+          bankEl.textContent = count;
+          var badge = document.getElementById('bankBadge');
+          if (badge) {
+            if (count > 0) {
+              badge.textContent = count;
+              badge.style.display = 'inline';
+            } else {
+              badge.style.display = 'none';
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load dashboard stats:', error);
