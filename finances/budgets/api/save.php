@@ -103,22 +103,26 @@ try {
 
     $DB->commit();
 
-    // Audit log
-    $details = json_encode([
-        'year' => $year,
-        'project_id' => null,
-        'count' => $count
-    ]);
-    $logStmt = $DB->prepare(
-        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-         VALUES (?, ?, 'budget_saved', ?, ?, NOW())"
-    );
-    $logStmt->execute([
-        $companyId,
-        $userId,
-        $details,
-        $_SERVER['REMOTE_ADDR'] ?? null
-    ]);
+    // Audit log – separate try-catch so a logging failure cannot mask a successful save
+    try {
+        $details = json_encode([
+            'year' => $year,
+            'project_id' => null,
+            'count' => $count
+        ]);
+        $logStmt = $DB->prepare(
+            "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+             VALUES (?, ?, 'budget_saved', ?, ?, NOW())"
+        );
+        $logStmt->execute([
+            $companyId,
+            $userId,
+            $details,
+            $_SERVER['REMOTE_ADDR'] ?? null
+        ]);
+    } catch (Throwable $auditErr) {
+        error_log('Budget audit log error [company=' . $companyId . ']: ' . $auditErr->getMessage());
+    }
 
     echo json_encode(['success' => true]);
 } catch (Throwable $e) {

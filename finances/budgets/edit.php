@@ -69,7 +69,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Budgets – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
-    <meta name="csrf-token" content="<?= Csrf::token() ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <style>
         table.budget-table {
             width: 100%;

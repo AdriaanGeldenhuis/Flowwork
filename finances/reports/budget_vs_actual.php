@@ -42,7 +42,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Budget vs Actual Report – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
-    <meta name="csrf-token" content="<?= Csrf::token() ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <style>
         /* Extra styles for budgets vs actual report */
         .report-container {
@@ -353,8 +353,6 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
         html += '<tr class="bva-net-position">';
         html += '<td colspan="2">Net Position (Income - Expenses)</td>';
         for (let i = 0; i < 12; i++) {
-            const mIncBud = incomeAccounts.length > 0 ? (grandBud[i] - (grandBud[i] - (incomeAccounts.reduce(function(s, a) { return s + (a.budget_cents[i+1] || 0); }, 0)))) : 0;
-            // Simplified: just show dashes for monthly net since per-section monthly is already shown
             html += '<td>-</td><td>-</td>';
         }
         html += '<td>' + (netBud !== 0 ? formatCurrency(netBud) : '-') + '</td>';
@@ -439,7 +437,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
                 // Subtotal
                 const secVar = (secTotalBud - secTotalAct)/100;
                 const secPct = secTotalBud !== 0 ? ((secTotalBud - secTotalAct) / Math.abs(secTotalBud) * 100).toFixed(1) + '%' : '-';
-                csv += '"Total ' + label + '",,,,,,,,,,,,,,,,,,,,,,,,,' + (secTotalBud/100).toFixed(2) + ',' + (secTotalAct/100).toFixed(2) + ',' + secVar.toFixed(2) + ',' + secPct + '\n';
+                csv += '"Total ' + label + '",,,,,,,,,,,,,,,,,,,,,,,,,,' + (secTotalBud/100).toFixed(2) + ',' + (secTotalAct/100).toFixed(2) + ',' + secVar.toFixed(2) + ',' + secPct + '\n';
                 return { totalBud: secTotalBud, totalAct: secTotalAct };
             }
 
@@ -458,7 +456,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
             const netAct = (incomeTotals.totalAct - expenseTotals.totalAct)/100;
             const netVar = netBud - netAct;
             const netPct = netBud !== 0 ? (netVar / Math.abs(netBud) * 100).toFixed(1) + '%' : '-';
-            csv += '\n"Net Position (Income - Expenses)",,,,,,,,,,,,,,,,,,,,,,,,,' + netBud.toFixed(2) + ',' + netAct.toFixed(2) + ',' + netVar.toFixed(2) + ',' + netPct + '\n';
+            csv += '\n"Net Position (Income - Expenses)",,,,,,,,,,,,,,,,,,,,,,,,,,' + netBud.toFixed(2) + ',' + netAct.toFixed(2) + ',' + netVar.toFixed(2) + ',' + netPct + '\n';
 
             // Trigger download
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
