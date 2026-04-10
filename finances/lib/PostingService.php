@@ -996,19 +996,34 @@ class PostingService
             $totalNet += $net;
             $totalVat += $vat;
         }
+        // Detect if any line debits a fixed asset account (capital goods for SARS VAT201 Box 7)
+        $hasCapitalGoods = false;
+        foreach ($journalLines as $jl) {
+            $stmtChk = $this->db->prepare(
+                "SELECT account_subtype FROM gl_accounts WHERE account_code = ? AND company_id = ? LIMIT 1"
+            );
+            $stmtChk->execute([$jl['account_code'], $this->companyId]);
+            $subtype = $stmtChk->fetchColumn();
+            if ($subtype === 'fixed_asset' && $jl['debit'] > 0) {
+                $hasCapitalGoods = true;
+                break;
+            }
+        }
+
         // VAT Input line if applicable
         if ($totalVat > 0.0001) {
             $inputTaxCodeId = $this->resolveInputTaxCodeId(15.0);
             $journalLines[] = [
-                'account_code' => $vatInCode,
-                'description'  => 'VAT Input - ' . ($bill['vendor_invoice_number'] ?: 'AP Bill'),
-                'debit'        => $totalVat,
-                'credit'       => 0.0,
-                'project_id'   => null,
-                'board_id'     => null,
-                'item_id'      => null,
-                'supplier_id'  => (int)$bill['supplier_id'],
-                'tax_code_id'  => $inputTaxCodeId
+                'account_code'    => $vatInCode,
+                'description'     => 'VAT Input - ' . ($bill['vendor_invoice_number'] ?: 'AP Bill'),
+                'debit'           => $totalVat,
+                'credit'          => 0.0,
+                'project_id'      => null,
+                'board_id'        => null,
+                'item_id'         => null,
+                'supplier_id'     => (int)$bill['supplier_id'],
+                'tax_code_id'     => $inputTaxCodeId,
+                'is_capital_goods' => $hasCapitalGoods ? 1 : 0
             ];
         }
         // Credit AP for gross (net + VAT)
@@ -1046,10 +1061,10 @@ class PostingService
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
-            // Insert journal lines (with SARS tax_code_id linkage)
+            // Insert journal lines (with SARS tax_code_id linkage and capital goods flag)
             $stmtLine = $this->db->prepare(
-                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, project_id, board_id, item_id, tax_code_id, customer_id, supplier_id, reference)\n"
-                . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)"
+                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, project_id, board_id, item_id, tax_code_id, is_capital_goods, customer_id, supplier_id, reference)\n"
+                . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)"
             );
             foreach ($journalLines as $jl) {
                 $stmtLine->execute([
@@ -1062,6 +1077,7 @@ class PostingService
                     $jl['board_id'],
                     $jl['item_id'],
                     $jl['tax_code_id'],
+                    $jl['is_capital_goods'] ?? 0,
                     $jl['supplier_id'],
                     $reference
                 ]);

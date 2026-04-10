@@ -43,6 +43,23 @@ if (!$billId) {
 }
 
 try {
+    // SARS compliance: Check vendor VAT number before posting
+    $sarsWarnings = [];
+    $stmt = $DB->prepare(
+        "SELECT b.supplier_id, b.tax AS bill_tax, s.name AS supplier_name, s.vat_no
+         FROM ap_bills b
+         LEFT JOIN crm_accounts s ON s.id = b.supplier_id
+         WHERE b.id = ? AND b.company_id = ?"
+    );
+    $stmt->execute([$billId, $companyId]);
+    $billInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($billInfo) {
+        $billTax = (float)($billInfo['bill_tax'] ?? 0);
+        if ($billTax > 0 && empty($billInfo['vat_no'])) {
+            $sarsWarnings[] = 'Supplier "' . ($billInfo['supplier_name'] ?? 'Unknown') . '" has no VAT number on file. Input VAT may not be claimable (SARS requirement for input tax deduction).';
+        }
+    }
+
     // Post the bill using the central PostingService
     $posting = new PostingService($DB, $companyId, $userId);
     $posting->postApBill($billId);
@@ -50,7 +67,11 @@ try {
     $stmt = $DB->prepare("SELECT journal_id FROM ap_bills WHERE id = ? AND company_id = ?");
     $stmt->execute([$billId, $companyId]);
     $journalId = $stmt->fetchColumn();
-    echo json_encode(['ok' => true, 'journal_id' => $journalId]);
+    $result = ['ok' => true, 'journal_id' => $journalId];
+    if (!empty($sarsWarnings)) {
+        $result['sars_warnings'] = $sarsWarnings;
+    }
+    echo json_encode($result);
 } catch (Exception $e) {
     // Log the error and return a message
     error_log('AP bill post error: ' . $e->getMessage());

@@ -104,9 +104,10 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <select id="supplierId" required>
                         <option value="">Select Supplier</option>
                         <?php foreach ($suppliers as $s): ?>
-                            <option value="<?= (int)$s['id'] ?>"><?= htmlspecialchars($s['name']) ?></option>
+                            <option value="<?= (int)$s['id'] ?>" data-vat="<?= htmlspecialchars($s['vat_no'] ?? '') ?>"><?= htmlspecialchars($s['name']) ?><?= !empty($s['vat_no']) ? ' (VAT: ' . htmlspecialchars($s['vat_no']) . ')' : '' ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <small id="vatWarning" style="color:#dc3545; display:none;">No VAT number on file for this supplier. Input VAT may not be claimable per SARS.</small>
                 </label>
                 <label>
                     Invoice Number
@@ -199,6 +200,13 @@ document.getElementById('supplierId').addEventListener('change', function() {
     var vatField = document.getElementById('vendorVat');
     var vatNo = supplierVatMap[this.value] || '';
     vatField.value = vatNo;
+    // Show SARS warning if no VAT number
+    var warn = document.getElementById('vatWarning');
+    if (this.value && !vatNo) {
+        warn.style.display = 'block';
+    } else {
+        warn.style.display = 'none';
+    }
 });
 
 // ---------------------------

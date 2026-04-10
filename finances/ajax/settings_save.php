@@ -53,11 +53,16 @@ $allowedKeys = [
     'fiscal_year_start',
     'ar_account_id',
     'ap_account_id',
+    'bank_account_id',
     'vat_output_account_id',
     'vat_input_account_id',
+    'vat_control_account_id',
     'sales_account_id',
     'cogs_account_id',
-    'inventory_account_id'
+    'inventory_account_id',
+    'expense_account_id',
+    'gain_on_disposal_account_id',
+    'loss_on_disposal_account_id'
 ];
 
 // Prepare data for update

@@ -44,6 +44,11 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $issueDate)) {
     exit;
 }
 $notes        = $header['notes'] ?? null;
+$reasonCode   = $header['reason_code'] ?? null;
+$validReasons = ['return', 'discount', 'correction', 'damaged', 'cancellation', 'vat_adjustment', 'other'];
+if ($reasonCode && !in_array($reasonCode, $validReasons, true)) {
+    $reasonCode = null;
+}
 
 // Compute amounts
 $subtotal = 0.0;
@@ -64,8 +69,8 @@ try {
     $DB->beginTransaction();
     // Insert vendor credit header
     $stmt = $DB->prepare(
-        "INSERT INTO vendor_credits (company_id, credit_number, supplier_id, issue_date, status, subtotal, tax, total, journal_id, notes, created_by, created_at)\n"
-        . "VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, NULL, ?, ?, NOW())"
+        "INSERT INTO vendor_credits (company_id, credit_number, supplier_id, issue_date, status, subtotal, tax, total, journal_id, notes, reason_code, created_by, created_at)\n"
+        . "VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, NULL, ?, ?, ?, NOW())"
     );
     $stmt->execute([
         $companyId,
@@ -76,6 +81,7 @@ try {
         $tax,
         $total,
         $notes,
+        $reasonCode,
         $userId
     ]);
     $creditId = (int)$DB->lastInsertId();

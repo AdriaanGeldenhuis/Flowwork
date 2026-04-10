@@ -104,6 +104,15 @@ if (!empty($invoice['journal_id'])) {
         exit;
     }
 
+    // SARS Section 20 compliance check (warn but do not block)
+    require_once __DIR__ . '/../lib/TaxInvoiceValidator.php';
+    $validator = new TaxInvoiceValidator($DB, $companyId);
+    $complianceIssues = $validator->validate($invoiceId);
+    $complianceWarnings = [];
+    foreach ($complianceIssues as $ci) {
+        $complianceWarnings[] = $ci['message'];
+    }
+
     // Delegate posting to ArService
     $arService = new ArService($DB, $companyId, $userId);
     $arService->postInvoice($invoiceId);
@@ -130,10 +139,11 @@ if (!empty($invoice['journal_id'])) {
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
 
-    echo json_encode([
-        'ok' => true,
-        'data' => ['journal_id' => $journalId]
-    ]);
+    $result = ['ok' => true, 'data' => ['journal_id' => $journalId]];
+    if (!empty($complianceWarnings)) {
+        $result['sars_warnings'] = $complianceWarnings;
+    }
+    echo json_encode($result);
     exit;
 
 } catch (Exception $e) {
