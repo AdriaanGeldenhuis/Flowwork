@@ -507,7 +507,11 @@ html[data-theme="dark"], body[data-theme="dark"] {
   font-weight: 700;
   color: var(--fw-primary);
   margin-bottom: 4px;
-  text-shadow: 0 0 12px var(--fw-primary-glow);
+  text-shadow:
+    -0.5px -0.5px 0 #000,
+     0.5px -0.5px 0 #000,
+    -0.5px  0.5px 0 #000,
+     0.5px  0.5px 0 #000;
   position: relative;
   z-index: 2;
 }
@@ -2669,7 +2673,11 @@ table.bva-table thead th {
   font-weight: 700;
   color: var(--fw-primary);
   font-family: 'Courier New', monospace;
-  text-shadow: 0 0 12px var(--fw-primary-glow);
+  text-shadow:
+    -0.5px -0.5px 0 #000,
+     0.5px -0.5px 0 #000,
+    -0.5px  0.5px 0 #000,
+     0.5px  0.5px 0 #000;
   line-height: 1.2;
 }
 
@@ -2749,7 +2757,11 @@ table.bva-table thead th {
 
 .fw-finance__bank-transaction-amount--credit {
   color: var(--neon-green);
-  text-shadow: 0 0 8px var(--neon-green-glow);
+  text-shadow:
+    -0.5px -0.5px 0 #000,
+     0.5px -0.5px 0 #000,
+    -0.5px  0.5px 0 #000,
+     0.5px  0.5px 0 #000;
 }
 
 .fw-finance__bank-transaction-amount--debit {
@@ -4064,7 +4076,7 @@ select.fw-finance__input:valid {
 }
 }
 
-/* ===== GREEN TEXT — 0.5px black outline ===== */
+/* ===== GREEN TEXT — solid black outline (light mode only) ===== */
 .fw-finance__greeting-name,
 .fw-finance__stat-value,
 .fw-finance__bal--positive,
@@ -4090,12 +4102,7 @@ select.fw-finance__input:valid {
 .fw-finance-overview__kpi-icon,
 .fw-finance__badge--paid,
 .fw-finance__badge--prepared,
-.fw-finance__badge--filed {
-  -webkit-text-stroke: 0.5px #000;
-  paint-order: stroke fill;
-}
-
-/* Green text on hover/active states */
+.fw-finance__badge--filed,
 .fw-finance__kebab-item:hover,
 .fw-finance__btn--primary,
 .fw-finance__btn--secondary:hover,
@@ -4117,4 +4124,59 @@ select.fw-finance__input option:checked,
 .fw-finance__input[type="file"]::file-selector-button {
   -webkit-text-stroke: 0.5px #000;
   paint-order: stroke fill;
+  text-shadow:
+    -0.5px -0.5px 0 #000,
+     0.5px -0.5px 0 #000,
+    -0.5px  0.5px 0 #000,
+     0.5px  0.5px 0 #000;
+}
+
+/* Dark mode: swap black outline for green glow */
+.fw-finance[data-theme="dark"] .fw-finance__greeting-name,
+.fw-finance[data-theme="dark"] .fw-finance__stat-value,
+.fw-finance[data-theme="dark"] .fw-finance__bal--positive,
+.fw-finance[data-theme="dark"] .fw-finance__journal-status--posted,
+.fw-finance[data-theme="dark"] .fw-finance__balance-value--balanced,
+.fw-finance[data-theme="dark"] .fw-finance__alert--success,
+.fw-finance[data-theme="dark"] .fw-finance__bank-transaction-amount--credit,
+.fw-finance[data-theme="dark"] .fw-finance__bank-transaction-status--matched,
+.fw-finance[data-theme="dark"] .fw-finance__bank-account-balance-value,
+.fw-finance[data-theme="dark"] .fw-finance__vat-period-amount,
+.fw-finance[data-theme="dark"] .fw-finance__vat-period-value--net,
+.fw-finance[data-theme="dark"] .fw-finance__account-code,
+.fw-finance[data-theme="dark"] .fw-finance__account-type,
+.fw-finance[data-theme="dark"] .fw-finance__account-group-header,
+.fw-finance[data-theme="dark"] .fw-finance__col-code,
+.fw-finance[data-theme="dark"] .fw-finance__link,
+.fw-finance[data-theme="dark"] .fw-finance__ar-card-amount,
+.fw-finance[data-theme="dark"] .fw-finance__invoice-party-label,
+.fw-finance[data-theme="dark"] .fw-finance__invoice-totals-table tr.balance td,
+.fw-finance[data-theme="dark"] .fw-finance__invoice-section-title,
+.fw-finance[data-theme="dark"] .fw-finance__bank-rule-condition-badge,
+.fw-finance[data-theme="dark"] .fw-finance__match-indicator--suggested,
+.fw-finance[data-theme="dark"] .fw-finance-overview__kpi-icon,
+.fw-finance[data-theme="dark"] .fw-finance__badge--paid,
+.fw-finance[data-theme="dark"] .fw-finance__badge--prepared,
+.fw-finance[data-theme="dark"] .fw-finance__badge--filed,
+.fw-finance[data-theme="dark"] .fw-finance__kebab-item:hover,
+.fw-finance[data-theme="dark"] .fw-finance__btn--primary,
+.fw-finance[data-theme="dark"] .fw-finance__btn--secondary:hover,
+.fw-finance[data-theme="dark"] .fw-finance__tab:hover,
+.fw-finance[data-theme="dark"] .fw-finance__tab--active,
+.fw-finance[data-theme="dark"] .fw-finance__report-type-btn--active,
+.fw-finance[data-theme="dark"] .fw-finance__page-btn:hover:not(:disabled),
+.fw-finance[data-theme="dark"] .fw-finance__modal-close:hover,
+.fw-finance[data-theme="dark"] .fw-finance__report-type-btn:hover,
+.fw-finance[data-theme="dark"] .fw-finance__bank-transaction-btn:hover,
+.fw-finance[data-theme="dark"] .fw-finance__bank-rule-btn:hover,
+.fw-finance[data-theme="dark"] .fw-finance__input optgroup,
+.fw-finance[data-theme="dark"] select.fw-finance__input optgroup,
+.fw-finance[data-theme="dark"] .fw-finance__filter optgroup,
+.fw-finance[data-theme="dark"] .fw-finance__input option:hover,
+.fw-finance[data-theme="dark"] .fw-finance__input option:checked,
+.fw-finance[data-theme="dark"] select.fw-finance__input option:hover,
+.fw-finance[data-theme="dark"] select.fw-finance__input option:checked,
+.fw-finance[data-theme="dark"] .fw-finance__input[type="file"]::file-selector-button {
+  -webkit-text-stroke: 0;
+  text-shadow: 0 0 12px var(--fw-primary-glow);
 }
