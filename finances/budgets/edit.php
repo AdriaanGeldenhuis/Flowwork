@@ -69,6 +69,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Budgets – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= Csrf::token() ?>">
     <style>
         table.budget-table {
             width: 100%;
@@ -150,6 +151,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
                 </select>
                 <button class="fw-finance__btn" id="changeYearBtn">Change Year</button>
                 <button class="fw-finance__btn fw-finance__btn--primary" id="saveBudgetsBtn">Save Budgets</button>
+                <a href="/finances/reports/budget_vs_actual.php" class="fw-finance__btn fw-finance__btn--secondary">View Budget vs Actual</a>
                 <div id="saveMessage"></div>
             </div>
             <table class="budget-table">
@@ -223,17 +225,20 @@ document.getElementById('saveBudgetsBtn').addEventListener('click', function() {
     });
     fetch('/finances/budgets/api/save.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+        },
         body: JSON.stringify({ year: parseInt(year, 10), budgets: budgets })
     }).then(function(resp) { return resp.json(); }).then(function(data) {
         if (data.success) {
             document.getElementById('saveMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--success">Budgets saved.</div>';
             setTimeout(function() { document.getElementById('saveMessage').innerHTML = ''; }, 3000);
         } else {
-            document.getElementById('saveMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">' + (data.message || 'Error saving budgets') + '</div>';
+            document.getElementById('saveMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">' + escapeHtml(data.message || 'Error saving budgets') + '</div>';
         }
     }).catch(function(err) {
-        document.getElementById('saveMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">' + err.message + '</div>';
+        document.getElementById('saveMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">' + escapeHtml(err.message) + '</div>';
     });
 });
 </script>
