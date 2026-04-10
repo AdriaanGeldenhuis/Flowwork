@@ -2,8 +2,10 @@
 // /finances/ajax/vat_prepare.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
-// Include AccountsMap to resolve VAT account codes
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
+require_once __DIR__ . '/../lib/VatCalculator.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -11,6 +13,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
     exit;
 }
+
+Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -39,90 +44,39 @@ try {
         throw new Exception('Period is already ' . $period['status']);
     }
 
-    // Resolve VAT account codes via AccountsMap; fallback codes for SA VAT
+    // Resolve VAT account codes via AccountsMap
     $accounts = new AccountsMap($DB, $companyId);
-    // Get raw setting values (could be id or code)
-    $stmt = $DB->prepare(
-        "SELECT setting_key, setting_value FROM company_settings
-         WHERE company_id = ?
-         AND setting_key IN ('finance_vat_output_account_id', 'finance_vat_input_account_id')"
-    );
-    $stmt->execute([$companyId]);
-    $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    $rawOutput = $settings['finance_vat_output_account_id'] ?? null;
-    $rawInput  = $settings['finance_vat_input_account_id'] ?? null;
-    // Determine account codes (e.g. '2120' and '2130')
     $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
     $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
-    // Determine account ids if numeric
-    $vatOutputId = (is_numeric($rawOutput) ? (int)$rawOutput : null);
-    $vatInputId  = (is_numeric($rawInput) ? (int)$rawInput : null);
 
     if (!$vatOutputCode || !$vatInputCode) {
         throw new Exception('Please configure VAT accounts in Finance Settings');
     }
 
-    // Calculate Output VAT (credit minus debit) over the period
-    $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS total_output
-         FROM journal_lines jl
-         JOIN journal_entries je ON jl.journal_id = je.id
-         WHERE je.company_id = ? AND je.status = 'posted'
-           AND je.entry_date BETWEEN ? AND ?
-           AND jl.account_code = ?"
+    // Calculate VAT breakdown using centralised helper
+    $vatData = VatCalculator::calculate(
+        $DB, $companyId,
+        $period['period_start'], $period['period_end'],
+        $vatOutputCode, $vatInputCode
     );
-    $stmt->execute([
-        $companyId,
-        $period['period_start'],
-        $period['period_end'],
-        $vatOutputCode
-    ]);
-    $outputVat = (float)$stmt->fetchColumn();
 
-    // Calculate Input VAT (debit minus credit) over the period
-    $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS total_input
-         FROM journal_lines jl
-         JOIN journal_entries je ON jl.journal_id = je.id
-         WHERE je.company_id = ? AND je.status = 'posted'
-           AND je.entry_date BETWEEN ? AND ?
-           AND jl.account_code = ?"
-    );
-    $stmt->execute([
-        $companyId,
-        $period['period_start'],
-        $period['period_end'],
-        $vatInputCode
-    ]);
-    $inputVat = (float)$stmt->fetchColumn();
-
-    // Convert to cents for consistent client representation
-    $outputVatCents = (int)round($outputVat * 100);
-    $inputVatCents  = (int)round($inputVat * 100);
-    $netVatCents    = $outputVatCents - $inputVatCents;
-
-    // Calculate base amounts (reverse engineer from 15% VAT). Only
-    // standard rated supplies are considered here; zero/exempt remain zero.
-    $outputStandardBaseCents = ($outputVat > 0.0) ? (int)round(($outputVat / 0.15) * 100) : 0;
-    $outputStandardVatCents  = $outputVatCents;
+    // Fetch company details for VAT201 header
+    $stmt = $DB->prepare("SELECT name, vat_number, reg_number FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $company = $stmt->fetch(PDO::FETCH_ASSOC);
 
     echo json_encode([
         'ok' => true,
-        'data' => [
+        'data' => array_merge($vatData, [
             'period_id' => $period['id'],
             'period_start' => $period['period_start'],
             'period_end' => $period['period_end'],
             'status' => $period['status'],
-            'output_standard_base_cents' => $outputStandardBaseCents,
-            'output_standard_vat_cents' => $outputStandardVatCents,
-            'output_zero_base_cents' => 0,
-            'output_exempt_base_cents' => 0,
-            'total_output_vat_cents' => $outputVatCents,
-            'input_capital_cents' => 0,
-            'input_other_cents' => $inputVatCents,
-            'total_input_vat_cents' => $inputVatCents,
-            'net_vat_cents' => $netVatCents
-        ]
+            'company_name' => $company['name'] ?? '',
+            'vat_number' => $company['vat_number'] ?? '',
+            'reg_number' => $company['reg_number'] ?? '',
+            'tax_period' => date('M Y', strtotime($period['period_start'])) . ' - ' . date('M Y', strtotime($period['period_end'])),
+        ])
     ]);
 
 } catch (Exception $e) {

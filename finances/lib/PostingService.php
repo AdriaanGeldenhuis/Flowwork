@@ -61,6 +61,32 @@ class PostingService
     }
 
     /**
+     * Resolve the tax_code_id for an AR (output) line based on its tax rate.
+     * Returns STD/STANDARD for 15%, ZERO for 0%, or null if not found.
+     */
+    private function resolveOutputTaxCodeId(float $taxRate): ?int
+    {
+        if ($taxRate >= 14.99) {
+            $code = 'STD';
+        } elseif ($taxRate > 0.0001) {
+            $code = 'STD';
+        } else {
+            $code = 'ZERO';
+        }
+        $stmt = $this->db->prepare(
+            "SELECT tax_code_id FROM gl_tax_codes WHERE company_id = ? AND code = ? AND is_active = 1 LIMIT 1"
+        );
+        $stmt->execute([$this->companyId, $code]);
+        $id = $stmt->fetchColumn();
+        if (!$id && $code === 'STD') {
+            // Try STANDARD as alternative code name
+            $stmt->execute([$this->companyId, 'STANDARD']);
+            $id = $stmt->fetchColumn();
+        }
+        return $id ? (int)$id : null;
+    }
+
+    /**
      * Remove an existing journal entry by id. This helper deletes the entry
      * and its associated lines. Use this prior to re-posting a transaction
      * that has already been posted. If the period of the entry is locked
@@ -143,6 +169,16 @@ class PostingService
         $totalVat    = 0.0;
         $cogsTotals  = [];
         $invTotals   = [];
+        // Resolve output tax_code_id for SARS compliance
+        $primaryTaxRate = 0.0;
+        foreach ($lines as $li) {
+            $tr = floatval($li['tax_rate']);
+            if ($tr > $primaryTaxRate) {
+                $primaryTaxRate = $tr;
+            }
+        }
+        $outputTaxCodeId = $this->resolveOutputTaxCodeId($primaryTaxRate);
+
         foreach ($lines as $li) {
             $qty      = floatval($li['quantity']);
             $price    = floatval($li['unit_price']);
@@ -212,10 +248,10 @@ class PostingService
                 $invoice['customer_id'],
                 $reference
             ]);
-            // Insert sales credit lines per account
+            // Insert sales credit lines per account (with SARS tax_code_id)
             $stmtLine = $this->db->prepare(
-                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, customer_id, reference)
-                 VALUES (?, ?, ?, 0, ?, ?, ?)"
+                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, customer_id, reference)
+                 VALUES (?, ?, ?, 0, ?, ?, ?, ?)"
             );
             foreach ($salesTotals as $code => $amount) {
                 $stmtLine->execute([
@@ -223,17 +259,19 @@ class PostingService
                     $code,
                     'Sales Income',
                     number_format($amount, 2, '.', ''),
+                    $outputTaxCodeId,
                     $invoice['customer_id'],
                     $reference
                 ]);
             }
-            // Insert VAT credit line if VAT > 0
+            // Insert VAT credit line if VAT > 0 (with SARS tax_code_id)
             if ($totalVat > 0.0001) {
                 $stmtLine->execute([
                     $journalId,
                     $vatCode,
                     'VAT Output',
                     number_format($totalVat, 2, '.', ''),
+                    $outputTaxCodeId,
                     $invoice['customer_id'],
                     $reference
                 ]);

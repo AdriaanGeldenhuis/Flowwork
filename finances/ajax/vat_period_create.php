@@ -2,6 +2,8 @@
 // /finances/ajax/vat_period_create.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -9,6 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
     exit;
 }
+
+Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -20,6 +25,26 @@ $periodEnd = $input['period_end'] ?? null;
 
 if (!$periodStart || !$periodEnd) {
     echo json_encode(['ok' => false, 'error' => 'Both dates required']);
+    exit;
+}
+
+// Validate date format
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $periodStart) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $periodEnd)) {
+    echo json_encode(['ok' => false, 'error' => 'Dates must be in YYYY-MM-DD format']);
+    exit;
+}
+
+// Validate dates are real calendar dates
+$startObj = DateTime::createFromFormat('Y-m-d', $periodStart);
+$endObj = DateTime::createFromFormat('Y-m-d', $periodEnd);
+if (!$startObj || $startObj->format('Y-m-d') !== $periodStart || !$endObj || $endObj->format('Y-m-d') !== $periodEnd) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid date values']);
+    exit;
+}
+
+// Validate date order
+if ($periodEnd < $periodStart) {
+    echo json_encode(['ok' => false, 'error' => 'Period end must be on or after period start']);
     exit;
 }
 
@@ -78,7 +103,9 @@ try {
     ]);
 
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log("VAT period create error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,

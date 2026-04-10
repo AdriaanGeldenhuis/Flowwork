@@ -5,9 +5,10 @@ require_once __DIR__ . '/../auth_gate.php';
 
 // Include permissions helper and restrict access to admins and bookkeepers
 require_once __DIR__ . '/permissions.php';
-requireRoles(['admin', 'bookkeeper']);
+require_once __DIR__ . '/lib/Csrf.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-VAT-1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -18,6 +19,7 @@ $stmt->execute([$userId]);
 $user = $stmt->fetch();
 $firstName = $user['first_name'] ?? 'User';
 $userRole = $user['role'] ?? 'member';
+$isViewer = ($userRole === 'viewer');
 
 // Fetch company name
 $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
@@ -40,6 +42,7 @@ $vatPeriods = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>VAT Returns – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 </head>
@@ -126,11 +129,13 @@ $vatPeriods = $stmt->fetchAll();
                     <!-- Periods Tab -->
                     <div class="fw-finance__tab-panel fw-finance__tab-panel--active" id="periodsPanel">
                         
+                        <?php if (!$isViewer): ?>
                         <div class="fw-finance__toolbar">
                             <button class="fw-finance__btn fw-finance__btn--primary" id="createPeriodBtn">
                                 + Create New Period
                             </button>
                         </div>
+                        <?php endif; ?>
 
                         <div class="fw-finance__vat-periods-list">
                             <?php if (empty($vatPeriods)): ?>
@@ -170,11 +175,11 @@ $vatPeriods = $stmt->fetchAll();
                                             </div>
                                         </div>
                                         <div class="fw-finance__vat-period-actions">
-                                            <?php if ($period['status'] === 'open'): ?>
+                                            <?php if ($period['status'] === 'open' && !$isViewer): ?>
                                                 <button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--primary prepare-period" data-id="<?= $period['id'] ?>">
                                                     Prepare Return
                                                 </button>
-                                            <?php elseif ($period['status'] === 'prepared'): ?>
+                                            <?php elseif (in_array($period['status'], ['prepared', 'adjusted'])): ?>
                                                 <button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--primary view-vat201" data-id="<?= $period['id'] ?>">
                                                     View VAT201
                                                 </button>
@@ -317,6 +322,7 @@ $vatPeriods = $stmt->fetchAll();
     </div>
 
     <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>window.__vatUserRole = <?= json_encode($userRole) ?>;</script>
     <script src="/finances/assets/vat.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

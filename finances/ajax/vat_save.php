@@ -2,10 +2,11 @@
 // /finances/ajax/vat_save.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
-// Include PeriodService to insert a period lock
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
-// Include AccountsMap to resolve VAT account codes
 require_once __DIR__ . '/../lib/AccountsMap.php';
+require_once __DIR__ . '/../lib/VatCalculator.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -13,6 +14,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
     exit;
 }
+
+Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -44,61 +48,20 @@ try {
         throw new Exception('Period is already ' . $period['status']);
     }
 
-    // Before updating status, compute and persist VAT totals for this period.
-    // This ensures list view shows accurate amounts after locking the period.
-    // Resolve VAT account codes and ids
+    // Compute VAT totals using centralised helper
     $accounts = new AccountsMap($DB, $companyId);
-    $stmt = $DB->prepare(
-        "SELECT setting_key, setting_value FROM company_settings
-         WHERE company_id = ? AND setting_key IN ('finance_vat_output_account_id','finance_vat_input_account_id')"
-    );
-    $stmt->execute([$companyId]);
-    $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    $rawOutput = $settings['finance_vat_output_account_id'] ?? null;
-    $rawInput  = $settings['finance_vat_input_account_id'] ?? null;
     $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
     $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
-    $vatOutputId = (is_numeric($rawOutput) ? (int)$rawOutput : null);
-    $vatInputId  = (is_numeric($rawInput) ? (int)$rawInput : null);
 
-    // Calculate total output VAT for this period (credit minus debit)
-    $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS total_output
-         FROM journal_lines jl
-         JOIN journal_entries je ON jl.journal_id = je.id
-         WHERE je.company_id = ? AND je.status = 'posted'
-           AND je.entry_date BETWEEN ? AND ?
-           AND jl.account_code = ?"
+    $vatData = VatCalculator::calculate(
+        $DB, $companyId,
+        $period['period_start'], $period['period_end'],
+        $vatOutputCode, $vatInputCode
     );
-    $stmt->execute([
-        $companyId,
-        $period['period_start'],
-        $period['period_end'],
-        $vatOutputCode
-    ]);
-    $outputVat = (float)$stmt->fetchColumn();
 
-    // Calculate total input VAT for this period (debit minus credit)
-    $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS total_input
-         FROM journal_lines jl
-         JOIN journal_entries je ON jl.journal_id = je.id
-         WHERE je.company_id = ? AND je.status = 'posted'
-           AND je.entry_date BETWEEN ? AND ?
-           AND jl.account_code = ?"
-    );
-    $stmt->execute([
-        $companyId,
-        $period['period_start'],
-        $period['period_end'],
-        $vatInputCode
-    ]);
-    $inputVat = (float)$stmt->fetchColumn();
-
-    // Convert to cents
-    $outputVatCents = (int)round($outputVat * 100);
-    $inputVatCents  = (int)round($inputVat * 100);
-    $netVatCents    = $outputVatCents - $inputVatCents;
+    $outputVatCents = $vatData['total_output_vat_cents'];
+    $inputVatCents  = $vatData['total_input_vat_cents'];
+    $netVatCents    = $vatData['net_vat_cents'];
 
     // Persist totals in gl_vat_periods
     $stmt = $DB->prepare(
@@ -149,7 +112,9 @@ try {
     echo json_encode(['ok' => true]);
 
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log("VAT save error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
