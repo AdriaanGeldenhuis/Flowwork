@@ -71,7 +71,7 @@ if ($userIds) {
         .form-group { margin-bottom: 1rem; }
         label { display: block; font-weight: bold; margin-bottom: 0.5rem; }
         input[type="date"], input[type="text"] { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 0.6rem 1.2rem; background-color: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        button { padding: 0.6rem 1.2rem; background-color: #38ff12; color: #000; border: none; border-radius: 4px; cursor: pointer; }
         button:disabled { background-color: #aaa; }
         .message { margin-top: 0.5rem; font-weight: bold; }
         .danger-btn { background-color: #dc3545; color: #fff; border: none; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 4px; }
