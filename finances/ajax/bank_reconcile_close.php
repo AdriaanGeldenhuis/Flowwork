@@ -42,6 +42,12 @@ if (!$bankAccountId || !$statementDate) {
     exit;
 }
 
+// Validate date format
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $statementDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid date format (expected YYYY-MM-DD)']);
+    exit;
+}
+
 try {
     $DB->beginTransaction();
     // Verify the bank account exists for this company

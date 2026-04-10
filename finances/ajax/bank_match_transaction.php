@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 Csrf::validate();
 
 // Check user role
-$role = $_SESSION['role'] ?? 'member';
+$role = strtolower($_SESSION['role'] ?? 'member');
 if (!in_array($role, ['admin', 'bookkeeper'])) {
     echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
