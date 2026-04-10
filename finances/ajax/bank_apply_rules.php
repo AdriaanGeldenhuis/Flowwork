@@ -7,17 +7,10 @@
 // dated in locked periods are skipped. Only admin or bookkeeper roles may
 // invoke this endpoint.
 
-// Dynamically load initialization and authentication. Detect whether an `/app`
-// folder exists and adjust accordingly.
-$__fin_root = realpath(__DIR__ . '/../../');
-if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
-    require_once $__fin_root . '/app/init.php';
-    require_once $__fin_root . '/app/auth_gate.php';
-} else {
-    require_once $__fin_root . '/init.php';
-    require_once $__fin_root . '/auth_gate.php';
-}
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -26,6 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
+
+Csrf::validate();
 
 // Check user role
 $role = $_SESSION['role'] ?? 'member';
@@ -90,13 +85,13 @@ try {
                 if ($periodService->isLocked($tx['tx_date'])) {
                     continue;
                 }
-                // Create journal entry for this match
+                // Create journal entry for this match (status=posted for SARS compliance)
                 $description = $rule['description_template'] ?: ($tx['description'] ?: 'Bank transaction');
                 $stmtJ = $DB->prepare(
                     "INSERT INTO journal_entries (
                         company_id, entry_date, reference, description, module, ref_type, ref_id,
-                        source_type, source_id, created_by, created_at
-                    ) VALUES (?, ?, ?, ?, 'fin', 'bank_rule', ?, 'bank_rule', ?, ?, NOW())"
+                        source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                    ) VALUES (?, ?, ?, ?, 'fin', 'bank_rule', ?, 'bank_rule', ?, ?, NOW(), 'posted', ?, NOW())"
                 );
                 $reference = 'BANKTX' . $tx['bank_tx_id'];
                 $stmtJ->execute([
@@ -106,6 +101,7 @@ try {
                     $description,
                     $tx['bank_tx_id'],
                     $tx['bank_tx_id'],
+                    $userId,
                     $userId
                 ]);
                 $journalId = (int)$DB->lastInsertId();
@@ -123,21 +119,22 @@ try {
                 if (!$ruleAccountCode) {
                     throw new Exception('GL account code not found for rule ' . $rule['id']);
                 }
-                // Insert journal lines
+                // Insert journal lines with tax code for SARS VAT tracking
+                $ruleTaxCodeId = !empty($rule['tax_code_id']) ? (int)$rule['tax_code_id'] : null;
                 $lineStmt = $DB->prepare(
-                    "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)"
+                    "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)"
                 );
                 if (intval($tx['amount_cents']) > 0) {
                     // Money IN: Dr bank, Cr rule account
                     if ($bankAccountCode) {
-                        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
+                        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, null, $reference]);
                     }
-                    $lineStmt->execute([$journalId, $ruleAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
+                    $lineStmt->execute([$journalId, $ruleAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $ruleTaxCodeId, $reference]);
                 } else {
                     // Money OUT: Dr rule account, Cr bank
-                    $lineStmt->execute([$journalId, $ruleAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
+                    $lineStmt->execute([$journalId, $ruleAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $ruleTaxCodeId, $reference]);
                     if ($bankAccountCode) {
-                        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
+                        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), null, $reference]);
                     }
                 }
                 // Mark transaction as matched

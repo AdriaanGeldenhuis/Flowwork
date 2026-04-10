@@ -1,17 +1,19 @@
 <?php
-
-require_once __DIR__ . '/../lib/http.php';
-require_once __DIR__ . '/../lib/Csrf.php';
-require_method('POST');
-Csrf::validate();
 // /finances/ajax/bank_import.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/http.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
+require_method('POST');
+Csrf::validate();
+
+// Role check
+$role = strtolower($_SESSION['role'] ?? 'member');
+if (!in_array($role, ['admin', 'bookkeeper'])) {
+    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
 
@@ -62,40 +64,63 @@ try {
     // Parse CSV
     $file = fopen($_FILES['csv_file']['tmp_name'], 'r');
     $importCount = 0;
+    $skippedCount = 0;
 
     // Skip header row
     fgetcsv($file);
 
     while (($row = fgetcsv($file)) !== false) {
-        if (count($row) < 3) continue; // Need at least date, description, amount
+        if (count($row) < 3) { $skippedCount++; continue; }
 
-        $txDate = $row[0];
-        $description = $row[1];
-        $amount = floatval($row[2]);
-        $reference = $row[3] ?? null;
+        $rawDate = trim($row[0]);
+        $description = trim($row[1]);
+        $rawAmount = trim($row[2]);
+        $reference = isset($row[3]) ? trim($row[3]) : null;
+
+        // Validate and normalize date (accept YYYY-MM-DD, DD/MM/YYYY, D/M/YYYY)
+        $txDate = null;
+        $dateObj = DateTime::createFromFormat('Y-m-d', $rawDate);
+        if ($dateObj && $dateObj->format('Y-m-d') === $rawDate) {
+            $txDate = $rawDate;
+        } else {
+            $dateObj = DateTime::createFromFormat('d/m/Y', $rawDate);
+            if (!$dateObj) {
+                $dateObj = DateTime::createFromFormat('m/d/Y', $rawDate);
+            }
+            if ($dateObj) {
+                $txDate = $dateObj->format('Y-m-d');
+            }
+        }
+
+        if (!$txDate) { $skippedCount++; continue; }
+
+        // Validate amount is numeric
+        if (!is_numeric($rawAmount)) { $skippedCount++; continue; }
+        $amount = floatval($rawAmount);
 
         // Convert amount to cents
         $amountCents = round($amount * 100);
 
         // Check for duplicates
         $stmt = $DB->prepare("
-            SELECT COUNT(*) FROM gl_bank_transactions 
-            WHERE company_id = ? 
-            AND bank_account_id = ? 
-            AND tx_date = ? 
-            AND description = ? 
+            SELECT COUNT(*) FROM gl_bank_transactions
+            WHERE company_id = ?
+            AND bank_account_id = ?
+            AND tx_date = ?
+            AND description = ?
             AND amount_cents = ?
         ");
         $stmt->execute([$companyId, $bankAccountId, $txDate, $description, $amountCents]);
-        
+
         if ($stmt->fetchColumn() > 0) {
+            $skippedCount++;
             continue; // Skip duplicate
         }
 
         // Insert transaction
         $stmt = $DB->prepare("
             INSERT INTO gl_bank_transactions (
-                company_id, bank_account_id, tx_date, description, 
+                company_id, bank_account_id, tx_date, description,
                 amount_cents, reference, matched, import_batch_id, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, NOW())
         ");
@@ -142,7 +167,7 @@ try {
 
     echo json_encode([
         'ok' => true,
-        'data' => ['count' => $importCount]
+        'data' => ['count' => $importCount, 'skipped' => $skippedCount]
     ]);
 
 } catch (Exception $e) {

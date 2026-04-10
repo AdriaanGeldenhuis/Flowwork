@@ -5,15 +5,8 @@
 // reconciliation for each account and period. Only authenticated users can
 // access this endpoint; permissions are read-only.
 
-// Dynamically load init and auth. Project root is two levels above this file.
-$__fin_root = realpath(__DIR__ . '/../../');
-if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
-    require_once $__fin_root . '/app/init.php';
-    require_once $__fin_root . '/app/auth_gate.php';
-} else {
-    require_once $__fin_root . '/init.php';
-    require_once $__fin_root . '/auth_gate.php';
-}
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
 
 header('Content-Type: application/json');
 

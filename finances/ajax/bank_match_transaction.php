@@ -5,16 +5,10 @@
 // prevents matching a transaction that has already been matched or that falls
 // into a locked accounting period.
 
-// Dynamically include init and auth. Use /app directory if it exists, otherwise root-level files.
-$__fin_root = realpath(__DIR__ . '/../../');
-if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
-    require_once $__fin_root . '/app/init.php';
-    require_once $__fin_root . '/app/auth_gate.php';
-} else {
-    require_once $__fin_root . '/init.php';
-    require_once $__fin_root . '/auth_gate.php';
-}
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -23,6 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
+
+Csrf::validate();
 
 // Check user role
 $role = $_SESSION['role'] ?? 'member';
@@ -38,6 +34,7 @@ $userId    = (int)($_SESSION['user_id'] ?? 0);
 $input = json_decode(file_get_contents('php://input'), true);
 $bankTxId = $input['bank_tx_id'] ?? null;
 $accountCodeInput = isset($input['account_code']) ? trim($input['account_code']) : '';
+$taxCodeId = !empty($input['tax_code_id']) ? (int)$input['tax_code_id'] : null;
 
 if (!$bankTxId || !$accountCodeInput) {
     echo json_encode(['ok' => false, 'error' => 'Missing required fields']);
@@ -107,18 +104,18 @@ try {
     if (!$bankAccountCode) {
         throw new Exception('Bank GL account not configured for this bank account');
     }
-    // Insert journal lines (debits/credits)
+    // Insert journal lines (debits/credits) with optional tax code for SARS VAT tracking
     $lineStmt = $DB->prepare(
-        "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)"
+        "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)"
     );
     if (intval($tx['amount_cents']) > 0) {
         // Money IN: Dr bank, Cr other
-        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
-        $lineStmt->execute([$journalId, $validatedAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
+        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, null, $reference]);
+        $lineStmt->execute([$journalId, $validatedAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $taxCodeId, $reference]);
     } else {
         // Money OUT: Dr other, Cr bank
-        $lineStmt->execute([$journalId, $validatedAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $reference]);
-        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $reference]);
+        $lineStmt->execute([$journalId, $validatedAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $taxCodeId, $reference]);
+        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), null, $reference]);
     }
     // Mark the bank transaction as matched and store journal id
     $stmt = $DB->prepare(

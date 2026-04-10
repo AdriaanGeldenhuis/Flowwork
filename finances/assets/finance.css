@@ -3978,3 +3978,44 @@ select.fw-finance__input:valid {
     flex-wrap: wrap;
   }
 }
+
+/* ===== BANK MATCH PANEL (inline) ===== */
+.fw-finance__bank-match-panel {
+  padding: var(--fw-spacing-lg);
+  margin: -8px 0 var(--fw-spacing-md) 0;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-primary);
+  border-radius: 0 0 var(--fw-radius-lg) var(--fw-radius-lg);
+  box-shadow: 0 4px 16px var(--fw-primary-glow);
+}
+
+/* ===== TAB BADGE ===== */
+.fw-finance__tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  margin-left: 6px;
+  border-radius: var(--fw-radius-full);
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ===== BADGE WARNING ===== */
+.fw-finance__badge--warning {
+  background: #f59e0b;
+  color: #fff;
+}
+
+/* ===== PAGINATION INFO ===== */
+.fw-finance__pagination-info {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fw-text-secondary);
+}
+}

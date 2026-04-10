@@ -4,17 +4,11 @@
 // and resetting the matched flag. This endpoint checks period locks to prevent
 // modifications to locked periods. Only admin or bookkeeper roles may undo.
 
-// Load init and auth flexibly based on project structure.
-$__fin_root = realpath(__DIR__ . '/../../');
-if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
-    require_once $__fin_root . '/app/init.php';
-    require_once $__fin_root . '/app/auth_gate.php';
-} else {
-    require_once $__fin_root . '/init.php';
-    require_once $__fin_root . '/auth_gate.php';
-}
+require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
 require_once __DIR__ . '/../lib/ReversalService.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -23,6 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
+
+Csrf::validate();
 
 // Authorise user
 $role = $_SESSION['role'] ?? 'member';
@@ -74,7 +70,7 @@ try {
     }
     // Reverse journal instead of deleting lines
     $rev = new ReversalService($DB, $companyId);
-    $rev->reverseJournal((int)$journalId, 'Bank undo match');
+    $rev->reverseJournal((int)$journalId, $userId, 'Bank undo match');
     // Reset the bank transaction matched flag and journal_id
     $stmt = $DB->prepare(
         "UPDATE gl_bank_transactions SET matched = 0, journal_id = NULL WHERE bank_tx_id = ? AND company_id = ?"
