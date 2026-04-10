@@ -52,7 +52,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
  * ----------------------- */
 $checks = [];
 
-// 3.1 Finance settings mapping – vereis AR/AP/VAT/Sales/COGS/Inventory/Bank
+// 3.1 Finance settings mapping – vereis AR/AP/VAT/Sales/COGS/Inventory/Bank/Expense/Disposal
 try {
     $required = [
         'finance_ar_account_id',
@@ -62,7 +62,11 @@ try {
         'finance_sales_account_id',
         'finance_cogs_account_id',
         'finance_inventory_account_id',
-        'finance_bank_account_id' // mag leeg wees, maar rapporteer as “Missing”
+        'finance_bank_account_id',
+        'finance_vat_control_account_id',
+        'finance_expense_account_id',
+        'finance_gain_on_disposal_account_id',
+        'finance_loss_on_disposal_account_id'
     ];
     $placeholders = implode(',', array_fill(0, count($required), '?'));
     $stmt = $DB->prepare("SELECT setting_key, setting_value

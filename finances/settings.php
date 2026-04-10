@@ -23,7 +23,7 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 // Restrict to admin users
 requireRoles(['admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-FIN-4');
 
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;
@@ -62,7 +62,12 @@ $settings = [
     'vat_input_account_id'   => $raw['finance_vat_input_account_id']   ?? '',
     'sales_account_id'       => $raw['finance_sales_account_id']       ?? '',
     'cogs_account_id'        => $raw['finance_cogs_account_id']        ?? '',
-    'inventory_account_id'   => $raw['finance_inventory_account_id']   ?? ''
+    'inventory_account_id'           => $raw['finance_inventory_account_id']           ?? '',
+    'bank_account_id'                => $raw['finance_bank_account_id']                ?? '',
+    'vat_control_account_id'         => $raw['finance_vat_control_account_id']         ?? '',
+    'expense_account_id'             => $raw['finance_expense_account_id']             ?? '',
+    'gain_on_disposal_account_id'    => $raw['finance_gain_on_disposal_account_id']    ?? '',
+    'loss_on_disposal_account_id'    => $raw['finance_loss_on_disposal_account_id']    ?? ''
 ];
 
 // Load active GL accounts for dropdowns
@@ -192,14 +197,34 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             echo '</div>';
                         }
 
-                        // Render all account mapping selects
+                        // --- Receivables & Payments ---
                         renderSelect('ar_account_id', 'Accounts Receivable', 'Default account for customer invoices', $settings, $accounts);
                         renderSelect('ap_account_id', 'Accounts Payable', 'Default account for supplier bills', $settings, $accounts);
+                        renderSelect('bank_account_id', 'Bank Account', 'Default bank account for payment posting', $settings, $accounts);
+
+                        echo '<div style="height: 24px;"></div>';
+                        echo '<div class="fw-finance__form-card-title" style="font-size: 14px; margin-bottom: 16px; color: var(--fw-text-secondary);">Tax Accounts</div>';
+
+                        // --- Tax Accounts ---
                         renderSelect('vat_output_account_id', 'VAT Output (Sales Tax)', 'Tax collected on sales', $settings, $accounts);
                         renderSelect('vat_input_account_id', 'VAT Input (Purchase Tax)', 'Tax paid on purchases', $settings, $accounts);
+                        renderSelect('vat_control_account_id', 'VAT Control', 'VAT settlement/control account for adjustments', $settings, $accounts);
+
+                        echo '<div style="height: 24px;"></div>';
+                        echo '<div class="fw-finance__form-card-title" style="font-size: 14px; margin-bottom: 16px; color: var(--fw-text-secondary);">Revenue, Cost &amp; Inventory</div>';
+
+                        // --- Revenue, Cost & Inventory ---
                         renderSelect('sales_account_id', 'Sales Revenue', 'Default sales income account', $settings, $accounts);
                         renderSelect('cogs_account_id', 'Cost of Goods Sold', 'Default COGS expense account', $settings, $accounts);
                         renderSelect('inventory_account_id', 'Inventory Asset', 'Default inventory tracking account', $settings, $accounts);
+                        renderSelect('expense_account_id', 'Default Expense', 'Fallback expense account for AP bills without a GL account', $settings, $accounts);
+
+                        echo '<div style="height: 24px;"></div>';
+                        echo '<div class="fw-finance__form-card-title" style="font-size: 14px; margin-bottom: 16px; color: var(--fw-text-secondary);">Fixed Asset Disposal</div>';
+
+                        // --- Fixed Asset Disposal ---
+                        renderSelect('gain_on_disposal_account_id', 'Gain on Disposal', 'Income account for fixed asset disposal gains', $settings, $accounts);
+                        renderSelect('loss_on_disposal_account_id', 'Loss on Disposal', 'Expense account for fixed asset disposal losses', $settings, $accounts);
                         ?>
 
                         <div id="formMessage"></div>
@@ -221,8 +246,12 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <ul style="color: var(--fw-text-secondary); line-height: 1.8; padding-left: 20px;">
                         <li><strong>Fiscal Year Start:</strong> Determines reporting periods and year-end calculations</li>
                         <li><strong>AR/AP Accounts:</strong> Used for customer invoices and supplier bills</li>
+                        <li><strong>Bank Account:</strong> Default bank GL account used when posting customer and supplier payments</li>
                         <li><strong>VAT Accounts:</strong> Track sales and purchase tax obligations</li>
+                        <li><strong>VAT Control:</strong> Settlement account used during VAT period adjustments</li>
                         <li><strong>Sales/COGS/Inventory:</strong> Used in transaction posting and inventory valuation</li>
+                        <li><strong>Default Expense:</strong> Fallback expense account for AP bill lines without a specified GL account</li>
+                        <li><strong>Gain/Loss on Disposal:</strong> Income and expense accounts for fixed asset disposal journals</li>
                     </ul>
                     <p style="margin-top: 12px; color: var(--fw-text-muted); font-size: 13px;">
                         💡 Tip: You can override these defaults on individual transactions if needed.
