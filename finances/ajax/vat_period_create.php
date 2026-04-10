@@ -2,6 +2,7 @@
 // /finances/ajax/vat_period_create.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
@@ -12,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -101,7 +103,9 @@ try {
     ]);
 
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log("VAT period create error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,

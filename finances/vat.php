@@ -322,6 +322,7 @@ $vatPeriods = $stmt->fetchAll();
     </div>
 
     <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>window.__vatUserRole = <?= json_encode($userRole) ?>;</script>
     <script src="/finances/assets/vat.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

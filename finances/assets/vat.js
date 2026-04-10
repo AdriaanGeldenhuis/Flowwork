@@ -5,6 +5,8 @@
   'use strict';
 
   let currentPeriod = null;
+  const userRole = window.__vatUserRole || 'viewer';
+  const canEdit = (userRole === 'admin' || userRole === 'bookkeeper');
 
   // DOM Elements
   const tabButtons = document.querySelectorAll('.fw-finance__tab');
@@ -137,14 +139,16 @@
         </div>
 
         <div class="fw-finance__vat201-actions">
-          ${data.status === 'open' ? `
+          ${data.status === 'open' && canEdit ? `
             <button class="fw-finance__btn fw-finance__btn--primary" id="saveVAT201Btn">
               Save & Lock Period
             </button>
           ` : ''}
-          <button class="fw-finance__btn fw-finance__btn--secondary" id="addVATAdjustmentBtn">
-            Add Adjustment
-          </button>
+          ${canEdit && (data.status === 'prepared' || data.status === 'adjusted') ? `
+            <button class="fw-finance__btn fw-finance__btn--secondary" id="addVATAdjustmentBtn">
+              Add Adjustment
+            </button>
+          ` : ''}
           ${data.status !== 'open' ? `
             <button class="fw-finance__btn fw-finance__btn--secondary" id="exportVAT201Btn">
               Export CSV

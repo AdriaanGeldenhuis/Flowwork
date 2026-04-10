@@ -2,6 +2,7 @@
 // /finances/ajax/vat_save.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/../lib/VatCalculator.php';
@@ -15,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -110,7 +112,9 @@ try {
     echo json_encode(['ok' => true]);
 
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log("VAT save error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,

@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 
@@ -18,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 // Ensure company and user context
 $companyId = $_SESSION['company_id'] ?? null;
@@ -49,9 +51,9 @@ try {
     if (!$period) {
         throw new Exception('VAT period not found');
     }
-    // Prevent adjustments on filed or paid periods
-    if (in_array($period['status'], ['filed', 'paid'])) {
-        throw new Exception('Adjustments are not allowed on filed periods');
+    // Only allow adjustments on prepared or already-adjusted periods
+    if (!in_array($period['status'], ['prepared', 'adjusted'])) {
+        throw new Exception('Adjustments are only allowed on prepared or adjusted periods');
     }
 
     // Resolve VAT output and input account codes

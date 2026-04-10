@@ -2,6 +2,7 @@
 // /finances/ajax/vat_prepare.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/../lib/VatCalculator.php';
 require_once __DIR__ . '/../lib/Csrf.php';
@@ -14,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
