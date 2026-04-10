@@ -47,6 +47,23 @@ $budgets = $data['budgets'];
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
+// Period lock check – reject if the budget year is fully locked
+require_once __DIR__ . '/../../lib/PeriodService.php';
+$periodService = new PeriodService($DB, $companyId);
+if ($periodService->isLocked($year . '-12-31')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Period is locked. Budget changes are not allowed for ' . $year . '.']);
+    exit;
+}
+
+// Fetch valid account IDs for this company to prevent cross-company writes
+$validAccStmt = $DB->prepare(
+    "SELECT account_id FROM gl_accounts WHERE company_id = ? AND is_active = 1 AND account_type IN ('income','expense')"
+);
+$validAccStmt->execute([$companyId]);
+$validAccountIds = array_column($validAccStmt->fetchAll(PDO::FETCH_ASSOC), 'account_id');
+$validAccountIds = array_map('intval', $validAccountIds);
+
 try {
     // Begin transaction
     $DB->beginTransaction();
@@ -64,12 +81,15 @@ try {
     );
 
     // Loop through budgets and insert
+    $count = 0;
     foreach ($budgets as $row) {
         if (!is_array($row)) continue;
         if (!isset($row['account_id'], $row['month'], $row['amount'])) continue;
         $accId = (int) $row['account_id'];
         $month = (int) $row['month'];
         $amt   = (float) $row['amount'];
+        // Validate account belongs to this company
+        if (!in_array($accId, $validAccountIds, true)) continue;
         // Validate month and amount
         if ($month < 1 || $month > 12) continue;
         if ($amt < 0) $amt = 0.0;
@@ -78,13 +98,33 @@ try {
         // Only insert if non-zero (we remove zeros during deletion step)
         if ($cents === 0) continue;
         $insStmt->execute([$companyId, $accId, $year, $month, $cents]);
+        $count++;
     }
 
     $DB->commit();
+
+    // Audit log
+    $details = json_encode([
+        'year' => $year,
+        'project_id' => null,
+        'count' => $count
+    ]);
+    $logStmt = $DB->prepare(
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+         VALUES (?, ?, 'budget_saved', ?, ?, NOW())"
+    );
+    $logStmt->execute([
+        $companyId,
+        $userId,
+        $details,
+        $_SERVER['REMOTE_ADDR'] ?? null
+    ]);
+
     echo json_encode(['success' => true]);
 } catch (Throwable $e) {
     $DB->rollBack();
+    error_log('Budget save error [company=' . $companyId . ']: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Error saving budgets: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'An error occurred while saving budgets. Please try again.']);
 }
 ?>

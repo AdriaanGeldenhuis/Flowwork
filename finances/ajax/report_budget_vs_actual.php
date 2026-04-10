@@ -7,6 +7,9 @@ require_method('GET');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
+require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -123,19 +126,24 @@ try {
         $respAccounts[] = $acctRow;
     }
 
+    // Fetch report metadata (company details, prepared-by, timestamp)
+    $meta = getReportMeta($DB, $companyId, $userId);
+
     echo json_encode([
         'ok' => true,
         'data' => [
             'company_name' => $companyName,
             'year' => $year,
-            'accounts' => $respAccounts
+            'accounts' => $respAccounts,
+            'meta' => $meta
         ]
     ]);
     exit;
 
 } catch (Throwable $e) {
+    error_log('Budget vs actual report error [company=' . $companyId . ']: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'An error occurred while generating the report. Please try again.']);
     exit;
 }
 

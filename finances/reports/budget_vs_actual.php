@@ -23,6 +23,10 @@ $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
 $stmt->execute([$userId]);
 $firstName = $stmt->fetchColumn() ?: 'User';
 
+// Check if user has edit permissions (admin or bookkeeper)
+$userRole = fw_get_user_role($DB);
+$canEditBudgets = in_array($userRole, ['admin', 'bookkeeper'], true);
+
 // Build years list (last 5 to next 2 years)
 $currentYear = intval(date('Y'));
 $years = [];
@@ -38,6 +42,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Budget vs Actual Report – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
+    <meta name="csrf-token" content="<?= Csrf::token() ?>">
     <style>
         /* Extra styles for budgets vs actual report */
         .report-container {
@@ -82,6 +87,30 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
         }
         .fw-finance__btn {
             margin-left: 0.5rem;
+        }
+        .bva-meta {
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+            color: var(--fw-text-secondary, #666);
+            line-height: 1.6;
+        }
+        .bva-meta strong {
+            color: var(--fw-text-primary, #333);
+        }
+        .bva-section-header td {
+            background: var(--fw-bg-secondary);
+            font-weight: bold;
+            text-align: left !important;
+            padding: 0.4rem 0.5rem;
+        }
+        .bva-subtotal td {
+            font-weight: bold;
+            border-top: 2px solid var(--fw-border);
+        }
+        .bva-net-position td {
+            font-weight: bold;
+            border-top: 3px double var(--fw-border);
+            background: var(--fw-bg-secondary);
         }
     </style>
 </head>
@@ -146,6 +175,9 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
                         </select>
                         <button class="fw-finance__btn fw-finance__btn--primary" id="runReportBtn">Run Report</button>
                         <button class="fw-finance__btn fw-finance__btn--secondary" id="exportBtn" disabled>Export CSV</button>
+                        <?php if ($canEditBudgets): ?>
+                        <a href="/finances/budgets/edit.php" class="fw-finance__btn">Edit Budgets</a>
+                        <?php endif; ?>
                     </div>
                     <div id="reportStatus"></div>
                 </div>
@@ -167,6 +199,9 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
         generateReport(year, type);
     });
 
+    // Store last fetched data for CSV export
+    let lastReportData = null;
+
     async function generateReport(year, type) {
         const container = document.getElementById('reportContainer');
         container.innerHTML = '<div class="fw-finance__loading"><div class="fw-finance__spinner"></div> Generating report...</div>';
@@ -176,69 +211,159 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
             const res = await fetch(`/finances/ajax/report_budget_vs_actual.php?year=${encodeURIComponent(year)}&type=${encodeURIComponent(type)}`);
             const json = await res.json();
             if (!json.ok) {
-                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + (json.error || 'Failed to generate report') + '</div>';
+                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + escapeHtml(json.error || 'Failed to generate report') + '</div>';
                 return;
             }
-            const data = json.data;
-            renderTable(data);
+            lastReportData = json.data;
+            renderTable(json.data);
             document.getElementById('exportBtn').disabled = false;
             document.getElementById('reportStatus').textContent = 'Generated: ' + new Date().toLocaleString();
         } catch (e) {
-            container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + e.message + '</div>';
+            container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + escapeHtml(e.message) + '</div>';
         }
+    }
+
+    // Determine if variance is unfavorable based on account type
+    function isUnfavorable(variance, accountType) {
+        if (accountType === 'income') return variance > 0; // Under-earned
+        return variance < 0; // Overspent
+    }
+
+    // Calculate percentage variance
+    function pctVariance(variance, budget) {
+        if (budget === 0) return '-';
+        const pct = (variance / Math.abs(budget)) * 100;
+        return pct.toFixed(1) + '%';
     }
 
     function renderTable(data) {
         const container = document.getElementById('reportContainer');
         const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const colSpan = 2 + (12 * 2) + 4; // code + name + 24 months + totBud + totAct + var + %var
+
+        // Report metadata header
         let html = '';
+        if (data.meta) {
+            html += '<div class="bva-meta">';
+            html += '<strong>' + escapeHtml(data.meta.company_name || '') + '</strong><br>';
+            if (data.meta.reg_number) html += 'Reg: ' + escapeHtml(data.meta.reg_number) + ' &nbsp; ';
+            if (data.meta.vat_number) html += 'VAT: ' + escapeHtml(data.meta.vat_number) + ' &nbsp; ';
+            if (data.meta.tax_number) html += 'Tax: ' + escapeHtml(data.meta.tax_number);
+            if (data.meta.reg_number || data.meta.vat_number || data.meta.tax_number) html += '<br>';
+            html += 'Budget vs Actual Report &mdash; Year: ' + escapeHtml(String(data.year)) + '<br>';
+            html += 'Prepared by: ' + escapeHtml(data.meta.prepared_by || '') + ' &nbsp; Generated: ' + escapeHtml(data.meta.generated_at || '');
+            html += '</div>';
+        }
+
         html += '<table class="bva-table"><thead><tr>';
         html += '<th>Account Code</th><th>Account Name</th>';
         months.forEach(function(m) {
             html += '<th>' + m + ' Bud</th><th>' + m + ' Act</th>';
         });
-        html += '<th>Total Bud</th><th>Total Act</th><th>Variance</th>';
+        html += '<th>Total Bud</th><th>Total Act</th><th>Variance</th><th>% Var</th>';
         html += '</tr></thead><tbody>';
+
+        // Separate accounts into income and expense
+        const incomeAccounts = data.accounts.filter(function(a) { return a.account_type === 'income'; });
+        const expenseAccounts = data.accounts.filter(function(a) { return a.account_type === 'expense'; });
+
         let grandBud = new Array(12).fill(0);
         let grandAct = new Array(12).fill(0);
         let grandTotalBud = 0;
         let grandTotalAct = 0;
-        data.accounts.forEach(function(acc) {
-            let totalBud = 0;
-            let totalAct = 0;
-            html += '<tr>';
-            html += '<td>' + escapeHtml(acc.account_code) + '</td>';
-            html += '<td>' + escapeHtml(acc.account_name) + '</td>';
-            for (let m=1; m<=12; m++) {
-                const bud = acc.budget_cents[m] || 0;
-                const act = acc.actual_cents[m] || 0;
-                grandBud[m-1] += bud;
-                grandAct[m-1] += act;
-                totalBud += bud;
-                totalAct += act;
-                html += '<td>' + (bud !== 0 ? formatCurrency(bud) : '-') + '</td>';
-                html += '<td>' + (act !== 0 ? formatCurrency(act) : '-') + '</td>';
+
+        // Render a section of accounts and return subtotals
+        function renderSection(accounts, label) {
+            let secBud = new Array(12).fill(0);
+            let secAct = new Array(12).fill(0);
+            let secTotalBud = 0;
+            let secTotalAct = 0;
+            const accType = accounts.length > 0 ? accounts[0].account_type : 'expense';
+
+            // Section header
+            html += '<tr class="bva-section-header"><td colspan="' + colSpan + '">' + escapeHtml(label) + '</td></tr>';
+
+            accounts.forEach(function(acc) {
+                let totalBud = 0;
+                let totalAct = 0;
+                html += '<tr>';
+                html += '<td>' + escapeHtml(acc.account_code) + '</td>';
+                html += '<td>' + escapeHtml(acc.account_name) + '</td>';
+                for (let m = 1; m <= 12; m++) {
+                    const bud = acc.budget_cents[m] || 0;
+                    const act = acc.actual_cents[m] || 0;
+                    secBud[m-1] += bud;
+                    secAct[m-1] += act;
+                    totalBud += bud;
+                    totalAct += act;
+                    html += '<td>' + (bud !== 0 ? formatCurrency(bud) : '-') + '</td>';
+                    html += '<td>' + (act !== 0 ? formatCurrency(act) : '-') + '</td>';
+                }
+                secTotalBud += totalBud;
+                secTotalAct += totalAct;
+                const variance = totalBud - totalAct;
+                const unfavorable = isUnfavorable(variance, accType);
+                const varColor = (variance !== 0 && unfavorable) ? 'red' : 'inherit';
+                html += '<td>' + (totalBud !== 0 ? formatCurrency(totalBud) : '-') + '</td>';
+                html += '<td>' + (totalAct !== 0 ? formatCurrency(totalAct) : '-') + '</td>';
+                html += '<td style="color:' + varColor + '">' + (variance !== 0 ? formatCurrency(variance) : '-') + '</td>';
+                html += '<td style="color:' + varColor + '">' + pctVariance(variance, totalBud) + '</td>';
+                html += '</tr>';
+            });
+
+            // Subtotal row
+            const secVariance = secTotalBud - secTotalAct;
+            const secUnfavorable = isUnfavorable(secVariance, accType);
+            const secVarColor = (secVariance !== 0 && secUnfavorable) ? 'red' : 'inherit';
+            html += '<tr class="bva-subtotal">';
+            html += '<td colspan="2">Total ' + escapeHtml(label) + '</td>';
+            for (let i = 0; i < 12; i++) {
+                grandBud[i] += secBud[i];
+                grandAct[i] += secAct[i];
+                html += '<td>' + (secBud[i] !== 0 ? formatCurrency(secBud[i]) : '-') + '</td>';
+                html += '<td>' + (secAct[i] !== 0 ? formatCurrency(secAct[i]) : '-') + '</td>';
             }
-            grandTotalBud += totalBud;
-            grandTotalAct += totalAct;
-            const variance = totalBud - totalAct;
-            html += '<td>' + (totalBud !== 0 ? formatCurrency(totalBud) : '-') + '</td>';
-            html += '<td>' + (totalAct !== 0 ? formatCurrency(totalAct) : '-') + '</td>';
-            html += '<td style="color:' + (variance < 0 ? 'red' : 'inherit') + '">' + (variance !== 0 ? formatCurrency(variance) : '-') + '</td>';
+            grandTotalBud += secTotalBud;
+            grandTotalAct += secTotalAct;
+            html += '<td>' + (secTotalBud !== 0 ? formatCurrency(secTotalBud) : '-') + '</td>';
+            html += '<td>' + (secTotalAct !== 0 ? formatCurrency(secTotalAct) : '-') + '</td>';
+            html += '<td style="color:' + secVarColor + '">' + (secVariance !== 0 ? formatCurrency(secVariance) : '-') + '</td>';
+            html += '<td style="color:' + secVarColor + '">' + pctVariance(secVariance, secTotalBud) + '</td>';
             html += '</tr>';
-        });
-        // Totals row
-        html += '<tr class="fw-finance__report-table-total">';
-        html += '<td colspan="2"><strong>Total</strong></td>';
-        for (let i=0; i<12; i++) {
-            html += '<td><strong>' + (grandBud[i] !== 0 ? formatCurrency(grandBud[i]) : '-') + '</strong></td>';
-            html += '<td><strong>' + (grandAct[i] !== 0 ? formatCurrency(grandAct[i]) : '-') + '</strong></td>';
+
+            return { totalBud: secTotalBud, totalAct: secTotalAct };
         }
-        const grandVariance = grandTotalBud - grandTotalAct;
-        html += '<td><strong>' + (grandTotalBud !== 0 ? formatCurrency(grandTotalBud) : '-') + '</strong></td>';
-        html += '<td><strong>' + (grandTotalAct !== 0 ? formatCurrency(grandTotalAct) : '-') + '</strong></td>';
-        html += '<td style="color:' + (grandVariance < 0 ? 'red' : 'inherit') + '"><strong>' + (grandVariance !== 0 ? formatCurrency(grandVariance) : '-') + '</strong></td>';
+
+        // Render Income section
+        let incomeTotals = { totalBud: 0, totalAct: 0 };
+        if (incomeAccounts.length > 0) {
+            incomeTotals = renderSection(incomeAccounts, 'Income');
+        }
+
+        // Render Expense section
+        let expenseTotals = { totalBud: 0, totalAct: 0 };
+        if (expenseAccounts.length > 0) {
+            expenseTotals = renderSection(expenseAccounts, 'Expenses');
+        }
+
+        // Net Position row (Income - Expenses)
+        const netBud = incomeTotals.totalBud - expenseTotals.totalBud;
+        const netAct = incomeTotals.totalAct - expenseTotals.totalAct;
+        const netVariance = netBud - netAct;
+        html += '<tr class="bva-net-position">';
+        html += '<td colspan="2">Net Position (Income - Expenses)</td>';
+        for (let i = 0; i < 12; i++) {
+            const mIncBud = incomeAccounts.length > 0 ? (grandBud[i] - (grandBud[i] - (incomeAccounts.reduce(function(s, a) { return s + (a.budget_cents[i+1] || 0); }, 0)))) : 0;
+            // Simplified: just show dashes for monthly net since per-section monthly is already shown
+            html += '<td>-</td><td>-</td>';
+        }
+        html += '<td>' + (netBud !== 0 ? formatCurrency(netBud) : '-') + '</td>';
+        html += '<td>' + (netAct !== 0 ? formatCurrency(netAct) : '-') + '</td>';
+        const netColor = netVariance < 0 ? 'red' : 'inherit';
+        html += '<td style="color:' + netColor + '">' + (netVariance !== 0 ? formatCurrency(netVariance) : '-') + '</td>';
+        html += '<td style="color:' + netColor + '">' + pctVariance(netVariance, netBud) + '</td>';
         html += '</tr>';
+
         html += '</tbody></table>';
         container.innerHTML = html;
     }
@@ -250,12 +375,7 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
         const rands = abs / 100;
         return sign + 'R ' + rands.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-    // Helper to escape HTML
-    function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, function(m) {
-            return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#039;'}[m] || m;
-        });
-    }
+
     // CSV Export
     document.getElementById('exportBtn').addEventListener('click', function() {
         const year = document.getElementById('yearSelect').value;
@@ -273,45 +393,73 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
             const data = json.data;
             const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             let csv = '';
-            // Header row
+
+            // Company metadata header rows
+            if (data.meta) {
+                csv += '"' + (data.meta.company_name || '').replace(/"/g,'""') + '"\n';
+                if (data.meta.reg_number) csv += '"Reg: ' + data.meta.reg_number.replace(/"/g,'""') + '"\n';
+                if (data.meta.vat_number) csv += '"VAT: ' + data.meta.vat_number.replace(/"/g,'""') + '"\n';
+                if (data.meta.tax_number) csv += '"Tax: ' + data.meta.tax_number.replace(/"/g,'""') + '"\n';
+                csv += '"Budget vs Actual Report - Year: ' + year + '"\n';
+                csv += '"Prepared by: ' + (data.meta.prepared_by || '').replace(/"/g,'""') + '","Generated: ' + (data.meta.generated_at || '').replace(/"/g,'""') + '"\n';
+                csv += '\n';
+            }
+
+            // Column header row
             csv += 'Account Code,Account Name';
             months.forEach(function(m) {
                 csv += ',' + m + ' Budget,' + m + ' Actual';
             });
-            csv += ',Total Budget,Total Actual,Variance\n';
-            // Data rows
-            let grandBud = new Array(12).fill(0);
-            let grandAct = new Array(12).fill(0);
-            let grandTotalBud = 0;
-            let grandTotalAct = 0;
-            data.accounts.forEach(function(acc) {
-                let line = '';
-                line += '"' + acc.account_code.replace(/"/g,'""') + '",' + '"' + acc.account_name.replace(/"/g,'""') + '"';
-                let totBud = 0;
-                let totAct = 0;
-                for (let m=1; m<=12; m++) {
-                    const bud = acc.budget_cents[m] || 0;
-                    const act = acc.actual_cents[m] || 0;
-                    grandBud[m-1] += bud;
-                    grandAct[m-1] += act;
-                    totBud += bud;
-                    totAct += act;
-                    line += ',' + (bud/100).toFixed(2) + ',' + (act/100).toFixed(2);
-                }
-                grandTotalBud += totBud;
-                grandTotalAct += totAct;
-                const variance = (totBud - totAct)/100;
-                line += ',' + (totBud/100).toFixed(2) + ',' + (totAct/100).toFixed(2) + ',' + variance.toFixed(2);
-                csv += line + '\n';
-            });
-            // Totals row
-            let totalsLine = 'Total,Total';
-            for (let i=0; i<12; i++) {
-                totalsLine += ',' + (grandBud[i]/100).toFixed(2) + ',' + (grandAct[i]/100).toFixed(2);
+            csv += ',Total Budget,Total Actual,Variance,% Variance\n';
+
+            // Separate accounts
+            const incomeAccounts = data.accounts.filter(function(a) { return a.account_type === 'income'; });
+            const expenseAccounts = data.accounts.filter(function(a) { return a.account_type === 'expense'; });
+
+            function csvSection(accounts, label) {
+                let secTotalBud = 0, secTotalAct = 0;
+                csv += '"' + label + '"\n';
+                accounts.forEach(function(acc) {
+                    let line = '"' + acc.account_code.replace(/"/g,'""') + '","' + acc.account_name.replace(/"/g,'""') + '"';
+                    let totBud = 0, totAct = 0;
+                    for (let m = 1; m <= 12; m++) {
+                        const bud = acc.budget_cents[m] || 0;
+                        const act = acc.actual_cents[m] || 0;
+                        totBud += bud;
+                        totAct += act;
+                        line += ',' + (bud/100).toFixed(2) + ',' + (act/100).toFixed(2);
+                    }
+                    secTotalBud += totBud;
+                    secTotalAct += totAct;
+                    const variance = (totBud - totAct)/100;
+                    const pct = totBud !== 0 ? ((totBud - totAct) / Math.abs(totBud) * 100).toFixed(1) + '%' : '-';
+                    line += ',' + (totBud/100).toFixed(2) + ',' + (totAct/100).toFixed(2) + ',' + variance.toFixed(2) + ',' + pct;
+                    csv += line + '\n';
+                });
+                // Subtotal
+                const secVar = (secTotalBud - secTotalAct)/100;
+                const secPct = secTotalBud !== 0 ? ((secTotalBud - secTotalAct) / Math.abs(secTotalBud) * 100).toFixed(1) + '%' : '-';
+                csv += '"Total ' + label + '",,,,,,,,,,,,,,,,,,,,,,,,,' + (secTotalBud/100).toFixed(2) + ',' + (secTotalAct/100).toFixed(2) + ',' + secVar.toFixed(2) + ',' + secPct + '\n';
+                return { totalBud: secTotalBud, totalAct: secTotalAct };
             }
-            const grandVar = (grandTotalBud - grandTotalAct)/100;
-            totalsLine += ',' + (grandTotalBud/100).toFixed(2) + ',' + (grandTotalAct/100).toFixed(2) + ',' + grandVar.toFixed(2);
-            csv += totalsLine + '\n';
+
+            let incomeTotals = { totalBud: 0, totalAct: 0 };
+            if (incomeAccounts.length > 0) {
+                incomeTotals = csvSection(incomeAccounts, 'Income');
+            }
+
+            let expenseTotals = { totalBud: 0, totalAct: 0 };
+            if (expenseAccounts.length > 0) {
+                expenseTotals = csvSection(expenseAccounts, 'Expenses');
+            }
+
+            // Net Position
+            const netBud = (incomeTotals.totalBud - expenseTotals.totalBud)/100;
+            const netAct = (incomeTotals.totalAct - expenseTotals.totalAct)/100;
+            const netVar = netBud - netAct;
+            const netPct = netBud !== 0 ? (netVar / Math.abs(netBud) * 100).toFixed(1) + '%' : '-';
+            csv += '\n"Net Position (Income - Expenses)",,,,,,,,,,,,,,,,,,,,,,,,,' + netBud.toFixed(2) + ',' + netAct.toFixed(2) + ',' + netVar.toFixed(2) + ',' + netPct + '\n';
+
             // Trigger download
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');

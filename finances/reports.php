@@ -122,6 +122,9 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/vat_summary.php'">
                         VAT Summary
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/budget_vs_actual.php'">
+                        Budget vs Actual
+                    </button>
 
                     <!-- New: Exports tab -->
                     <button class="fw-finance__report-type-btn" data-report="exports">
