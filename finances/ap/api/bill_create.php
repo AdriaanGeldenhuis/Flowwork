@@ -10,9 +10,13 @@ require_once __DIR__ . '/../../../auth_gate.php';
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
+
+require_once __DIR__ . '/../../lib/Csrf.php';
+Csrf::validate();
 
 // Only admin/bookkeeper can create bills
 $role = $_SESSION['role'] ?? 'member';
@@ -38,7 +42,17 @@ if (empty($header['supplier_id']) || empty($header['invoice_number']) || empty($
 $supplierId  = (int)$header['supplier_id'];
 $invoiceNo   = trim($header['invoice_number']);
 $invoiceDate = $header['invoice_date'];
+
+// Validate date formats
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $invoiceDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid invoice date format']);
+    exit;
+}
 $dueDate     = $header['due_date'] ?? null;
+if ($dueDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid due date format']);
+    exit;
+}
 $currency    = $header['currency'] ?? 'ZAR';
 $subtotal    = isset($header['subtotal']) ? (float)$header['subtotal'] : 0.0;
 $tax         = isset($header['tax']) ? (float)$header['tax'] : 0.0;

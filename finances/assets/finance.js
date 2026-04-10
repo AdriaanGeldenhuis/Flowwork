@@ -157,11 +157,7 @@
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    container.innerHTML = `
-      <div class="fw-finance__form-message fw-finance__form-message--${type}">
-        ${message}
-      </div>
-    `;
+    container.innerHTML = '<div class="fw-finance__form-message fw-finance__form-message--' + escapeHtml(type) + '">' + escapeHtml(message) + '</div>';
 
     setTimeout(() => {
       container.innerHTML = '';
@@ -219,15 +215,9 @@
       const result = await FinanceAPI.request('/finances/ajax/recent_activity.php');
       
       if (result.ok && result.data.length > 0) {
-        container.innerHTML = result.data.map(item => `
-          <div class="fw-finance__activity-item">
-            <div class="fw-finance__activity-icon">${item.icon || '📄'}</div>
-            <div class="fw-finance__activity-content">
-              <div class="fw-finance__activity-title">${item.title}</div>
-              <div class="fw-finance__activity-meta">${item.meta}</div>
-            </div>
-          </div>
-        `).join('');
+        container.innerHTML = result.data.map(function(item) {
+          return '<div class="fw-finance__activity-item"><div class="fw-finance__activity-icon">' + escapeHtml(item.icon || '📄') + '</div><div class="fw-finance__activity-content"><div class="fw-finance__activity-title">' + escapeHtml(item.title) + '</div><div class="fw-finance__activity-meta">' + escapeHtml(item.meta) + '</div></div></div>';
+        }).join('');
       } else {
         container.innerHTML = '<div class="fw-finance__empty-state">No recent activity</div>';
       }

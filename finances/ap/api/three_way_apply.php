@@ -14,6 +14,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 require_once __DIR__ . '/../../lib/Csrf.php';
 Csrf::validate();
 
+// Role check: only admin/bookkeeper can apply matches
+$role = $_SESSION['role'] ?? 'member';
+if (!in_array($role, ['admin', 'bookkeeper'])) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
+    exit;
+}
+
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 $userId    = (int)($_SESSION['user_id'] ?? 0);
 

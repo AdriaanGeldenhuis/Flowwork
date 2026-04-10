@@ -429,9 +429,12 @@ document.getElementById('billForm').addEventListener('submit', async function(e)
             });
             if (matchesToSend.length > 0) {
                 try {
+                    var matchHdrs = { 'Content-Type': 'application/json' };
+                    var csrfMeta2 = document.querySelector('meta[name="csrf-token"]');
+                    if (csrfMeta2) matchHdrs['X-CSRF-Token'] = csrfMeta2.content;
                     var mRes = await fetch('/finances/ap/ajax/bill.match.php', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: matchHdrs,
                         body: JSON.stringify({ bill_id: result.bill_id, matches: matchesToSend })
                     });
                     var mResult = await mRes.json();

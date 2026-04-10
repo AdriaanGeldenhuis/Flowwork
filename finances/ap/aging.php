@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../lib/http.php';
+require_method('GET');
 // /finances/ap/aging.php – Accounts payable aging report
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
@@ -113,7 +115,7 @@ async function loadAging() {
         html += '</tbody></table>';
         container.innerHTML = html;
     } catch (err) {
-        container.innerHTML = '<div class="fw-finance__error">' + err.message + '</div>';
+        container.innerHTML = '<div class="fw-finance__error">' + escapeHtml(err.message) + '</div>';
     }
 }
 document.addEventListener('DOMContentLoaded', loadAging);

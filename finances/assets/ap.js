@@ -418,11 +418,16 @@
       });
       html += '</tbody></table>';
       list.innerHTML = html;
-      list.querySelectorAll('.tw-remove-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          twPendingMatches.splice(parseInt(this.dataset.idx), 1);
+    }
+
+    // Event delegation for remove buttons on the 3-way content container (avoids memory leak)
+    var twContainer = document.getElementById('threewayContent');
+    if (twContainer) {
+      twContainer.addEventListener('click', function(ev) {
+        if (ev.target && ev.target.classList.contains('tw-remove-btn')) {
+          twPendingMatches.splice(parseInt(ev.target.dataset.idx), 1);
           renderPendingMatches();
-        });
+        }
       });
     }
   }

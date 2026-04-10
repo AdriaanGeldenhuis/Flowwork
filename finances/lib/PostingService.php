@@ -1277,6 +1277,9 @@ class PostingService
             if (!$acctCode) {
                 $acctCode = $this->accounts->get('finance_expense_account_id', '5000');
             }
+            // SARS: Resolve tax code for credit line
+            $lineTaxCodeId = $this->resolveInputTaxCodeId($taxRate);
+
             // Credit expense (reverse cost)
             $journalLines[] = [
                 'account_code' => $acctCode,
@@ -1284,20 +1287,23 @@ class PostingService
                 'debit'        => 0.0,
                 'credit'       => $net,
                 'supplier_id'  => (int)$credit['supplier_id'],
-                'reference'    => $credit['credit_number']
+                'reference'    => $credit['credit_number'],
+                'tax_code_id'  => $lineTaxCodeId
             ];
             $netTotal += $net;
             $vatTotal += $vat;
         }
         // Credit VAT Input (reverse VAT claimed)
         if ($vatTotal > 0.0001) {
+            $inputTaxCodeId = $this->resolveInputTaxCodeId(15.0);
             $journalLines[] = [
                 'account_code' => $vatInCode,
                 'description'  => 'VAT Input (Vendor Credit)',
                 'debit'        => 0.0,
                 'credit'       => $vatTotal,
                 'supplier_id'  => (int)$credit['supplier_id'],
-                'reference'    => $credit['credit_number']
+                'reference'    => $credit['credit_number'],
+                'tax_code_id'  => $inputTaxCodeId
             ];
         }
         // Debit AP for total credit (net + vat)
@@ -1308,7 +1314,8 @@ class PostingService
             'debit'        => $total,
             'credit'       => 0.0,
             'supplier_id'  => (int)$credit['supplier_id'],
-            'reference'    => $credit['credit_number']
+            'reference'    => $credit['credit_number'],
+            'tax_code_id'  => null
         ];
         // Post to GL
         $this->db->beginTransaction();
@@ -1331,10 +1338,10 @@ class PostingService
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
-            // Insert lines
+            // Insert lines (with SARS tax_code_id linkage)
             $stmtLine = $this->db->prepare(
-                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, customer_id, supplier_id, reference)\n"
-                . "VALUES (?, ?, ?, ?, ?, NULL, ?, ?)"
+                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, customer_id, supplier_id, reference)\n"
+                . "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)"
             );
             foreach ($journalLines as $jl) {
                 $stmtLine->execute([
@@ -1343,15 +1350,27 @@ class PostingService
                     $jl['description'],
                     number_format($jl['debit'], 2, '.', ''),
                     number_format($jl['credit'], 2, '.', ''),
+                    $jl['tax_code_id'],
                     $jl['supplier_id'],
                     $jl['reference']
                 ]);
             }
             // Update credit with journal id and status
+            $oldStatus = $credit['status'];
             $stmt = $this->db->prepare(
                 "UPDATE vendor_credits SET journal_id = ?, status = 'applied' WHERE id = ? AND company_id = ?"
             );
             $stmt->execute([$journalId, $creditId, $this->companyId]);
+
+            // SARS audit trail for vendor credit status change
+            require_once __DIR__ . '/Audit.php';
+            Audit::log('vendor_credit_status_change', [
+                'credit_id' => $creditId,
+                'from' => $oldStatus,
+                'to' => 'applied',
+                'journal_id' => $journalId
+            ]);
+
             $this->db->commit();
         } catch (Exception $e) {
             $this->db->rollBack();

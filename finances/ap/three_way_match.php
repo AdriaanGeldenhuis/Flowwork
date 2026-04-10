@@ -6,6 +6,8 @@ requireRoles(['bookkeeper','admin']);
 
 define('ASSET_VERSION', '2026-04-10-AP-1');
 
+require_once __DIR__ . '/../lib/Csrf.php';
+$csrfToken = Csrf::token();
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -32,6 +34,7 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3-Way Match – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body>
@@ -182,8 +185,10 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </footer>
 
         <!-- Inline script handling dynamic matching -->
+        <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
         <script>
         (function() {
+            var E = window.escapeHtml || function(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
             // Data arrays
             let poLines = [];
             let grnLines = [];
@@ -242,39 +247,39 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 poTableBody.innerHTML = '';
                 poLines.forEach(line => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${line.id}</td>` +
-                        `<td>${line.po_number}</td>` +
-                        `<td>${line.description || ''}</td>` +
-                        `<td>${numberFmt(line.qty_ordered)}</td>` +
-                        `<td>${numberFmt(line.qty_matched)}</td>` +
-                        `<td>${numberFmt(line.qty_available)}</td>` +
-                        `<td>${line.unit_price.toFixed(2)}</td>`;
+                    tr.innerHTML = '<td>' + parseInt(line.id) + '</td>' +
+                        '<td>' + E(line.po_number) + '</td>' +
+                        '<td>' + E(line.description) + '</td>' +
+                        '<td>' + numberFmt(line.qty_ordered) + '</td>' +
+                        '<td>' + numberFmt(line.qty_matched) + '</td>' +
+                        '<td>' + numberFmt(line.qty_available) + '</td>' +
+                        '<td>' + parseFloat(line.unit_price).toFixed(2) + '</td>';
                     poTableBody.appendChild(tr);
                 });
                 // GRN table
                 grnTableBody.innerHTML = '';
                 grnLines.forEach(line => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${line.id}</td>` +
-                        `<td>${line.grn_number}</td>` +
-                        `<td>${line.po_line_id !== null ? line.po_line_id : ''}</td>` +
-                        `<td>${line.po_description || ''}</td>` +
-                        `<td>${numberFmt(line.qty_received)}</td>` +
-                        `<td>${numberFmt(line.qty_matched)}</td>` +
-                        `<td>${numberFmt(line.qty_available)}</td>`;
+                    tr.innerHTML = '<td>' + parseInt(line.id) + '</td>' +
+                        '<td>' + E(line.grn_number) + '</td>' +
+                        '<td>' + (line.po_line_id !== null ? parseInt(line.po_line_id) : '') + '</td>' +
+                        '<td>' + E(line.po_description) + '</td>' +
+                        '<td>' + numberFmt(line.qty_received) + '</td>' +
+                        '<td>' + numberFmt(line.qty_matched) + '</td>' +
+                        '<td>' + numberFmt(line.qty_available) + '</td>';
                     grnTableBody.appendChild(tr);
                 });
                 // Bill table
                 billTableBody.innerHTML = '';
                 billLines.forEach(line => {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${line.id}</td>` +
-                        `<td>${line.invoice_number || ''}</td>` +
-                        `<td>${line.description || ''}</td>` +
-                        `<td>${numberFmt(line.qty)}</td>` +
-                        `<td>${numberFmt(line.qty_matched)}</td>` +
-                        `<td>${numberFmt(line.qty_available)}</td>` +
-                        `<td>${line.unit_price.toFixed(2)}</td>`;
+                    tr.innerHTML = '<td>' + parseInt(line.id) + '</td>' +
+                        '<td>' + E(line.invoice_number) + '</td>' +
+                        '<td>' + E(line.description) + '</td>' +
+                        '<td>' + numberFmt(line.qty) + '</td>' +
+                        '<td>' + numberFmt(line.qty_matched) + '</td>' +
+                        '<td>' + numberFmt(line.qty_available) + '</td>' +
+                        '<td>' + parseFloat(line.unit_price).toFixed(2) + '</td>';
                     billTableBody.appendChild(tr);
                 });
             }
@@ -286,7 +291,7 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     if (line.qty_available > 0) {
                         const opt = document.createElement('option');
                         opt.value = line.id;
-                        opt.textContent = `${line.po_number} – ${line.description} (avail: ${numberFmt(line.qty_available)})`;
+                        opt.textContent = (line.po_number || '') + ' \u2013 ' + (line.description || '') + ' (avail: ' + numberFmt(line.qty_available) + ')';
                         opt.dataset.available = line.qty_available;
                         poLineSelect.appendChild(opt);
                     }
@@ -297,7 +302,7 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     if (line.qty_available > 0) {
                         const opt = document.createElement('option');
                         opt.value = line.id;
-                        opt.textContent = `${line.grn_number} – ${line.po_description || ''} (avail: ${numberFmt(line.qty_available)})`;
+                        opt.textContent = (line.grn_number || '') + ' \u2013 ' + (line.po_description || '') + ' (avail: ' + numberFmt(line.qty_available) + ')';
                         opt.dataset.available = line.qty_available;
                         grnLineSelect.appendChild(opt);
                     }
@@ -308,7 +313,7 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     if (line.qty_available > 0) {
                         const opt = document.createElement('option');
                         opt.value = line.id;
-                        opt.textContent = `${line.invoice_number || ''} – ${line.description} (avail: ${numberFmt(line.qty_available)})`;
+                        opt.textContent = (line.invoice_number || '') + ' \u2013 ' + (line.description || '') + ' (avail: ' + numberFmt(line.qty_available) + ')';
                         opt.dataset.available = line.qty_available;
                         billLineSelect.appendChild(opt);
                     }
@@ -352,10 +357,13 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 qtyInput.value = '';
                 // Append to matches table
                 const tr = document.createElement('tr');
-                const poText  = poId ? (poLines.find(l => l.id === poId).po_number + ' – ' + (poLines.find(l => l.id === poId).description || '')) : '';
-                const grnText = grnId ? (grnLines.find(l => l.id === grnId).grn_number + ' – ' + (grnLines.find(l => l.id === grnId).po_description || '')) : '';
-                const billText= billId ? (billLines.find(l => l.id === billId).invoice_number + ' – ' + (billLines.find(l => l.id === billId).description || '')) : '';
-                tr.innerHTML = `<td>${poText}</td><td>${grnText}</td><td>${billText}</td><td>${numberFmt(qty)}</td><td><button type="button" class="removeMatchBtn">Remove</button></td>`;
+                const poLine = poId ? poLines.find(l => l.id === poId) : null;
+                const grnLine = grnId ? grnLines.find(l => l.id === grnId) : null;
+                const billLine = billId ? billLines.find(l => l.id === billId) : null;
+                const poText  = poLine ? (poLine.po_number || '') + ' \u2013 ' + (poLine.description || '') : '';
+                const grnText = grnLine ? (grnLine.grn_number || '') + ' \u2013 ' + (grnLine.po_description || '') : '';
+                const billText = billLine ? (billLine.invoice_number || '') + ' \u2013 ' + (billLine.description || '') : '';
+                tr.innerHTML = '<td>' + E(poText) + '</td><td>' + E(grnText) + '</td><td>' + E(billText) + '</td><td>' + numberFmt(qty) + '</td><td><button type="button" class="removeMatchBtn">Remove</button></td>';
                 // store index on row
                 const index = pendingMatches.length - 1;
                 tr.dataset.index = index;
@@ -400,9 +408,12 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 }
                 // Disable button to prevent duplicate clicks
                 applyBtn.disabled = true;
+                var hdrs = { 'Content-Type': 'application/json' };
+                var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+                if (csrfMeta) hdrs['X-CSRF-Token'] = csrfMeta.content;
                 fetch('/finances/ap/api/three_way_apply.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: hdrs,
                     body: JSON.stringify({ matches: pendingMatches })
                 })
                 .then(r => r.json())

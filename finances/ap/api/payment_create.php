@@ -9,12 +9,17 @@ require_once __DIR__ . '/../../../finances/lib/PostingService.php';
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
 
+require_once __DIR__ . '/../../lib/Csrf.php';
+Csrf::validate();
+
 $role = $_SESSION['role'] ?? 'member';
 if (!in_array($role, ['admin', 'bookkeeper'])) {
+    http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
@@ -25,6 +30,10 @@ $userId    = (int)$_SESSION['user_id'];
 $input = json_decode(file_get_contents('php://input'), true);
 $supplierId     = isset($input['supplier_id']) ? (int)$input['supplier_id'] : 0;
 $paymentDate    = $input['payment_date'] ?? date('Y-m-d');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $paymentDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid payment date format']);
+    exit;
+}
 $bankAccountId  = isset($input['bank_account_id']) && $input['bank_account_id'] ? (int)$input['bank_account_id'] : null;
 $method         = $input['method'] ?? 'eft';
 $reference      = $input['reference'] ?? null;

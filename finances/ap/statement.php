@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../lib/http.php';
+require_method('GET');
 // /finances/ap/statement.php – Supplier statements
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
@@ -150,7 +152,7 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
             const res = await fetch('/finances/ap/api/ap_statement.php?' + params.toString());
             const data = await res.json();
             if (!data.ok) {
-                container.innerHTML = '<div class="fw-finance__error">Error: ' + (data.error || 'Unknown error') + '</div>';
+                container.innerHTML = '<div class="fw-finance__error">Error: ' + escapeHtml(data.error || 'Unknown error') + '</div>';
                 return;
             }
             const opening = parseFloat(data.opening_balance || 0);
@@ -178,7 +180,7 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
             }
             container.innerHTML = html;
         } catch (err) {
-            container.innerHTML = '<div class="fw-finance__error">Network error: ' + err.message + '</div>';
+            container.innerHTML = '<div class="fw-finance__error">Network error: ' + escapeHtml(err.message) + '</div>';
         }
     });
     </script>
