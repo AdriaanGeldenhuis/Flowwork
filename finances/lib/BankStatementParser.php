@@ -152,6 +152,10 @@ class BankStatementParser
             $line = trim($line);
             if (empty($line)) continue;
 
+            // Skip summary/header lines
+            if (preg_match('/^(opening|closing|total)\s+balance/i', $line)) continue;
+            if (preg_match('/balance\s+(brought|carried)\s+forward/i', $line)) continue;
+
             // FNB pattern: DD/MM/YYYY or DD Mon YYYY followed by description and amounts
             // e.g. "05/03/2026   SHOPRITE SALES      -1,250.00    15,432.10"
             // e.g. "05 Mar 2026  SALARY DEPOSIT       25,000.00   40,432.10"
@@ -172,19 +176,47 @@ class BankStatementParser
     // ── ABSA ─────────────────────────────────────────────────────────
     // ABSA statements: Date | Description | Debit | Credit | Balance
     // Date format: DD Mon YYYY or YYYY/MM/DD
+    // IMPORTANT: Transaction detail often appears on the NEXT line below the main line
+    // e.g. "05 Mar 2026  POS PURCHASE SHOPRITE       1,250.00                    15,432.10"
+    //       "             CARD NO 1234*5678"
     private function parseABSA(string $text): array
     {
         $transactions = [];
         $lines = explode("\n", $text);
+        $lineCount = count($lines);
 
-        foreach ($lines as $line) {
-            $line = trim($line);
+        for ($i = 0; $i < $lineCount; $i++) {
+            $line = trim($lines[$i]);
             if (empty($line)) continue;
 
+            // Skip summary lines
+            if (preg_match('/^(opening|closing|total)\s+balance/i', $line)) continue;
+
             // ABSA pattern with separate debit/credit columns
-            // e.g. "05 Mar 2026  POS PURCHASE SHOPRITE       1,250.00                    15,432.10"
-            // e.g. "10 Mar 2026  SALARY DEPOSIT                            25,000.00     40,432.10"
             if (preg_match('/^(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})\s+(.+?)\s{2,}([\d,]+\.\d{2})?\s+([\d,]+\.\d{2})?\s+([\d,]+\.\d{2})?/i', $line, $m)) {
+                $debit = $m[3] ?? '';
+                $credit = $m[4] ?? '';
+                $desc = trim($m[2]);
+
+                // Check if next line is a continuation (indented detail, no date)
+                if ($i + 1 < $lineCount) {
+                    $nextLine = trim($lines[$i + 1]);
+                    if (!empty($nextLine) && !preg_match('/^\d/', $nextLine) && !preg_match('/[\d,]+\.\d{2}\s*$/', $nextLine)) {
+                        $desc .= ' ' . $nextLine;
+                        $i++; // Skip the detail line
+                    }
+                }
+
+                if ($debit && $debit !== '0.00') {
+                    $transactions[] = $this->buildTransaction($m[1], $desc, '-' . $debit);
+                } elseif ($credit && $credit !== '0.00') {
+                    $transactions[] = $this->buildTransaction($m[1], $desc, $credit);
+                }
+                continue;
+            }
+
+            // ABSA DD/MM/YYYY format
+            if (preg_match('/^(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(.+?)\s{2,}([\d,]+\.\d{2})?\s+([\d,]+\.\d{2})?\s+([\d,]+\.\d{2})?/', $line, $m)) {
                 $debit = $m[3] ?? '';
                 $credit = $m[4] ?? '';
                 $desc = trim($m[2]);
@@ -197,7 +229,7 @@ class BankStatementParser
                 continue;
             }
 
-            // ABSA numeric date format
+            // ABSA YYYY/MM/DD format with single signed amount
             if (preg_match('/^(\d{4}[\/\-]\d{2}[\/\-]\d{2})\s+(.+?)\s{2,}(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})?/', $line, $m)) {
                 $transactions[] = $this->buildTransaction($m[1], trim($m[2]), $m[3]);
                 continue;
@@ -238,6 +270,7 @@ class BankStatementParser
     // ── Standard Bank ────────────────────────────────────────────────
     // Standard Bank: Date | Description | Amount | Balance
     // Often uses DD/MM/YY or DD Mon format
+    // IMPORTANT: Filter "Balance brought forward" / "Balance carried forward" lines
     private function parseStandardBank(string $text): array
     {
         $transactions = [];
@@ -246,6 +279,15 @@ class BankStatementParser
         foreach ($lines as $line) {
             $line = trim($line);
             if (empty($line)) continue;
+
+            // Skip balance brought/carried forward lines (appear on every page)
+            if (preg_match('/balance\s+(brought|carried)\s+forward/i', $line)) {
+                continue;
+            }
+            // Skip summary/header lines
+            if (preg_match('/^(opening|closing)\s+balance/i', $line)) {
+                continue;
+            }
 
             // DD/MM/YY format (Standard Bank often uses 2-digit year)
             if (preg_match('/^(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})\s+(.+?)\s{2,}(-?[\d,]+\.\d{2})\s*(-?[\d,]+\.\d{2})?/', $line, $m)) {
@@ -264,8 +306,10 @@ class BankStatementParser
     }
 
     // ── Capitec ──────────────────────────────────────────────────────
-    // Capitec: Date | Transaction | Debit | Credit | Balance
+    // Capitec: Date | Transaction | Money Out | Money In | Balance
     // Date format: YYYY-MM-DD or DD/MM/YYYY
+    // IMPORTANT: Capitec uses space as thousands separator (e.g. "1 250.00")
+    // and has separate Money Out / Money In columns
     private function parseCapitec(string $text): array
     {
         $transactions = [];
@@ -275,15 +319,31 @@ class BankStatementParser
             $line = trim($line);
             if (empty($line)) continue;
 
-            // YYYY-MM-DD format with signed amount
-            if (preg_match('/^(\d{4}-\d{2}-\d{2})\s+(.+?)\s{2,}(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})?/', $line, $m)) {
-                $transactions[] = $this->buildTransaction($m[1], trim($m[2]), $m[3]);
+            // Skip summary lines
+            if (preg_match('/^(opening|closing|total)\s+balance/i', $line)) continue;
+
+            // Capitec with separate debit/credit columns (amounts may have spaces)
+            // Pattern: Date  Description  MoneyOut  MoneyIn  Balance
+            // Amounts like "1 250.00" or "25 000.00"
+            $datePattern = '(\d{4}-\d{2}-\d{2}|\d{2}[\/\-]\d{2}[\/\-]\d{4})';
+
+            if (preg_match('/^' . $datePattern . '\s+(.+?)\s{2,}([\d\s,]+\.\d{2})?\s+([\d\s,]+\.\d{2})?\s+([\d\s,]+\.\d{2})?/', $line, $m)) {
+                $debit = str_replace([' ', ','], '', trim($m[3] ?? ''));
+                $credit = str_replace([' ', ','], '', trim($m[4] ?? ''));
+                $desc = trim($m[2]);
+
+                if ($debit && (float)$debit > 0) {
+                    $transactions[] = $this->buildTransaction($m[1], $desc, '-' . $debit);
+                } elseif ($credit && (float)$credit > 0) {
+                    $transactions[] = $this->buildTransaction($m[1], $desc, $credit);
+                }
                 continue;
             }
 
-            // DD/MM/YYYY format
-            if (preg_match('/^(\d{2}[\/\-]\d{2}[\/\-]\d{4})\s+(.+?)\s{2,}(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})?/', $line, $m)) {
-                $transactions[] = $this->buildTransaction($m[1], trim($m[2]), $m[3]);
+            // Fallback: single signed amount column (amounts may have spaces)
+            if (preg_match('/^' . $datePattern . '\s+(.+?)\s{2,}(-?[\d\s,]+\.\d{2})/', $line, $m)) {
+                $amount = str_replace([' ', ','], '', $m[3]);
+                $transactions[] = $this->buildTransaction($m[1], trim($m[2]), $amount);
                 continue;
             }
         }
@@ -301,6 +361,12 @@ class BankStatementParser
         foreach ($lines as $line) {
             $line = trim($line);
             if (empty($line) || strlen($line) < 15) continue;
+
+            // Skip common non-transaction lines
+            if (preg_match('/balance\s+(brought|carried)\s+forward/i', $line)) continue;
+            if (preg_match('/^(opening|closing|total)\s+balance/i', $line)) continue;
+            if (preg_match('/^(date|transaction|description|debit|credit|amount)\s/i', $line)) continue;
+            if (preg_match('/^page\s+\d/i', $line)) continue;
 
             // Pattern 1: Date at start, amount somewhere in line
             // Matches: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, DD Mon YYYY
