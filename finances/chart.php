@@ -6,19 +6,21 @@ require_once __DIR__ . '/permissions.php';
 require_once __DIR__ . '/lib/Csrf.php';
 requireRoles(['admin', 'bookkeeper']);
 
-define('ASSET_VERSION', '2026-04-09-FIN-COA-1');
+define('ASSET_VERSION', '2026-04-10-FIN-COA-2');
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-$userRole = $_SESSION['role'] ?? 'viewer';
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
+$userRole  = $_SESSION['role'] ?? 'viewer';
 
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
 $stmt->execute([$userId]);
-$firstName = ($stmt->fetch())['first_name'] ?? 'User';
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+$firstName = $row ? $row['first_name'] : 'User';
 
 $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
 $stmt->execute([$companyId]);
-$companyName = ($stmt->fetch())['name'] ?? 'Company';
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+$companyName = $row ? $row['name'] : 'Company';
 
 $csrfToken = Csrf::token();
 $isAdmin = ($userRole === 'admin');
