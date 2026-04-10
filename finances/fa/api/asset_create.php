@@ -70,8 +70,13 @@ try {
         (int)$accumAccId
     ]);
     $assetId = (int)$DB->lastInsertId();
-    echo json_encode(['ok' => true, 'data' => ['asset_id' => $assetId]]);
+    // Audit log
+    $stmt = $DB->prepare(
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp) VALUES (?, ?, 'fa_asset_created', ?, ?, NOW())"
+    );
+    $stmt->execute([$companyId, $userId, json_encode(['asset_id' => $assetId, 'asset_name' => $assetName, 'cost' => $purchaseCost]), $_SERVER['REMOTE_ADDR'] ?? null]);
+    echo json_encode(['success' => true, 'data' => ['asset_id' => $assetId], 'message' => 'Asset created successfully']);
 } catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
 ?>

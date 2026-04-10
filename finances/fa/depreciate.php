@@ -9,6 +9,8 @@ requireRoles(['admin', 'bookkeeper']);
 
 define('ASSET_VERSION', '2026-04-07-FIN-3');
 
+require_once __DIR__ . '/../lib/Csrf.php';
+
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
@@ -39,6 +41,7 @@ $runs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Run Depreciation – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__form {
@@ -148,7 +151,7 @@ document.getElementById('runForm').addEventListener('submit', function() {
     }
     fetch('/finances/fa/api/run_depreciation.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
         body: JSON.stringify({ run_month: monthVal })
     }).then(function(resp) { return resp.json(); }).then(function(data) {
         if (data.success) {

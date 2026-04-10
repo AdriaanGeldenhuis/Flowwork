@@ -846,7 +846,7 @@ class PostingService
                     company_id, entry_date, reference, description,
                     module, ref_type, ref_id, source_type, source_id,
                     created_by, created_at, status, posted_by, posted_at
-                ) VALUES (?, ?, ?, ?, 'fin', 'depreciation', ?, 'depreciation', ?, ?, NOW(), 'posted', ?, NOW())"
+                ) VALUES (?, ?, ?, ?, 'fin', 'depreciation', ?, 'manual', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $stmtJ->execute([
                 $this->companyId,

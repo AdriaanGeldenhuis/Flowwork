@@ -106,9 +106,11 @@ class VatCalculator
                 CASE
                     WHEN EXISTS (
                         SELECT 1 FROM journal_lines sibling
+                        JOIN gl_accounts ga ON ga.account_code = sibling.account_code
+                            AND ga.company_id = je.company_id
                         WHERE sibling.journal_id = jl.journal_id
                           AND sibling.id != jl.id
-                          AND sibling.account_code LIKE '14%'
+                          AND ga.account_subtype = 'fixed_asset'
                           AND sibling.debit > 0
                     ) THEN 'capital'
                     ELSE 'other'
