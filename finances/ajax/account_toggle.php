@@ -19,7 +19,7 @@ Csrf::validate();
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
 $input     = json_decode(file_get_contents('php://input'), true);
-$accountId = $input['account_id'] ?? null;
+$accountId = (int)($input['account_id'] ?? 0);
 
 if (!$accountId) {
     echo json_encode(['ok' => false, 'error' => 'Account ID required']);

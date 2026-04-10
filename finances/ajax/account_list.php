@@ -8,6 +8,12 @@ requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 header('Content-Type: application/json');
 
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    http_response_code(405);
+    echo json_encode(['ok' => false, 'error' => 'Method Not Allowed']);
+    exit;
+}
+
 $companyId = (int)$_SESSION['company_id'];
 
 try {

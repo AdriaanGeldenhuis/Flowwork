@@ -145,6 +145,22 @@ class CoaSchema {
         return (int)$stmt->fetchColumn();
     }
 
+    /**
+     * Number of journal lines (any status) that reference a given account_code.
+     * Used to prevent deletion when draft/prepared entries still exist.
+     */
+    public static function allLineCount(PDO $DB, int $companyId, string $accountCode): int {
+        $stmt = $DB->prepare("
+            SELECT COUNT(*)
+            FROM journal_lines jl
+            JOIN journal_entries je ON je.id = jl.journal_id
+            WHERE je.company_id = ?
+              AND jl.account_code = ?
+        ");
+        $stmt->execute([$companyId, $accountCode]);
+        return (int)$stmt->fetchColumn();
+    }
+
     /** YTD net balance for an account, signed by normal_balance. */
     public static function ytdBalance(PDO $DB, int $companyId, string $accountCode, string $normalBalance, string $fyStartDate): float {
         $stmt = $DB->prepare("
