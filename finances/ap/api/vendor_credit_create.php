@@ -10,12 +10,17 @@ require_once __DIR__ . '/../../../auth_gate.php';
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
 
+require_once __DIR__ . '/../../lib/Csrf.php';
+Csrf::validate();
+
 $role = $_SESSION['role'] ?? 'member';
 if (!in_array($role, ['admin', 'bookkeeper'])) {
+    http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
@@ -34,6 +39,10 @@ if (empty($header['supplier_id']) || empty($header['credit_number']) || empty($h
 $supplierId   = (int)$header['supplier_id'];
 $creditNumber = trim($header['credit_number']);
 $issueDate    = $header['issue_date'];
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $issueDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid issue date format']);
+    exit;
+}
 $notes        = $header['notes'] ?? null;
 
 // Compute amounts

@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -20,13 +20,16 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Fetch suppliers
-$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND status = 'active' ORDER BY name");
+require_once __DIR__ . '/../lib/Csrf.php';
+$csrfToken = Csrf::token();
+
+// Fetch suppliers with VAT numbers for SARS compliance
+$stmt = $DB->prepare("SELECT id, name, vat_no FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND status = 'active' ORDER BY name");
 $stmt->execute([$companyId]);
 $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch expense accounts
-$stmt = $DB->prepare("SELECT account_id, account_code, account_name FROM gl_accounts WHERE company_id = ? AND is_active = 1 AND account_type = 'expense' ORDER BY account_code");
+// Fetch expense and asset accounts (asset needed for inventory/stock purchases)
+$stmt = $DB->prepare("SELECT account_id, account_code, account_name FROM gl_accounts WHERE company_id = ? AND is_active = 1 AND account_type IN ('expense', 'asset') ORDER BY account_code");
 $stmt->execute([$companyId]);
 $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -36,6 +39,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Bill – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__form {
@@ -113,6 +117,11 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <input type="date" id="invoiceDate" value="<?= date('Y-m-d') ?>" required>
                 </label>
                 <label>
+                    Supplier VAT No.
+                    <input type="text" id="vendorVat" placeholder="e.g. 4123456789" maxlength="10" pattern="4\d{9}">
+                    <small style="color:var(--fw-text-secondary);">SARS: Required for input VAT claims</small>
+                </label>
+                <label>
                     Due Date
                     <input type="date" id="dueDate">
                 </label>
@@ -178,6 +187,19 @@ var accounts = <?php echo json_encode(array_map(function($a) {
         'name' => $a['account_name']
     ];
 }, $accounts)); ?>;
+
+// Supplier VAT lookup map (SARS compliance)
+var supplierVatMap = <?php echo json_encode(array_combine(
+    array_column($suppliers, 'id'),
+    array_column($suppliers, 'vat_no')
+)); ?>;
+
+// Auto-populate supplier VAT number when supplier is selected
+document.getElementById('supplierId').addEventListener('change', function() {
+    var vatField = document.getElementById('vendorVat');
+    var vatNo = supplierVatMap[this.value] || '';
+    vatField.value = vatNo;
+});
 
 // ---------------------------
 // 3-Way Matching helpers
@@ -356,12 +378,20 @@ document.getElementById('billForm').addEventListener('submit', async function(e)
         taxTotal += vat;
     });
     var total = subtotal + taxTotal;
+    var vendorVat = document.getElementById('vendorVat').value.trim();
+    // SARS warning: if lines have VAT but no valid supplier VAT number
+    if (taxTotal > 0.01 && !vendorVat) {
+        if (!confirm('Warning: Lines include VAT but no supplier VAT number is provided. Input VAT may not be claimable per SARS Section 20. Continue?')) {
+            return;
+        }
+    }
     var data = {
         header: {
             supplier_id: supplierId,
             invoice_number: invoiceNo,
             invoice_date: invoiceDate,
             due_date: dueDate,
+            vendor_vat: vendorVat || null,
             subtotal: subtotal,
             tax: taxTotal,
             total: total,
@@ -369,9 +399,12 @@ document.getElementById('billForm').addEventListener('submit', async function(e)
         },
         lines: lines
     };
+    var headers = { 'Content-Type': 'application/json' };
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    if (csrfMeta) headers['X-CSRF-Token'] = csrfMeta.content;
     var res = await fetch('/finances/ap/api/bill_create.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(data)
     });
     var result = await res.json();
@@ -396,9 +429,12 @@ document.getElementById('billForm').addEventListener('submit', async function(e)
             });
             if (matchesToSend.length > 0) {
                 try {
+                    var matchHdrs = { 'Content-Type': 'application/json' };
+                    var csrfMeta2 = document.querySelector('meta[name="csrf-token"]');
+                    if (csrfMeta2) matchHdrs['X-CSRF-Token'] = csrfMeta2.content;
                     var mRes = await fetch('/finances/ap/ajax/bill.match.php', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: matchHdrs,
                         body: JSON.stringify({ bill_id: result.bill_id, matches: matchesToSend })
                     });
                     var mResult = await mRes.json();

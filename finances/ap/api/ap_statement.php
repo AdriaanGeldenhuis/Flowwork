@@ -61,7 +61,7 @@ try {
     }
     $openingBalance = $openingDebit - $openingCredit;
     // Build date filter
-    $params = [$companyId, $supplierId];
+    $params = [];
     $dateSql = '';
     if ($startDate) {
         $dateSql .= " AND t_date >= ?";

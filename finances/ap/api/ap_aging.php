@@ -8,7 +8,7 @@ require_once __DIR__ . '/../../../auth_gate.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'] ?? 0;
+$companyId = (int)($_SESSION['company_id'] ?? 0);
 if (!$companyId) {
     echo json_encode(['ok' => false, 'error' => 'No company selected']);
     exit;

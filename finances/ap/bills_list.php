@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -123,16 +123,16 @@ async function loadBills() {
     html += '<thead><tr><th>Invoice #</th><th>Supplier</th><th>Issue Date</th><th>Due Date</th><th>Status</th><th class="amount">Total</th><th class="amount">Paid</th><th class="amount">Credited</th><th class="amount">Balance</th><th>Action</th></tr></thead><tbody>';
     bills.forEach(function(b) {
         html += '<tr>';
-        html += '<td>' + (b.vendor_invoice_number || '') + '</td>';
-        html += '<td>' + (b.supplier_name || '') + '</td>';
-        html += '<td>' + (b.issue_date || '') + '</td>';
-        html += '<td>' + (b.due_date || '') + '</td>';
-        html += '<td>' + (b.status || '') + '</td>';
+        html += '<td>' + escapeHtml(b.vendor_invoice_number) + '</td>';
+        html += '<td>' + escapeHtml(b.supplier_name) + '</td>';
+        html += '<td>' + escapeHtml(b.issue_date) + '</td>';
+        html += '<td>' + escapeHtml(b.due_date) + '</td>';
+        html += '<td>' + escapeHtml(b.status) + '</td>';
         html += '<td class="amount">' + parseFloat(b.total).toFixed(2) + '</td>';
         html += '<td class="amount">' + parseFloat(b.paid).toFixed(2) + '</td>';
         html += '<td class="amount">' + parseFloat(b.credited).toFixed(2) + '</td>';
         html += '<td class="amount">' + parseFloat(b.balance).toFixed(2) + '</td>';
-        html += '<td><a href="/finances/ap/bill_view.php?id=' + b.id + '">View</a></td>';
+        html += '<td><a href="/finances/ap/bill_view.php?id=' + parseInt(b.id) + '">View</a></td>';
         html += '</tr>';
     });
     html += '</tbody></table>';

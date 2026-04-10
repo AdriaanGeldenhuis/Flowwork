@@ -7,7 +7,10 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
+
+require_once __DIR__ . '/../lib/Csrf.php';
+$csrfToken = Csrf::token();
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -43,6 +46,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Vendor Credit – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__form {
@@ -122,6 +126,13 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <input type="date" id="issueDate" value="<?= date('Y-m-d') ?>" required>
                 </label>
                 <label>
+                    Original Bill Reference
+                    <select id="refBillId">
+                        <option value="">Select original bill (SARS requirement)</option>
+                    </select>
+                    <small style="color:var(--fw-text-secondary);">SARS: Credit notes must reference the original tax invoice</small>
+                </label>
+                <label>
                     Notes
                     <textarea id="notes" rows="2"></textarea>
                 </label>
@@ -177,6 +188,27 @@ function addLineRow(desc, qty, unit, price, discount, taxRate, accountId) {
     tbody.appendChild(tr);
 }
 
+// Load supplier bills for original bill reference (SARS)
+document.getElementById('supplierId').addEventListener('change', async function() {
+    var supId = this.value;
+    var select = document.getElementById('refBillId');
+    select.innerHTML = '<option value="">Select original bill (SARS requirement)</option>';
+    if (!supId) return;
+    try {
+        var res = await fetch('/finances/ap/api/bill_list.php');
+        var json = await res.json();
+        if (json.ok) {
+            var bills = (json.data || []).filter(function(b) { return Number(b.supplier_id) === Number(supId); });
+            bills.forEach(function(b) {
+                var opt = document.createElement('option');
+                opt.value = b.id;
+                opt.textContent = (b.vendor_invoice_number || 'Bill #' + b.id) + ' - R' + parseFloat(b.total).toFixed(2) + ' (' + b.issue_date + ')';
+                select.appendChild(opt);
+            });
+        }
+    } catch (e) { /* ignore */ }
+});
+
 document.getElementById('addLineBtn').addEventListener('click', function() {
     addLineRow();
 });
@@ -230,19 +262,31 @@ document.getElementById('creditForm').addEventListener('submit', async function(
         subtotal += net;
         taxTotal += vat;
     });
+    // SARS: Prepend original bill reference to notes if selected
+    var refBillId = document.getElementById('refBillId').value;
+    var refBillText = '';
+    if (refBillId) {
+        var refOpt = document.getElementById('refBillId').selectedOptions[0];
+        refBillText = 'Ref Invoice: ' + refOpt.textContent;
+    }
+    var fullNotes = refBillText ? (refBillText + (notes ? '\n' + notes : '')) : notes;
+
     var data = {
         header: {
             supplier_id: parseInt(supplierId),
             credit_number: creditNumber,
             issue_date: issueDate,
-            notes: notes
+            notes: fullNotes
         },
         lines: lines
     };
     try {
+        var hdrs = { 'Content-Type': 'application/json' };
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        if (csrfMeta) hdrs['X-CSRF-Token'] = csrfMeta.content;
         const res = await fetch('/finances/ap/api/vendor_credit_create.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: hdrs,
             body: JSON.stringify(data)
         });
         const result = await res.json();

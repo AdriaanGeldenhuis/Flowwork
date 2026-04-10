@@ -10,9 +10,13 @@ require_once __DIR__ . '/../../../auth_gate.php';
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
+
+require_once __DIR__ . '/../../lib/Csrf.php';
+Csrf::validate();
 
 // Only admin/bookkeeper can create bills
 $role = $_SESSION['role'] ?? 'member';
@@ -38,12 +42,34 @@ if (empty($header['supplier_id']) || empty($header['invoice_number']) || empty($
 $supplierId  = (int)$header['supplier_id'];
 $invoiceNo   = trim($header['invoice_number']);
 $invoiceDate = $header['invoice_date'];
+
+// Validate date formats
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $invoiceDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid invoice date format']);
+    exit;
+}
 $dueDate     = $header['due_date'] ?? null;
+if ($dueDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueDate)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid due date format']);
+    exit;
+}
 $currency    = $header['currency'] ?? 'ZAR';
 $subtotal    = isset($header['subtotal']) ? (float)$header['subtotal'] : 0.0;
 $tax         = isset($header['tax']) ? (float)$header['tax'] : 0.0;
 $total       = (float)$header['total'];
 $notes       = $header['notes'] ?? null;
+
+// SARS: Capture and validate supplier VAT number
+$vendorVat   = isset($header['vendor_vat']) ? trim($header['vendor_vat']) : null;
+if ($vendorVat !== null && $vendorVat !== '') {
+    // SA VAT numbers: 10 digits starting with 4
+    if (!preg_match('/^4\d{9}$/', $vendorVat)) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid supplier VAT number format (must be 10 digits starting with 4)']);
+        exit;
+    }
+} else {
+    $vendorVat = null;
+}
 
 // Compute fingerprint to avoid duplicates: invoice number + date + total + supplier
 $hash = sha1($invoiceNo . '|' . $invoiceDate . '|' . $total . '|' . $supplierId);
@@ -62,12 +88,13 @@ try {
     $stmt = $DB->prepare(
         "INSERT INTO ap_bills (company_id, supplier_id, vendor_invoice_number, vendor_vat, issue_date, due_date,\n"
         . "currency, subtotal, tax, total, status, ocr_id, file_id, hash_fingerprint, journal_id, notes, created_by, created_at)\n"
-        . "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'draft', NULL, NULL, ?, NULL, ?, ?, NOW())"
+        . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, NULL, ?, NULL, ?, ?, NOW())"
     );
     $stmt->execute([
         $companyId,
         $supplierId,
         $invoiceNo,
+        $vendorVat,
         $invoiceDate,
         $dueDate,
         $currency,

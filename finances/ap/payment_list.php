@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', '2026-04-10-AP-1');
 
 $companyId = (int)$_SESSION['company_id'];
 $userId    = (int)$_SESSION['user_id'];
@@ -124,10 +124,10 @@ async function loadPayments() {
         html += '<thead><tr><th>Date</th><th>Supplier</th><th>Method</th><th>Reference</th><th class="amount">Amount</th></tr></thead><tbody>';
         rows.forEach(p => {
             html += '<tr>' +
-                '<td>' + (p.payment_date || '') + '</td>' +
-                '<td>' + (p.supplier_name || '') + '</td>' +
-                '<td>' + (p.method || '') + '</td>' +
-                '<td>' + (p.reference || '') + '</td>' +
+                '<td>' + escapeHtml(p.payment_date) + '</td>' +
+                '<td>' + escapeHtml(p.supplier_name) + '</td>' +
+                '<td>' + escapeHtml(p.method) + '</td>' +
+                '<td>' + escapeHtml(p.reference) + '</td>' +
                 '<td class="amount">' + parseFloat(p.amount).toFixed(2) + '</td>' +
                 '</tr>';
         });
