@@ -9,6 +9,8 @@ requireRoles(['admin', 'bookkeeper']);
 
 define('ASSET_VERSION', '2026-04-07-FIN-3');
 
+require_once __DIR__ . '/../lib/Csrf.php';
+
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
@@ -50,6 +52,7 @@ foreach ($accounts as $acc) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Fixed Asset – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__form {
@@ -194,7 +197,7 @@ document.getElementById('assetForm').addEventListener('submit', function() {
     }
     fetch('/finances/fa/api/asset_create.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
         body: JSON.stringify(payload)
     }).then(function(resp) { return resp.json(); }).then(function(data) {
         if (data.success) {

@@ -100,15 +100,17 @@ class VatCalculator
 
         // --- Input VAT: split capital goods vs other ---
         // Capital goods = journal lines on VAT input account where a sibling
-        // line on the same journal debits a fixed asset account (14xx)
+        // line on the same journal debits a fixed asset account (account_subtype='fixed_asset')
         $stmt = $db->prepare(
             "SELECT
                 CASE
                     WHEN EXISTS (
                         SELECT 1 FROM journal_lines sibling
+                        JOIN gl_accounts ga ON ga.account_code = sibling.account_code
+                            AND ga.company_id = je.company_id
                         WHERE sibling.journal_id = jl.journal_id
                           AND sibling.id != jl.id
-                          AND sibling.account_code LIKE '14%'
+                          AND ga.account_subtype = 'fixed_asset'
                           AND sibling.debit > 0
                     ) THEN 'capital'
                     ELSE 'other'

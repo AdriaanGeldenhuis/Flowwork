@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../../auth_gate.php';
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
-    echo json_encode(['ok'=>false,'error'=>'Method Not Allowed']);
+    echo json_encode(['success'=>false,'message'=>'Method Not Allowed']);
     exit;
 }
 
@@ -19,6 +19,7 @@ Csrf::validate();
 require_once __DIR__ . '/../../permissions.php';
 requireRoles(['admin', 'bookkeeper']);
 require_once __DIR__ . '/../../lib/PostingService.php';
+require_once __DIR__ . '/../../lib/PeriodService.php';
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -28,17 +29,24 @@ header('Content-Type: application/json');
 // Read input
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data || empty($data['run_month'])) {
-    echo json_encode(['ok' => false, 'error' => 'No run month provided']);
+    echo json_encode(['success' => false, 'message' => 'No run month provided']);
     exit;
 }
 
 $monthInput = trim($data['run_month']);
 // Normalize to YYYY-MM
 if (!preg_match('/^\d{4}-\d{2}$/', $monthInput)) {
-    echo json_encode(['ok' => false, 'error' => 'Invalid run_month format']);
+    echo json_encode(['success' => false, 'message' => 'Invalid run_month format']);
     exit;
 }
 $runMonthDate = $monthInput . '-01';
+
+// Check period lock before any calculations or updates
+$periodService = new PeriodService($DB, $companyId);
+if ($periodService->isLocked($runMonthDate)) {
+    echo json_encode(['success' => false, 'message' => 'Cannot run depreciation in locked period (' . $runMonthDate . ')']);
+    exit;
+}
 
 try {
     // Check for existing run for the month
@@ -115,31 +123,41 @@ try {
     if (empty($lines)) {
         throw new Exception('No depreciable amounts calculated for this month');
     }
-    // Create run and insert lines
+    // Create run and insert lines (do NOT update asset accum yet - wait for PostingService)
     $DB->beginTransaction();
     // Insert run
     $stmt = $DB->prepare("INSERT INTO fa_depreciation_runs (company_id, run_month, status, created_by, created_at) VALUES (?, ?, 'draft', ?, NOW())");
     $stmt->execute([$companyId, $runMonthDate, $userId]);
     $runId = (int)$DB->lastInsertId();
-    // Insert lines and update assets
+    // Insert lines only
     $insLine = $DB->prepare("INSERT INTO fa_depreciation_lines (run_id, asset_id, amount_cents) VALUES (?, ?, ?)");
-    $updAsset = $DB->prepare("UPDATE gl_fixed_assets SET accumulated_depreciation_cents = accumulated_depreciation_cents + ? WHERE asset_id = ? AND company_id = ?");
     $totalCents = 0;
     foreach ($lines as $ln) {
         $insLine->execute([$runId, $ln['asset_id'], $ln['amount_cents']]);
-        $updAsset->execute([$ln['amount_cents'], $ln['asset_id'], $companyId]);
         $totalCents += $ln['amount_cents'];
     }
     $DB->commit();
-    // Post the run via PostingService
+    // Post the run via PostingService (creates journal, marks run as posted)
     $posting = new PostingService($DB, $companyId, $userId);
     $posting->postDepreciation($runId);
+    // Only update asset accumulated depreciation AFTER successful posting
+    $DB->beginTransaction();
+    $updAsset = $DB->prepare("UPDATE gl_fixed_assets SET accumulated_depreciation_cents = accumulated_depreciation_cents + ? WHERE asset_id = ? AND company_id = ?");
+    foreach ($lines as $ln) {
+        $updAsset->execute([$ln['amount_cents'], $ln['asset_id'], $companyId]);
+    }
+    $DB->commit();
     $total = $totalCents / 100.0;
-    echo json_encode(['ok' => true, 'data' => ['run_id' => $runId, 'total' => $total], 'message' => 'Depreciation run posted successfully']);
+    // Audit log
+    $stmt = $DB->prepare(
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp) VALUES (?, ?, 'fa_depreciation_run_posted', ?, ?, NOW())"
+    );
+    $stmt->execute([$companyId, $userId, json_encode(['run_id' => $runId, 'run_month' => $monthInput, 'total' => $total]), $_SERVER['REMOTE_ADDR'] ?? null]);
+    echo json_encode(['success' => true, 'data' => ['run_id' => $runId, 'total' => $total], 'message' => 'Depreciation run posted successfully']);
 } catch (Exception $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
 ?>

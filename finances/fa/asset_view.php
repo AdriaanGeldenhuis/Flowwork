@@ -12,6 +12,8 @@ requireRoles(['admin', 'bookkeeper']);
 
 define('ASSET_VERSION', '2026-04-07-FIN-3');
 
+require_once __DIR__ . '/../lib/Csrf.php';
+
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
@@ -64,6 +66,7 @@ $status    = strtolower($asset['status']);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fixed Asset Details – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__details {
@@ -146,6 +149,10 @@ $status    = strtolower($asset['status']);
                     Proceeds (R)
                     <input type="number" id="disposalProceeds" step="0.01" min="0" value="0">
                 </label>
+                <label style="flex-direction:row;align-items:center;gap:0.5rem;">
+                    <input type="checkbox" id="disposalVat" checked>
+                    Charge VAT on proceeds (15% inclusive)
+                </label>
                 <label>
                     Notes (optional)
                     <textarea id="disposalNotes" placeholder="Reason for disposal, details, etc."></textarea>
@@ -154,7 +161,17 @@ $status    = strtolower($asset['status']);
                 <div id="disposeMessage"></div>
             </form>
             <?php else: ?>
-            <p>This asset has been disposed.</p>
+            <h3>Disposal Information</h3>
+            <dl class="fw-finance__details">
+                <dt>Disposal Date</dt>
+                <dd><?= $asset['disposal_date'] ? htmlspecialchars($asset['disposal_date']) : '-' ?></dd>
+                <dt>Disposal Proceeds</dt>
+                <dd>R <?= $asset['disposal_proceeds_cents'] ? number_format($asset['disposal_proceeds_cents'] / 100, 2) : '0.00' ?></dd>
+                <?php if ($asset['disposal_journal_id']): ?>
+                <dt>Journal Entry</dt>
+                <dd><a href="/finances/journals.php?jid=<?= (int)$asset['disposal_journal_id'] ?>">View Journal</a></dd>
+                <?php endif; ?>
+            </dl>
             <?php endif; ?>
         </div>
         <footer class="fw-finance__footer">
@@ -175,15 +192,17 @@ document.getElementById('disposeForm').addEventListener('submit', function() {
         msgDiv.innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">Please select a disposal date.</div>';
         return;
     }
+    var includeVat = document.getElementById('disposalVat').checked;
     var payload = {
         asset_id: <?= (int)$assetId ?>,
         disposal_date: dateVal,
         proceeds: procVal,
-        notes: notesVal
+        notes: notesVal,
+        include_vat: includeVat
     };
     fetch('/finances/fa/api/asset_dispose.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content },
         body: JSON.stringify(payload)
     }).then(function(resp) { return resp.json(); }).then(function(data) {
         if (data.success) {

@@ -10,7 +10,9 @@ require_once __DIR__ . '/../../../auth_gate.php';
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
-    json_error('Error');
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
+    exit;
 }
 
 // CSRF validation
@@ -27,10 +29,13 @@ require_once __DIR__ . '/../../lib/AccountsMap.php';
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
+header('Content-Type: application/json');
+
 // Parse JSON input
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data) {
-    json_error('Error');
+    echo json_encode(['success' => false, 'message' => 'Invalid request body']);
+    exit;
 }
 
 try {
@@ -38,6 +43,7 @@ try {
     $dateStr   = trim($data['disposal_date'] ?? '');
     $proceeds  = isset($data['proceeds']) ? (float)$data['proceeds'] : 0.0;
     $notes     = isset($data['notes']) ? trim($data['notes']) : null;
+    $includeVat = !empty($data['include_vat']);
     if (!$assetId || !$dateStr) {
         throw new Exception('Missing asset_id or disposal_date');
     }
@@ -85,13 +91,21 @@ try {
     if (!$gainCode || !$lossCode) {
         throw new Exception('Missing gain/loss account mappings');
     }
+    // VAT output account for disposal proceeds (SARS Section 8(13))
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
     // Convert monetary amounts to decimals
     $costDec  = $asset['purchase_cost_cents'] / 100.0;
     $accumDec = $asset['accumulated_depreciation_cents'] / 100.0;
     $proceedsDec = round(floatval($proceeds), 2);
-    // Compute book value and difference
+    // Calculate VAT on proceeds if applicable (VAT-inclusive: VAT = proceeds * 15/115)
+    $vatAmt = 0.0;
+    if ($includeVat && $proceedsDec > 0) {
+        $vatAmt = round($proceedsDec * 15 / 115, 2);
+    }
+    $proceedsExVat = $proceedsDec - $vatAmt;
+    // Compute book value and difference (gain/loss based on ex-VAT proceeds)
     $bookValue = $costDec - $accumDec;
-    $diff      = $proceedsDec - $bookValue;
+    $diff      = $proceedsExVat - $bookValue;
     // Prepare amounts for journal lines (always positive values where appropriate)
     $bankAmt   = max(0, $proceedsDec);
     $accumAmt  = $accumDec;
@@ -107,8 +121,8 @@ try {
         "INSERT INTO journal_entries (
             company_id, entry_date, reference, description,
             module, ref_type, ref_id, source_type, source_id,
-            created_by, created_at
-        ) VALUES (?, ?, ?, ?, 'fin', 'fa_disposal', ?, 'asset', ?, ?, NOW())"
+            created_by, created_at, status, posted_by, posted_at
+        ) VALUES (?, ?, ?, ?, 'fin', 'fa_disposal', ?, 'manual', ?, ?, NOW(), 'posted', ?, NOW())"
     );
     $stmtJ->execute([
         $companyId,
@@ -117,6 +131,7 @@ try {
         $description,
         $assetId,
         $assetId,
+        $userId,
         $userId
     ]);
     $journalId = (int)$DB->lastInsertId();
@@ -175,6 +190,16 @@ try {
             number_format($gainAmt, 2, '.', '')
         ]);
     }
+    // VAT output on disposal proceeds (SARS Section 8(13))
+    if ($vatAmt > 0.00001) {
+        $stmtL->execute([
+            $journalId,
+            $vatOutputCode,
+            'VAT on disposal proceeds (15%)',
+            '0.00',
+            number_format($vatAmt, 2, '.', '')
+        ]);
+    }
     // Update asset record: mark disposed
     $stmtU = $DB->prepare(
         "UPDATE gl_fixed_assets
@@ -204,11 +229,16 @@ try {
     ]);
     // Commit transaction
     $DB->commit();
-    echo json_encode(['ok' => true, 'data' => ['journal_id' => $journalId], 'message' => 'Asset disposed successfully']);
+    // Audit log
+    $stmt = $DB->prepare(
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp) VALUES (?, ?, 'fa_asset_disposed', ?, ?, NOW())"
+    );
+    $stmt->execute([$companyId, $userId, json_encode(['asset_id' => $assetId, 'journal_id' => $journalId, 'proceeds' => $proceedsDec, 'date' => $dateStr]), $_SERVER['REMOTE_ADDR'] ?? null]);
+    echo json_encode(['success' => true, 'data' => ['journal_id' => $journalId], 'message' => 'Asset disposed successfully']);
 } catch (Exception $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
 ?>

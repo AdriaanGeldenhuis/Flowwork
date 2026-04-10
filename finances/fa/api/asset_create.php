@@ -7,7 +7,9 @@ require_once __DIR__ . '/../../../auth_gate.php';
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
-    json_error('Error');
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
+    exit;
 }
 
 // CSRF validation
@@ -21,10 +23,13 @@ requireRoles(['admin', 'bookkeeper']);
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
+header('Content-Type: application/json');
+
 // Read input
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data) {
-    json_error('Error');
+    echo json_encode(['success' => false, 'message' => 'Invalid request body']);
+    exit;
 }
 
 try {
@@ -70,8 +75,13 @@ try {
         (int)$accumAccId
     ]);
     $assetId = (int)$DB->lastInsertId();
-    echo json_encode(['ok' => true, 'data' => ['asset_id' => $assetId]]);
+    // Audit log
+    $stmt = $DB->prepare(
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp) VALUES (?, ?, 'fa_asset_created', ?, ?, NOW())"
+    );
+    $stmt->execute([$companyId, $userId, json_encode(['asset_id' => $assetId, 'asset_name' => $assetName, 'cost' => $purchaseCost]), $_SERVER['REMOTE_ADDR'] ?? null]);
+    echo json_encode(['success' => true, 'data' => ['asset_id' => $assetId], 'message' => 'Asset created successfully']);
 } catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
 ?>
