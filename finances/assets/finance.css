@@ -4018,4 +4018,59 @@ select.fw-finance__input:valid {
   font-weight: 600;
   color: var(--fw-text-secondary);
 }
+
+/* ===== PREVIEW TABLE ===== */
+.fw-finance__table-wrapper {
+  overflow-x: auto;
+}
+
+.fw-finance__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fw-finance__table th,
+.fw-finance__table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--fw-border-base);
+  text-align: left;
+}
+
+.fw-finance__table th {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 11px;
+  color: var(--fw-text-muted);
+  position: sticky;
+  top: 0;
+  background: var(--fw-panel-bg);
+  z-index: 1;
+}
+
+.fw-finance__table tr:hover td {
+  background: var(--fw-panel-hover, rgba(255,255,255,0.03));
+}
+
+.fw-finance__table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.fw-finance__form-card-header {
+  margin-bottom: var(--fw-spacing-md);
+}
+
+/* ===== ALERT WARNING ===== */
+.fw-finance__alert--warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid #f59e0b;
+  color: #f59e0b;
+  padding: var(--fw-spacing-md);
+  border-radius: var(--fw-radius-md);
+  margin-bottom: var(--fw-spacing-md);
+  font-size: 13px;
+}
 }

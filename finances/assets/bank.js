@@ -448,13 +448,15 @@
     }
   }
 
-  // ── Import CSV ─────────────────────────────────────────────────────
+  // ── Import (CSV + PDF) ──────────────────────────────────────────────
+
+  var pdfParsedTransactions = []; // Stores parsed PDF transactions for confirm step
 
   async function handleImport(e) {
     e.preventDefault();
 
     var bankAccountId = document.getElementById('importBankAccount').value;
-    var fileInput = document.getElementById('csvFile');
+    var fileInput = document.getElementById('statementFile');
     var file = fileInput.files[0];
 
     if (!bankAccountId || !file) {
@@ -462,13 +464,25 @@
       return;
     }
 
+    var isPDF = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+
+    if (isPDF) {
+      await handlePDFImport(file, bankAccountId);
+    } else {
+      await handleCSVImport(file, bankAccountId);
+    }
+  }
+
+  async function handleCSVImport(file, bankAccountId) {
+    var submitBtn = document.getElementById('importSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading...';
+
     var formData = new FormData();
     formData.append('bank_account_id', bankAccountId);
     formData.append('csv_file', file);
 
-    // Attach CSRF token
     var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-    var headers = {};
     if (csrfMeta) {
       formData.append('csrf_token', csrfMeta.content);
     }
@@ -489,9 +503,8 @@
         }
         showMessage('importMessage', msg, 'success');
         importForm.reset();
-
-        // Refresh counters and switch to transactions
         loadCounters();
+        loadedTabs.transactions = false;
         setTimeout(function() {
           document.querySelector('[data-tab="transactions"]').click();
         }, 1500);
@@ -500,7 +513,190 @@
       }
     } catch (error) {
       showMessage('importMessage', 'Upload failed: ' + error.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Upload & Parse';
     }
+  }
+
+  async function handlePDFImport(file, bankAccountId) {
+    var submitBtn = document.getElementById('importSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Parsing PDF...';
+
+    var formData = new FormData();
+    formData.append('pdf_file', file);
+
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    if (csrfMeta) {
+      formData.append('csrf_token', csrfMeta.content);
+    }
+
+    try {
+      var response = await fetch('/finances/ajax/bank_import_parse_pdf.php', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+      });
+
+      var result = await response.json();
+
+      if (result.ok && result.transactions && result.transactions.length > 0) {
+        pdfParsedTransactions = result.transactions;
+        showPDFPreview(result, file.name);
+        showMessage('importMessage', 'PDF parsed successfully. Review the transactions below.', 'success');
+      } else {
+        var errMsg = result.error || 'No transactions found in PDF.';
+        if (result.warnings && result.warnings.length > 0) {
+          errMsg += ' ' + result.warnings.join('; ');
+        }
+        showMessage('importMessage', errMsg, 'error');
+      }
+    } catch (error) {
+      showMessage('importMessage', 'PDF parsing failed: ' + error.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Upload & Parse';
+    }
+  }
+
+  function showPDFPreview(result, fileName) {
+    var previewCard = document.getElementById('pdfPreviewCard');
+    var bankBadge = document.getElementById('pdfBankBadge');
+    var warningsDiv = document.getElementById('pdfWarnings');
+    var tbody = document.getElementById('pdfPreviewBody');
+    var countSpan = document.getElementById('pdfSelectedCount');
+
+    if (!previewCard) return;
+
+    // Show detected bank
+    var bankNames = {
+      fnb: 'FNB', absa: 'ABSA', nedbank: 'Nedbank',
+      standard_bank: 'Standard Bank', capitec: 'Capitec',
+      investec: 'Investec', tymebank: 'TymeBank',
+      discovery: 'Discovery Bank', generic: 'Unknown Bank'
+    };
+    bankBadge.textContent = bankNames[result.bank] || result.bank;
+
+    // Show warnings
+    if (result.warnings && result.warnings.length > 0) {
+      warningsDiv.innerHTML = '<div class="fw-finance__alert fw-finance__alert--warning">'
+        + result.warnings.map(function(w) { return escapeHtml(w); }).join('<br>')
+        + '</div>';
+    } else {
+      warningsDiv.innerHTML = '';
+    }
+
+    // Build preview table rows
+    var html = '';
+    result.transactions.forEach(function(tx, idx) {
+      var isDebit = tx.amount_cents < 0;
+      var amountClass = isDebit ? 'color:#ef4444' : 'color:var(--neon-green, #4ade80)';
+      html += '<tr>'
+        + '<td><input type="checkbox" class="pdf-tx-check" data-idx="' + idx + '" checked></td>'
+        + '<td>' + escapeHtml(tx.tx_date || '') + '</td>'
+        + '<td>' + escapeHtml(tx.description || '') + '</td>'
+        + '<td style="text-align:right;font-weight:600;' + amountClass + '">'
+        + (isDebit ? '-' : '+') + 'R ' + escapeHtml(tx.amount_display || '0.00')
+        + '</td>'
+        + '</tr>';
+    });
+    tbody.innerHTML = html;
+
+    // Update count
+    countSpan.textContent = result.transactions.length + ' transactions found';
+
+    // Store file name for confirm
+    previewCard.setAttribute('data-filename', fileName);
+
+    // Show preview card
+    previewCard.style.display = 'block';
+
+    // Attach select-all handler
+    var selectAll = document.getElementById('pdfSelectAll');
+    if (selectAll) {
+      selectAll.checked = true;
+      selectAll.onchange = function() {
+        document.querySelectorAll('.pdf-tx-check').forEach(function(cb) {
+          cb.checked = selectAll.checked;
+        });
+        updatePDFCount();
+      };
+    }
+
+    // Attach individual checkbox handlers
+    document.querySelectorAll('.pdf-tx-check').forEach(function(cb) {
+      cb.onchange = updatePDFCount;
+    });
+  }
+
+  function updatePDFCount() {
+    var checked = document.querySelectorAll('.pdf-tx-check:checked').length;
+    var total = document.querySelectorAll('.pdf-tx-check').length;
+    var countSpan = document.getElementById('pdfSelectedCount');
+    if (countSpan) countSpan.textContent = checked + ' of ' + total + ' selected';
+  }
+
+  async function confirmPDFImport() {
+    var bankAccountId = document.getElementById('importBankAccount').value;
+    if (!bankAccountId) {
+      showMessage('importMessage', 'Please select a bank account', 'error');
+      return;
+    }
+
+    // Collect only checked transactions
+    var selectedTx = [];
+    document.querySelectorAll('.pdf-tx-check:checked').forEach(function(cb) {
+      var idx = parseInt(cb.getAttribute('data-idx'));
+      if (pdfParsedTransactions[idx]) {
+        selectedTx.push(pdfParsedTransactions[idx]);
+      }
+    });
+
+    if (selectedTx.length === 0) {
+      showMessage('importMessage', 'No transactions selected', 'error');
+      return;
+    }
+
+    var confirmBtn = document.getElementById('pdfConfirmBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Importing...';
+
+    var previewCard = document.getElementById('pdfPreviewCard');
+    var fileName = previewCard ? previewCard.getAttribute('data-filename') : 'pdf_import.pdf';
+
+    var result = await FinanceAPI.request('/finances/ajax/bank_import_confirm.php', 'POST', {
+      bank_account_id: parseInt(bankAccountId),
+      transactions: selectedTx,
+      source_file: fileName
+    });
+
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Confirm Import';
+
+    if (result && result.ok) {
+      var msg = 'Imported ' + result.data.count + ' transactions from PDF';
+      if (result.data.skipped > 0) {
+        msg += ' (' + result.data.skipped + ' skipped: duplicates)';
+      }
+      showMessage('importMessage', msg, 'success');
+      hidePDFPreview();
+      importForm.reset();
+      pdfParsedTransactions = [];
+      loadCounters();
+      loadedTabs.transactions = false;
+      setTimeout(function() {
+        document.querySelector('[data-tab="transactions"]').click();
+      }, 1500);
+    } else {
+      showMessage('importMessage', (result && result.error) || 'Import failed', 'error');
+    }
+  }
+
+  function hidePDFPreview() {
+    var previewCard = document.getElementById('pdfPreviewCard');
+    if (previewCard) previewCard.style.display = 'none';
+    pdfParsedTransactions = [];
   }
 
   // ── Save Bank Account ──────────────────────────────────────────────
@@ -665,6 +861,12 @@
   }
 
   if (importForm) importForm.addEventListener('submit', handleImport);
+
+  // PDF preview buttons
+  var pdfConfirmBtn = document.getElementById('pdfConfirmBtn');
+  var pdfCancelBtn = document.getElementById('pdfCancelBtn');
+  if (pdfConfirmBtn) pdfConfirmBtn.addEventListener('click', confirmPDFImport);
+  if (pdfCancelBtn) pdfCancelBtn.addEventListener('click', hidePDFPreview);
   if (bankAccountForm) bankAccountForm.addEventListener('submit', saveBankAccount);
   if (ruleForm) ruleForm.addEventListener('submit', saveRule);
   if (reconcileForm) reconcileForm.addEventListener('submit', handleReconcile);

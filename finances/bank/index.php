@@ -169,10 +169,6 @@ $bankAccounts = $stmt->fetchAll();
 
                     <!-- Import Statement Tab -->
                     <div class="fw-finance__tab-panel" id="importPanel">
-                        
-                        <div class="fw-finance__alert fw-finance__alert--info">
-                            📥 <strong>Import CSV Bank Statement:</strong> Upload your bank statement in CSV format.
-                        </div>
 
                         <div class="fw-finance__form-card">
                             <h3 class="fw-finance__form-card-title">Import Bank Statement</h3>
@@ -188,21 +184,48 @@ $bankAccounts = $stmt->fetchAll();
                                 </div>
 
                                 <div class="fw-finance__form-group">
-                                    <label class="fw-finance__label">CSV File <span class="fw-finance__required">*</span></label>
-                                    <input type="file" class="fw-finance__input" id="csvFile" accept=".csv" required>
+                                    <label class="fw-finance__label">Statement File <span class="fw-finance__required">*</span></label>
+                                    <input type="file" class="fw-finance__input" id="statementFile" accept=".csv,.pdf" required>
                                     <small class="fw-finance__help-text">
-                                        Format: Date, Description, Amount (negative for debits, positive for credits)
+                                        Accepts CSV or PDF bank statements. SA banks supported: FNB, ABSA, Nedbank, Standard Bank, Capitec.
                                     </small>
                                 </div>
 
                                 <div id="importMessage"></div>
 
                                 <div class="fw-finance__form-actions">
-                                    <button type="submit" class="fw-finance__btn fw-finance__btn--primary">
+                                    <button type="submit" class="fw-finance__btn fw-finance__btn--primary" id="importSubmitBtn">
                                         Upload & Parse
                                     </button>
                                 </div>
                             </form>
+                        </div>
+
+                        <!-- PDF Preview Section (hidden until PDF is parsed) -->
+                        <div class="fw-finance__form-card" id="pdfPreviewCard" style="display:none">
+                            <div class="fw-finance__form-card-header" style="display:flex;justify-content:space-between;align-items:center">
+                                <h3 class="fw-finance__form-card-title">Preview Extracted Transactions</h3>
+                                <span class="fw-finance__badge fw-finance__badge--success" id="pdfBankBadge"></span>
+                            </div>
+                            <div id="pdfWarnings"></div>
+                            <div class="fw-finance__table-wrapper" style="max-height:400px;overflow-y:auto">
+                                <table class="fw-finance__table" id="pdfPreviewTable">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:30px"><input type="checkbox" id="pdfSelectAll" checked></th>
+                                            <th>Date</th>
+                                            <th>Description</th>
+                                            <th style="text-align:right">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pdfPreviewBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="fw-finance__form-actions" style="margin-top:16px">
+                                <span id="pdfSelectedCount" style="font-size:13px;color:var(--fw-text-secondary)"></span>
+                                <button type="button" class="fw-finance__btn fw-finance__btn--secondary" id="pdfCancelBtn">Cancel</button>
+                                <button type="button" class="fw-finance__btn fw-finance__btn--primary" id="pdfConfirmBtn">Confirm Import</button>
+                            </div>
                         </div>
 
                     </div>
