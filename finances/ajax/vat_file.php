@@ -2,6 +2,8 @@
 // /finances/ajax/vat_file.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -10,18 +12,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+Csrf::validate();
+requireRoles(['admin']);
+
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
-
-// Check admin
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$role = $stmt->fetchColumn();
-
-if ($role !== 'admin') {
-    echo json_encode(['ok' => false, 'error' => 'Admin access required']);
-    exit;
-}
 
 $input = json_decode(file_get_contents('php://input'), true);
 $periodId = $input['period_id'] ?? null;
@@ -34,10 +29,9 @@ if (!$periodId) {
 try {
     $DB->beginTransaction();
 
-    $stmt = $DB->prepare("
-        SELECT * FROM gl_vat_periods 
-        WHERE id = ? AND company_id = ?
-    ");
+    $stmt = $DB->prepare(
+        "SELECT * FROM gl_vat_periods WHERE id = ? AND company_id = ? LIMIT 1"
+    );
     $stmt->execute([$periodId, $companyId]);
     $period = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -45,22 +39,38 @@ try {
         throw new Exception('VAT period not found');
     }
 
-    if ($period['status'] !== 'prepared') {
-        throw new Exception('Period must be prepared before filing');
+    // Accept both prepared and adjusted periods for filing
+    $status = strtolower((string)$period['status']);
+    if (!in_array($status, ['prepared', 'adjusted'], true)) {
+        throw new Exception('Period must be prepared or adjusted before filing');
     }
 
-    $stmt = $DB->prepare("
-        UPDATE gl_vat_periods 
-        SET status = 'filed', filed_by = ?, filed_at = NOW()
-        WHERE id = ?
-    ");
-    $stmt->execute([$userId, $periodId]);
+    // Update period status to filed
+    $stmt = $DB->prepare(
+        "UPDATE gl_vat_periods
+         SET status = 'filed', filed_by = ?, filed_at = NOW()
+         WHERE id = ? AND company_id = ?"
+    );
+    $stmt->execute([$userId, $periodId, $companyId]);
+
+    // Insert a period lock if one does not already exist at or after this date
+    $stmt = $DB->prepare(
+        "SELECT 1 FROM gl_period_locks WHERE company_id = ? AND lock_date >= ? LIMIT 1"
+    );
+    $stmt->execute([$companyId, $period['period_end']]);
+    if (!$stmt->fetchColumn()) {
+        $stmt = $DB->prepare(
+            "INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at)
+             VALUES (?, ?, 'vat_period_filed', ?, NOW())"
+        );
+        $stmt->execute([$companyId, $period['period_end'], $userId]);
+    }
 
     // Audit log
-    $stmt = $DB->prepare("
-        INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-        VALUES (?, ?, 'vat_period_filed', ?, ?, NOW())
-    ");
+    $stmt = $DB->prepare(
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+         VALUES (?, ?, 'vat_period_filed', ?, ?, NOW())"
+    );
     $stmt->execute([
         $companyId,
         $userId,
@@ -73,7 +83,9 @@ try {
     echo json_encode(['ok' => true]);
 
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log("VAT file error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,

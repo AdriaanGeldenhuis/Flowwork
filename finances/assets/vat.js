@@ -73,8 +73,10 @@
       <div class="fw-finance__vat201-container">
         <div class="fw-finance__vat201-header">
           <h2>VAT201 Return</h2>
+          ${data.company_name ? `<div class="fw-finance__vat201-company">${escapeHtml(data.company_name)}</div>` : ''}
+          ${data.vat_number ? `<div class="fw-finance__vat201-vatno">VAT Registration No: ${escapeHtml(data.vat_number)}</div>` : '<div class="fw-finance__alert fw-finance__alert--danger" style="margin:0.5rem 0">VAT registration number not configured</div>'}
           <div class="fw-finance__vat201-period">
-            Period: ${formatDate(data.period_start)} to ${formatDate(data.period_end)}
+            Tax Period: ${data.tax_period || (formatDate(data.period_start) + ' to ' + formatDate(data.period_end))}
           </div>
         </div>
 
@@ -145,8 +147,11 @@
           </button>
           ${data.status !== 'open' ? `
             <button class="fw-finance__btn fw-finance__btn--secondary" id="exportVAT201Btn">
-              Export to CSV
+              Export CSV
             </button>
+            <a href="/export/pdf/vat_summary.php?start_date=${data.period_start}&end_date=${data.period_end}" class="fw-finance__btn fw-finance__btn--secondary" target="_blank">
+              Download PDF
+            </a>
             <button class="fw-finance__btn fw-finance__btn--secondary" id="printVAT201Btn">
               Print VAT201
             </button>

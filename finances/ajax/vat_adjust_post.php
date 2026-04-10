@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
+require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
 
@@ -15,6 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
     exit;
 }
+
+Csrf::validate();
 
 // Ensure company and user context
 $companyId = $_SESSION['company_id'] ?? null;
@@ -117,9 +120,27 @@ try {
             }
         }
     }
-    // After processing, ensure journal is balanced
-    if (abs($totalDebit - $totalCredit) > 0.01) {
-        throw new Exception('Adjustment is not balanced. Debits: ' . $totalDebit . ', Credits: ' . $totalCredit);
+    // Auto-balance: if a single-sided adjustment, add contra to VAT Control (2100)
+    $imbalance = round($totalDebit - $totalCredit, 2);
+    if (abs($imbalance) > 0.01) {
+        $vatControlCode = $accountsMap->get('finance_vat_control_account_id', '2100');
+        if ($imbalance > 0) {
+            $journalLines[] = [
+                'account_code' => $vatControlCode,
+                'description'  => 'VAT adjustment contra',
+                'debit'        => 0.0,
+                'credit'       => round($imbalance, 2)
+            ];
+            $totalCredit += round($imbalance, 2);
+        } else {
+            $journalLines[] = [
+                'account_code' => $vatControlCode,
+                'description'  => 'VAT adjustment contra',
+                'debit'        => round(abs($imbalance), 2),
+                'credit'       => 0.0
+            ];
+            $totalDebit += round(abs($imbalance), 2);
+        }
     }
     if (empty($journalLines)) {
         throw new Exception('No valid adjustment lines');
@@ -132,11 +153,12 @@ try {
 
     $DB->beginTransaction();
 
-    // Insert journal entry
+    // Insert journal entry (posted immediately so VAT calcs include it)
     $stmt = $DB->prepare(
         "INSERT INTO journal_entries (
-            company_id, entry_date, memo, reference, module, ref_type, ref_id, created_by, created_at
-        ) VALUES (?, ?, ?, ?, 'vat_adjust', 'vat_period', ?, ?, NOW())"
+            company_id, entry_date, description, reference, module, ref_type, ref_id,
+            created_by, created_at, status, posted_by, posted_at
+        ) VALUES (?, ?, ?, ?, 'vat_adjust', 'vat_period', ?, ?, NOW(), 'posted', ?, NOW())"
     );
     $stmt->execute([
         $companyId,
@@ -144,6 +166,7 @@ try {
         $memo,
         $reference,
         $periodId,
+        $userId,
         $userId
     ]);
     $journalId = (int)$DB->lastInsertId();
