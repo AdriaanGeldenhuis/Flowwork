@@ -95,7 +95,8 @@ if ($format === 'csv') {
         number_format($totalSalvage / 100, 2, '.', ''),
         '', '',
         number_format($totalAccumDepr / 100, 2, '.', ''),
-        number_format($totalNBV / 100, 2, '.', '')
+        number_format($totalNBV / 100, 2, '.', ''),
+        '', '', '', '', ''
     ]);
     fclose($out);
     exit;

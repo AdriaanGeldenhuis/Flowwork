@@ -192,6 +192,19 @@ try {
     }
 
     // --- Execute: Create and post the closing journal ---
+
+    // Verify journal balances before posting
+    $verifyDebit = 0;
+    $verifyCredit = 0;
+    foreach ($lines as $line) {
+        $verifyDebit += $line['debit_cents'];
+        $verifyCredit += $line['credit_cents'];
+    }
+    if ($verifyDebit !== $verifyCredit) {
+        echo json_encode(['ok' => false, 'error' => 'Closing journal is unbalanced (debits ' . $verifyDebit . ' != credits ' . $verifyCredit . '). Please contact support.']);
+        exit;
+    }
+
     $DB->beginTransaction();
 
     // Create journal entry header

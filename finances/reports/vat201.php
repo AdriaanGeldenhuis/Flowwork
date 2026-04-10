@@ -25,10 +25,16 @@ requireRoles(['admin', 'bookkeeper', 'viewer']);
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
-// Load company info
-$stmt = $DB->prepare("SELECT name, vat_number, reg_number, IFNULL(tax_reference, '') AS tax_reference FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch(PDO::FETCH_ASSOC);
+// Load company info (tax_reference may not exist if migration not yet applied)
+try {
+    $stmt = $DB->prepare("SELECT name, vat_number, reg_number, IFNULL(tax_reference, '') AS tax_reference FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $company = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $stmt = $DB->prepare("SELECT name, vat_number, reg_number FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $company = $stmt->fetch(PDO::FETCH_ASSOC);
+}
 
 // Load VAT periods for dropdown
 $stmt = $DB->prepare(

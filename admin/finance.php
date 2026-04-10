@@ -37,15 +37,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
 
         // Save SARS company registration fields to companies table
-        $stmt = $DB->prepare(
-            "UPDATE companies SET vat_number = ?, reg_number = ?, tax_reference = ? WHERE id = ?"
-        );
-        $stmt->execute([
-            trim($_POST['company_vat_number'] ?? ''),
-            trim($_POST['company_reg_number'] ?? ''),
-            trim($_POST['company_tax_reference'] ?? ''),
-            $companyId
-        ]);
+        try {
+            $stmt = $DB->prepare(
+                "UPDATE companies SET vat_number = ?, reg_number = ?, tax_reference = ? WHERE id = ?"
+            );
+            $stmt->execute([
+                trim($_POST['company_vat_number'] ?? ''),
+                trim($_POST['company_reg_number'] ?? ''),
+                trim($_POST['company_tax_reference'] ?? ''),
+                $companyId
+            ]);
+        } catch (PDOException $e) {
+            // Fallback if tax_reference column doesn't exist yet
+            $stmt = $DB->prepare(
+                "UPDATE companies SET vat_number = ?, reg_number = ? WHERE id = ?"
+            );
+            $stmt->execute([
+                trim($_POST['company_vat_number'] ?? ''),
+                trim($_POST['company_reg_number'] ?? ''),
+                $companyId
+            ]);
+        }
 
         // Log audit
         $stmt = $DB->prepare("
@@ -60,10 +72,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Load company SARS details
-$stmt = $DB->prepare("SELECT vat_number, reg_number, tax_reference FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$companyDetails = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+// Load company SARS details (tax_reference may not exist if migration not yet applied)
+try {
+    $stmt = $DB->prepare("SELECT vat_number, reg_number, tax_reference FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $companyDetails = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+} catch (PDOException $e) {
+    // Fallback if tax_reference column doesn't exist yet
+    $stmt = $DB->prepare("SELECT vat_number, reg_number FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $companyDetails = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+}
 
 // Load current settings
 $settings = [

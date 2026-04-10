@@ -75,7 +75,7 @@ try {
          JOIN journal_entries je ON jl.journal_id = je.id
          WHERE je.company_id = ? AND je.status = 'posted'
            AND je.entry_date BETWEEN ? AND ?
-           AND je.module = 'vat_adjustment'
+           AND je.module = 'vat_adjust'
            AND jl.account_code = ?"
     );
     $stmt->execute([$companyId, $period['period_start'], $period['period_end'], $vatCtrlCode]);

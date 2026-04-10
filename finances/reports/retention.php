@@ -39,8 +39,8 @@ $tables = [
         'date_col' => 'issue_date'
     ],
     'Bills (AP)' => [
-        'sql' => "SELECT YEAR(bill_date) AS yr, COUNT(*) AS cnt FROM ap_bills WHERE company_id = ? GROUP BY YEAR(bill_date) ORDER BY yr",
-        'date_col' => 'bill_date'
+        'sql' => "SELECT YEAR(issue_date) AS yr, COUNT(*) AS cnt FROM ap_bills WHERE company_id = ? GROUP BY YEAR(issue_date) ORDER BY yr",
+        'date_col' => 'issue_date'
     ],
     'Customer Payments' => [
         'sql' => "SELECT YEAR(payment_date) AS yr, COUNT(*) AS cnt FROM payments WHERE company_id = ? GROUP BY YEAR(payment_date) ORDER BY yr",

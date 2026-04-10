@@ -122,8 +122,23 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/vat_summary.php'">
                         VAT Summary
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/vat201.php'">
+                        VAT201 Return
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/vat_reconciliation.php'">
+                        VAT Reconciliation
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/capital_goods_vat.php'">
+                        Capital Goods VAT
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/fa_schedule.php'">
+                        Fixed Asset Schedule
+                    </button>
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/budget_vs_actual.php'">
                         Budget vs Actual
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/retention.php'">
+                        Record Retention
                     </button>
 
                     <!-- New: Exports tab -->

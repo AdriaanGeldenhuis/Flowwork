@@ -88,7 +88,7 @@ foreach ($periods as $p) {
     $stmt = $DB->prepare(
         "SELECT COALESCE(SUM(b.tax), 0) AS bill_vat
          FROM ap_bills b
-         WHERE b.company_id = ? AND b.bill_date BETWEEN ? AND ?
+         WHERE b.company_id = ? AND b.issue_date BETWEEN ? AND ?
            AND b.journal_id IS NOT NULL"
     );
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
