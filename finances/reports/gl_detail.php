@@ -78,6 +78,16 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
         const account = document.getElementById('account');
         const reportContainer = document.getElementById('reportContainer');
         let reportData = null;
+        // XSS-safe HTML escape helper
+        function esc(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         runBtn.addEventListener('click', function() {
             const sd = startDate.value;
             const ed = endDate.value;
@@ -110,12 +120,12 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
             let html = '<table><thead><tr><th>Date</th><th>Journal ID</th><th>Account Code</th><th>Account Name</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>';
             let totalDebit = 0;
             let totalCredit = 0;
-            data.lines.forEach(item => {
+            (data.lines || []).forEach(item => {
                 const d = item.debit_cents || 0;
                 const c = item.credit_cents || 0;
                 totalDebit += d;
                 totalCredit += c;
-                html += `<tr><td>${item.entry_date}</td><td>${item.journal_id}</td><td>${item.account_code}</td><td>${item.account_name || ''}</td><td>${item.description || ''}</td><td>${(d/100).toFixed(2)}</td><td>${(c/100).toFixed(2)}</td></tr>`;
+                html += `<tr><td>${esc(item.entry_date)}</td><td>${esc(item.journal_id)}</td><td>${esc(item.account_code)}</td><td>${esc(item.account_name || '')}</td><td>${esc(item.description || '')}</td><td>${(d/100).toFixed(2)}</td><td>${(c/100).toFixed(2)}</td></tr>`;
             });
             html += '</tbody><tfoot><tr><td colspan="5">Totals</td><td>' + (totalDebit/100).toFixed(2) + '</td><td>' + (totalCredit/100).toFixed(2) + '</td></tr></tfoot></table>';
             reportContainer.innerHTML = html;

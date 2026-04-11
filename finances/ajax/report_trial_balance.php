@@ -5,13 +5,21 @@ require_method('GET');
 // /finances/ajax/report_trial_balance.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 $date = $_GET['date'] ?? date('Y-m-d');
+// Validate date format
+$dt = DateTime::createFromFormat('Y-m-d', $date);
+if (!$dt || $dt->format('Y-m-d') !== $date) {
+    $date = date('Y-m-d');
+}
 
 try {
     $meta = getReportMeta($DB, $companyId, $userId);

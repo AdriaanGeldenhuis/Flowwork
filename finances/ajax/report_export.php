@@ -188,9 +188,13 @@ try {
             $types = ['asset', 'liability', 'equity'];
             $results = [];
             foreach ($types as $type) {
+                // Assets are normal-debit (debit - credit); liabilities and equity are
+                // normal-credit (credit - debit). Use the correct expression per type
+                // so that the balance sheet shows positive values on the natural side.
+                $balanceExpr = ($type === 'asset') ? '(jl.debit - jl.credit)' : '(jl.credit - jl.debit)';
                 $stmtBS = $DB->prepare(
                     "SELECT ga.account_id, ga.account_code, ga.account_name,
-                    COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (jl.debit - jl.credit) ELSE 0 END),0) * 100 AS balance
+                    COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN $balanceExpr ELSE 0 END),0) * 100 AS balance
                     FROM gl_accounts ga
                     LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
                     LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
@@ -306,8 +310,8 @@ try {
     error_log('Report error: ' . $e->getMessage());
     if ($export) {
         header('Content-Type: text/plain');
-        echo 'Error generating report: ' . $e->getMessage();
+        echo 'Error generating report. Please try again.';
     } else {
-        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        echo json_encode(['ok' => false, 'error' => 'Failed to generate report']);
     }
 }

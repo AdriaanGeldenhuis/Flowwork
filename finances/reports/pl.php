@@ -92,24 +92,34 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
             if (!date) return;
             window.location.href = `/finances/ajax/report_export.php?report=pl&date=${encodeURIComponent(date)}&export=1`;
         });
+        // XSS-safe HTML escape helper
+        function esc(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         function renderReport(data) {
             let html = '';
             html += '<h2>Revenue</h2>';
             html += '<table><thead><tr><th>Account Code</th><th>Account Name</th><th>Amount</th></tr></thead><tbody>';
             let totalRevenue = 0;
-            data.revenue.forEach(row => {
+            (data.revenue || []).forEach(row => {
                 const amt = row.balance_cents || 0;
                 totalRevenue += amt;
-                html += `<tr><td>${row.account_code}</td><td>${row.account_name}</td><td>${(amt/100).toFixed(2)}</td></tr>`;
+                html += `<tr><td>${esc(row.account_code)}</td><td>${esc(row.account_name)}</td><td>${(amt/100).toFixed(2)}</td></tr>`;
             });
             html += '</tbody><tfoot><tr><td colspan="2">Total Revenue</td><td>' + (totalRevenue/100).toFixed(2) + '</td></tr></tfoot></table>';
             html += '<h2>Expenses</h2>';
             html += '<table><thead><tr><th>Account Code</th><th>Account Name</th><th>Amount</th></tr></thead><tbody>';
             let totalExpenses = 0;
-            data.expenses.forEach(row => {
+            (data.expenses || []).forEach(row => {
                 const amt = row.balance_cents || 0;
                 totalExpenses += amt;
-                html += `<tr><td>${row.account_code}</td><td>${row.account_name}</td><td>${(amt/100).toFixed(2)}</td></tr>`;
+                html += `<tr><td>${esc(row.account_code)}</td><td>${esc(row.account_name)}</td><td>${(amt/100).toFixed(2)}</td></tr>`;
             });
             html += '</tbody><tfoot><tr><td colspan="2">Total Expenses</td><td>' + (totalExpenses/100).toFixed(2) + '</td></tr></tfoot></table>';
             const net = (totalRevenue - totalExpenses);

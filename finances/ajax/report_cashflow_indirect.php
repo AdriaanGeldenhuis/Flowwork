@@ -7,25 +7,32 @@ require_method('GET');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../../finances/lib/AccountsMap.php';
 require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 $startDate = $_GET['start_date'] ?? date('Y-01-01');
 $endDate   = $_GET['end_date'] ?? date('Y-m-d');
 
-// Validate dates
-try {
-    $startDateObj = new DateTime($startDate);
-    $endDateObj   = new DateTime($endDate);
-    if ($endDateObj < $startDateObj) {
-        throw new Exception('End date must be on or after start date');
-    }
-} catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => 'Invalid dates']);
+// Validate dates strictly
+$startDateObj = DateTime::createFromFormat('Y-m-d', $startDate);
+$endDateObj   = DateTime::createFromFormat('Y-m-d', $endDate);
+if (!$startDateObj || $startDateObj->format('Y-m-d') !== $startDate) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid start_date']);
+    exit;
+}
+if (!$endDateObj || $endDateObj->format('Y-m-d') !== $endDate) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid end_date']);
+    exit;
+}
+if ($endDateObj < $startDateObj) {
+    echo json_encode(['ok' => false, 'error' => 'End date must be on or after start date']);
     exit;
 }
 
@@ -81,12 +88,29 @@ try {
     $stmt->execute([$companyId, $startDate, $endDate]);
     $netIncome = floatval($stmt->fetchColumn());
 
-    // Depreciation expense (non-cash) for period: sum of debit - credit for expense accounts with name like 'Depreciation'
-    $stmt = $DB->prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
-        FROM journal_lines jl
-        JOIN journal_entries je ON jl.journal_id = je.id
-        JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
-        WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ? AND ga.account_type = 'expense' AND ga.account_name LIKE '%Depreciation%'");
+    // Depreciation expense (non-cash) for period:
+    // Prefer accounts tagged with account_subtype='depreciation'; fall back to
+    // name-based detection for legacy chart-of-accounts without subtypes.
+    $hasSubtype = columnExists($DB, 'gl_accounts', 'account_subtype');
+    if ($hasSubtype) {
+        $stmt = $DB->prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+            FROM journal_lines jl
+            JOIN journal_entries je ON jl.journal_id = je.id
+            JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+            WHERE je.company_id = ? AND je.status = 'posted'
+              AND je.entry_date BETWEEN ? AND ?
+              AND ga.account_type = 'expense'
+              AND (ga.account_subtype = 'depreciation' OR ga.account_name LIKE '%Depreciation%')");
+    } else {
+        $stmt = $DB->prepare("SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+            FROM journal_lines jl
+            JOIN journal_entries je ON jl.journal_id = je.id
+            JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+            WHERE je.company_id = ? AND je.status = 'posted'
+              AND je.entry_date BETWEEN ? AND ?
+              AND ga.account_type = 'expense'
+              AND ga.account_name LIKE '%Depreciation%'");
+    }
     $stmt->execute([$companyId, $startDate, $endDate]);
     $depreciation = floatval($stmt->fetchColumn());
 
@@ -169,5 +193,5 @@ try {
     echo json_encode(['ok' => true, 'data' => $result]);
 } catch (Exception $e) {
     error_log('Cash flow report error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to generate cash flow report']);
 }

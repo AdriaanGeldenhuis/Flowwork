@@ -13,17 +13,20 @@ require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
-$userId    = $_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 
-// Input: year (YYYY), type (income|expense|all)
+// Input: year (YYYY), type (income|revenue|expense|all)
 $year = isset($_GET['year']) ? intval($_GET['year']) : intval(date('Y'));
 if ($year < 2000 || $year > 2100) {
     $year = intval(date('Y'));
 }
 
 $type = isset($_GET['type']) ? strtolower(trim($_GET['type'])) : '';
-if (!in_array($type, ['income','expense','all',''])) {
+// Accept 'income' as an alias for 'revenue' (legacy API name); DB uses 'revenue'
+if ($type === 'income') { $type = 'revenue'; }
+if (!in_array($type, ['revenue','expense','all',''])) {
     $type = '';
 }
 
@@ -36,12 +39,12 @@ try {
     // Build list of accounts to include
     $accSql = "SELECT account_id, account_code, account_name, account_type FROM gl_accounts WHERE company_id = ? AND is_active = 1";
     $params = [$companyId];
-    if ($type === 'income' || $type === 'expense') {
+    if ($type === 'revenue' || $type === 'expense') {
         $accSql .= " AND account_type = ?";
         $params[] = $type;
     } else {
-        // Only include income and expense accounts for budgets vs actual
-        $accSql .= " AND account_type IN ('income','expense')";
+        // Only include revenue and expense accounts for budgets vs actual
+        $accSql .= " AND account_type IN ('revenue','expense')";
     }
     $accSql .= " ORDER BY account_code";
     $stmt = $DB->prepare($accSql);
@@ -82,7 +85,7 @@ try {
         $sql = "SELECT ga.account_id, MONTH(je.entry_date) AS m,
                 SUM(
                     CASE
-                        WHEN ga.account_type = 'income' THEN (jl.credit - jl.debit) * 100
+                        WHEN ga.account_type = 'revenue' THEN (jl.credit - jl.debit) * 100
                         ELSE (jl.debit - jl.credit) * 100
                     END
                 ) AS actual_cents

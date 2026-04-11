@@ -62,16 +62,19 @@ class VatCalculator
         }
 
         // --- Output tax BASE amounts from revenue lines ---
+        // Use gl_accounts.account_type to identify revenue accounts, not a
+        // hardcoded '4%' code prefix (not all charts use 4xxx for revenue).
         $stmt = $db->prepare(
             "SELECT
                 COALESCE(tc.code, 'STD') AS tax_code,
                 SUM(jl.credit - jl.debit) AS base_amount
              FROM journal_lines jl
              JOIN journal_entries je ON jl.journal_id = je.id
+             JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
              LEFT JOIN gl_tax_codes tc ON jl.tax_code_id = tc.tax_code_id
              WHERE je.company_id = ? AND je.status = 'posted'
                AND je.entry_date BETWEEN ? AND ?
-               AND jl.account_code LIKE '4%'
+               AND ga.account_type = 'revenue'
              GROUP BY COALESCE(tc.code, 'STD')"
         );
         $stmt->execute([$companyId, $startDate, $endDate]);

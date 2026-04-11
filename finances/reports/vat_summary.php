@@ -108,6 +108,16 @@ $firstName = $stmt->fetchColumn() ?: 'User';
     <script>
     (function() {
         'use strict';
+        // XSS-safe HTML escape helper
+        function esc(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         const runBtn    = document.getElementById('runBtn');
         const exportBtn = document.getElementById('exportBtn');
         const startDate = document.getElementById('startDate');
@@ -126,7 +136,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
                 const res  = await fetch(`/finances/ajax/report_vat_summary.php?start_date=${encodeURIComponent(s)}&end_date=${encodeURIComponent(e)}`);
                 const json = await res.json();
                 if (!json.ok) {
-                    container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + (json.error || 'Failed to generate report') + '</div>';
+                    container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + esc(json.error || 'Failed to generate report') + '</div>';
                     return;
                 }
                 reportData = json.data;
@@ -134,7 +144,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
                 exportBtn.disabled = false;
                 reportInfo.textContent = 'Generated: ' + new Date().toLocaleString();
             } catch (err) {
-                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + err.message + '</div>';
+                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + esc(err.message) + '</div>';
             }
         });
         exportBtn.addEventListener('click', function() {
@@ -169,9 +179,9 @@ $firstName = $stmt->fetchColumn() ?: 'User';
             html += '<table class="report-table">';
             html += '<thead><tr><th>Period</th><th>Output VAT</th><th>Input VAT</th><th>Net VAT</th></tr></thead>';
             html += '<tbody>';
-            data.periods.forEach(row => {
+            (data.periods || []).forEach(row => {
                 html += '<tr>';
-                html += '<td>' + row.period + '</td>';
+                html += '<td>' + esc(row.period) + '</td>';
                 html += '<td>' + formatCurrency(row.output_vat_cents) + '</td>';
                 html += '<td>' + formatCurrency(row.input_vat_cents) + '</td>';
                 html += '<td>' + formatCurrency(row.net_vat_cents) + '</td>';
