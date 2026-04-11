@@ -43,5 +43,5 @@ try {
     echo json_encode(['ok' => true, 'total_unmatched' => $total, 'counters' => $counters]);
 } catch (Exception $e) {
     error_log('Bank get counters error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to load counters']);
 }

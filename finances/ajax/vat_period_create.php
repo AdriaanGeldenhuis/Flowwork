@@ -109,6 +109,6 @@ try {
     error_log("VAT period create error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to create VAT period'
     ]);
 }

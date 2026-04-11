@@ -28,20 +28,19 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 }
 require_once __DIR__ . '/../lib/PeriodService.php';
 require_once __DIR__ . '/../lib/ArService.php';
+require_once __DIR__ . '/../lib/http.php';
+require_once __DIR__ . '/../lib/Csrf.php';
+
+require_method('POST');
+Csrf::validate();
 
 header('Content-Type: application/json');
-
-// Only accept POST
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
-    exit;
-}
 
 // Enforce finance role permissions
 requireRoles(['admin', 'bookkeeper']);
 
-$companyId = $_SESSION['company_id'] ?? null;
-$userId    = $_SESSION['user_id'] ?? null;
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
 if (!$companyId || !$userId) {
     echo json_encode(['ok' => false, 'error' => 'Authentication required']);
     exit;
@@ -61,6 +60,12 @@ $allocations = isset($data['allocations']) && is_array($data['allocations']) ? $
 $amount     = isset($data['amount']) ? floatval($data['amount']) : 0.0;
 $method     = isset($data['method']) && $data['method'] ? trim((string)$data['method']) : 'eft';
 $paymentDate = isset($data['payment_date']) && $data['payment_date'] ? $data['payment_date'] : date('Y-m-d');
+// Validate payment_date format strictly
+$dtP = DateTime::createFromFormat('Y-m-d', $paymentDate);
+if (!$dtP || $dtP->format('Y-m-d') !== $paymentDate) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid payment_date format (expected YYYY-MM-DD)']);
+    exit;
+}
 $reference   = isset($data['reference']) ? trim((string)$data['reference']) : '';
 $notes       = isset($data['notes']) ? trim((string)$data['notes']) : '';
 $idempotencyKey = isset($data['idempotency_key']) ? trim((string)$data['idempotency_key']) : '';
@@ -190,7 +195,7 @@ try {
     error_log('AR record payment error: ' . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to record payment'
     ]);
     exit;
 }

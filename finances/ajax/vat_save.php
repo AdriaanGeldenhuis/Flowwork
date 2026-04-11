@@ -18,13 +18,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 Csrf::validate();
 requireRoles(['admin', 'bookkeeper']);
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId || !$userId) {
+    echo json_encode(['ok' => false, 'error' => 'Not authorised']);
+    exit;
+}
 
 $input = json_decode(file_get_contents('php://input'), true);
-$periodId = $input['period_id'] ?? null;
+$periodId = isset($input['period_id']) ? (int)$input['period_id'] : 0;
 
-if (!$periodId) {
+if ($periodId <= 0) {
     echo json_encode(['ok' => false, 'error' => 'Period ID required']);
     exit;
 }
@@ -46,6 +50,13 @@ try {
 
     if ($period['status'] !== 'open') {
         throw new Exception('Period is already ' . $period['status']);
+    }
+
+    // SARS: do not allow preparing a VAT return when its period_end
+    // already falls inside a locked accounting period
+    $periodService = new PeriodService($DB, $companyId);
+    if ($periodService->isLocked($period['period_end'])) {
+        throw new Exception('Cannot prepare VAT for a locked period (' . $period['period_end'] . ')');
     }
 
     // Compute VAT totals using centralised helper
@@ -118,6 +129,6 @@ try {
     error_log("VAT save error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to prepare VAT period'
     ]);
 }

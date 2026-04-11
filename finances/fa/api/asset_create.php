@@ -82,6 +82,7 @@ try {
     $stmt->execute([$companyId, $userId, json_encode(['asset_id' => $assetId, 'asset_name' => $assetName, 'cost' => $purchaseCost]), $_SERVER['REMOTE_ADDR'] ?? null]);
     echo json_encode(['success' => true, 'data' => ['asset_id' => $assetId], 'message' => 'Asset created successfully']);
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    error_log('FA asset create error: ' . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Failed to create asset']);
 }
 ?>

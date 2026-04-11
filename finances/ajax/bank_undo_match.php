@@ -91,5 +91,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log('Bank undo match error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to undo match']);
 }

@@ -158,6 +158,7 @@ try {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    error_log('FA depreciation run error: ' . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Failed to run depreciation']);
 }
 ?>

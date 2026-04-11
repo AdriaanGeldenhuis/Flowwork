@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 require_once __DIR__ . '/../lib/BankStatementParser.php';
+require_once __DIR__ . '/../permissions.php';
 
 header('Content-Type: application/json');
 
@@ -17,14 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
-$role = strtolower($_SESSION['role'] ?? 'member');
-if (!in_array($role, ['admin', 'bookkeeper'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+if (!$companyId) {
+    echo json_encode(['ok' => false, 'error' => 'Not authorised']);
     exit;
 }
-
-$companyId = (int)$_SESSION['company_id'];
 
 // Validate file upload
 if (!isset($_FILES['pdf_file']) || $_FILES['pdf_file']['error'] !== UPLOAD_ERR_OK) {
@@ -33,7 +33,18 @@ if (!isset($_FILES['pdf_file']) || $_FILES['pdf_file']['error'] !== UPLOAD_ERR_O
 }
 
 $file = $_FILES['pdf_file'];
-$mimeType = mime_content_type($file['tmp_name']);
+// Use finfo for more reliable MIME detection; fall back to mime_content_type
+$mimeType = null;
+if (function_exists('finfo_open')) {
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    if ($finfo) {
+        $mimeType = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+    }
+}
+if ($mimeType === null && function_exists('mime_content_type')) {
+    $mimeType = mime_content_type($file['tmp_name']);
+}
 
 if ($mimeType !== 'application/pdf') {
     echo json_encode(['ok' => false, 'error' => 'File must be a PDF']);
@@ -78,6 +89,6 @@ try {
     error_log('PDF parse error: ' . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => 'Failed to parse PDF: ' . $e->getMessage()
+        'error' => 'Failed to parse PDF'
     ]);
 }

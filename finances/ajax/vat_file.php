@@ -89,6 +89,6 @@ try {
     error_log("VAT file error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to file VAT return'
     ]);
 }

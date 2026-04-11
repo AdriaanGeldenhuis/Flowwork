@@ -65,5 +65,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Bank rule delete error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to delete rule']);
 }

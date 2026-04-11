@@ -60,7 +60,7 @@ try {
     $DB->beginTransaction();
     // Fetch lock to include details in audit
     $stmt = $DB->prepare("SELECT lock_date, lock_reason FROM gl_period_locks WHERE company_id = ? AND lock_id = ?");
-    $stmt->execute([$userId, $companyId, $lockId]);
+    $stmt->execute([$companyId, $lockId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
         $DB->rollBack();
@@ -87,5 +87,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log('Period lock delete error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to delete period lock']);
 }

@@ -7,11 +7,13 @@ require_method('GET');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'] ?? 0;
-$userId    = $_SESSION['user_id'] ?? 0;
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
 
 // Capture query parameters
 $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
@@ -145,5 +147,5 @@ try {
     ]);
 } catch (Exception $e) {
     error_log('AR statement error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to generate statement']);
 }

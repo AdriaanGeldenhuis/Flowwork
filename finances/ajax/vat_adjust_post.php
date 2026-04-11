@@ -222,7 +222,7 @@ try {
     error_log('VAT adjust error: ' . $e->getMessage());
     echo json_encode([
         'ok'    => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to post VAT adjustment'
     ]);
     exit;
 }
