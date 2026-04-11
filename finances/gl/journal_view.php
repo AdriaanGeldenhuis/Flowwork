@@ -2,6 +2,8 @@
 // /finances/gl/journal_view.php — Standalone Journal Entry View
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 define('ASSET_VERSION', '2026-04-09-GL-1');
 

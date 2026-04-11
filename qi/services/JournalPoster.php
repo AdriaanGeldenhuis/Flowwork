@@ -15,6 +15,7 @@ class JournalPoster
     private $db;
     private $companyId;
     private $userId;
+    private $periodService;
 
     /**
      * Constructor
@@ -28,6 +29,22 @@ class JournalPoster
         $this->db        = $db;
         $this->companyId = $companyId;
         $this->userId    = $userId;
+        require_once __DIR__ . '/../../finances/lib/PeriodService.php';
+        $this->periodService = new PeriodService($db, $companyId);
+    }
+
+    /**
+     * Resolve the output tax_code_id for SARS VAT201 compliance.
+     * Returns the STD/STANDARD code id, or null if not found.
+     */
+    private function resolveOutputTaxCodeId(): ?int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT tax_code_id FROM gl_tax_codes WHERE company_id = ? AND code IN ('STD','STANDARD') AND is_active = 1 LIMIT 1"
+        );
+        $stmt->execute([$this->companyId]);
+        $id = $stmt->fetchColumn();
+        return $id ? (int)$id : null;
     }
 
     /**
@@ -101,6 +118,11 @@ class JournalPoster
         if (!$invoice) {
             return;
         }
+        // Check period lock
+        $entryDate = $invoice['issue_date'] ?? date('Y-m-d');
+        if ($this->periodService->isLocked($entryDate)) {
+            throw new Exception('Cannot post invoice to locked period (' . $entryDate . ')');
+        }
         // Remove existing journal entry if present (re-post on update)
         if (!empty($invoice['journal_id'])) {
             $this->deleteJournal((int)$invoice['journal_id']);
@@ -118,6 +140,9 @@ class JournalPoster
         $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1200');
         $salesDef = $this->getAccountCodeBySetting('finance_sales_account_id', '4100');
         $vatCode  = $this->getAccountCodeBySetting('finance_vat_output_account_id', '2120');
+
+        // Resolve output tax_code_id for SARS VAT201 compliance
+        $outputTaxCodeId = $this->resolveOutputTaxCodeId();
 
         // Aggregate net sales per account and total VAT
         $salesTotals = [];
@@ -142,14 +167,13 @@ class JournalPoster
         // Begin new transaction for journal posting
         $this->db->beginTransaction();
         try {
-            // Insert journal entry
+            // Insert journal entry (status='posted' — auto-posted from QI)
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'qi', 'invoice', ?, 'invoice', ?, ?, NOW())"
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'qi', 'invoice', ?, 'invoice', ?, ?, NOW(), 'posted', ?, NOW())"
             );
-            $entryDate  = $invoice['issue_date'] ?? date('Y-m-d');
             $reference  = $invoice['invoice_number'];
             $desc       = 'Invoice ' . $invoice['invoice_number'];
             $stmt->execute([
@@ -159,6 +183,7 @@ class JournalPoster
                 $desc,
                 $invoiceId,
                 $invoiceId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -176,11 +201,11 @@ class JournalPoster
                 $invoice['customer_id'],
                 $reference
             ]);
-            // Insert sales credit lines per account
+            // Insert sales credit lines per account (with SARS tax_code_id)
             $stmtLine = $this->db->prepare(
                 "INSERT INTO journal_lines (
-                    journal_id, account_code, description, debit, credit, customer_id, reference
-                ) VALUES (?, ?, ?, 0, ?, ?, ?)"
+                    journal_id, account_code, description, debit, credit, tax_code_id, customer_id, reference
+                ) VALUES (?, ?, ?, 0, ?, ?, ?, ?)"
             );
             foreach ($salesTotals as $code => $amount) {
                 $stmtLine->execute([
@@ -188,17 +213,19 @@ class JournalPoster
                     $code,
                     'Sales Income',
                     number_format($amount, 2, '.', ''),
+                    $outputTaxCodeId,
                     $invoice['customer_id'],
                     $reference
                 ]);
             }
-            // Insert VAT credit line if VAT > 0
+            // Insert VAT credit line if VAT > 0 (with SARS tax_code_id)
             if ($totalVat > 0.0001) {
                 $stmtLine->execute([
                     $journalId,
                     $vatCode,
                     'VAT Output',
                     number_format($totalVat, 2, '.', ''),
+                    $outputTaxCodeId,
                     $invoice['customer_id'],
                     $reference
                 ]);
@@ -210,7 +237,7 @@ class JournalPoster
         } catch (Exception $e) {
             $this->db->rollBack();
             error_log('Journal posting for invoice failed: ' . $e->getMessage());
-            // Do not throw further
+            throw $e;
         }
     }
 
@@ -232,6 +259,11 @@ class JournalPoster
         $payment = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$payment) {
             return;
+        }
+        // Check period lock
+        $entryDate = $payment['payment_date'] ?? date('Y-m-d');
+        if ($this->periodService->isLocked($entryDate)) {
+            throw new Exception('Cannot post payment to locked period (' . $entryDate . ')');
         }
         // Remove existing journal entry if present
         if (!empty($payment['journal_id'])) {
@@ -259,15 +291,14 @@ class JournalPoster
         // Begin journal transaction
         $this->db->beginTransaction();
         try {
-            $entryDate = $payment['payment_date'];
             $reference = $payment['reference'] ?: ('PAY' . $paymentId);
             $desc      = 'Payment';
-            // Insert journal entry
+            // Insert journal entry (status='posted' — auto-posted from QI)
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'qi', 'payment', ?, 'payment', ?, ?, NOW())"
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'qi', 'payment', ?, 'payment', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $stmt->execute([
                 $this->companyId,
@@ -276,6 +307,7 @@ class JournalPoster
                 $desc,
                 $paymentId,
                 $paymentId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
@@ -318,6 +350,7 @@ class JournalPoster
         } catch (Exception $e) {
             $this->db->rollBack();
             error_log('Journal posting for payment failed: ' . $e->getMessage());
+            throw $e;
         }
     }
 
@@ -340,6 +373,11 @@ class JournalPoster
         if (!$credit) {
             return;
         }
+        // Check period lock
+        $entryDate = $credit['issue_date'] ?? date('Y-m-d');
+        if ($this->periodService->isLocked($entryDate)) {
+            throw new Exception('Cannot post credit note to locked period (' . $entryDate . ')');
+        }
         if (!empty($credit['journal_id'])) {
             $this->deleteJournal((int)$credit['journal_id']);
         }
@@ -356,6 +394,8 @@ class JournalPoster
         $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1200');
         $salesDef = $this->getAccountCodeBySetting('finance_sales_account_id', '4100');
         $vatCode  = $this->getAccountCodeBySetting('finance_vat_output_account_id', '2120');
+        // Resolve output tax_code_id for SARS VAT201 compliance
+        $outputTaxCodeId = $this->resolveOutputTaxCodeId();
         // Aggregate sales per account and VAT
         $salesTotals = [];
         $totalVat    = 0.0;
@@ -377,14 +417,14 @@ class JournalPoster
         // Create journal entry
         $this->db->beginTransaction();
         try {
-            $entryDate = $credit['issue_date'] ?? date('Y-m-d');
             $reference = $credit['credit_note_number'];
             $desc      = 'Credit Note ' . $reference;
+            // Insert journal entry (status='posted' — auto-posted from QI)
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
                     company_id, entry_date, reference, description, module, ref_type, ref_id,
-                    source_type, source_id, created_by, created_at
-                ) VALUES (?, ?, ?, ?, 'qi', 'credit_note', ?, 'credit_note', ?, ?, NOW())"
+                    source_type, source_id, created_by, created_at, status, posted_by, posted_at
+                ) VALUES (?, ?, ?, ?, 'qi', 'credit_note', ?, 'credit_note', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $stmt->execute([
                 $this->companyId,
@@ -393,13 +433,14 @@ class JournalPoster
                 $desc,
                 $creditNoteId,
                 $creditNoteId,
+                $this->userId,
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
-            // Debit Sales accounts (reverse revenue)
+            // Debit Sales accounts (reverse revenue, with SARS tax_code_id)
             $stmtLine = $this->db->prepare(
-                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, customer_id, reference)
-                 VALUES (?, ?, ?, ?, 0, ?, ?)"
+                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, customer_id, reference)
+                 VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
             );
             foreach ($salesTotals as $code => $amt) {
                 $stmtLine->execute([
@@ -407,17 +448,19 @@ class JournalPoster
                     $code,
                     'Sales Income',
                     number_format($amt, 2, '.', ''),
+                    $outputTaxCodeId,
                     $credit['customer_id'],
                     $reference
                 ]);
             }
-            // Debit VAT Output
+            // Debit VAT Output (with SARS tax_code_id)
             if ($totalVat > 0.0001) {
                 $stmtLine->execute([
                     $journalId,
                     $vatCode,
                     'VAT Output',
                     number_format($totalVat, 2, '.', ''),
+                    $outputTaxCodeId,
                     $credit['customer_id'],
                     $reference
                 ]);
@@ -442,6 +485,7 @@ class JournalPoster
         } catch (Exception $e) {
             $this->db->rollBack();
             error_log('Journal posting for credit note failed: ' . $e->getMessage());
+            throw $e;
         }
     }
 
@@ -457,17 +501,18 @@ class JournalPoster
         if ($journalId <= 0) {
             return;
         }
-        $this->db->beginTransaction();
-        try {
-            // Delete lines first due to FK constraints
-            $stmt = $this->db->prepare("DELETE FROM journal_lines WHERE journal_id = ?");
-            $stmt->execute([$journalId]);
-            $stmt = $this->db->prepare("DELETE FROM journal_entries WHERE id = ?");
-            $stmt->execute([$journalId]);
-            $this->db->commit();
-        } catch (Exception $e) {
-            $this->db->rollBack();
-            error_log('Failed to delete journal entry ' . $journalId . ': ' . $e->getMessage());
+        // No transaction here — caller is responsible for wrapping in a transaction.
+        // Check period lock before deleting
+        $stmt = $this->db->prepare("SELECT entry_date FROM journal_entries WHERE id = ? AND company_id = ?");
+        $stmt->execute([$journalId, $this->companyId]);
+        $date = $stmt->fetchColumn();
+        if ($date && $this->periodService->isLocked($date)) {
+            return; // Period is locked; skip deletion silently
         }
+        // Delete lines first due to FK constraints
+        $stmt = $this->db->prepare("DELETE FROM journal_lines WHERE journal_id = ?");
+        $stmt->execute([$journalId]);
+        $stmt = $this->db->prepare("DELETE FROM journal_entries WHERE id = ? AND company_id = ?");
+        $stmt->execute([$journalId, $this->companyId]);
     }
 }

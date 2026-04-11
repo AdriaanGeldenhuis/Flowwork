@@ -497,9 +497,10 @@ class PostingService
         if (!$arCode || !$salesDef) {
             throw new Exception('Finance settings incomplete (AR or Sales)');
         }
-        // Aggregate net and VAT
+        // Aggregate net and VAT, resolve output tax_code_id for SARS VAT201 compliance
         $netTotal  = 0.0;
         $vatTotal  = 0.0;
+        $primaryTaxRate = 0.0;
         foreach ($lines as $li) {
             $qty      = floatval($li['quantity']);
             $price    = floatval($li['unit_price']);
@@ -509,8 +510,12 @@ class PostingService
             $vat      = $net * ($taxRate / 100);
             $netTotal += $net;
             $vatTotal += $vat;
+            if ($taxRate > $primaryTaxRate) {
+                $primaryTaxRate = $taxRate;
+            }
         }
         $total = $netTotal + $vatTotal;
+        $outputTaxCodeId = $this->resolveOutputTaxCodeId($primaryTaxRate);
         // Post journal
         $this->db->beginTransaction();
         try {
@@ -534,26 +539,28 @@ class PostingService
                 $this->userId
             ]);
             $journalId = (int)$this->db->lastInsertId();
-            // Debit Sales (reduce revenue)
+            // Debit Sales (reduce revenue, with SARS tax_code_id)
             $stmtLine = $this->db->prepare(
-                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, customer_id, reference)
-                 VALUES (?, ?, ?, ?, 0, ?, ?)"
+                "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, customer_id, reference)
+                 VALUES (?, ?, ?, ?, 0, ?, ?, ?)"
             );
             $stmtLine->execute([
                 $journalId,
                 $salesDef,
                 'Sales Return',
                 number_format($netTotal, 2, '.', ''),
+                $outputTaxCodeId,
                 $credit['customer_id'] ?: null,
                 $reference
             ]);
-            // Debit VAT Output (reduce VAT liability) if any
+            // Debit VAT Output (reduce VAT liability, with SARS tax_code_id) if any
             if ($vatTotal > 0.0001) {
                 $stmtLine->execute([
                     $journalId,
                     $vatCode,
                     'VAT Output (Credit Note)',
                     number_format($vatTotal, 2, '.', ''),
+                    $outputTaxCodeId,
                     $credit['customer_id'] ?: null,
                     $reference
                 ]);
