@@ -5,10 +5,13 @@ require_method('GET');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 
 // Filters
 $dateFrom = $_GET['dateFrom'] ?? '';

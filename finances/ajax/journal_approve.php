@@ -21,12 +21,12 @@ $journalId = isset($input['journal_id']) ? (int)$input['journal_id'] : 0;
 if ($journalId <= 0) { json_error('Invalid journal_id'); }
 
 try {
-    // Approve only if not already posted
+    // Approve only draft journals (SARS workflow: draft → approved → posted)
     $stmt = $DB->prepare("SELECT status FROM journal_entries WHERE id = ? AND company_id = ?");
     $stmt->execute([$journalId, $companyId]);
     $st = $stmt->fetchColumn();
     if (!$st) { json_error('Journal not found', 404); }
-    if ($st === 'posted') { json_error('Already posted', 409); }
+    if ($st !== 'draft') { json_error('Only draft journals can be approved (current status: ' . $st . ')', 409); }
 
     $stmt = $DB->prepare("UPDATE journal_entries SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE id = ? AND company_id = ?");
     $stmt->execute([$userId, $journalId, $companyId]);

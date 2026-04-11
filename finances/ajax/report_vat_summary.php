@@ -7,21 +7,32 @@ require_method('GET');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../../finances/lib/AccountsMap.php';
 require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 $startDate = $_GET['start_date'] ?? date('Y-01-01');
 $endDate   = $_GET['end_date'] ?? date('Y-m-d');
 
+// Validate dates strictly
+$dtStart = DateTime::createFromFormat('Y-m-d', $startDate);
+$dtEnd   = DateTime::createFromFormat('Y-m-d', $endDate);
+if (!$dtStart || $dtStart->format('Y-m-d') !== $startDate) {
+    json_error('Invalid start_date');
+}
+if (!$dtEnd || $dtEnd->format('Y-m-d') !== $endDate) {
+    json_error('Invalid end_date');
+}
+
 try {
-    // Validate dates
-    $start = new DateTime($startDate);
-    $end   = new DateTime($endDate);
-    if ($end < $start) {
+    // Validate range
+    if ($dtEnd < $dtStart) {
         throw new Exception('End date must be on or after start date');
     }
     // Resolve VAT account codes
@@ -81,5 +92,5 @@ try {
     ]]);
 } catch (Exception $e) {
     error_log('VAT summary report error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to generate VAT summary']);
 }

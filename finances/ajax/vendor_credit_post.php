@@ -14,24 +14,22 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
     require_once $__fin_root . '/auth_gate.php';
 }
 require_once __DIR__ . '/../lib/PostingService.php';
+require_once __DIR__ . '/../lib/http.php';
+require_once __DIR__ . '/../lib/Csrf.php';
+require_once __DIR__ . '/../permissions.php';
+
+require_method('POST');
+Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
 header('Content-Type: application/json');
 
-// Only accept POST requests
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'POST required']);
-    exit;
-}
-
-// Authorise user
-$role = $_SESSION['role'] ?? 'member';
-if (!in_array($role, ['admin', 'bookkeeper'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
-    exit;
-}
-
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 $userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId || !$userId) {
+    echo json_encode(['ok' => false, 'error' => 'Not authorised']);
+    exit;
+}
 
 // Parse JSON input
 $input = json_decode(file_get_contents('php://input'), true);
@@ -113,7 +111,7 @@ try {
     }
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) { $DB->rollBack(); }
     error_log('Vendor credit post error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to post vendor credit']);
 }

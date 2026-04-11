@@ -28,9 +28,13 @@ if (!$companyId) { header('Location: /login.php'); exit; }
 $accounts = new AccountsMap($DB, $companyId);
 $vatInputCode = $accounts->get('finance_vat_input_account_id', '2130');
 
-// Date range filter
+// Date range filter (validate format strictly to avoid DateTime exceptions in SQL)
 $startDate = $_GET['start'] ?? date('Y-01-01');
 $endDate   = $_GET['end'] ?? date('Y-m-d');
+$dtS = DateTime::createFromFormat('Y-m-d', $startDate);
+$dtE = DateTime::createFromFormat('Y-m-d', $endDate);
+if (!$dtS || $dtS->format('Y-m-d') !== $startDate) { $startDate = date('Y-01-01'); }
+if (!$dtE || $dtE->format('Y-m-d') !== $endDate)   { $endDate   = date('Y-m-d'); }
 
 // Method 1: Use is_capital_goods flag (for new records)
 // Method 2: Heuristic detection (for historical records) - sibling line debits fixed asset

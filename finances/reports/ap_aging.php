@@ -122,7 +122,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
                 const res  = await fetch(`/finances/ajax/report_ap_aging.php?date=${encodeURIComponent(date)}`);
                 const json = await res.json();
                 if (!json.ok) {
-                    container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + (json.error || 'Failed to generate report') + '</div>';
+                    container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + escapeHtml(json.error || 'Failed to generate report') + '</div>';
                     return;
                 }
                 reportData = json.data;
@@ -130,7 +130,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
                 exportBtn.disabled = false;
                 reportInfo.textContent = 'Generated: ' + new Date().toLocaleString();
             } catch (e) {
-                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + e.message + '</div>';
+                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + escapeHtml(e.message) + '</div>';
             }
         });
         exportBtn.addEventListener('click', function() {

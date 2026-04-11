@@ -5,13 +5,22 @@ require_method('GET');
 // /finances/ajax/report_balance_sheet.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
+require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 $date = $_GET['date'] ?? date('Y-m-d');
+// Validate date format
+$dt = DateTime::createFromFormat('Y-m-d', $date);
+if (!$dt || $dt->format('Y-m-d') !== $date) {
+    $date = date('Y-m-d');
+}
 
 // Current/Non-Current classification using CoaSchema subtypes
 $currentAssetSubtypes = ['bank', 'cash', 'accounts_receivable', 'inventory', 'prepayment', 'current_asset'];
@@ -116,9 +125,12 @@ try {
     $netIncomeCents = (int) round((floatval($plData['revenue']) - floatval($plData['expenses'])) * 100);
 
     if ($netIncomeCents != 0) {
+        // Resolve current-year-earnings account code from company settings (fallback 3300)
+        $accountsMap = new AccountsMap($DB, $companyId);
+        $cyeCode = $accountsMap->get('finance_current_year_earnings_account_id', '3300');
         $equity[] = [
             'account_id'   => null,
-            'account_code' => '3300',
+            'account_code' => $cyeCode,
             'account_name' => 'Current Year Earnings',
             'balance_cents' => $netIncomeCents
         ];
@@ -164,6 +176,6 @@ try {
     error_log("Balance sheet error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => 'Failed to generate balance sheet: ' . $e->getMessage()
+        'error' => 'Failed to generate balance sheet'
     ]);
 }

@@ -5,18 +5,27 @@ require_method('GET');
 // /finances/ajax/report_gl_detail.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
 
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 $date      = $_GET['date'] ?? date('Y-m-d');
-$accountId = $_GET['account_id'] ?? null;
-$projectId = $_GET['project_id'] ?? null;
+$accountId = isset($_GET['account_id']) ? (int)$_GET['account_id'] : 0;
+$projectId = isset($_GET['project_id']) ? (int)$_GET['project_id'] : 0;
 
-if (!$accountId) {
+// Validate date format
+$dt = DateTime::createFromFormat('Y-m-d', $date);
+if (!$dt || $dt->format('Y-m-d') !== $date) {
+    $date = date('Y-m-d');
+}
+
+if ($accountId <= 0) {
     echo json_encode(['ok' => false, 'error' => 'Account ID required']);
     exit;
 }
@@ -65,7 +74,7 @@ try {
         AND je.status = 'posted'
         AND je.entry_date <= ?";
     $params = [$accountCode, $companyId, $date];
-    if ($projectId) {
+    if ($projectId > 0) {
         $sql .= " AND jl.project_id = ?";
         $params[] = $projectId;
     }
@@ -116,5 +125,5 @@ try {
 
 } catch (Exception $e) {
     error_log('GL detail error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to generate GL detail']);
 }

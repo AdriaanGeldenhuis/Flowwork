@@ -154,5 +154,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Bank PDF import confirm error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to confirm import']);
 }

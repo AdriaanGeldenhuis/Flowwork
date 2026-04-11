@@ -27,15 +27,16 @@ if (!isset($_SESSION['company_id']) || !isset($_SESSION['user_id'])) {
     exit;
 }
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
-$role = $_SESSION['role'] ?? 'member';
-
-// Only finance admins and bookkeepers may build bills from receipts
-if (!in_array($role, ['admin', 'bookkeeper'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId || !$userId) {
+    echo json_encode(['ok' => false, 'error' => 'Not authorised']);
     exit;
 }
+
+// Only finance admins and bookkeepers may build bills from receipts
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper']);
 
 // Accept file_id from either GET query or JSON body
 $fileId = null;

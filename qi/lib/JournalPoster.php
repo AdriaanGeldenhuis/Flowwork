@@ -8,13 +8,14 @@
  *   JournalPoster::postInvoice($pdo, (int)$invoice_id);
  */
 class JournalPoster {
-    public static function postInvoice(PDO $db, int $invoiceId): ?int {
+    public static function postInvoice(PDO $db, int $invoiceId, int $userId = 0): ?int {
         $stmt = $db->prepare("SELECT company_id, invoice_number, issue_date, subtotal, tax, total, customer_id FROM invoices WHERE id=?");
         $stmt->execute([$invoiceId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) return null;
 
         $companyId = (int)$row['company_id'];
+        if (!$userId) { $userId = (int)($_SESSION['user_id'] ?? 1); }
         $map = self::getFinanceMap($db, $companyId);
         if (!$map['ar'] || !$map['sales'] || !$map['vat_output']) {
             // Missing required mappings, do nothing gracefully
@@ -23,9 +24,9 @@ class JournalPoster {
 
         $db->beginTransaction();
         try {
-            $ins = $db->prepare("INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id, source_type, source_id, created_by)
-                                 VALUES (?, ?, ?, ?, 'qi', 'invoice', ?, 'invoice', ?, 1)");
-            $ins->execute([$companyId, $row['issue_date'], $row['invoice_number'], 'Invoice posting', $invoiceId, $invoiceId]);
+            $ins = $db->prepare("INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id, source_type, source_id, created_by, created_at, status, posted_by, posted_at)
+                                 VALUES (?, ?, ?, ?, 'qi', 'invoice', ?, 'invoice', ?, ?, NOW(), 'posted', ?, NOW())");
+            $ins->execute([$companyId, $row['issue_date'], $row['invoice_number'], 'Invoice posting', $invoiceId, $invoiceId, $userId, $userId]);
             $journalId = (int)$db->lastInsertId();
 
             // DR Accounts Receivable (total)
@@ -36,9 +37,10 @@ class JournalPoster {
                 self::line($db, $journalId, $map['sales_code'], 'Sales '.$row['invoice_number'], 0.00, (float)$row['subtotal'], (int)$row['customer_id']);
             }
 
-            // CR VAT Output (tax)
+            // CR VAT Output (tax) — resolve SARS tax_code_id for VAT201
             if ((float)$row['tax'] > 0) {
-                self::line($db, $journalId, $map['vat_output_code'], 'VAT Output '.$row['invoice_number'], 0.00, (float)$row['tax'], (int)$row['customer_id'], 1);
+                $outputTaxCodeId = self::resolveOutputTaxCodeId($db, $companyId);
+                self::line($db, $journalId, $map['vat_output_code'], 'VAT Output '.$row['invoice_number'], 0.00, (float)$row['tax'], (int)$row['customer_id'], $outputTaxCodeId);
             }
 
             $upd = $db->prepare("UPDATE invoices SET journal_id=? WHERE id=?");
@@ -82,6 +84,13 @@ class JournalPoster {
             'sales_code' => $codes['sales_code'] ?? null,
             'vat_output_code' => $codes['vat_output_code'] ?? null
         ];
+    }
+
+    private static function resolveOutputTaxCodeId(PDO $db, int $companyId): ?int {
+        $stmt = $db->prepare("SELECT tax_code_id FROM gl_tax_codes WHERE company_id = ? AND code IN ('STD','STANDARD') AND is_active = 1 LIMIT 1");
+        $stmt->execute([$companyId]);
+        $id = $stmt->fetchColumn();
+        return $id ? (int)$id : null;
     }
 
     private static function line(PDO $db, int $journalId, string $accountCode, string $desc, float $debit, float $credit, ?int $customerId=null, ?int $taxCodeId=null): void {

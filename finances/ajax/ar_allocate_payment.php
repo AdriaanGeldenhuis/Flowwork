@@ -25,18 +25,18 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 }
 require_once __DIR__ . '/../lib/PeriodService.php';
 require_once __DIR__ . '/../lib/ArService.php';
+require_once __DIR__ . '/../lib/http.php';
+require_once __DIR__ . '/../lib/Csrf.php';
+
+require_method('POST');
+Csrf::validate();
 
 header('Content-Type: application/json');
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
-    exit;
-}
-
 requireRoles(['admin', 'bookkeeper']);
 
-$companyId = $_SESSION['company_id'] ?? null;
-$userId    = $_SESSION['user_id'] ?? null;
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
 if (!$companyId || !$userId) {
     echo json_encode(['ok' => false, 'error' => 'Authentication required']);
     exit;
@@ -180,6 +180,6 @@ try {
         $DB->rollBack();
     }
     error_log('AR allocate payment error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Failed to reallocate payment']);
     exit;
 }

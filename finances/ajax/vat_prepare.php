@@ -83,6 +83,6 @@ try {
     error_log("VAT prepare error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to prepare VAT return'
     ]);
 }

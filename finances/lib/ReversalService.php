@@ -21,6 +21,11 @@ class ReversalService
      */
     public function reverseJournal(int $journalId, int $userId, ?string $reason = null, ?string $reversalDate = null): ?int
     {
+        // SARS compliance: reason is required for audit trail
+        if (!$reason || trim($reason) === '') {
+            throw new \InvalidArgumentException('A reason is required for journal reversals (SARS compliance)');
+        }
+
         // Fetch original header
         $stmt = $this->db->prepare("SELECT id, entry_date, description FROM journal_entries WHERE id = ? AND company_id = ?");
         $stmt->execute([$journalId, $this->companyId]);
@@ -38,34 +43,42 @@ class ReversalService
         $rows = $lines->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) { return null; }
 
-        // Create reversing header
-        $desc = 'Reversal of #' . $journalId . ($reason ? ' - ' . $reason : '');
-        $ins = $this->db->prepare(
-            "INSERT INTO journal_entries (company_id, entry_date, description, module, ref_type, ref_id, source_type, source_id, status, created_by, created_at, posted_by, posted_at, reverses_journal_id)
-             VALUES (?, ?, ?, 'fin', 'reversal', ?, 'reversal', ?, 'posted', ?, NOW(), ?, NOW(), ?)"
-        );
-        $ins->execute([$this->companyId, $date, $desc, $journalId, $journalId, $userId, $userId, $journalId]);
-        $revId = (int)$this->db->lastInsertId();
-
-        // Insert reversing lines with swapped amounts (preserve tax_code_id for SARS VAT trail)
-        $insL = $this->db->prepare("INSERT INTO journal_lines (journal_id, account_code, debit, credit, description, tax_code_id) VALUES (?, ?, ?, ?, ?, ?)");
-        foreach ($rows as $r) {
-            $insL->execute([
-                $revId,
-                $r['account_code'],
-                $r['credit'],  // swap: original credit becomes debit
-                $r['debit'],   // swap: original debit becomes credit
-                'Reversal',
-                $r['tax_code_id'] ?? null
-            ]);
-        }
-
-        // Link original journal to the reversal
+        // Atomic reversal: insert reversal + link original must succeed together
+        $this->db->beginTransaction();
         try {
+            // Create reversing header (with reference for SARS audit trail)
+            $desc = 'Reversal of #' . $journalId . ' - ' . $reason;
+            $reference = 'REV-' . $journalId;
+            $ins = $this->db->prepare(
+                "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id, source_type, source_id, status, created_by, created_at, posted_by, posted_at, reverses_journal_id)
+                 VALUES (?, ?, ?, ?, 'fin', 'reversal', ?, 'reversal', ?, 'posted', ?, NOW(), ?, NOW(), ?)"
+            );
+            $ins->execute([$this->companyId, $date, $reference, $desc, $journalId, $journalId, $userId, $userId, $journalId]);
+            $revId = (int)$this->db->lastInsertId();
+
+            // Insert reversing lines with swapped amounts (preserve tax_code_id for SARS VAT trail)
+            $insL = $this->db->prepare("INSERT INTO journal_lines (journal_id, account_code, debit, credit, description, tax_code_id) VALUES (?, ?, ?, ?, ?, ?)");
+            foreach ($rows as $r) {
+                $insL->execute([
+                    $revId,
+                    $r['account_code'],
+                    $r['credit'],  // swap: original credit becomes debit
+                    $r['debit'],   // swap: original debit becomes credit
+                    'Reversal',
+                    $r['tax_code_id'] ?? null
+                ]);
+            }
+
+            // Link original journal to the reversal
             $up1 = $this->db->prepare("UPDATE journal_entries SET reversed_by_journal_id = ? WHERE id = ? AND company_id = ?");
             $up1->execute([$revId, $journalId, $this->companyId]);
-        } catch (Throwable $e) {}
 
-        return $revId;
+            $this->db->commit();
+            return $revId;
+        } catch (Throwable $e) {
+            $this->db->rollBack();
+            error_log('Journal reversal failed: ' . $e->getMessage());
+            throw $e;
+        }
     }
 }

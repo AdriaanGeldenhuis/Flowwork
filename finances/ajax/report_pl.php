@@ -5,14 +5,29 @@ require_method('GET');
 // /finances/ajax/report_pl.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/report_helpers.php';
 
 header('Content-Type: application/json');
 
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId) { json_error('Not authorised', 403); }
 $endDate   = $_GET['date'] ?? date('Y-m-d');
 $startDate = $_GET['start_date'] ?? null;
+
+// Validate dates
+$dtEnd = DateTime::createFromFormat('Y-m-d', $endDate);
+if (!$dtEnd || $dtEnd->format('Y-m-d') !== $endDate) {
+    $endDate = date('Y-m-d');
+}
+if ($startDate) {
+    $dtStart = DateTime::createFromFormat('Y-m-d', $startDate);
+    if (!$dtStart || $dtStart->format('Y-m-d') !== $startDate) {
+        $startDate = null;
+    }
+}
 
 // Default start_date to fiscal year start if not provided
 if (!$startDate) {
@@ -165,6 +180,6 @@ try {
     error_log("P&L error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => 'Failed to generate P&L: ' . $e->getMessage()
+        'error' => 'Failed to generate P&L'
     ]);
 }

@@ -4,31 +4,36 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/Csrf.php';
+require_once __DIR__ . '/../permissions.php';
 
 header('Content-Type: application/json');
 
 require_method('POST');
 Csrf::validate();
+requireRoles(['admin', 'bookkeeper']);
 
-// Role check
-$role = strtolower($_SESSION['role'] ?? 'member');
-if (!in_array($role, ['admin', 'bookkeeper'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId = (int)($_SESSION['user_id'] ?? 0);
+if (!$companyId || !$userId) {
+    echo json_encode(['ok' => false, 'error' => 'Not authorised']);
     exit;
 }
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
+$bankAccountId = isset($_POST['bank_account_id']) ? (int)$_POST['bank_account_id'] : 0;
 
-$bankAccountId = $_POST['bank_account_id'] ?? null;
-
-if (!$bankAccountId) {
+if ($bankAccountId <= 0) {
     echo json_encode(['ok' => false, 'error' => 'Bank account ID required']);
     exit;
 }
 
 if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
     echo json_encode(['ok' => false, 'error' => 'No file uploaded']);
+    exit;
+}
+
+// Enforce file size limit (10MB) to prevent memory exhaustion
+if ($_FILES['csv_file']['size'] > 10 * 1024 * 1024) {
+    echo json_encode(['ok' => false, 'error' => 'File too large (max 10MB)']);
     exit;
 }
 
@@ -175,6 +180,6 @@ try {
     error_log("Bank import error: " . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to import bank statement'
     ]);
 }

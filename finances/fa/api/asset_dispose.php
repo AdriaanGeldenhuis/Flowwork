@@ -239,6 +239,7 @@ try {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    error_log('FA asset dispose error: ' . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Failed to dispose asset']);
 }
 ?>

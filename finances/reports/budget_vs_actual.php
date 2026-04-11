@@ -225,7 +225,8 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
 
     // Determine if variance is unfavorable based on account type
     function isUnfavorable(variance, accountType) {
-        if (accountType === 'income') return variance > 0; // Under-earned
+        // 'revenue' is the DB type; 'income' kept as alias for backward compatibility
+        if (accountType === 'revenue' || accountType === 'income') return variance > 0; // Under-earned
         return variance < 0; // Overspent
     }
 
@@ -263,9 +264,9 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
         html += '<th>Total Bud</th><th>Total Act</th><th>Variance</th><th>% Var</th>';
         html += '</tr></thead><tbody>';
 
-        // Separate accounts into income and expense
-        const incomeAccounts = data.accounts.filter(function(a) { return a.account_type === 'income'; });
-        const expenseAccounts = data.accounts.filter(function(a) { return a.account_type === 'expense'; });
+        // Separate accounts into revenue (income) and expense
+        const incomeAccounts = (data.accounts || []).filter(function(a) { return a.account_type === 'revenue' || a.account_type === 'income'; });
+        const expenseAccounts = (data.accounts || []).filter(function(a) { return a.account_type === 'expense'; });
 
         let grandBud = new Array(12).fill(0);
         let grandAct = new Array(12).fill(0);
@@ -410,9 +411,9 @@ for ($y = $currentYear - 5; $y <= $currentYear + 2; $y++) {
             });
             csv += ',Total Budget,Total Actual,Variance,% Variance\n';
 
-            // Separate accounts
-            const incomeAccounts = data.accounts.filter(function(a) { return a.account_type === 'income'; });
-            const expenseAccounts = data.accounts.filter(function(a) { return a.account_type === 'expense'; });
+            // Separate accounts (DB uses 'revenue'; 'income' kept as alias)
+            const incomeAccounts = (data.accounts || []).filter(function(a) { return a.account_type === 'revenue' || a.account_type === 'income'; });
+            const expenseAccounts = (data.accounts || []).filter(function(a) { return a.account_type === 'expense'; });
 
             function csvSection(accounts, label) {
                 let secTotalBud = 0, secTotalAct = 0;

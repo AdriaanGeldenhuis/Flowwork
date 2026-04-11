@@ -108,6 +108,16 @@ $firstName = $stmt->fetchColumn() ?: 'User';
     <script>
     (function() {
         'use strict';
+        // XSS-safe HTML escape helper
+        function esc(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         const runBtn    = document.getElementById('runBtn');
         const exportBtn = document.getElementById('exportBtn');
         const startDate = document.getElementById('startDate');
@@ -126,7 +136,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
                 const res  = await fetch(`/finances/ajax/report_cashflow_indirect.php?start_date=${encodeURIComponent(s)}&end_date=${encodeURIComponent(e)}`);
                 const json = await res.json();
                 if (!json.ok) {
-                    container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + (json.error || 'Failed to generate report') + '</div>';
+                    container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + esc(json.error || 'Failed to generate report') + '</div>';
                     return;
                 }
                 reportData = json.data;
@@ -134,7 +144,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
                 exportBtn.disabled = false;
                 reportInfo.textContent = 'Generated: ' + new Date().toLocaleString();
             } catch (err) {
-                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + err.message + '</div>';
+                container.innerHTML = '<div class="fw-finance__empty-state">Error: ' + esc(err.message) + '</div>';
             }
         });
         exportBtn.addEventListener('click', function() {
@@ -187,7 +197,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
             html += '<tbody>';
             items.forEach(([label, cents]) => {
                 html += '<tr>';
-                html += '<td>' + label + '</td>';
+                html += '<td>' + esc(label) + '</td>';
                 html += '<td>' + formatCurrency(cents) + '</td>';
                 html += '</tr>';
             });

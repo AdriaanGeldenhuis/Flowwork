@@ -24,6 +24,7 @@ $journalId = isset($input['journal_id']) ? (int)$input['journal_id'] : 0;
 $reason    = trim($input['reason'] ?? '');
 
 if ($journalId <= 0) { json_error('Invalid journal_id'); }
+if ($reason === '') { json_error('A reason is required for reversals (SARS audit trail)'); }
 
 try {
     // Verify the journal is posted and not already reversed

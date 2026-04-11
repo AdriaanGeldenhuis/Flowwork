@@ -30,21 +30,20 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 }
 require_once __DIR__ . '/../lib/PeriodService.php';
 require_once __DIR__ . '/../lib/ArService.php';
+require_once __DIR__ . '/../lib/http.php';
+require_once __DIR__ . '/../lib/Csrf.php';
+
+require_method('POST');
+Csrf::validate();
 
 header('Content-Type: application/json');
-
-// Only accept POST requests
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['ok' => false, 'error' => 'Invalid request method']);
-    exit;
-}
 
 // Enforce finance role permissions
 requireRoles(['admin', 'bookkeeper']);
 
 // Pull company and user context from the session
-$companyId = $_SESSION['company_id'] ?? null;
-$userId    = $_SESSION['user_id'] ?? null;
+$companyId = (int)($_SESSION['company_id'] ?? 0);
+$userId    = (int)($_SESSION['user_id'] ?? 0);
 
 if (!$companyId || !$userId) {
     echo json_encode(['ok' => false, 'error' => 'Authentication required']);
@@ -64,7 +63,7 @@ if ($invoiceId <= 0) {
 try {
     // Fetch invoice details to determine date and status
     $stmt = $DB->prepare(
-        "SELECT id, issue_date, status, journal_id FROM invoices WHERE id = ? AND company_id = ? LIMIT 1"
+        "SELECT id, issue_date, status, journal_id, invoice_number FROM invoices WHERE id = ? AND company_id = ? LIMIT 1"
     );
     $stmt->execute([$invoiceId, $companyId]);
     $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -73,8 +72,16 @@ try {
         exit;
     }
 
-    // Prevent duplicate posting by checking existing journal
-    
+    // Prevent duplicate posting FIRST — before any mutations such as reference number assignment
+    if (!empty($invoice['journal_id'])) {
+        echo json_encode([
+            'ok' => false,
+            'duplicate' => true,
+            'error' => 'Invoice already posted'
+        ]);
+        exit;
+    }
+
     // Assign invoice number if missing using per-company sequence
     if (empty($invoice['invoice_number'])) {
         require_once __DIR__ . '/../lib/Sequence.php';
@@ -83,14 +90,6 @@ try {
         $u = $DB->prepare("UPDATE invoices SET invoice_number = ? WHERE id = ? AND company_id = ?");
         $u->execute([$newNo, $invoiceId, $companyId]);
         $invoice['invoice_number'] = $newNo;
-    }
-if (!empty($invoice['journal_id'])) {
-        echo json_encode([
-            'ok' => false,
-            'duplicate' => true,
-            'error' => 'Invoice already posted'
-        ]);
-        exit;
     }
 
     // Check locked period for the invoice issue date (or today if null)
@@ -150,7 +149,7 @@ if (!empty($invoice['journal_id'])) {
     error_log('AR post invoice error: ' . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to post invoice'
     ]);
     exit;
 }
