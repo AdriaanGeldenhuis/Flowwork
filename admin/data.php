@@ -174,6 +174,7 @@ foreach ($tables as $table) {
             <!-- Retention Policy -->
             <form method="POST">
                 <input type="hidden" name="action" value="save_data">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
 
                 <div class="fw-admin__card">
                     <h2 class="fw-admin__card-title">Data Retention Policy</h2>

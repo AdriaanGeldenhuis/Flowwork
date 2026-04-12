@@ -116,7 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             <form method="POST" class="fw-admin__form">
                 <input type="hidden" name="action" value="update_company">
-                
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+
                 <div class="fw-admin__card">
                     <h2 class="fw-admin__card-title">Basic Information</h2>
                     

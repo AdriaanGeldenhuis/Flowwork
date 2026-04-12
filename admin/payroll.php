@@ -97,6 +97,7 @@ $s = [
 
             <form method="POST">
                 <input type="hidden" name="action" value="save_payroll">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
 
                 <!-- Pay Schedule -->
                 <div class="fw-admin__card">

@@ -94,7 +94,9 @@ $boards = $stmt->fetchAll();
                                 <td>
                                     <div class="fw-admin__table-actions">
                                         <button class="fw-admin__btn-icon"
-                                                onclick="manageBoardAccess(<?= $board['board_id'] ?>, '<?= htmlspecialchars(addslashes($board['title'])) ?>')"
+                                                data-board-id="<?= $board['board_id'] ?>"
+                                                data-board-title="<?= htmlspecialchars($board['title']) ?>"
+                                                onclick="manageBoardAccess(this.dataset.boardId, this.dataset.boardTitle)"
                                                 title="Manage Access">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -166,6 +168,7 @@ $boards = $stmt->fetchAll();
     </div>
 </div>
 <script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 let currentBoardId = null;
 
 async function manageBoardAccess(boardId, boardTitle) {
@@ -249,7 +252,7 @@ async function updateBoardMemberRole(memberId, role) {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'update_board_member', board_id: currentBoardId, user_id: memberId, role: role })
         });
         const data = await res.json();
@@ -266,7 +269,7 @@ async function removeBoardMember(memberId) {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'remove_board_member', board_id: currentBoardId, user_id: memberId })
         });
         const data = await res.json();
@@ -291,7 +294,7 @@ async function addBoardMember() {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'add_board_member', board_id: currentBoardId, user_id: memberId, role: role })
         });
         const data = await res.json();
@@ -326,7 +329,7 @@ async function archiveBoard(boardId) {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'archive_board', board_id: boardId })
         });
 

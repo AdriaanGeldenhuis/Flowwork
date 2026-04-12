@@ -101,6 +101,7 @@ $s = [
 
             <form method="POST">
                 <input type="hidden" name="action" value="save_quotes">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
 
                 <!-- Numbering -->
                 <div class="fw-admin__card">

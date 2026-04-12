@@ -75,8 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         // TODO: Send email with invite link
         $inviteLink = "https://" . $_SERVER['HTTP_HOST'] . "/accept-invite.php?token=" . $token;
-        
-        $success = "Invite sent to $email. Link: <a href='$inviteLink' target='_blank'>$inviteLink</a>";
+
+        $success = "Invite sent to " . htmlspecialchars($email) . ". Link copied below.";
+        $inviteLinkHtml = htmlspecialchars($inviteLink);
         
         // Refresh invites
         $stmt = $DB->prepare("
@@ -123,7 +124,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                         <polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
-                    <?= $success ?>
+                    <?= htmlspecialchars($success) ?>
+                    <?php if (!empty($inviteLinkHtml)): ?>
+                        <br><a href="<?= $inviteLinkHtml ?>" target="_blank" style="word-break: break-all;"><?= $inviteLinkHtml ?></a>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
@@ -226,7 +230,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </header>
         <form method="POST" class="fw-admin__form">
             <input type="hidden" name="action" value="send_invite">
-            
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+
             <div class="fw-admin__form-grid">
                 <div class="fw-admin__form-group fw-admin__form-group--full">
                     <label class="fw-admin__label">Email Address <span class="fw-admin__required">*</span></label>
@@ -301,11 +306,11 @@ function copyInviteLink(token) {
 
 async function revokeInvite(inviteId) {
     if (!confirm('Are you sure you want to revoke this invite?')) return;
-    
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'revoke_invite', invite_id: inviteId })
         });
         

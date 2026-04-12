@@ -84,10 +84,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'user_created', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'user_created', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Created user: $email"]);
+            $stmt->execute([$companyId, $userId, "Created user: $email", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode([
                 'success' => true,
@@ -118,10 +118,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'user_updated', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'user_updated', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Updated user ID: $targetUserId"]);
+            $stmt->execute([$companyId, $userId, "Updated user ID: $targetUserId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -167,10 +167,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'user_deleted', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'user_deleted', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Removed user ID: $targetUserId"]);
+            $stmt->execute([$companyId, $userId, "Removed user ID: $targetUserId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -201,28 +201,36 @@ try {
                 throw new Exception("Cannot downgrade: you have $currentUsers users but plan allows {$newPlan['max_users']}");
             }
 
-            // Update company plan
-            $stmt = $DB->prepare("
-                UPDATE companies
-                SET plan_id = ?, max_users = ?, max_companies = ?, updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$newPlan['id'], $newPlan['max_users'], $newPlan['max_companies'], $companyId]);
+            $DB->beginTransaction();
+            try {
+                // Update company plan
+                $stmt = $DB->prepare("
+                    UPDATE companies
+                    SET plan_id = ?, max_users = ?, max_companies = ?, updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$newPlan['id'], $newPlan['max_users'], $newPlan['max_companies'], $companyId]);
 
-            // Update subscription
-            $stmt = $DB->prepare("
-                UPDATE subscriptions
-                SET plan_id = ?, updated_at = NOW()
-                WHERE company_id = ?
-            ");
-            $stmt->execute([$newPlan['id'], $companyId]);
+                // Update subscription
+                $stmt = $DB->prepare("
+                    UPDATE subscriptions
+                    SET plan_id = ?, updated_at = NOW()
+                    WHERE company_id = ?
+                ");
+                $stmt->execute([$newPlan['id'], $companyId]);
 
-            // Log audit
-            $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'plan_changed', ?, NOW())
-            ");
-            $stmt->execute([$companyId, $userId, "Changed plan to: {$newPlan['name']}"]);
+                // Log audit
+                $stmt = $DB->prepare("
+                    INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                    VALUES (?, ?, 'plan_changed', ?, ?, NOW())
+                ");
+                $stmt->execute([$companyId, $userId, "Changed plan to: {$newPlan['name']}", $_SERVER['REMOTE_ADDR'] ?? '']);
+
+                $DB->commit();
+            } catch (Exception $e) {
+                $DB->rollBack();
+                throw $e;
+            }
 
             echo json_encode(['success' => true]);
             break;
@@ -238,10 +246,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'subscription_canceled', 'User requested cancellation', NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'subscription_canceled', 'User requested cancellation', ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId]);
+            $stmt->execute([$companyId, $userId, $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -262,10 +270,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'invite_revoked', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'invite_revoked', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Revoked invite ID: $inviteId"]);
+            $stmt->execute([$companyId, $userId, "Revoked invite ID: $inviteId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -287,10 +295,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'board_archived', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'board_archived', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Archived board ID: $boardId"]);
+            $stmt->execute([$companyId, $userId, "Archived board ID: $boardId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -343,6 +351,13 @@ try {
                 throw new Exception('Board ID required');
             }
 
+            // Verify board belongs to this company
+            $stmt = $DB->prepare("SELECT board_id FROM project_boards WHERE board_id = ? AND company_id = ?");
+            $stmt->execute([$boardId, $companyId]);
+            if (!$stmt->fetch()) {
+                throw new Exception('Board not found');
+            }
+
             // Get current board members
             $stmt = $DB->prepare("
                 SELECT bm.*, u.first_name, u.last_name, u.email
@@ -382,10 +397,24 @@ try {
                 throw new Exception('Board ID and User ID required');
             }
 
+            // Verify board belongs to this company
+            $stmt = $DB->prepare("SELECT board_id FROM project_boards WHERE board_id = ? AND company_id = ?");
+            $stmt->execute([$boardId, $companyId]);
+            if (!$stmt->fetch()) {
+                throw new Exception('Board not found');
+            }
+
             $stmt = $DB->prepare("
                 UPDATE board_members SET role = ? WHERE board_id = ? AND user_id = ?
             ");
             $stmt->execute([$role, $boardId, $memberId]);
+
+            // Log audit
+            $stmt = $DB->prepare("
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'board_member_updated', ?, ?, NOW())
+            ");
+            $stmt->execute([$companyId, $userId, "Changed user $memberId role to $role on board $boardId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -400,6 +429,20 @@ try {
                 throw new Exception('Board ID and User ID required');
             }
 
+            // Verify board belongs to this company
+            $stmt = $DB->prepare("SELECT board_id FROM project_boards WHERE board_id = ? AND company_id = ?");
+            $stmt->execute([$boardId, $companyId]);
+            if (!$stmt->fetch()) {
+                throw new Exception('Board not found');
+            }
+
+            // Verify user belongs to this company
+            $stmt = $DB->prepare("SELECT id FROM users WHERE id = ? AND company_id = ?");
+            $stmt->execute([$memberId, $companyId]);
+            if (!$stmt->fetch()) {
+                throw new Exception('User not found');
+            }
+
             $stmt = $DB->prepare("
                 INSERT INTO board_members (board_id, user_id, role) VALUES (?, ?, ?)
             ");
@@ -407,10 +450,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'board_member_added', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'board_member_added', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Added user $memberId to board $boardId"]);
+            $stmt->execute([$companyId, $userId, "Added user $memberId to board $boardId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -424,6 +467,13 @@ try {
                 throw new Exception('Board ID and User ID required');
             }
 
+            // Verify board belongs to this company
+            $stmt = $DB->prepare("SELECT board_id FROM project_boards WHERE board_id = ? AND company_id = ?");
+            $stmt->execute([$boardId, $companyId]);
+            if (!$stmt->fetch()) {
+                throw new Exception('Board not found');
+            }
+
             $stmt = $DB->prepare("
                 DELETE FROM board_members WHERE board_id = ? AND user_id = ?
             ");
@@ -431,10 +481,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'board_member_removed', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'board_member_removed', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Removed user $memberId from board $boardId"]);
+            $stmt->execute([$companyId, $userId, "Removed user $memberId from board $boardId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -459,10 +509,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'api_key_created', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'api_key_created', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Created API key: $name"]);
+            $stmt->execute([$companyId, $userId, "Created API key: $name", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true, 'api_key' => $token]);
             break;
@@ -480,10 +530,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'api_key_revoked', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'api_key_revoked', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Revoked API key ID: $keyId"]);
+            $stmt->execute([$companyId, $userId, "Revoked API key ID: $keyId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -506,10 +556,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'webhook_created', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'webhook_created', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Created webhook: $url"]);
+            $stmt->execute([$companyId, $userId, "Created webhook: $url", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -553,9 +603,9 @@ try {
             $stmt = $DB->prepare("
                 UPDATE webhooks
                 SET last_delivery_at = NOW(), last_status = ?
-                WHERE id = ?
+                WHERE id = ? AND company_id = ?
             ");
-            $stmt->execute([$httpCode, $webhookId]);
+            $stmt->execute([$httpCode, $webhookId, $companyId]);
 
             echo json_encode(['success' => true, 'status' => $httpCode]);
             break;
@@ -572,10 +622,10 @@ try {
 
             // Log audit
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'webhook_deleted', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'webhook_deleted', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Deleted webhook ID: $webhookId"]);
+            $stmt->execute([$companyId, $userId, "Deleted webhook ID: $webhookId", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;
@@ -658,10 +708,10 @@ try {
             // Log audit
             $settingKeys = implode(', ', array_keys($settings));
             $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-                VALUES (?, ?, 'settings_updated', ?, NOW())
+                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                VALUES (?, ?, 'settings_updated', ?, ?, NOW())
             ");
-            $stmt->execute([$companyId, $userId, "Updated settings: $settingKeys"]);
+            $stmt->execute([$companyId, $userId, "Updated settings: $settingKeys", $_SERVER['REMOTE_ADDR'] ?? '']);
 
             echo json_encode(['success' => true]);
             break;

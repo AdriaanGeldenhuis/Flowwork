@@ -103,6 +103,7 @@ $s = [
 
             <form method="POST">
                 <input type="hidden" name="action" value="save_mail">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
 
                 <!-- Sender Settings -->
                 <div class="fw-admin__card">
