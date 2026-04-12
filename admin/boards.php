@@ -94,7 +94,9 @@ $boards = $stmt->fetchAll();
                                 <td>
                                     <div class="fw-admin__table-actions">
                                         <button class="fw-admin__btn-icon"
-                                                onclick="manageBoardAccess(<?= $board['board_id'] ?>, '<?= htmlspecialchars(addslashes($board['title'])) ?>')"
+                                                data-board-id="<?= $board['board_id'] ?>"
+                                                data-board-title="<?= htmlspecialchars($board['title']) ?>"
+                                                onclick="manageBoardAccess(this.dataset.boardId, this.dataset.boardTitle)"
                                                 title="Manage Access">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>

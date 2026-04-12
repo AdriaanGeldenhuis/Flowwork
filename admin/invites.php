@@ -75,8 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         // TODO: Send email with invite link
         $inviteLink = "https://" . $_SERVER['HTTP_HOST'] . "/accept-invite.php?token=" . $token;
-        
-        $success = "Invite sent to $email. Link: <a href='$inviteLink' target='_blank'>$inviteLink</a>";
+
+        $success = "Invite sent to " . htmlspecialchars($email) . ". Link copied below.";
+        $inviteLinkHtml = htmlspecialchars($inviteLink);
         
         // Refresh invites
         $stmt = $DB->prepare("
@@ -123,7 +124,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                         <polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
-                    <?= $success ?>
+                    <?= htmlspecialchars($success) ?>
+                    <?php if (!empty($inviteLinkHtml)): ?>
+                        <br><a href="<?= $inviteLinkHtml ?>" target="_blank" style="word-break: break-all;"><?= $inviteLinkHtml ?></a>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
