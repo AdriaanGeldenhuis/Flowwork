@@ -89,6 +89,7 @@ $s = [
 
             <form method="POST">
                 <input type="hidden" name="action" value="save_pos">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
 
                 <!-- General -->
                 <div class="fw-admin__card">

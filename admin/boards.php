@@ -166,6 +166,7 @@ $boards = $stmt->fetchAll();
     </div>
 </div>
 <script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 let currentBoardId = null;
 
 async function manageBoardAccess(boardId, boardTitle) {
@@ -249,7 +250,7 @@ async function updateBoardMemberRole(memberId, role) {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'update_board_member', board_id: currentBoardId, user_id: memberId, role: role })
         });
         const data = await res.json();
@@ -266,7 +267,7 @@ async function removeBoardMember(memberId) {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'remove_board_member', board_id: currentBoardId, user_id: memberId })
         });
         const data = await res.json();
@@ -291,7 +292,7 @@ async function addBoardMember() {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'add_board_member', board_id: currentBoardId, user_id: memberId, role: role })
         });
         const data = await res.json();
@@ -326,7 +327,7 @@ async function archiveBoard(boardId) {
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'archive_board', board_id: boardId })
         });
 

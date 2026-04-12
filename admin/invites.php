@@ -226,7 +226,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </header>
         <form method="POST" class="fw-admin__form">
             <input type="hidden" name="action" value="send_invite">
-            
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+
             <div class="fw-admin__form-grid">
                 <div class="fw-admin__form-group fw-admin__form-group--full">
                     <label class="fw-admin__label">Email Address <span class="fw-admin__required">*</span></label>
@@ -301,11 +302,11 @@ function copyInviteLink(token) {
 
 async function revokeInvite(inviteId) {
     if (!confirm('Are you sure you want to revoke this invite?')) return;
-    
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
     try {
         const res = await fetch('/admin/api.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
             body: new URLSearchParams({ action: 'revoke_invite', invite_id: inviteId })
         });
         

@@ -91,6 +91,7 @@ $timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairob
 
             <form method="POST">
                 <input type="hidden" name="action" value="save_calendar">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
 
                 <!-- General -->
                 <div class="fw-admin__card">

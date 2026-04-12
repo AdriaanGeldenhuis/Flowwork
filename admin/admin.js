@@ -55,14 +55,16 @@
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(form);
-        
+
         const userId = formData.get('user_id');
         const action = userId ? 'update_user' : 'add_user';
         formData.append('action', action);
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
 
         try {
           const res = await fetch('/admin/api.php', {
             method: 'POST',
+            headers: csrfMeta ? { 'X-CSRF-Token': csrfMeta.content } : {},
             body: formData
           });
           
@@ -170,11 +172,12 @@
     if (!confirm('Are you sure you want to remove this user? This will suspend their access.')) {
       return;
     }
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
 
     try {
       const res = await fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfMeta ? csrfMeta.content : '' },
         body: new URLSearchParams({ action: 'delete_user', user_id: userId })
       });
       

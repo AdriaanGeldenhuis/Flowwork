@@ -232,12 +232,14 @@ $currentCompanies = $stmt->fetchColumn();
                 </div>
             </div>
 <script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
 function changePlan(planId, planName) {
     if (!confirm(`Are you sure you want to change to the ${planName} plan? Changes will be pro-rated.`)) return;
-    
+
     fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'change_plan', plan_id: planId })
     })
     .then(r => r.json())
@@ -275,7 +277,7 @@ function cancelSubscription() {
     
     fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'cancel_subscription' })
     })
     .then(r => r.json())

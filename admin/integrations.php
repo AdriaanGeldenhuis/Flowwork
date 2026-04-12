@@ -129,7 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 <form method="POST" class="fw-admin__form">
                     <input type="hidden" name="action" value="save_yoco">
-                    
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+
                     <div class="fw-admin__form-grid">
                         <div class="fw-admin__form-group fw-admin__form-group--full">
                             <label class="fw-admin__label">Mode</label>
@@ -357,13 +358,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 <script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
 function createAPIKey() {
     const name = prompt('API Key Name:');
     if (!name) return;
     
     fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'create_api_key', name: name })
     })
     .then(r => r.json())
@@ -382,7 +385,7 @@ async function revokeAPIKey(keyId) {
     
     const res = await fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'revoke_api_key', key_id: keyId })
     });
     
@@ -401,7 +404,7 @@ function createWebhook() {
     
     fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'create_webhook', url: url })
     })
     .then(r => r.json())
@@ -418,7 +421,7 @@ function createWebhook() {
 async function testWebhook(webhookId) {
     const res = await fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'test_webhook', webhook_id: webhookId })
     });
     
@@ -431,7 +434,7 @@ async function deleteWebhook(webhookId) {
     
     const res = await fetch('/admin/api.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
         body: new URLSearchParams({ action: 'delete_webhook', webhook_id: webhookId })
     });
     
