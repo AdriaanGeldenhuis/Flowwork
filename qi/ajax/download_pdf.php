@@ -1,6 +1,6 @@
 <?php
 /**
- * /qi/ajax/download_pdf.php — Generate and stream a styled PDF for download.
+ * /qi/ajax/download_pdf.php — Generate and stream a PDF for download.
  *
  * Usage: GET ?type=invoice|quote|credit_note&id=123
  * Streams the PDF directly as a file download (Content-Disposition: attachment).
@@ -22,10 +22,6 @@ if (!$id) {
     exit;
 }
 
-function fmtAmount($amount) {
-    return 'R ' . number_format((float)$amount, 2);
-}
-
 try {
     if ($type === 'quote') {
         $stmt = $DB->prepare(
@@ -37,6 +33,7 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color,
+                    c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
                     addr.line1 AS customer_address1, addr.line2 AS customer_address2,
@@ -53,7 +50,7 @@ try {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$doc) { throw new Exception('Quote not found'); }
 
-        $doc['_doc_type'] = 'QUOTE';
+        $doc['_doc_type'] = $doc['qi_quote_title'] ?? 'QUOTE';
         $doc['_doc_title'] = 'Quote #: ' . $doc['quote_number'];
         $doc['_dates'] = [
             'Issue Date' => date('d M Y', strtotime($doc['issue_date'])),
@@ -76,6 +73,7 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color,
+                    c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
                     addr.line1 AS customer_address1, addr.line2 AS customer_address2,
@@ -120,6 +118,7 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color,
+                    c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
                     addr.line1 AS customer_address1, addr.line2 AS customer_address2,
@@ -136,7 +135,7 @@ try {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$doc) { throw new Exception('Invoice not found'); }
 
-        $doc['_doc_type'] = 'INVOICE';
+        $doc['_doc_type'] = $doc['qi_invoice_title'] ?? 'INVOICE';
         $doc['_doc_title'] = 'Invoice #: ' . $doc['invoice_number'];
         $doc['_dates'] = [
             'Issue Date' => date('d M Y', strtotime($doc['issue_date'])),
@@ -150,7 +149,7 @@ try {
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    // Generate PDF in memory
+    // Generate PDF
     $pdf = new QiStyledPdfWriter($doc, $lines);
     $pdfContent = $pdf->render();
 

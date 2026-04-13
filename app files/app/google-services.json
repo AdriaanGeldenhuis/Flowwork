@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "184629195536",
+    "project_id": "flowwork-f26fe",
+    "storage_bucket": "flowwork-f26fe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184629195536:android:9b96d1e90f33bd9ae76b95",
+        "android_client_info": {
+          "package_name": "app.flowwork"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxWI4GHMql_BiZsieVKtnahPNzOllm0Ms"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

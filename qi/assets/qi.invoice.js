@@ -70,7 +70,7 @@ const InvoiceView = {
 
     downloadPDF() {
         if (!this.invoiceId) return;
-        window.open('/qi/ajax/generate_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
+        window.location.href = '/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId;
     },
 
     async deleteInvoice() {

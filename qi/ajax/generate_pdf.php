@@ -253,6 +253,22 @@ try {
         min-height: 297mm;
         margin: 0 auto;
         border-radius: 0;
+        overflow: hidden;
+    }
+    /* Force header into equal columns so right side doesn't overflow */
+    .fw-qi__doc-header {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 24px !important;
+    }
+    /* Constrain tables to document width */
+    .fw-qi__doc-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    .fw-qi__doc-table td,
+    .fw-qi__doc-table th {
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Print toolbar */
@@ -308,10 +324,10 @@ try {
             border-radius: 0;
             page-break-after: always;
         }
-        /* Force two-column header in print (override mobile breakpoint) */
+        /* Force two-column header in print */
         .fw-qi__doc-header {
-            grid-template-columns: 1fr auto !important;
-            gap: 40px !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 24px !important;
             padding: 40px 40px 16px !important;
         }
         .fw-qi__doc-meta {
@@ -336,7 +352,7 @@ try {
 <body>
 
 <div class="print-bar no-print">
-    <button onclick="window.print()">Save as PDF / Print</button>
+    <button onclick="if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){window.location.href='/qi/ajax/download_pdf.php?type=<?= urlencode($type) ?>&id=<?= (int)$id ?>'}else{window.print()}">Save as PDF / Print</button>
     <span><?= htmlspecialchars($docNumber) ?></span>
     <a href="javascript:history.back()">&larr; Back</a>
 </div>
@@ -551,7 +567,11 @@ try {
 
 <script>
 window.addEventListener('load', function() {
-    setTimeout(function() { window.print(); }, 500);
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        window.location.href = '/qi/ajax/download_pdf.php?type=<?= urlencode($type) ?>&id=<?= (int)$id ?>';
+    } else {
+        setTimeout(function() { window.print(); }, 500);
+    }
 });
 </script>
 </body>
