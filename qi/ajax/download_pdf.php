@@ -12,10 +12,17 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
-require_once __DIR__ . '/../../vendor/autoload.php';
 
-use Dompdf\Dompdf;
-use Dompdf\Options;
+// Try loading Dompdf — fall back to basic PDF writer if not installed
+$useDompdf = false;
+$autoload = __DIR__ . '/../../vendor/autoload.php';
+if (file_exists($autoload)) {
+    require_once $autoload;
+    $useDompdf = class_exists('Dompdf\\Dompdf');
+}
+if (!$useDompdf) {
+    require_once __DIR__ . '/../../includes/pdf/qi_styled_pdf.php';
+}
 
 $companyId = $_SESSION['company_id'];
 $type      = $_GET['type'] ?? 'invoice';
@@ -437,19 +444,29 @@ try {
 </body>
 </html>';
 
-    // ── Render PDF with Dompdf ──
-    $options = new Options();
-    $options->set('isRemoteEnabled', true);
-    $options->set('defaultFont', 'Helvetica');
-    $options->set('isPhpEnabled', false);
-    $options->set('isHtml5ParserEnabled', true);
+    // ── Render PDF ──
+    if ($useDompdf) {
+        // Styled PDF via Dompdf (matches web view)
+        $options = new \Dompdf\Options();
+        $options->set('isRemoteEnabled', true);
+        $options->set('defaultFont', 'Helvetica');
+        $options->set('isPhpEnabled', false);
+        $options->set('isHtml5ParserEnabled', true);
 
-    $dompdf = new Dompdf($options);
-    $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', 'portrait');
-    $dompdf->render();
+        $dompdf = new \Dompdf\Dompdf($options);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
 
-    $pdfContent = $dompdf->output();
+        $pdfContent = $dompdf->output();
+    } else {
+        // Fallback: basic PDF via QiStyledPdfWriter
+        $doc['_doc_type']  = $docType;
+        $doc['_doc_title'] = $docTitle;
+        $doc['_dates']     = $dates;
+        $pdf = new QiStyledPdfWriter($doc, $lines);
+        $pdfContent = $pdf->render();
+    }
 
     // Stream as download
     header('Content-Type: application/pdf');
