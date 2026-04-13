@@ -253,6 +253,22 @@ try {
         min-height: 297mm;
         margin: 0 auto;
         border-radius: 0;
+        overflow: hidden;
+    }
+    /* Force header into equal columns so right side doesn't overflow */
+    .fw-qi__doc-header {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 24px !important;
+    }
+    /* Constrain tables to document width */
+    .fw-qi__doc-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    .fw-qi__doc-table td,
+    .fw-qi__doc-table th {
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Print toolbar */
@@ -308,10 +324,10 @@ try {
             border-radius: 0;
             page-break-after: always;
         }
-        /* Force two-column header in print (override mobile breakpoint) */
+        /* Force two-column header in print */
         .fw-qi__doc-header {
-            grid-template-columns: 1fr auto !important;
-            gap: 40px !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 24px !important;
             padding: 40px 40px 16px !important;
         }
         .fw-qi__doc-meta {
