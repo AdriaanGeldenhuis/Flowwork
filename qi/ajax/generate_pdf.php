@@ -336,7 +336,7 @@ try {
 <body>
 
 <div class="print-bar no-print">
-    <button onclick="window.print()">Save as PDF / Print</button>
+    <button onclick="if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){window.location.href='/qi/ajax/download_pdf.php?type=<?= urlencode($type) ?>&id=<?= (int)$id ?>'}else{window.print()}">Save as PDF / Print</button>
     <span><?= htmlspecialchars($docNumber) ?></span>
     <a href="javascript:history.back()">&larr; Back</a>
 </div>
@@ -551,7 +551,11 @@ try {
 
 <script>
 window.addEventListener('load', function() {
-    setTimeout(function() { window.print(); }, 500);
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        window.location.href = '/qi/ajax/download_pdf.php?type=<?= urlencode($type) ?>&id=<?= (int)$id ?>';
+    } else {
+        setTimeout(function() { window.print(); }, 500);
+    }
 });
 </script>
 </body>
