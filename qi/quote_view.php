@@ -548,7 +548,9 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
 },
         
         downloadPDF() {
-            window.location.href = '/qi/ajax/download_pdf.php?type=quote&id=' + this.quoteId;
+            // Use the browser's print engine via generate_pdf.php so the
+            // downloaded PDF matches the on-screen quote exactly.
+            window.open('/qi/ajax/generate_pdf.php?type=quote&id=' + this.quoteId, '_blank');
         },
         
         async duplicateQuote() {

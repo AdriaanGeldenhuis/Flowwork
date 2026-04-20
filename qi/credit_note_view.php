@@ -460,7 +460,7 @@ function format_currency($amount) {
             },
 
             downloadPDF() {
-                window.location.href = '/qi/ajax/download_pdf.php?type=credit_note&id=' + this.creditNoteId;
+                window.open('/qi/ajax/generate_pdf.php?type=credit_note&id=' + this.creditNoteId, '_blank');
             }
         };
     </script>
