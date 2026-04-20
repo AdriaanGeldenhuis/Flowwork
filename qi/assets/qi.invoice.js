@@ -73,32 +73,167 @@ const InvoiceView = {
         window.location.href = '/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId;
     },
 
-    async deleteInvoice() {
-        if (!this.invoiceId) return;
-        if (!UI.confirm('Delete this invoice? This action cannot be undone.')) return;
-        const btn = event.target;
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = 'Deleting...';
-        btn.disabled = true;
+    async _callAction(url, body, successMsg, reloadUrl) {
+        const btn = (typeof event !== 'undefined') ? event.target : null;
+        let originalHTML = '';
+        if (btn) {
+            originalHTML = btn.innerHTML;
+            btn.innerHTML = 'Working...';
+            btn.disabled = true;
+        }
         try {
-            const data = await UI.fetchJSON('/qi/ajax/delete_invoice.php', {
+            const data = await UI.fetchJSON(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ invoice_id: this.invoiceId })
+                body: JSON.stringify(body)
             });
             if (data.ok) {
-                UI.toast('Invoice deleted');
-                window.location.href = '/qi/?tab=invoices';
-            } else {
-                UI.toast('Error: ' + (data.error || 'Delete failed'));
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
+                if (successMsg) UI.toast(successMsg);
+                if (reloadUrl === false) return data;
+                if (reloadUrl) window.location.href = reloadUrl;
+                else window.location.reload();
+                return data;
             }
+            UI.toast('Error: ' + (data.error || 'Action failed'));
         } catch (err) {
             UI.toast('Network error: ' + err.message);
+        }
+        if (btn) {
             btn.innerHTML = originalHTML;
             btn.disabled = false;
         }
+        return null;
+    },
+
+    async deleteInvoice() {
+        if (!this.invoiceId) return;
+        if (!UI.confirm('Delete this invoice? This action cannot be undone.')) return;
+        await this._callAction('/qi/ajax/delete_invoice.php',
+            { invoice_id: this.invoiceId, mode: 'hard' },
+            'Invoice deleted',
+            '/qi/?tab=invoices');
+    },
+
+    async softDeleteInvoice() {
+        if (!this.invoiceId) return;
+        const reason = prompt('Reason for deletion (optional):') || '';
+        if (!UI.confirm('Move this invoice to trash? It can be restored later.')) return;
+        await this._callAction('/qi/ajax/delete_invoice.php',
+            { invoice_id: this.invoiceId, mode: 'soft', reason },
+            'Invoice moved to trash',
+            '/qi/?tab=invoices');
+    },
+
+    async forceDeleteInvoice() {
+        if (!this.invoiceId) return;
+        const reason = prompt('Admin force delete — enter a reason (required):') || '';
+        if (!reason.trim()) { UI.toast('Reason is required'); return; }
+        if (!UI.confirm('FORCE DELETE this invoice and all related records (payments, allocations, lines)?\n\nThis cannot be undone.')) return;
+        await this._callAction('/qi/ajax/delete_invoice.php',
+            { invoice_id: this.invoiceId, mode: 'force', reason },
+            'Invoice force-deleted',
+            '/qi/?tab=invoices');
+    },
+
+    async restoreInvoice() {
+        if (!this.invoiceId) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'restore' }, 'Invoice restored');
+    },
+
+    async voidInvoice() {
+        if (!this.invoiceId) return;
+        const reason = prompt('Reason for voiding (optional):') || '';
+        if (!UI.confirm('Void this invoice?\n\nStatus will change to "cancelled" and any posted journal will be reversed. The record stays for audit.')) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'void', reason }, 'Invoice voided');
+    },
+
+    async revertToDraft() {
+        if (!this.invoiceId) return;
+        if (!UI.confirm('Revert this invoice to draft? You will be able to edit it again.')) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'revert_to_draft' }, 'Reverted to draft');
+    },
+
+    async writeOffInvoice() {
+        if (!this.invoiceId) return;
+        const amtStr = prompt('Amount to write off (leave blank for full outstanding balance):');
+        const amount = amtStr ? parseFloat(amtStr) : null;
+        if (amtStr && (isNaN(amount) || amount <= 0)) { UI.toast('Invalid amount'); return; }
+        const reason = prompt('Reason (e.g. Bad debt):') || '';
+        if (!UI.confirm('Write off this amount as bad debt?')) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'write_off', amount, reason },
+            'Invoice written off');
+    },
+
+    async markUncollectible() {
+        if (!this.invoiceId) return;
+        const reason = prompt('Reason (optional):') || '';
+        if (!UI.confirm('Mark this invoice as uncollectible?')) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'mark_uncollectible', reason },
+            'Marked uncollectible');
+    },
+
+    async archiveInvoice() {
+        if (!this.invoiceId) return;
+        if (!UI.confirm('Archive this invoice? It will be hidden from the default list but kept for reporting.')) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'archive' }, 'Invoice archived');
+    },
+
+    async unarchiveInvoice() {
+        if (!this.invoiceId) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'unarchive' }, 'Invoice unarchived');
+    },
+
+    async unapplyPayments() {
+        if (!this.invoiceId) return;
+        if (!UI.confirm('Unapply ALL payments from this invoice?\n\nAllocations will be removed and the balance recalculated. The payment records themselves are kept.')) return;
+        await this._callAction('/qi/ajax/invoice_action.php',
+            { invoice_id: this.invoiceId, action: 'unapply_payments' }, 'Payments unapplied');
+    },
+
+    async duplicateInvoice() {
+        if (!this.invoiceId) return;
+        if (!UI.confirm('Create a duplicate of this invoice as a new draft?')) return;
+        const data = await this._callAction('/qi/ajax/duplicate_invoice.php',
+            { invoice_id: this.invoiceId }, null, false);
+        if (data && data.invoice_id) {
+            window.location.href = '/qi/invoice_view.php?id=' + data.invoice_id;
+        }
+    },
+
+    async issueFullCredit() {
+        if (!this.invoiceId) return;
+        const reason = prompt('Reason for credit note:') || 'Full credit';
+        if (!UI.confirm('Issue a draft credit note that fully offsets this invoice?')) return;
+        const data = await this._callAction('/qi/ajax/issue_full_credit.php',
+            { invoice_id: this.invoiceId, reason }, null, false);
+        if (data && data.credit_note_id) {
+            UI.toast('Credit note ' + data.credit_note_number + ' created');
+            window.location.href = '/qi/credit_note_view.php?id=' + data.credit_note_id;
+        }
+    },
+
+    async refundInvoice() {
+        if (!this.invoiceId) return;
+        const amtStr = prompt('Refund amount:');
+        const amount = parseFloat(amtStr);
+        if (!amount || amount <= 0) { UI.toast('Invalid amount'); return; }
+        const reference = prompt('Refund reference (bank ref, etc.):') || '';
+        const reason = prompt('Reason (optional):') || '';
+        if (!UI.confirm('Record a refund of R ' + amount.toFixed(2) + ' against this invoice?')) return;
+        await this._callAction('/qi/ajax/refund_invoice.php',
+            { invoice_id: this.invoiceId, amount, reference, reason }, 'Refund recorded');
+    },
+
+    async exportBeforeDelete() {
+        if (!this.invoiceId) return;
+        window.open('/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
     },
 
     /**

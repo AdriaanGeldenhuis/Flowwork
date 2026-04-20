@@ -11,7 +11,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-07-QI-pinch-v2');
+define('ASSET_VERSION', '2026-04-20-QI-delete-options-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -61,9 +61,28 @@ try {
 }
 
 // Permissions
-$canEdit = ($invoice['status'] === 'draft');
-$canSend = in_array($invoice['status'], ['draft', 'sent']);
-$canDelete = ($invoice['status'] === 'draft');
+$canEdit    = ($invoice['status'] === 'draft');
+$canSend    = in_array($invoice['status'], ['draft', 'sent']);
+$canDelete  = ($invoice['status'] === 'draft');
+
+$status     = $invoice['status'];
+$isSoftDeleted = !empty($invoice['deleted_at']);
+$isArchived    = !empty($invoice['archived_at']);
+$isAdmin       = !empty($_SESSION['is_admin']) || (($_SESSION['role'] ?? '') === 'admin');
+
+$canVoid              = in_array($status, ['sent','viewed','overdue','part-paid'], true);
+$canRevertToDraft     = in_array($status, ['sent','viewed','overdue','cancelled'], true);
+$canWriteOff          = in_array($status, ['sent','viewed','overdue','part-paid'], true);
+$canMarkUncollectible = in_array($status, ['sent','viewed','overdue','part-paid'], true);
+$canRefund            = in_array($status, ['paid','part-paid'], true);
+$canIssueCredit       = !in_array($status, ['draft','cancelled','written_off'], true);
+$canUnapplyPayments   = in_array($status, ['paid','part-paid','refunded'], true);
+$canDuplicate         = true;
+$canSoftDelete        = !$isSoftDeleted;
+$canRestore           = $isSoftDeleted;
+$canForceDelete       = $isAdmin;
+$canArchive           = !$isArchived;
+$canUnarchive         = $isArchived;
 
 // Colour and font customisation
 $primaryColor   = sanitize_css_color($invoice['primary_color'] ?? '#fbbf24');
@@ -212,6 +231,52 @@ function format_currency($amount) {
                                 </svg>
                                 Delete Invoice
                             </button>
+                        <?php endif; ?>
+
+                        <?php /* --- Status-change alternatives --- */ ?>
+                        <?php if ($canVoid): ?>
+                            <button onclick="InvoiceView.voidInvoice()" class="fw-qi__kebab-item" style="color:#b45309;">Void / Cancel Invoice</button>
+                        <?php endif; ?>
+                        <?php if ($canRevertToDraft): ?>
+                            <button onclick="InvoiceView.revertToDraft()" class="fw-qi__kebab-item">Revert to Draft</button>
+                        <?php endif; ?>
+                        <?php if ($canWriteOff): ?>
+                            <button onclick="InvoiceView.writeOffInvoice()" class="fw-qi__kebab-item">Write Off (Bad Debt)</button>
+                        <?php endif; ?>
+                        <?php if ($canMarkUncollectible): ?>
+                            <button onclick="InvoiceView.markUncollectible()" class="fw-qi__kebab-item">Mark Uncollectible</button>
+                        <?php endif; ?>
+
+                        <?php /* --- Credit / refund --- */ ?>
+                        <?php if ($canIssueCredit): ?>
+                            <button onclick="InvoiceView.issueFullCredit()" class="fw-qi__kebab-item">Issue Full Credit Note</button>
+                        <?php endif; ?>
+                        <?php if ($canRefund): ?>
+                            <button onclick="InvoiceView.refundInvoice()" class="fw-qi__kebab-item">Refund</button>
+                        <?php endif; ?>
+                        <?php if ($canUnapplyPayments): ?>
+                            <button onclick="InvoiceView.unapplyPayments()" class="fw-qi__kebab-item">Unapply Payments</button>
+                        <?php endif; ?>
+
+                        <?php /* --- Archival / utility --- */ ?>
+                        <?php if ($canDuplicate): ?>
+                            <button onclick="InvoiceView.duplicateInvoice()" class="fw-qi__kebab-item">Duplicate as Draft</button>
+                        <?php endif; ?>
+                        <?php if ($canArchive): ?>
+                            <button onclick="InvoiceView.archiveInvoice()" class="fw-qi__kebab-item">Archive Invoice</button>
+                        <?php endif; ?>
+                        <?php if ($canUnarchive): ?>
+                            <button onclick="InvoiceView.unarchiveInvoice()" class="fw-qi__kebab-item">Unarchive Invoice</button>
+                        <?php endif; ?>
+                        <button onclick="InvoiceView.exportBeforeDelete()" class="fw-qi__kebab-item">Export PDF (backup)</button>
+                        <?php if ($canSoftDelete): ?>
+                            <button onclick="InvoiceView.softDeleteInvoice()" class="fw-qi__kebab-item" style="color:#ef4444;">Move to Trash (soft delete)</button>
+                        <?php endif; ?>
+                        <?php if ($canRestore): ?>
+                            <button onclick="InvoiceView.restoreInvoice()" class="fw-qi__kebab-item">Restore from Trash</button>
+                        <?php endif; ?>
+                        <?php if ($canForceDelete): ?>
+                            <button onclick="InvoiceView.forceDeleteInvoice()" class="fw-qi__kebab-item" style="color:#ef4444;font-weight:600;">Force Delete (Admin)</button>
                         <?php endif; ?>
 
                         <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
