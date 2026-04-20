@@ -70,7 +70,10 @@ const InvoiceView = {
 
     downloadPDF() {
         if (!this.invoiceId) return;
-        window.location.href = '/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId;
+        // Route through generate_pdf.php so the browser's own print engine
+        // renders the same HTML/CSS as the on-screen invoice. The print dialog
+        // auto-opens; the user picks "Save as PDF" for pixel-perfect output.
+        window.open('/qi/ajax/generate_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
     },
 
     async _callAction(url, body, successMsg, reloadUrl) {

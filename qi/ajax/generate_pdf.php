@@ -352,7 +352,7 @@ try {
 <body>
 
 <div class="print-bar no-print">
-    <button onclick="if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){window.location.href='/qi/ajax/download_pdf.php?type=<?= urlencode($type) ?>&id=<?= (int)$id ?>'}else{window.print()}">Save as PDF / Print</button>
+    <button onclick="window.print()">Save as PDF / Print</button>
     <span><?= htmlspecialchars($docNumber) ?></span>
     <a href="javascript:history.back()">&larr; Back</a>
 </div>
@@ -566,12 +566,11 @@ try {
 </main>
 
 <script>
+// Let the browser's print engine render the same HTML/CSS as the on-screen
+// view — this guarantees the PDF matches the web view exactly. Mobile Chrome
+// and Safari both expose "Save as PDF" in the native print dialog.
 window.addEventListener('load', function() {
-    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-        window.location.href = '/qi/ajax/download_pdf.php?type=<?= urlencode($type) ?>&id=<?= (int)$id ?>';
-    } else {
-        setTimeout(function() { window.print(); }, 500);
-    }
+    setTimeout(function() { window.print(); }, 500);
 });
 </script>
 </body>

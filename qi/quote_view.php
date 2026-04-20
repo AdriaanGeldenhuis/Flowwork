@@ -263,7 +263,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
         
         <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
         
-        <button onclick="if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){window.location.href='/qi/ajax/download_pdf.php?type=quote&id=<?= (int)$quoteId ?>'}else{window.print()}" class="fw-qi__kebab-item">
+        <button onclick="window.open('/qi/ajax/generate_pdf.php?type=quote&id=<?= (int)$quoteId ?>','_blank')" class="fw-qi__kebab-item">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
                 <polyline points="6 9 6 2 18 2 18 9"/>
                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
