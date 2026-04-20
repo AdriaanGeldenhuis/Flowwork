@@ -263,7 +263,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
         
         <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
         
-        <button onclick="if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){window.location.href='/qi/ajax/download_pdf.php?type=quote&id=<?= (int)$quoteId ?>'}else{window.print()}" class="fw-qi__kebab-item">
+        <button onclick="window.open('/qi/ajax/generate_pdf.php?type=quote&id=<?= (int)$quoteId ?>','_blank')" class="fw-qi__kebab-item">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
                 <polyline points="6 9 6 2 18 2 18 9"/>
                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
@@ -314,7 +314,7 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
             </button>
         <?php endif; ?>
         
-        <?php if ($quote['status'] === 'draft'): ?>
+        <?php if ($quote['status'] !== 'converted'): ?>
             <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
             <button onclick="QuoteView.deleteQuote()" class="fw-qi__kebab-item" style="color:#ef4444;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
@@ -548,7 +548,9 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
 },
         
         downloadPDF() {
-            window.location.href = '/qi/ajax/download_pdf.php?type=quote&id=' + this.quoteId;
+            // Use the browser's print engine via generate_pdf.php so the
+            // downloaded PDF matches the on-screen quote exactly.
+            window.open('/qi/ajax/generate_pdf.php?type=quote&id=' + this.quoteId, '_blank');
         },
         
         async duplicateQuote() {
@@ -615,58 +617,61 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
          * Admin: mark the quote as accepted via token
          */
         async acceptQuote() {
-            if (!this.publicToken) return;
+            if (!this.quoteId) return;
             if (!UI.confirm('Mark this quote as ACCEPTED?')) return;
             const btn = event.target;
             const originalHTML = btn.innerHTML;
             btn.innerHTML = 'Accepting...';
             btn.disabled = true;
             try {
+                const body = this.publicToken
+                    ? { token: this.publicToken }
+                    : { quote_id: this.quoteId };
                 const res = await UI.fetchJSON('/qi/ajax/accept_quote.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: this.publicToken })
+                    body: JSON.stringify(body)
                 });
                 if (res.ok) {
-                    UI.toast('✅ Quote marked as accepted');
+                    UI.toast('Quote marked as accepted');
                     window.location.reload();
                 } else {
-                    UI.toast('❌ Error: ' + (res.error || 'Could not accept'));
+                    UI.toast('Error: ' + (res.error || 'Could not accept'));
                     btn.innerHTML = originalHTML;
                     btn.disabled = false;
                 }
             } catch (err) {
-                UI.toast('❌ Network error: ' + err.message);
+                UI.toast('Network error: ' + err.message);
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }
         },
-        /**
-         * Admin: mark the quote as declined via token
-         */
         async declineQuote() {
-            if (!this.publicToken) return;
+            if (!this.quoteId) return;
             if (!UI.confirm('Mark this quote as DECLINED?')) return;
             const btn = event.target;
             const originalHTML = btn.innerHTML;
             btn.innerHTML = 'Declining...';
             btn.disabled = true;
             try {
+                const body = this.publicToken
+                    ? { token: this.publicToken }
+                    : { quote_id: this.quoteId };
                 const res = await UI.fetchJSON('/qi/ajax/decline_quote.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: this.publicToken })
+                    body: JSON.stringify(body)
                 });
                 if (res.ok) {
-                    UI.toast('✅ Quote marked as declined');
+                    UI.toast('Quote marked as declined');
                     window.location.reload();
                 } else {
-                    UI.toast('❌ Error: ' + (res.error || 'Could not decline'));
+                    UI.toast('Error: ' + (res.error || 'Could not decline'));
                     btn.innerHTML = originalHTML;
                     btn.disabled = false;
                 }
             } catch (err) {
-                UI.toast('❌ Network error: ' + err.message);
+                UI.toast('Network error: ' + err.message);
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;
             }

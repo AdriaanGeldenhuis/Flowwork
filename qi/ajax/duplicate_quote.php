@@ -93,10 +93,13 @@ try {
 
     // Create calendar event for the new duplicate quote's expiry
     try {
-        require_once __DIR__ . '/../../services/CalendarHook.php';
-        $calendarHook = new CalendarHook($DB);
-        $calendarHook->handleQuoteEvent($companyId, (int)$newQuoteId, $newQuoteNumber, $newExpiryDate, $userId);
-    } catch (Exception $chEx) {
+        $calendarHookPath = __DIR__ . '/../services/CalendarHook.php';
+        if (file_exists($calendarHookPath)) {
+            require_once $calendarHookPath;
+            $calendarHook = new CalendarHook($DB);
+            $calendarHook->handleQuoteEvent($companyId, (int)$newQuoteId, $newQuoteNumber, $newExpiryDate, $userId);
+        }
+    } catch (Throwable $chEx) {
         error_log('Calendar hook (duplicate quote) failed: ' . $chEx->getMessage());
     }
 
