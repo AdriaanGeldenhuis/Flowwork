@@ -64,7 +64,9 @@ class InvoiceDeleteHelper
     public static function removeCalendarEvent(PDO $db, int $invoiceId): void
     {
         try {
-            require_once __DIR__ . '/../../services/CalendarHook.php';
+            $path = __DIR__ . '/../services/CalendarHook.php';
+            if (!file_exists($path)) return;
+            require_once $path;
             $hook = new CalendarHook($db);
             $hook->deleteEvent('invoice', $invoiceId);
         } catch (Throwable $e) {

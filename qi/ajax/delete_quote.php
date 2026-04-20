@@ -71,10 +71,13 @@ try {
     $DB->commit();
 
     try {
-        require_once __DIR__ . '/../../services/CalendarHook.php';
-        $calendarHook = new CalendarHook($DB);
-        $calendarHook->deleteEvent('quote', $quoteId);
-    } catch (Exception $chEx) {
+        $calendarHookPath = __DIR__ . '/../services/CalendarHook.php';
+        if (file_exists($calendarHookPath)) {
+            require_once $calendarHookPath;
+            $calendarHook = new CalendarHook($DB);
+            $calendarHook->deleteEvent('quote', $quoteId);
+        }
+    } catch (Throwable $chEx) {
         error_log('Calendar hook delete for quote failed: ' . $chEx->getMessage());
     }
 
