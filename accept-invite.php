@@ -72,7 +72,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error) {
         ]);
         
         $newUserId = $DB->lastInsertId();
-        
+
+        // Link the user to the inviting company in the multi-tenant
+        // membership table (mirrors register.php / api.php add_user).
+        $stmt = $DB->prepare(
+            "INSERT INTO user_companies (user_id, company_id, role, created_at)
+             VALUES (?, ?, ?, NOW())"
+        );
+        $stmt->execute([$newUserId, $invite['company_id'], $invite['role']]);
+
         // Mark invite as used
         $stmt = $DB->prepare("
             UPDATE invites 
