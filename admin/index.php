@@ -19,7 +19,12 @@ $stmt->execute([$company['plan_id']]);
 $plan = $stmt->fetch();
 
 // Fetch usage stats
-$stmt = $DB->prepare("SELECT COUNT(*) as user_count FROM users WHERE company_id = ? AND status = 'active' AND is_seat = 1");
+$stmt = $DB->prepare("
+    SELECT COUNT(*) as user_count
+    FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1
+");
 $stmt->execute([$companyId]);
 $userCount = $stmt->fetchColumn();
 

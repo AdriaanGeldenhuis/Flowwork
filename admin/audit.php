@@ -49,8 +49,14 @@ $stmt = $DB->prepare($sql);
 $stmt->execute($params);
 $logs = $stmt->fetchAll();
 
-// Fetch all users for filter
-$stmt = $DB->prepare("SELECT id, first_name, last_name FROM users WHERE company_id = ? ORDER BY first_name");
+// Fetch all users for filter (anyone with access to this company)
+$stmt = $DB->prepare("
+    SELECT u.id, u.first_name, u.last_name
+    FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ?
+    ORDER BY u.first_name
+");
 $stmt->execute([$companyId]);
 $users = $stmt->fetchAll();
 ?>

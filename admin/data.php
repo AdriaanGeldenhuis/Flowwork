@@ -44,7 +44,7 @@ $s = [
 // Calculate data usage
 $stats = [];
 $tables = [
-    ['label' => 'Users', 'query' => "SELECT COUNT(*) FROM users WHERE company_id = ?"],
+    ['label' => 'Users', 'query' => "SELECT COUNT(*) FROM user_companies WHERE company_id = ?"],
     ['label' => 'Projects', 'query' => "SELECT COUNT(*) FROM projects WHERE company_id = ?"],
     ['label' => 'Boards', 'query' => "SELECT COUNT(*) FROM project_boards WHERE company_id = ?"],
     ['label' => 'Audit Log Entries', 'query' => "SELECT COUNT(*) FROM audit_log WHERE company_id = ?"],

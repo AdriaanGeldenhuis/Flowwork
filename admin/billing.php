@@ -33,7 +33,11 @@ $stmt = $DB->query("SELECT * FROM plans ORDER BY price_monthly_cents ASC");
 $plans = $stmt->fetchAll();
 
 // Calculate usage
-$stmt = $DB->prepare("SELECT COUNT(*) FROM users WHERE company_id = ? AND status = 'active' AND is_seat = 1");
+$stmt = $DB->prepare("
+    SELECT COUNT(*) FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1
+");
 $stmt->execute([$companyId]);
 $currentUsers = $stmt->fetchColumn();
 
