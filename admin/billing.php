@@ -5,15 +5,8 @@ require_once __DIR__ . '/../auth_gate.php';
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
-// Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-
-if ($user['role'] !== 'admin') {
-    http_response_code(403);
-    die('Access denied - Admin only');
-}
+require_once __DIR__ . '/../includes/companies.php';
+fw_require_admin();
 
 // Fetch company with plan
 $stmt = $DB->prepare("
@@ -40,13 +33,19 @@ $stmt = $DB->query("SELECT * FROM plans ORDER BY price_monthly_cents ASC");
 $plans = $stmt->fetchAll();
 
 // Calculate usage
-$stmt = $DB->prepare("SELECT COUNT(*) FROM users WHERE company_id = ? AND status = 'active' AND is_seat = 1");
+$stmt = $DB->prepare("
+    SELECT COUNT(*) FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1
+");
 $stmt->execute([$companyId]);
 $currentUsers = $stmt->fetchColumn();
 
-$stmt = $DB->prepare("SELECT COUNT(DISTINCT company_id) FROM user_companies WHERE user_id IN (SELECT id FROM users WHERE company_id = ?)");
-$stmt->execute([$companyId]);
-$currentCompanies = $stmt->fetchColumn();
+// Companies under the current admin's account — same metric as the
+// /admin/companies.php "X of Y on the {plan} plan" row.
+$stmt = $DB->prepare("SELECT COUNT(*) FROM user_companies WHERE user_id = ?");
+$stmt->execute([$userId]);
+$currentCompanies = (int)$stmt->fetchColumn();
 ?>
 <?php
   $pageTitle = 'Billing – Admin';

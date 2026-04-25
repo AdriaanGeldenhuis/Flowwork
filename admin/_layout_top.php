@@ -5,20 +5,21 @@
 //
 // Inputs (set by caller before include):
 //   $pageTitle  - string used in <title>
-//   $company    - associative array (must have 'name'); falls back to session
+//   $company    - associative array, optional. If absent, the global
+//                 header looks up the active company by $_SESSION['company_id'].
 //   $user       - associative array, optional 'first_name'; falls back to session
 
 $initialTheme = (($_COOKIE['fw_theme'] ?? 'light') === 'dark') ? 'dark' : 'light';
 $pageTitle    = $pageTitle ?? 'Admin';
-$companyName  = $company['name']      ?? ($_SESSION['company_name']    ?? 'Your Company');
-$firstName    = $user['first_name']   ?? ($_SESSION['user_first_name'] ?? 'Welcome');
+$companyName  = $company['name']    ?? null;
+$firstName    = $user['first_name'] ?? ($_SESSION['user_first_name'] ?? 'Welcome');
 ?><!DOCTYPE html>
 <html lang="en" data-theme="<?= $initialTheme ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($pageTitle) ?></title>
-    <link rel="stylesheet" href="/admin/style.css?v=2026-04-07-2">
+    <link rel="stylesheet" href="/admin/style.css?v=2026-04-25-2">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
 </head>
 <body class="fw-admin" data-theme="<?= $initialTheme ?>">

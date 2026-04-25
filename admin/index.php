@@ -5,15 +5,8 @@ require_once __DIR__ . '/../auth_gate.php';
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
-// Check admin access
-$stmt = $DB->prepare("SELECT role, first_name FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-
-if ($user['role'] !== 'admin') {
-    http_response_code(403);
-    die('Access denied - Admin only');
-}
+require_once __DIR__ . '/../includes/companies.php';
+fw_require_admin();
 
 // Fetch company info
 $stmt = $DB->prepare("SELECT * FROM companies WHERE id = ?");
@@ -26,7 +19,12 @@ $stmt->execute([$company['plan_id']]);
 $plan = $stmt->fetch();
 
 // Fetch usage stats
-$stmt = $DB->prepare("SELECT COUNT(*) as user_count FROM users WHERE company_id = ? AND status = 'active' AND is_seat = 1");
+$stmt = $DB->prepare("
+    SELECT COUNT(*) as user_count
+    FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1
+");
 $stmt->execute([$companyId]);
 $userCount = $stmt->fetchColumn();
 

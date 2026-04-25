@@ -7,16 +7,8 @@ header('Content-Type: application/json');
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
-// Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-
-if ($user['role'] !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => 'Admin access required']);
-    exit;
-}
+require_once __DIR__ . '/../includes/companies.php';
+fw_require_admin('json');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
@@ -40,59 +32,92 @@ try {
                 throw new Exception('Invalid email address');
             }
 
-            // Check if email exists
+            // Does this email already belong to a Flowwork user?
             $stmt = $DB->prepare("SELECT id FROM users WHERE email = ?");
             $stmt->execute([$email]);
-            if ($stmt->fetch()) {
-                throw new Exception('Email already exists');
+            $existingUserId = $stmt->fetchColumn();
+
+            if ($existingUserId) {
+                // If they already have access to this company, surface that.
+                $stmt = $DB->prepare("SELECT 1 FROM user_companies WHERE user_id = ? AND company_id = ?");
+                $stmt->execute([$existingUserId, $companyId]);
+                if ($stmt->fetchColumn()) {
+                    throw new Exception('That user is already a member of this company.');
+                }
             }
 
-            // Check seat limit
+            // Check seat limit (existing or new user counts the same)
             if ($isSeat) {
                 $stmt = $DB->prepare("
-                    SELECT COUNT(*) as seat_count
-                    FROM users
-                    WHERE company_id = ? AND is_seat = 1 AND status = 'active'
+                    SELECT COUNT(*) FROM user_companies uc
+                    JOIN users u ON u.id = uc.user_id
+                    WHERE uc.company_id = ? AND u.is_seat = 1 AND u.status = 'active'
                 ");
                 $stmt->execute([$companyId]);
-                $seatCount = $stmt->fetchColumn();
+                $seatCount = (int)$stmt->fetchColumn();
 
                 $stmt = $DB->prepare("
-                    SELECT p.max_users
-                    FROM companies c
-                    JOIN plans p ON p.id = c.plan_id
-                    WHERE c.id = ?
+                    SELECT p.max_users FROM companies c
+                    JOIN plans p ON p.id = c.plan_id WHERE c.id = ?
                 ");
                 $stmt->execute([$companyId]);
-                $maxUsers = $stmt->fetchColumn();
+                $maxUsers = (int)$stmt->fetchColumn();
 
                 if ($seatCount >= $maxUsers) {
                     throw new Exception('User limit reached for your plan');
                 }
             }
 
-            // Generate temporary password
-            $tempPassword = bin2hex(random_bytes(8));
-            $passwordHash = password_hash($tempPassword, PASSWORD_DEFAULT);
+            $DB->beginTransaction();
+            try {
+                if ($existingUserId) {
+                    // Link the existing Flowwork user to this company. Their global
+                    // first/last/status/is_seat stay as-is; the per-company role
+                    // lives on user_companies.
+                    $stmt = $DB->prepare(
+                        "INSERT INTO user_companies (user_id, company_id, role, created_at)
+                         VALUES (?, ?, ?, NOW())"
+                    );
+                    $stmt->execute([$existingUserId, $companyId, $role]);
+                    $newUserId   = (int)$existingUserId;
+                    $tempPassword = null;
+                    $auditMessage = "Linked existing user: $email";
+                } else {
+                    $tempPassword = bin2hex(random_bytes(8));
+                    $passwordHash = password_hash($tempPassword, PASSWORD_DEFAULT);
 
-            $stmt = $DB->prepare("
-                INSERT INTO users (company_id, email, password_hash, first_name, last_name, role, is_seat, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-            ");
-            $stmt->execute([$companyId, $email, $passwordHash, $firstName, $lastName, $role, $isSeat, $status]);
-            $newUserId = $DB->lastInsertId();
+                    $stmt = $DB->prepare("
+                        INSERT INTO users (company_id, email, password_hash, first_name, last_name, role, is_seat, status, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    ");
+                    $stmt->execute([$companyId, $email, $passwordHash, $firstName, $lastName, $role, $isSeat, $status]);
+                    $newUserId = (int)$DB->lastInsertId();
 
-            // Log audit
-            $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-                VALUES (?, ?, 'user_created', ?, ?, NOW())
-            ");
-            $stmt->execute([$companyId, $userId, "Created user: $email", $_SERVER['REMOTE_ADDR'] ?? '']);
+                    $stmt = $DB->prepare(
+                        "INSERT INTO user_companies (user_id, company_id, role, created_at)
+                         VALUES (?, ?, ?, NOW())"
+                    );
+                    $stmt->execute([$newUserId, $companyId, $role]);
+                    $auditMessage = "Created user: $email";
+                }
+
+                $stmt = $DB->prepare("
+                    INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                    VALUES (?, ?, 'user_created', ?, ?, NOW())
+                ");
+                $stmt->execute([$companyId, $userId, $auditMessage, $_SERVER['REMOTE_ADDR'] ?? '']);
+
+                $DB->commit();
+            } catch (Exception $e) {
+                $DB->rollBack();
+                throw $e;
+            }
 
             echo json_encode([
-                'success' => true,
-                'user_id' => $newUserId,
-                'temp_password' => $tempPassword
+                'success'       => true,
+                'user_id'       => $newUserId,
+                'temp_password' => $tempPassword,
+                'linked'        => (bool)$existingUserId,
             ]);
             break;
 
@@ -109,12 +134,40 @@ try {
                 throw new Exception('User ID required');
             }
 
-            $stmt = $DB->prepare("
-                UPDATE users
-                SET first_name = ?, last_name = ?, role = ?, status = ?, is_seat = ?, updated_at = NOW()
-                WHERE id = ? AND company_id = ?
-            ");
-            $stmt->execute([$firstName, $lastName, $role, $status, $isSeat, $targetUserId, $companyId]);
+            // Verify the target is actually a member of the active company.
+            $stmt = $DB->prepare(
+                "SELECT u.company_id AS primary_company_id
+                 FROM user_companies uc
+                 JOIN users u ON u.id = uc.user_id
+                 WHERE uc.user_id = ? AND uc.company_id = ?"
+            );
+            $stmt->execute([$targetUserId, $companyId]);
+            $target = $stmt->fetch();
+            if (!$target) {
+                throw new Exception('User is not a member of this company');
+            }
+
+            // Per-company role always lives on user_companies.
+            $stmt = $DB->prepare(
+                "UPDATE user_companies SET role = ? WHERE user_id = ? AND company_id = ?"
+            );
+            $stmt->execute([$role, $targetUserId, $companyId]);
+
+            // Identity + global flags (status/is_seat) only mutate when
+            // this is the user's primary company.
+            if ((int)$target['primary_company_id'] === $companyId) {
+                $stmt = $DB->prepare("
+                    UPDATE users
+                    SET first_name = ?, last_name = ?, role = ?, status = ?, is_seat = ?, updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$firstName, $lastName, $role, $status, $isSeat, $targetUserId]);
+            } else {
+                $stmt = $DB->prepare(
+                    "UPDATE users SET first_name = ?, last_name = ?, updated_at = NOW() WHERE id = ?"
+                );
+                $stmt->execute([$firstName, $lastName, $targetUserId]);
+            }
 
             // Log audit
             $stmt = $DB->prepare("
@@ -135,9 +188,11 @@ try {
             }
 
             $stmt = $DB->prepare("
-                SELECT id, first_name, last_name, email, role, status, is_seat
-                FROM users
-                WHERE id = ? AND company_id = ?
+                SELECT u.id, u.first_name, u.last_name, u.email, u.status, u.is_seat,
+                       uc.role
+                FROM user_companies uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE u.id = ? AND uc.company_id = ?
             ");
             $stmt->execute([$targetUserId, $companyId]);
             $targetUser = $stmt->fetch();
@@ -157,13 +212,30 @@ try {
                 throw new Exception('Cannot delete yourself');
             }
 
-            // Soft delete: set status to suspended
-            $stmt = $DB->prepare("
-                UPDATE users
-                SET status = 'suspended', session_token = NULL, updated_at = NOW()
-                WHERE id = ? AND company_id = ?
-            ");
+            $stmt = $DB->prepare(
+                "SELECT u.company_id AS primary_company_id
+                 FROM user_companies uc
+                 JOIN users u ON u.id = uc.user_id
+                 WHERE uc.user_id = ? AND uc.company_id = ?"
+            );
             $stmt->execute([$targetUserId, $companyId]);
+            $target = $stmt->fetch();
+            if (!$target) {
+                throw new Exception('User is not a member of this company');
+            }
+
+            // Always revoke their access to this company.
+            $stmt = $DB->prepare("DELETE FROM user_companies WHERE user_id = ? AND company_id = ?");
+            $stmt->execute([$targetUserId, $companyId]);
+
+            // If this WAS their primary company, also suspend the global
+            // account (keeps the existing soft-delete behaviour).
+            if ((int)$target['primary_company_id'] === $companyId) {
+                $stmt = $DB->prepare(
+                    "UPDATE users SET status = 'suspended', session_token = NULL, updated_at = NOW() WHERE id = ?"
+                );
+                $stmt->execute([$targetUserId]);
+            }
 
             // Log audit
             $stmt = $DB->prepare("
@@ -192,8 +264,13 @@ try {
                 throw new Exception('Invalid plan');
             }
 
-            // Check if downgrade would violate limits
-            $stmt = $DB->prepare("SELECT COUNT(*) FROM users WHERE company_id = ? AND is_seat = 1 AND status = 'active'");
+            // Check if downgrade would violate limits — count anyone with
+            // access to this company via user_companies, not just primary.
+            $stmt = $DB->prepare("
+                SELECT COUNT(*) FROM user_companies uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE uc.company_id = ? AND u.is_seat = 1 AND u.status = 'active'
+            ");
             $stmt->execute([$companyId]);
             $currentUsers = $stmt->fetchColumn();
 
@@ -369,13 +446,15 @@ try {
             $stmt->execute([$boardId]);
             $members = $stmt->fetchAll();
 
-            // Get all company users not on the board
+            // Get all company users not on the board (members linked
+            // via user_companies, not just primary-company users)
             $stmt = $DB->prepare("
-                SELECT id, first_name, last_name, email
-                FROM users
-                WHERE company_id = ? AND status = 'active'
-                AND id NOT IN (SELECT user_id FROM board_members WHERE board_id = ?)
-                ORDER BY first_name
+                SELECT u.id, u.first_name, u.last_name, u.email
+                FROM user_companies uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE uc.company_id = ? AND u.status = 'active'
+                  AND u.id NOT IN (SELECT user_id FROM board_members WHERE board_id = ?)
+                ORDER BY u.first_name
             ");
             $stmt->execute([$companyId, $boardId]);
             $availableUsers = $stmt->fetchAll();
@@ -436,10 +515,10 @@ try {
                 throw new Exception('Board not found');
             }
 
-            // Verify user belongs to this company
-            $stmt = $DB->prepare("SELECT id FROM users WHERE id = ? AND company_id = ?");
+            // Verify user belongs to this company (via user_companies)
+            $stmt = $DB->prepare("SELECT 1 FROM user_companies WHERE user_id = ? AND company_id = ?");
             $stmt->execute([$memberId, $companyId]);
-            if (!$stmt->fetch()) {
+            if (!$stmt->fetchColumn()) {
                 throw new Exception('User not found');
             }
 
@@ -729,7 +808,14 @@ try {
             switch ($exportType) {
                 case 'users':
                     fputcsv($output, ['First Name', 'Last Name', 'Email', 'Role', 'Status', 'Seat', 'Created']);
-                    $stmt = $DB->prepare("SELECT * FROM users WHERE company_id = ? ORDER BY created_at");
+                    $stmt = $DB->prepare("
+                        SELECT u.first_name, u.last_name, u.email, uc.role,
+                               u.status, u.is_seat, u.created_at
+                        FROM user_companies uc
+                        JOIN users u ON u.id = uc.user_id
+                        WHERE uc.company_id = ?
+                        ORDER BY u.created_at
+                    ");
                     $stmt->execute([$companyId]);
                     while ($row = $stmt->fetch()) {
                         fputcsv($output, [
@@ -763,7 +849,7 @@ try {
 
                 default:
                     fputcsv($output, ['Type', 'Count']);
-                    $stmt = $DB->prepare("SELECT COUNT(*) FROM users WHERE company_id = ?");
+                    $stmt = $DB->prepare("SELECT COUNT(*) FROM user_companies WHERE company_id = ?");
                     $stmt->execute([$companyId]);
                     fputcsv($output, ['Users', $stmt->fetchColumn()]);
                     $stmt = $DB->prepare("SELECT COUNT(*) FROM projects WHERE company_id = ?");

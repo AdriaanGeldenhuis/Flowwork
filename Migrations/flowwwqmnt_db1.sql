@@ -12040,7 +12040,7 @@ CREATE TABLE `companies` (
   `qi_show_reg_number` tinyint(1) DEFAULT 1,
   `qi_font_family` enum('system-ui','montserrat','helvetica','georgia','inter') DEFAULT 'system-ui',
   `country` varchar(100) DEFAULT 'South Africa',
-  `business_type` enum('construction','postal','hairdresser') NOT NULL,
+  `business_type` enum('construction','postal','hairdresser','retail','restaurant','manufacturing','supplies','services','healthcare','it','automotive','logistics','cleaning','education','realestate','agriculture','other') NOT NULL,
   `plan_id` int(11) NOT NULL,
   `max_users` int(11) NOT NULL DEFAULT 1,
   `max_companies` int(11) NOT NULL DEFAULT 1,
@@ -12569,7 +12569,14 @@ INSERT INTO `crm_regions` (`id`, `name`) VALUES
 (7, 'Mpumalanga'),
 (8, 'North West'),
 (9, 'Northern Cape'),
-(2, 'Western Cape');
+(2, 'Western Cape'),
+(10, 'Botswana'),
+(11, 'Lesotho'),
+(12, 'Mozambique'),
+(13, 'Namibia'),
+(14, 'eSwatini'),
+(15, 'Zimbabwe'),
+(16, 'Zambia');
 
 -- --------------------------------------------------------
 
@@ -17135,7 +17142,7 @@ ALTER TABLE `crm_opportunities`
 -- AUTO_INCREMENT for table `crm_regions`
 --
 ALTER TABLE `crm_regions`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `crm_tags`

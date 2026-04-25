@@ -5,30 +5,29 @@ require_once __DIR__ . '/../auth_gate.php';
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
-// Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
+require_once __DIR__ . '/../includes/companies.php';
+fw_require_admin();
 
-if ($user['role'] !== 'admin') {
-    http_response_code(403);
-    die('Access denied - Admin only');
-}
-
-// Fetch users
+// Fetch users that belong to the active company via user_companies, so
+// members linked from other primary companies show up too. Per-tenant
+// role lives on user_companies; identity (name/email/status/is_seat) on
+// users.
 $stmt = $DB->prepare("
-    SELECT u.*, 
+    SELECT u.id, u.first_name, u.last_name, u.email, u.status, u.is_seat,
+           u.last_login_at, u.created_at,
+           uc.role,
            (SELECT COUNT(*) FROM project_members pm WHERE pm.user_id = u.id) as project_count
-    FROM users u
-    WHERE u.company_id = ?
-    ORDER BY u.role DESC, u.created_at DESC
+    FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ?
+    ORDER BY FIELD(uc.role,'admin','member','bookkeeper','viewer','pos'), u.created_at DESC
 ");
 $stmt->execute([$companyId]);
 $users = $stmt->fetchAll();
 
 // Fetch plan limits
 $stmt = $DB->prepare("
-    SELECT p.max_users 
+    SELECT p.max_users
     FROM companies c
     JOIN plans p ON p.id = c.plan_id
     WHERE c.id = ?

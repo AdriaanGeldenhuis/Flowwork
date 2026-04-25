@@ -5,15 +5,8 @@ require_once __DIR__ . '/../auth_gate.php';
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
-// Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-
-if ($user['role'] !== 'admin') {
-    http_response_code(403);
-    die('Access denied - Admin only');
-}
+require_once __DIR__ . '/../includes/companies.php';
+fw_require_admin();
 
 // Filters
 $filterUser = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
@@ -56,8 +49,14 @@ $stmt = $DB->prepare($sql);
 $stmt->execute($params);
 $logs = $stmt->fetchAll();
 
-// Fetch all users for filter
-$stmt = $DB->prepare("SELECT id, first_name, last_name FROM users WHERE company_id = ? ORDER BY first_name");
+// Fetch all users for filter (anyone with access to this company)
+$stmt = $DB->prepare("
+    SELECT u.id, u.first_name, u.last_name
+    FROM user_companies uc
+    JOIN users u ON u.id = uc.user_id
+    WHERE uc.company_id = ?
+    ORDER BY u.first_name
+");
 $stmt->execute([$companyId]);
 $users = $stmt->fetchAll();
 ?>

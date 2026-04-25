@@ -209,6 +209,19 @@
 }
 .fw-dashboard__kebab-item:hover,
 .fw-dashboard__kebab-item:focus { background: var(--fw-highlight); color: var(--accent-projects); outline: none; }
+button.fw-dashboard__kebab-item { width: 100%; text-align: left; background: transparent; border: 0; cursor: pointer; font-family: inherit; }
+.fw-dashboard__kebab-section-label {
+  padding: var(--fw-spacing-xs) var(--fw-spacing-md) 4px;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--fw-text-muted, #6b7280);
+}
+.fw-dashboard__kebab-item--company { display: flex; align-items: center; justify-content: space-between; gap: var(--fw-spacing-sm); }
+.fw-dashboard__kebab-item--company.is-active { background: var(--fw-highlight); cursor: default; }
+.fw-dashboard__kebab-item--company.is-active:hover { color: var(--fw-text-primary); }
+.fw-dashboard__kebab-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fw-dashboard__kebab-item-badge { color: var(--accent-projects); font-weight: 700; }
+.fw-dashboard__kebab-divider { height: 1px; background: var(--fw-panel-border); margin: var(--fw-spacing-xs) 0; }
+.fw-dashboard__kebab-item.is-loading { opacity: .6; cursor: progress; }
 
 /* ===== ROLES ===== */
 .fw-dashboard__roles {
