@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $stmt = $DB->prepare(
-                "INSERT INTO audit_log (company_id, user_id, action, details, ip, created_at)
+                "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
                  VALUES (?, ?, 'company_create', ?, ?, NOW())"
             );
             $stmt->execute([

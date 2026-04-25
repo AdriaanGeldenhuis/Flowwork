@@ -28,7 +28,7 @@ if (!fw_set_active_company($userId, $companyId)) {
 
 try {
     $stmt = $DB->prepare(
-        "INSERT INTO audit_log (company_id, user_id, action, details, ip, created_at)
+        "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
          VALUES (?, ?, 'company_switch', ?, ?, NOW())"
     );
     $stmt->execute([

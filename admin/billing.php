@@ -41,9 +41,11 @@ $stmt = $DB->prepare("
 $stmt->execute([$companyId]);
 $currentUsers = $stmt->fetchColumn();
 
-$stmt = $DB->prepare("SELECT COUNT(DISTINCT company_id) FROM user_companies WHERE user_id IN (SELECT id FROM users WHERE company_id = ?)");
-$stmt->execute([$companyId]);
-$currentCompanies = $stmt->fetchColumn();
+// Companies under the current admin's account — same metric as the
+// /admin/companies.php "X of Y on the {plan} plan" row.
+$stmt = $DB->prepare("SELECT COUNT(*) FROM user_companies WHERE user_id = ?");
+$stmt->execute([$userId]);
+$currentCompanies = (int)$stmt->fetchColumn();
 ?>
 <?php
   $pageTitle = 'Billing – Admin';

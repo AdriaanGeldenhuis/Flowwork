@@ -446,13 +446,15 @@ try {
             $stmt->execute([$boardId]);
             $members = $stmt->fetchAll();
 
-            // Get all company users not on the board
+            // Get all company users not on the board (members linked
+            // via user_companies, not just primary-company users)
             $stmt = $DB->prepare("
-                SELECT id, first_name, last_name, email
-                FROM users
-                WHERE company_id = ? AND status = 'active'
-                AND id NOT IN (SELECT user_id FROM board_members WHERE board_id = ?)
-                ORDER BY first_name
+                SELECT u.id, u.first_name, u.last_name, u.email
+                FROM user_companies uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE uc.company_id = ? AND u.status = 'active'
+                  AND u.id NOT IN (SELECT user_id FROM board_members WHERE board_id = ?)
+                ORDER BY u.first_name
             ");
             $stmt->execute([$companyId, $boardId]);
             $availableUsers = $stmt->fetchAll();
@@ -513,10 +515,10 @@ try {
                 throw new Exception('Board not found');
             }
 
-            // Verify user belongs to this company
-            $stmt = $DB->prepare("SELECT id FROM users WHERE id = ? AND company_id = ?");
+            // Verify user belongs to this company (via user_companies)
+            $stmt = $DB->prepare("SELECT 1 FROM user_companies WHERE user_id = ? AND company_id = ?");
             $stmt->execute([$memberId, $companyId]);
-            if (!$stmt->fetch()) {
+            if (!$stmt->fetchColumn()) {
                 throw new Exception('User not found');
             }
 

@@ -79,4 +79,4 @@ include __DIR__ . '/_layout_top.php';
                 </div>
             </div>
 <?php include __DIR__ . '/_layout_bottom.php'; ?>
-<script src="/shared/company_switcher.js?v=2026-04-25-1"></script>
+<script src="/shared/company_switcher.js?v=2026-04-25-2"></script>
