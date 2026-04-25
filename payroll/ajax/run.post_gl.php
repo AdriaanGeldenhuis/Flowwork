@@ -9,15 +9,16 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../finances/permissions.php';
 
 header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
-$role      = $_SESSION['role'] ?? '';
+$role      = fw_get_user_role($DB);
 
 // Only allow admins and bookkeepers to post to finance
-if (!in_array($role, ['admin', 'bookkeeper'])) {
+if (!in_array($role, ['admin', 'bookkeeper'], true)) {
     echo json_encode(['ok' => false, 'error' => 'Permission denied']);
     exit;
 }

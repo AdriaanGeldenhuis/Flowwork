@@ -73,11 +73,11 @@
                 <div class="fw-payroll__run-emp-no">${emp.employee_no}</div>
               </div>
             </div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${gross.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${paye.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${uif.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${deductions.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount fw-payroll__run-emp-net">R ${net.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="Gross">R ${gross.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="PAYE">R ${paye.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="UIF">R ${uif.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="Deductions">R ${deductions.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount fw-payroll__run-emp-net" data-label="Net Pay">R ${net.toFixed(2)}</div>
             <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--actions">
               <button class="fw-payroll__icon-btn" onclick="event.stopPropagation(); PayrollRunView.viewEmployee(${emp.employee_id})" title="View Details">
                 <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
@@ -432,6 +432,44 @@
 
     exportBank: function() {
       window.location.href = '/payroll/ajax/run_export_bank.php?run_id=' + this.runId;
+    },
+
+    emailPayslips: function(force) {
+      const label = force
+        ? 'Re-send payslips to ALL employees (including those already emailed)?'
+        : 'Email payslips to employees who have not been emailed yet?';
+      if (!confirm(label)) return;
+
+      const payload = 'run_id=' + this.runId + (force ? '&force=1' : '');
+      const msgDiv = document.getElementById('actionMessage');
+      msgDiv.innerHTML = '<div class="fw-payroll__loading">Emailing payslips...</div>';
+
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+      fetch('/payroll/ajax/payslip_email.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRF-Token': csrfToken
+        },
+        body: payload
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          let summary = `Sent ${data.sent}, skipped ${data.skipped}, failed ${data.failed}.`;
+          if (data.errors && data.errors.length) {
+            summary += '<br><small>' + data.errors.map(e => e.replace(/</g, '&lt;')).join('<br>') + '</small>';
+          }
+          const cls = data.failed > 0 ? 'fw-payroll__alert--error' : 'fw-payroll__alert--success';
+          msgDiv.innerHTML = '<div class="fw-payroll__alert ' + cls + '">' + summary + '</div>';
+        } else {
+          msgDiv.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + (data.error || 'Email failed') + '</div>';
+        }
+      })
+      .catch(err => {
+        msgDiv.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">Network error</div>';
+        console.error(err);
+      });
     }
   };
 

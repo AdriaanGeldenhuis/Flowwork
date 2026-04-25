@@ -1,130 +1,122 @@
 <?php
 // payroll/lib/PayslipGenerator.php
 //
-// Provides a helper function to generate simple HTML payslips for all employees
-// in a payroll run. Each payslip will be stored under /storage/payroll/{company_id}/run_{run_id}/
-// with a filename of payslip_{employee_id}.html. The relative path will be saved
-// to the pay_run_employees.payslip_path column. This generator does not
-// produce PDFs; it outputs basic HTML slips which can be viewed in the browser
-// or converted to PDF by a later utility.
+// Generates self-contained PDF payslips (one per employee per run) under
+// /storage/payroll/{company_id}/run_{run_id}/payslip_{employee_id}.pdf
+// and stores the relative path on pay_run_employees.payslip_path.
+//
+// PDF layout mirrors the HTML payslip exactly so the on-disk file, the
+// browser preview and the emailed attachment all show the same document.
+
+require_once __DIR__ . '/PayslipPdf.php';
 
 /**
  * Generate payslips for a payroll run.
- *
- * @param PDO $db Database connection
- * @param int $companyId Company ID
- * @param int $runId Pay run ID
- * @return int The number of payslips generated
- * @throws Exception if the run cannot be found
+ * @return int number of payslips generated
  */
 function generatePayslips(PDO $db, int $companyId, int $runId): int
 {
-    // Fetch run details to obtain period dates
-    $stmt = $db->prepare(
-        "SELECT period_start, period_end, pay_date FROM pay_runs WHERE id = ? AND company_id = ?"
-    );
+    $stmt = $db->prepare("SELECT * FROM pay_runs WHERE id = ? AND company_id = ?");
     $stmt->execute([$runId, $companyId]);
     $run = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$run) {
         throw new Exception('Pay run not found');
     }
-    $periodStart = $run['period_start'];
-    $periodEnd   = $run['period_end'];
-    $payDate     = $run['pay_date'];
 
-    // Create directory structure for payslips
+    $stmt = $db->prepare("SELECT * FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $company = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
     $baseDir = __DIR__ . '/../../storage/payroll/' . $companyId . '/run_' . $runId;
     if (!is_dir($baseDir)) {
         @mkdir($baseDir, 0775, true);
     }
 
-    // Fetch employees in this run along with their names
     $stmt = $db->prepare(
-        "SELECT pre.*, e.first_name, e.last_name, e.employee_no
+        "SELECT pre.*, e.first_name, e.last_name, e.employee_no, e.id_number,
+                e.tax_number, e.hire_date, e.employment_type, e.pay_frequency,
+                e.bank_name, e.bank_account_no, e.branch_code, e.email
          FROM pay_run_employees pre
          JOIN employees e ON e.id = pre.employee_id
          WHERE pre.run_id = ? AND pre.company_id = ?"
     );
     $stmt->execute([$runId, $companyId]);
     $employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $linesStmt = $db->prepare(
+        "SELECT prl.qty, prl.rate_cents, prl.amount_cents, prl.description,
+                pi.name AS item_name, pi.code AS item_code, pi.type
+         FROM pay_run_lines prl
+         LEFT JOIN payitems pi ON pi.id = prl.payitem_id
+         WHERE prl.run_id = ? AND prl.employee_id = ? AND prl.company_id = ?
+         ORDER BY pi.type ASC, prl.id ASC"
+    );
+
+    $taxYearStart = fw_payslip_tax_year_start($run['pay_date']);
+    $ytdStmt = $db->prepare(
+        "SELECT
+            COALESCE(SUM(pre.gross_cents), 0)            AS gross,
+            COALESCE(SUM(pre.taxable_income_cents), 0)   AS taxable,
+            COALESCE(SUM(pre.paye_cents), 0)             AS paye,
+            COALESCE(SUM(pre.uif_employee_cents), 0)     AS uif_emp,
+            COALESCE(SUM(pre.uif_employer_cents), 0)     AS uif_empr,
+            COALESCE(SUM(pre.sdl_cents), 0)              AS sdl,
+            COALESCE(SUM(pre.other_deductions_cents), 0) AS other_ded,
+            COALESCE(SUM(pre.net_cents), 0)              AS net
+         FROM pay_run_employees pre
+         JOIN pay_runs pr ON pr.id = pre.run_id
+         WHERE pre.company_id = ?
+           AND pre.employee_id = ?
+           AND pr.pay_date >= ?
+           AND pr.pay_date <= ?
+           AND pr.status IN ('locked','posted')"
+    );
+
     $generated = 0;
-
     foreach ($employees as $emp) {
-        $empId   = (int)$emp['employee_id'];
-        $empName = trim($emp['first_name'] . ' ' . $emp['last_name']);
-        $empNo   = $emp['employee_no'] ?? '';
+        $linesStmt->execute([$runId, (int)$emp['employee_id'], $companyId]);
+        $lines = $linesStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Fetch pay lines for this employee
-        $stmtLines = $db->prepare(
-            "SELECT prl.qty, prl.rate_cents, prl.amount_cents, pi.name as item_name, pi.type
-             FROM pay_run_lines prl
-             LEFT JOIN payitems pi ON pi.id = prl.payitem_id
-             WHERE prl.run_id = ? AND prl.employee_id = ? AND prl.company_id = ?
-             ORDER BY pi.type ASC, prl.id ASC"
-        );
-        $stmtLines->execute([$runId, $empId, $companyId]);
-        $lines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
+        $ytdStmt->execute([
+            $companyId,
+            (int)$emp['employee_id'],
+            $taxYearStart,
+            $run['pay_date'],
+        ]);
+        $ytd = $ytdStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        // Build HTML slip
-        $html  = '<!DOCTYPE html>';
-        $html .= '<html><head><meta charset="utf-8">';
-        $html .= '<title>Payslip</title>';
-        // Minimal inline styles to improve readability when viewing in browser
-        $html .= '<style>body{font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;}';
-        $html .= 'table{border-collapse:collapse;width:100%;margin-top:10px;}';
-        $html .= 'th,td{border:1px solid #ccc;padding:4px;text-align:left;}';
-        $html .= 'th{background:#f5f5f5;}';
-        $html .= '</style>';
-        $html .= '</head><body>';
-        $html .= '<h2>Payslip for ' . htmlspecialchars($empName) . '</h2>';
-        if ($empNo !== '') {
-            $html .= '<p>Employee Number: ' . htmlspecialchars($empNo) . '</p>';
-        }
-        $html .= '<p>Period: ' . htmlspecialchars($periodStart) . ' to ' . htmlspecialchars($periodEnd) . '<br>';
-        $html .= 'Pay Date: ' . htmlspecialchars($payDate) . '</p>';
+        $pdfBytes = renderPayslipPdf($company, $run, $emp, $lines, $ytd, $taxYearStart);
 
-        $html .= '<table><thead><tr><th>Item</th><th>Type</th><th>Quantity</th><th>Rate</th><th>Amount</th></tr></thead><tbody>';
-        $totalEarnings = 0.0;
-        $totalDeductions = 0.0;
-        foreach ($lines as $li) {
-            $qty       = (float)($li['qty'] ?? 1);
-            $rateCents = (int)($li['rate_cents'] ?? 0);
-            $amountCts = (int)($li['amount_cents'] ?? 0);
-            $rate = $rateCents / 100;
-            $amount = $amountCts / 100;
-            $html .= '<tr>';
-            $html .= '<td>' . htmlspecialchars($li['item_name'] ?? '') . '</td>';
-            $html .= '<td>' . htmlspecialchars($li['type'] ?? '') . '</td>';
-            $html .= '<td style="text-align:right">' . ($qty == floor($qty) ? intval($qty) : number_format($qty, 2)) . '</td>';
-            $html .= '<td style="text-align:right">R ' . number_format($rate, 2) . '</td>';
-            $html .= '<td style="text-align:right">R ' . number_format($amount, 2) . '</td>';
-            $html .= '</tr>';
-            // Sum totals by type
-            if (isset($li['type']) && strtolower($li['type']) === 'deduction') {
-                $totalDeductions += $amount;
-            } else {
-                $totalEarnings += $amount;
-            }
-        }
-        $net = $totalEarnings - $totalDeductions;
-        $html .= '</tbody></table>';
-        $html .= '<p><strong>Total Earnings:</strong> R ' . number_format($totalEarnings, 2) . '<br>';
-        $html .= '<strong>Total Deductions:</strong> R ' . number_format($totalDeductions, 2) . '<br>';
-        $html .= '<strong>Net Pay:</strong> R ' . number_format($net, 2) . '</p>';
-        $html .= '</body></html>';
+        // Clean up the previous .html file if it still exists from a prior run.
+        $oldHtml = $baseDir . '/payslip_' . (int)$emp['employee_id'] . '.html';
+        if (is_file($oldHtml)) @unlink($oldHtml);
 
-        // Determine file paths
-        $fileName = 'payslip_' . $empId . '.html';
+        $fileName = 'payslip_' . (int)$emp['employee_id'] . '.pdf';
         $absPath  = $baseDir . '/' . $fileName;
-        // Save HTML slip to disk
-        file_put_contents($absPath, $html);
-        // Store relative path for serving via web
-        $relPath  = '/storage/payroll/' . $companyId . '/run_' . $runId . '/' . $fileName;
-        // Update pay_run_employees record
-        $upd = $db->prepare("UPDATE pay_run_employees SET payslip_path = ?, payslip_generated_at = NOW() WHERE company_id = ? AND run_id = ? AND employee_id = ?");
-        $upd->execute([$relPath, $companyId, $runId, $empId]);
+        file_put_contents($absPath, $pdfBytes);
+
+        $relPath = '/storage/payroll/' . $companyId . '/run_' . $runId . '/' . $fileName;
+        $upd = $db->prepare(
+            "UPDATE pay_run_employees
+             SET payslip_path = ?, payslip_generated_at = NOW()
+             WHERE company_id = ? AND run_id = ? AND employee_id = ?"
+        );
+        $upd->execute([$relPath, $companyId, $runId, (int)$emp['employee_id']]);
         $generated++;
     }
 
     return $generated;
 }
+
+/** SA tax year starts 1 March. Returns the start date for the year covering $payDate. */
+function fw_payslip_tax_year_start(string $payDate): string
+{
+    $ts = strtotime($payDate);
+    $year = (int)date('Y', $ts);
+    $month = (int)date('n', $ts);
+    if ($month < 3) {
+        $year--;
+    }
+    return $year . '-03-01';
+}
+
