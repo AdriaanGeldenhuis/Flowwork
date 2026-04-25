@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/business_types.php';
+
 // Helpers for the multi-company "active company" mechanism.
 //
 // `users.company_id` is the user's PRIMARY/default company (set on
@@ -57,4 +59,99 @@ function fw_set_active_company(int $userId, int $companyId): bool
     }
     $_SESSION['active_company_id'] = $companyId;
     return true;
+}
+
+function fw_user_company_count(int $userId): int
+{
+    global $DB;
+    $stmt = $DB->prepare("SELECT COUNT(*) FROM user_companies WHERE user_id = ?");
+    $stmt->execute([$userId]);
+    return (int)$stmt->fetchColumn();
+}
+
+// Plan limit comes from the user's primary company (the one set on
+// users.company_id at registration). max_companies is copied from the
+// plan onto the company at sign-up time.
+function fw_user_plan_company_limit(int $userId): array
+{
+    global $DB;
+    $stmt = $DB->prepare(
+        "SELECT c.max_companies, p.name AS plan_name
+         FROM users u
+         JOIN companies c ON c.id = u.company_id
+         LEFT JOIN plans p ON p.id = c.plan_id
+         WHERE u.id = ?"
+    );
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    return [
+        'max'  => (int)($row['max_companies'] ?? 1),
+        'plan' => $row['plan_name'] ?? 'Solo',
+    ];
+}
+
+function fw_create_company_for_user(int $userId, string $name, string $businessType): int
+{
+    global $DB;
+
+    $name = trim($name);
+    if ($name === '') {
+        throw new Exception('Company name is required.');
+    }
+    if (!in_array($businessType, fw_business_type_keys(), true)) {
+        $businessType = 'construction';
+    }
+
+    $limit = fw_user_plan_company_limit($userId);
+    $count = fw_user_company_count($userId);
+    if ($count >= $limit['max']) {
+        throw new Exception(sprintf(
+            'Your %s plan allows %d compan%s. Upgrade your plan to add more.',
+            $limit['plan'],
+            $limit['max'],
+            $limit['max'] === 1 ? 'y' : 'ies'
+        ));
+    }
+
+    // Inherit plan + seat limits from the user's primary company so the
+    // new tenant matches the existing subscription.
+    $stmt = $DB->prepare(
+        "SELECT plan_id, max_users, max_companies
+         FROM companies WHERE id = (SELECT company_id FROM users WHERE id = ?)"
+    );
+    $stmt->execute([$userId]);
+    $primary = $stmt->fetch();
+    if (!$primary) {
+        throw new Exception('Could not load your subscription plan.');
+    }
+
+    $DB->beginTransaction();
+    try {
+        $stmt = $DB->prepare(
+            "INSERT INTO companies
+                (name, business_type, plan_id, max_users, max_companies,
+                 subscription_active, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 1, NOW(), NOW())"
+        );
+        $stmt->execute([
+            $name,
+            $businessType,
+            $primary['plan_id'],
+            $primary['max_users'],
+            $primary['max_companies'],
+        ]);
+        $newCompanyId = (int)$DB->lastInsertId();
+
+        $stmt = $DB->prepare(
+            "INSERT INTO user_companies (user_id, company_id, role, created_at)
+             VALUES (?, ?, 'admin', NOW())"
+        );
+        $stmt->execute([$userId, $newCompanyId]);
+
+        $DB->commit();
+        return $newCompanyId;
+    } catch (Exception $e) {
+        $DB->rollBack();
+        throw $e;
+    }
 }

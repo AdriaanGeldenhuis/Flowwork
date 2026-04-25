@@ -15,6 +15,7 @@ $currentPage = basename($_SERVER['PHP_SELF'], '.php');
         
         <li class="fw-admin__nav-divider">Company</li>
         <li><a href="/admin/company.php" class="fw-admin__nav-link <?= $currentPage === 'company' ? 'fw-admin__nav-link--active' : '' ?>">Company Profile</a></li>
+        <li><a href="/admin/companies.php" class="fw-admin__nav-link <?= ($currentPage === 'companies' || $currentPage === 'company_new') ? 'fw-admin__nav-link--active' : '' ?>">Companies</a></li>
         <li><a href="/admin/users.php" class="fw-admin__nav-link <?= $currentPage === 'users' ? 'fw-admin__nav-link--active' : '' ?>">Users & Roles</a></li>
         <li><a href="/admin/invites.php" class="fw-admin__nav-link <?= $currentPage === 'invites' ? 'fw-admin__nav-link--active' : '' ?>">Invites</a></li>
         <li><a href="/admin/boards.php" class="fw-admin__nav-link <?= $currentPage === 'boards' ? 'fw-admin__nav-link--active' : '' ?>">Boards & Permissions</a></li>

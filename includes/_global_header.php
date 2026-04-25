@@ -14,6 +14,14 @@ $scope       = isset($headerScope) && $headerScope ? $headerScope : 'fw-home';
 $companyName = isset($companyName) && $companyName !== '' ? $companyName : ($_SESSION['company_name'] ?? 'Your Company');
 $firstName   = isset($firstName)   && $firstName   !== '' ? $firstName   : ($_SESSION['user_first_name'] ?? 'Welcome');
 $companyLogo = $companyLogo ?? null;
+
+// Multi-company switcher data — only meaningful when authenticated.
+$fwHeaderCompanies = [];
+$fwHeaderActiveId  = (int)($_SESSION['company_id'] ?? 0);
+if (!empty($_SESSION['user_id'])) {
+    require_once __DIR__ . '/companies.php';
+    $fwHeaderCompanies = fw_user_companies((int)$_SESSION['user_id']);
+}
 ?>
 <header class="<?= $scope ?>__header">
     <div class="<?= $scope ?>__brand">
@@ -73,6 +81,26 @@ $companyLogo = $companyLogo ?? null;
                 </svg>
             </button>
             <nav class="<?= $scope ?>__kebab-menu" id="kebabMenu" role="menu" aria-hidden="true">
+                <?php if (count($fwHeaderCompanies) > 1): ?>
+                    <div class="<?= $scope ?>__kebab-section-label">Switch company</div>
+                    <?php foreach ($fwHeaderCompanies as $fwUc): ?>
+                        <?php $fwIsActive = ((int)$fwUc['id'] === $fwHeaderActiveId); ?>
+                        <button type="button"
+                                class="<?= $scope ?>__kebab-item <?= $scope ?>__kebab-item--company<?= $fwIsActive ? ' is-active' : '' ?>"
+                                role="menuitem"
+                                data-fw-switch-company="<?= (int)$fwUc['id'] ?>"
+                                <?= $fwIsActive ? 'aria-current="true" disabled' : '' ?>>
+                            <span class="<?= $scope ?>__kebab-item-name"><?= htmlspecialchars($fwUc['name']) ?></span>
+                            <?php if ($fwIsActive): ?>
+                                <span class="<?= $scope ?>__kebab-item-badge" aria-hidden="true">&#10003;</span>
+                            <?php endif; ?>
+                        </button>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+                <?php if (!empty($_SESSION['user_id'])): ?>
+                    <a href="/admin/company_new.php" class="<?= $scope ?>__kebab-item" role="menuitem">+ Add company</a>
+                    <div class="<?= $scope ?>__kebab-divider" role="separator"></div>
+                <?php endif; ?>
                 <a href="/admin/" class="<?= $scope ?>__kebab-item" role="menuitem">Admin/Settings</a>
                 <a href="/contact/" class="<?= $scope ?>__kebab-item" role="menuitem">Contact Us</a>
                 <a href="/help/" class="<?= $scope ?>__kebab-item" role="menuitem">Help</a>

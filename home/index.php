@@ -167,8 +167,9 @@ try {
                                     <?php endif; ?>
                                 </button>
                             <?php endforeach; ?>
-                            <div class="fw-dashboard__kebab-divider" role="separator"></div>
                         <?php endif; ?>
+                        <a href="/admin/company_new.php" class="fw-dashboard__kebab-item" role="menuitem">+ Add company</a>
+                        <div class="fw-dashboard__kebab-divider" role="separator"></div>
                         <a href="/admin/" class="fw-dashboard__kebab-item" role="menuitem">Admin/Settings</a>
                         <a href="/contact/" class="fw-dashboard__kebab-item" role="menuitem">Contact Us</a>
                         <a href="/help/" class="fw-dashboard__kebab-item" role="menuitem">Help</a>
