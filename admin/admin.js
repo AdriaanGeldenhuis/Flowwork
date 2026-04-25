@@ -215,9 +215,40 @@
     });
   }
 
+  // ========== KEBAB MENU ==========
+  function initKebabMenu() {
+    const toggle = document.getElementById('kebabToggle');
+    const menu   = document.getElementById('kebabMenu');
+    if (!toggle || !menu) return;
+
+    function setOpen(open) {
+      menu.setAttribute('aria-hidden', open ? 'false' : 'true');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setOpen(menu.getAttribute('aria-hidden') !== 'false');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!menu.contains(e.target) && !toggle.contains(e.target)) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menu.getAttribute('aria-hidden') === 'false') {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+  }
+
   // ========== INIT ==========
   function init() {
     initTheme();
+    initKebabMenu();
     initUserModal();
     initKeyboardShortcuts();
   }

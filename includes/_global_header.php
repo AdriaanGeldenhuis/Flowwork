@@ -6,14 +6,31 @@
 //   $headerScope  - BEM root class, e.g. 'fw-admin', 'fw-home', 'fw-proj'.
 //                   Defaults to 'fw-home'. Used to emit "<scope>__header" etc.
 //                   so each section can keep its own scoped CSS.
-//   $companyName  - string, falls back to $_SESSION['company_name'] or 'Your Company'
+//   $companyName  - string, falls back to a live lookup against
+//                   $_SESSION['company_id'] (so company switches show up).
 //   $firstName    - string, falls back to $_SESSION['user_first_name'] or 'Welcome'
 //   $companyLogo  - optional string URL to a company logo image (null = svg fallback)
 
 $scope       = isset($headerScope) && $headerScope ? $headerScope : 'fw-home';
-$companyName = isset($companyName) && $companyName !== '' ? $companyName : ($_SESSION['company_name'] ?? 'Your Company');
 $firstName   = isset($firstName)   && $firstName   !== '' ? $firstName   : ($_SESSION['user_first_name'] ?? 'Welcome');
 $companyLogo = $companyLogo ?? null;
+
+if (!isset($companyName) || $companyName === '') {
+    $companyName = 'Your Company';
+    if (!empty($_SESSION['company_id'])) {
+        try {
+            global $DB;
+            $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
+            $stmt->execute([(int)$_SESSION['company_id']]);
+            $name = $stmt->fetchColumn();
+            if ($name !== false && $name !== '') {
+                $companyName = $name;
+            }
+        } catch (Exception $e) {
+            error_log('Header company name lookup failed: ' . $e->getMessage());
+        }
+    }
+}
 
 // Multi-company switcher data — only meaningful when authenticated.
 $fwHeaderCompanies = [];

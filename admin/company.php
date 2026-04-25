@@ -61,9 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $companyId
         ]);
         
-        // Update session
-        $_SESSION['company_name'] = $name;
-        
         $success = 'Company profile updated successfully';
         
         // Refresh company data
