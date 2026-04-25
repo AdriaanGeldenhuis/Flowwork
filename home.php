@@ -104,9 +104,8 @@ $csrfToken     = Csrf::token();
                                     <?php endif; ?>
                                 </button>
                             <?php endforeach; ?>
+                            <div class="fw-home__kebab-divider" role="separator"></div>
                         <?php endif; ?>
-                        <a href="/admin/company_new.php" class="fw-home__kebab-item" role="menuitem">+ Add company</a>
-                        <div class="fw-home__kebab-divider" role="separator"></div>
                         <a href="/admin/" class="fw-home__kebab-item" role="menuitem">Admin/Settings</a>
                         <a href="/contact/" class="fw-home__kebab-item" role="menuitem">Contact Us</a>
                         <a href="/help/" class="fw-home__kebab-item" role="menuitem">Help</a>

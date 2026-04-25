@@ -96,9 +96,6 @@ if (!empty($_SESSION['user_id'])) {
                             <?php endif; ?>
                         </button>
                     <?php endforeach; ?>
-                <?php endif; ?>
-                <?php if (!empty($_SESSION['user_id'])): ?>
-                    <a href="/admin/company_new.php" class="<?= $scope ?>__kebab-item" role="menuitem">+ Add company</a>
                     <div class="<?= $scope ?>__kebab-divider" role="separator"></div>
                 <?php endif; ?>
                 <a href="/admin/" class="<?= $scope ?>__kebab-item" role="menuitem">Admin/Settings</a>
