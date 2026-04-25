@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/init.php';
+require_once __DIR__ . '/includes/business_types.php';
 
 if (!empty($_SESSION['user_id'])) redirect('/home.php');
 
@@ -42,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$agreeTerms) {
     $errors[] = 'You must agree to the Terms of Service and Privacy Policy.';
   }
-  if (!in_array($businessType, ['construction', 'postal', 'hairdresser'])) {
+  if (!in_array($businessType, fw_business_type_keys(), true)) {
     $businessType = 'construction';
   }
   if (!in_array($planId, [1, 2, 3])) {
@@ -352,9 +353,9 @@ $plans = $plansStmt->fetchAll();
           class="fw-auth__select" 
           required
         >
-          <option value="construction" <?= ($_POST['business_type'] ?? '') === 'construction' ? 'selected' : '' ?>>Construction</option>
-          <option value="postal" <?= ($_POST['business_type'] ?? '') === 'postal' ? 'selected' : '' ?>>Postal / Courier</option>
-          <option value="hairdresser" <?= ($_POST['business_type'] ?? '') === 'hairdresser' ? 'selected' : '' ?>>Hairdresser / Salon</option>
+          <?php foreach (fw_business_types() as $btKey => $btLabel): ?>
+            <option value="<?= htmlspecialchars($btKey) ?>" <?= (($_POST['business_type'] ?? '') === $btKey) ? 'selected' : '' ?>><?= htmlspecialchars($btLabel) ?></option>
+          <?php endforeach; ?>
         </select>
       </div>
 

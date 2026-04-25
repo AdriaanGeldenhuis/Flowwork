@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/../includes/business_types.php';
 
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
@@ -133,9 +134,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <div class="fw-admin__form-group">
                             <label class="fw-admin__label">Business Type</label>
                             <select name="business_type" class="fw-admin__select">
-                                <option value="construction" <?= $company['business_type'] === 'construction' ? 'selected' : '' ?>>Construction</option>
-                                <option value="postal" <?= $company['business_type'] === 'postal' ? 'selected' : '' ?>>Postal/Courier</option>
-                                <option value="hairdresser" <?= $company['business_type'] === 'hairdresser' ? 'selected' : '' ?>>Hairdresser/Salon</option>
+                                <?php foreach (fw_business_types() as $btKey => $btLabel): ?>
+                                    <option value="<?= htmlspecialchars($btKey) ?>" <?= $company['business_type'] === $btKey ? 'selected' : '' ?>><?= htmlspecialchars($btLabel) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
 
