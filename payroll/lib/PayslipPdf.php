@@ -144,10 +144,13 @@ class PayslipPdf
     {
         $this->flushPage();
 
-        $catalogId = count($this->objects) + 1;
-        $pagesId   = $catalogId + 1;
-        $fontF1Id  = $pagesId + 1;
-        $fontF2Id  = $fontF1Id + 1;
+        // Reserve IDs accounting for the page objects that get appended below.
+        // Layout: [content streams already added] [page objects] catalog pages F1 F2.
+        $afterPages = count($this->objects) + count($this->pages);
+        $catalogId  = $afterPages + 1;
+        $pagesId    = $catalogId + 1;
+        $fontF1Id   = $pagesId + 1;
+        $fontF2Id   = $fontF1Id + 1;
 
         $pageIds = [];
         foreach ($this->pages as $p) {
@@ -233,16 +236,8 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     $R = PayslipPdf::PAGE_W - PayslipPdf::MARGIN; // right margin x
     $W = $R - $L;                       // usable width
 
-    // ---------- Header band (full-bleed) ----------
-    $headerH = 130;
-    $pdf->fillRect(0, 0, PayslipPdf::PAGE_W, $headerH, $primary);
-
-    // Company name
-    $pdf->text($L, 26, $cName, 18, true, $textOnP);
-
-    // Address + contact lines
-    $y = 50;
-    $companyLines = array_filter([
+    // ---------- Header band (full-bleed, height grows to fit content) ----------
+    $companyLines = array_values(array_filter([
         $company['address_line1'] ?? '',
         $company['address_line2'] ?? '',
         trim(($company['city'] ?? '') . ' ' . ($company['postal'] ?? '')),
@@ -250,29 +245,41 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
         !empty($company['phone']) ? 'Tel: ' . $company['phone'] : '',
         $company['email'] ?? '',
         $company['website'] ?? '',
-    ]);
-    foreach ($companyLines as $line) {
-        if ($y > $headerH - 18) break;
-        $pdf->text($L, $y, $line, 8.5, false, $textOnP);
-        $y += 11;
-    }
-    $refs = array_filter([
+    ], fn($l) => trim((string)$l) !== ''));
+    $refs = array_values(array_filter([
         !empty($company['reg_number']) ? 'Reg: ' . $company['reg_number'] : '',
         !empty($company['tax_number']) ? 'PAYE Ref: ' . $company['tax_number'] : '',
         !empty($company['vat_number']) ? 'VAT: ' . $company['vat_number'] : '',
-    ]);
+    ]));
+
+    $nameTopY = 28;
+    $linesTopY = 52;
+    $lineGap = 12;
+    $leftEndY = $linesTopY + count($companyLines) * $lineGap + ($refs ? 16 : 0);
+    $rightEndY = 100;          // last right-side line baseline
+    $headerH = max(118, $leftEndY + 8, $rightEndY + 8);
+
+    $pdf->fillRect(0, 0, PayslipPdf::PAGE_W, $headerH, $primary);
+
+    // Right side: title, run number, period, pay date.
+    $pdf->textRight($R, 30, 'PAYSLIP', 24, true, $textOnP);
+    $pdf->textRight($R, 60, $run['run_number'] ?? '', 10, false, $textOnP);
+    $period = date('d M Y', strtotime($run['period_start'])) . ' – ' . date('d M Y', strtotime($run['period_end']));
+    $pdf->textRight($R, 76, $period, 9, false, $textOnP);
+    $pdf->textRight($R, 92, 'Pay Date: ' . date('d M Y', strtotime($run['pay_date'])), 9, false, $textOnP);
+
+    // Left side: company name + contact + refs.
+    $pdf->text($L, $nameTopY, $cName, 17, true, $textOnP);
+    $y = $linesTopY;
+    foreach ($companyLines as $line) {
+        $pdf->text($L, $y, $line, 8.5, false, $textOnP);
+        $y += $lineGap;
+    }
     if ($refs) {
         $pdf->text($L, $y + 2, implode('   |   ', $refs), 8, false, $textOnP);
     }
 
-    // Right side: PAYSLIP label, big title, run number, period
-    $pdf->textRight($R, 22, 'PAYSLIP', 9, true, $textOnP);
-    $pdf->textRight($R, 50, 'PAYSLIP', 26, true, $textOnP);
-    $pdf->textRight($R, 80, $run['run_number'] ?? '', 9.5, false, $textOnP);
-    $period = date('d M Y', strtotime($run['period_start'])) . ' – ' . date('d M Y', strtotime($run['period_end']));
-    $pdf->textRight($R, 96, $period, 9.5, false, $textOnP);
-
-    $pdf->setY($headerH + 22);
+    $pdf->setY($headerH + 24);
 
     // ---------- Employee details (4-column grid) ----------
     $kvCols = 4;
@@ -312,9 +319,7 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     // Header row
     $hdrY = $secY + 18;
     $pdf->text($earnX, $hdrY, 'DESCRIPTION', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW * 0.55, $hdrY, 'QTY', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW * 0.78, $hdrY, 'RATE', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW,        $hdrY, 'AMOUNT', 7, true, '#6b7280');
+    $pdf->textRight($earnX + $colW, $hdrY, 'AMOUNT', 7, true, '#6b7280');
     $pdf->text($dedX, $hdrY, 'DESCRIPTION', 7, true, '#6b7280');
     $pdf->textRight($dedX + $colW, $hdrY, 'AMOUNT', 7, true, '#6b7280');
     $pdf->line($earnX, $hdrY + 6, $earnX + $colW, $hdrY + 6, '#e5e7eb', 0.6);
@@ -327,18 +332,15 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     $eY = $rowY;
     foreach ($earningRows as $r) {
         $pdf->text($earnX, $eY, $r['name'], 9.5, false, '#1f2937');
-        $qtyStr = $r['qty'] == floor($r['qty']) ? (string)(int)$r['qty'] : number_format($r['qty'], 2);
-        $pdf->textRight($earnX + $colW * 0.55, $eY, $qtyStr, 9.5, false, '#1f2937');
-        $pdf->textRight($earnX + $colW * 0.78, $eY, $money($r['rate']), 9.5, false, '#1f2937');
         $pdf->textRight($earnX + $colW, $eY, $money($r['amt']), 9.5, false, '#1f2937');
         $eY += $rowH;
-        $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#f1f2f4', 0.3);
+        $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#e5e7eb', 0.4);
     }
     if ($reimb > 0) {
         $pdf->text($earnX, $eY, 'Reimbursements', 9.5, false, '#1f2937');
         $pdf->textRight($earnX + $colW, $eY, $money($reimb), 9.5, false, '#1f2937');
         $eY += $rowH;
-        $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#f1f2f4', 0.3);
+        $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#e5e7eb', 0.4);
     }
     // Gross + Taxable
     $pdf->line($earnX, $eY - 2, $earnX + $colW, $eY - 2, '#cbd5e1', 0.8);
@@ -364,7 +366,7 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
         $pdf->text($dedX, $dY, $r['name'], 9.5, false, '#1f2937');
         $pdf->textRight($dedX + $colW, $dY, $money($r['amt']), 9.5, false, '#1f2937');
         $dY += $rowH;
-        $pdf->line($dedX, $dY - 4, $dedX + $colW, $dY - 4, '#f1f2f4', 0.3);
+        $pdf->line($dedX, $dY - 4, $dedX + $colW, $dY - 4, '#e5e7eb', 0.4);
     }
     $pdf->line($dedX, $dY - 2, $dedX + $colW, $dY - 2, '#cbd5e1', 0.8);
     $dY += 4;
@@ -383,11 +385,11 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     $pdf->textRight($R - 18, $netY + 14, $money($net), 22, true, $textOnP);
     $pdf->setY($netY + $netH + 16);
 
-    // ---------- Employer Contributions (3-column grid in light box) ----------
+    // ---------- Employer Contributions (3-column grid) ----------
     $ecY = $pdf->getY();
-    $pdf->fillRect($L, $ecY, $W, 60, '#fafbfc');
-    $pdf->text($L + 14, $ecY + 12, 'EMPLOYER CONTRIBUTIONS', 8.5, true, '#6b7280');
-    $pdf->text($L + 14 + 165, $ecY + 12, '(not deducted from net pay)', 8, false, '#9ca3af');
+    $pdf->text($L, $ecY, 'EMPLOYER CONTRIBUTIONS', 9.5, true, $primary);
+    $pdf->textRight($R, $ecY + 1, '(not deducted from net pay)', 8, false, '#9ca3af');
+    $pdf->line($L, $ecY + 8, $R, $ecY + 8, '#e5e7eb', 0.6);
 
     $ec = [
         ['UIF (EMPLOYER 1%)',     $money($uifEmpr)],
@@ -397,19 +399,19 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     $ecCols = count($ec);
     $ecColW = $W / $ecCols;
     foreach ($ec as $i => $item) {
-        $x = $L + $i * $ecColW + 14;
-        $pdf->text($x, $ecY + 30, $item[0], 7.2, true, '#6b7280');
-        $pdf->text($x, $ecY + 42, $item[1], 11, true, '#111827');
+        $x = $L + $i * $ecColW;
+        $pdf->text($x, $ecY + 18, $item[0], 7.2, true, '#6b7280');
+        $pdf->text($x, $ecY + 30, $item[1], 11, true, '#111827');
     }
-    $pdf->setY($ecY + 60 + 16);
+    $pdf->setY($ecY + 50);
 
     // ---------- Year to Date table ----------
     $ytdY = $pdf->getY();
     $pdf->text($L, $ytdY, 'YEAR TO DATE (' . $taxYearLabel . ')', 9.5, true, $primary);
-    $hdrY = $ytdY + 16;
-    $pdf->fillRect($L, $hdrY - 4, $W, 18, '#fafbfc');
-    $pdf->text($L + 8, $hdrY + 6, 'ITEM', 7, true, '#6b7280');
-    $pdf->textRight($R - 8, $hdrY + 6, 'YTD AMOUNT', 7, true, '#6b7280');
+    $hdrY = $ytdY + 18;
+    $pdf->text($L, $hdrY, 'ITEM', 7, true, '#6b7280');
+    $pdf->textRight($R, $hdrY, 'YTD AMOUNT', 7, true, '#6b7280');
+    $pdf->line($L, $hdrY + 6, $R, $hdrY + 6, '#e5e7eb', 0.6);
 
     $ytdItems = [
         ['Gross Earnings',  $money((int)($ytd['gross']    ?? 0))],
@@ -419,17 +421,17 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
         ['UIF (Employer)',  $money((int)($ytd['uif_empr'] ?? 0))],
         ['SDL',             $money((int)($ytd['sdl']      ?? 0))],
     ];
-    $rY = $hdrY + 22;
+    $rY = $hdrY + 14;
     foreach ($ytdItems as $r) {
-        $pdf->text($L + 8, $rY, $r[0], 9.5, false, '#1f2937');
-        $pdf->textRight($R - 8, $rY, $r[1], 9.5, false, '#1f2937');
+        $pdf->text($L, $rY, $r[0], 9.5, false, '#1f2937');
+        $pdf->textRight($R, $rY, $r[1], 9.5, false, '#1f2937');
         $rY += 16;
-        $pdf->line($L, $rY - 4, $R, $rY - 4, '#f1f2f4', 0.3);
+        $pdf->line($L, $rY - 4, $R, $rY - 4, '#e5e7eb', 0.4);
     }
     $pdf->line($L, $rY - 2, $R, $rY - 2, '#cbd5e1', 0.8);
     $rY += 4;
-    $pdf->text($L + 8, $rY, 'Net Paid', 10, true, '#111827');
-    $pdf->textRight($R - 8, $rY, $money((int)($ytd['net'] ?? 0)), 10, true, '#111827');
+    $pdf->text($L, $rY, 'Net Paid', 10, true, '#111827');
+    $pdf->textRight($R, $rY, $money((int)($ytd['net'] ?? 0)), 10, true, '#111827');
     $pdf->setY($rY + 22);
 
     // ---------- Footer ----------
