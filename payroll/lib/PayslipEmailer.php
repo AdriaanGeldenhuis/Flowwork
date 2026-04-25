@@ -23,18 +23,21 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
 {
     $result = ['sent' => 0, 'skipped' => 0, 'failed' => 0, 'errors' => []];
 
+    // Prefer an SMTP-configured email_account; fall back to any email_account
+    // for the From address; final fallback is PHP's mail() with a derived
+    // From so payslips still go out even when nothing is configured.
     $stmt = $db->prepare(
         "SELECT account_id, email_address, smtp_server, smtp_port, smtp_encryption,
                 username, password_encrypted
          FROM email_accounts
-         WHERE company_id = ? AND smtp_server IS NOT NULL AND smtp_server <> ''
-         ORDER BY account_id ASC LIMIT 1"
+         WHERE company_id = ?
+         ORDER BY (smtp_server IS NOT NULL AND smtp_server <> '') DESC,
+                  account_id ASC
+         LIMIT 1"
     );
     $stmt->execute([$companyId]);
-    $acc = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$acc) {
-        throw new Exception('No SMTP-enabled email account configured for this company');
-    }
+    $acc = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $useSmtp = !empty($acc['smtp_server']);
 
     $stmtCo = $db->prepare("SELECT * FROM companies WHERE id = ?");
     $stmtCo->execute([$companyId]);
@@ -88,7 +91,13 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
            AND pr.status IN ('locked','posted')"
     );
 
-    $pass = SecureVault::decrypt($acc['password_encrypted'] ?? '');
+    $pass = $useSmtp ? SecureVault::decrypt($acc['password_encrypted'] ?? '') : '';
+
+    // Resolve the From address: configured account → company contact email →
+    // a derived noreply on the app's host.
+    $fromAddress = $acc['email_address']
+        ?? ($company['email'] ?? null)
+        ?? ('payroll@' . preg_replace('~^https?://(www\\.)?~', '', defined('APP_BASE_URL') ? APP_BASE_URL : 'flowwork.app'));
 
     $upd = $db->prepare(
         "UPDATE pay_run_employees
@@ -140,22 +149,28 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
         $filename = 'payslip-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $empName)
                   . '-' . date('Ymd', strtotime($run['pay_date'])) . '.pdf';
 
-        $send = SmtpSender::send([
-            'host'       => $acc['smtp_server'],
-            'port'       => (int)$acc['smtp_port'],
-            'encryption' => $acc['smtp_encryption'],
-            'username'   => $acc['username'],
-            'password'   => $pass,
-            'from'       => $acc['email_address'],
-            'to'         => [$to],
-            'subject'    => $subject,
-            'html'       => $coverHtml,
-            'attachments' => [[
-                'filename' => $filename,
-                'mime'     => 'application/pdf',
-                'content'  => $pdfBytes,
-            ]],
-        ]);
+        $attachments = [[
+            'filename' => $filename,
+            'mime'     => 'application/pdf',
+            'content'  => $pdfBytes,
+        ]];
+
+        if ($useSmtp) {
+            $send = SmtpSender::send([
+                'host'        => $acc['smtp_server'],
+                'port'        => (int)$acc['smtp_port'],
+                'encryption'  => $acc['smtp_encryption'],
+                'username'    => $acc['username'],
+                'password'    => $pass,
+                'from'        => $fromAddress,
+                'to'          => [$to],
+                'subject'     => $subject,
+                'html'        => $coverHtml,
+                'attachments' => $attachments,
+            ]);
+        } else {
+            $send = fw_payslip_mail_fallback($fromAddress, $to, $subject, $coverHtml, $attachments);
+        }
 
         if (!empty($send['ok'])) {
             $result['sent']++;
@@ -169,4 +184,42 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
     }
 
     return $result;
+}
+
+/**
+ * Send a multipart/mixed message via PHP's mail() when no SMTP account is
+ * configured. Returns the same shape as SmtpSender::send().
+ */
+function fw_payslip_mail_fallback(string $from, string $to, string $subject, string $html, array $attachments): array
+{
+    if (!function_exists('mail')) {
+        return ['ok' => false, 'error' => 'PHP mail() is not available on this host'];
+    }
+
+    $mixed = 'mx' . bin2hex(random_bytes(6));
+    $alt   = 'al' . bin2hex(random_bytes(6));
+    $text  = strip_tags($html);
+
+    $body  = "--$mixed\r\nContent-Type: multipart/alternative; boundary=\"$alt\"\r\n\r\n";
+    $body .= "--$alt\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n$text\r\n";
+    $body .= "--$alt\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n$html\r\n";
+    $body .= "--$alt--\r\n";
+    foreach ($attachments as $att) {
+        $fn   = $att['filename'] ?? 'file';
+        $mime = $att['mime'] ?? 'application/octet-stream';
+        $body .= "--$mixed\r\nContent-Type: $mime; name=\"$fn\"\r\n"
+              .  "Content-Transfer-Encoding: base64\r\n"
+              .  "Content-Disposition: attachment; filename=\"$fn\"\r\n\r\n"
+              .  chunk_split(base64_encode($att['content'] ?? '')) . "\r\n";
+    }
+    $body .= "--$mixed--\r\n";
+
+    $headers = "From: $from\r\n"
+             . "MIME-Version: 1.0\r\n"
+             . "Content-Type: multipart/mixed; boundary=\"$mixed\"\r\n";
+
+    $ok = @mail($to, $subject, $body, $headers);
+    return $ok
+        ? ['ok' => true, 'transport' => 'mail()']
+        : ['ok' => false, 'error' => 'mail() returned false'];
 }
