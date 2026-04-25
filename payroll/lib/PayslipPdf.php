@@ -144,10 +144,13 @@ class PayslipPdf
     {
         $this->flushPage();
 
-        $catalogId = count($this->objects) + 1;
-        $pagesId   = $catalogId + 1;
-        $fontF1Id  = $pagesId + 1;
-        $fontF2Id  = $fontF1Id + 1;
+        // Reserve IDs accounting for the page objects that get appended below.
+        // Layout: [content streams already added] [page objects] catalog pages F1 F2.
+        $afterPages = count($this->objects) + count($this->pages);
+        $catalogId  = $afterPages + 1;
+        $pagesId    = $catalogId + 1;
+        $fontF1Id   = $pagesId + 1;
+        $fontF2Id   = $fontF1Id + 1;
 
         $pageIds = [];
         foreach ($this->pages as $p) {
