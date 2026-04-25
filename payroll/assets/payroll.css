@@ -2423,3 +2423,33 @@ body.fw-modal-open {
     gap: var(--fw-spacing-sm);
   }
 }
+
+.fw-payroll__add-emp-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-md);
+  padding: 4px;
+}
+
+.fw-payroll__add-emp-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--fw-radius-sm);
+}
+
+.fw-payroll__add-emp-row:hover {
+  background: var(--fw-surface-alt, rgba(0, 0, 0, 0.04));
+}
+
+.fw-payroll__add-emp-name {
+  font-weight: 500;
+}
+
+.fw-payroll__add-emp-meta {
+  color: var(--fw-text-muted, #6b7280);
+  font-size: 13px;
+}

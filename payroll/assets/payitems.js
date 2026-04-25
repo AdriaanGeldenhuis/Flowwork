@@ -162,9 +162,11 @@
     savePayitem: function() {
       const form = document.getElementById('payitemForm');
       const formData = new FormData(form);
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
       fetch('/payroll/ajax/payitem_save.php', {
         method: 'POST',
+        headers: { 'X-CSRF-Token': csrfToken },
         body: formData
       })
       .then(res => res.json())

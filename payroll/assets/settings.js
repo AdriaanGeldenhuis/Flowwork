@@ -9,8 +9,11 @@
 
       msgDiv.innerHTML = '<div class="fw-payroll__loading">Saving settings...</div>';
 
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
       fetch('/payroll/ajax/settings_save.php', {
         method: 'POST',
+        headers: { 'X-CSRF-Token': csrfToken },
         body: formData
       })
       .then(res => res.json())

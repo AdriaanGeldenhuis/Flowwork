@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-PAYROLL-1');
+define('ASSET_VERSION', '2026-04-25-PAYROLL-ADDEMP2');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -68,6 +68,7 @@ $canPost = $run['status'] === 'locked';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($run['name']) ?> – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/payroll/assets/payroll.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body>
@@ -241,6 +242,28 @@ $canPost = $run['status'] === 'locked';
 
         </div>
 
+        <!-- Add Employees to Run Modal -->
+        <div class="fw-payroll__modal-overlay" id="addEmployeeModal" aria-hidden="true">
+            <div class="fw-payroll__modal">
+                <div class="fw-payroll__modal-header">
+                    <h3 class="fw-payroll__modal-title">Add Employees to Pay Run</h3>
+                    <button class="fw-payroll__modal-close" onclick="PayrollRunView.closeAddEmployeeModal()" aria-label="Close">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="fw-payroll__modal-body" id="addEmployeeModalBody">
+                    <div class="fw-payroll__loading">Loading employees...</div>
+                </div>
+                <div class="fw-payroll__modal-footer">
+                    <button type="button" class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollRunView.closeAddEmployeeModal()">Cancel</button>
+                    <button type="button" class="fw-payroll__btn fw-payroll__btn--primary" id="addEmployeeConfirmBtn" onclick="PayrollRunView.confirmAddEmployees()">Add Selected</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Employee Detail Modal -->
         <div class="fw-payroll__modal-overlay" id="employeeModal" aria-hidden="true">
             <div class="fw-payroll__modal fw-payroll__modal--large">
@@ -265,9 +288,9 @@ $canPost = $run['status'] === 'locked';
     </main>
 
     <script>
-        const RUN_ID = <?= $runId ?>;
-        const RUN_STATUS = '<?= $run['status'] ?>';
-        const CAN_EDIT = <?= $canEdit ? 'true' : 'false' ?>;
+        window.RUN_ID = <?= (int)$runId ?>;
+        window.RUN_STATUS = '<?= $run['status'] ?>';
+        window.CAN_EDIT = <?= $canEdit ? 'true' : 'false' ?>;
     </script>
     <script src="/payroll/assets/payroll.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/payroll/assets/run_view.js?v=<?= ASSET_VERSION ?>"></script>
