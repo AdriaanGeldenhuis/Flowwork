@@ -102,8 +102,8 @@ foreach ($employees as $emp) {
             <div id="psMessage" class="ps-message"></div>
             <div class="fw-payroll__action-bar">
                 <a class="fw-payroll__btn fw-payroll__btn--secondary" href="/payroll/run_view.php?id=<?= (int)$runId ?>">← Back to Run</a>
-                <button class="fw-payroll__btn fw-payroll__btn--primary" id="generateBtn" <?php if ($allGenerated) echo 'style="display:none"'; ?> onclick="generatePayslips()">
-                    🔄 Generate Payslips
+                <button class="fw-payroll__btn fw-payroll__btn--primary" id="generateBtn" onclick="generatePayslips()">
+                    🔄 <?= $allGenerated ? 'Re-generate Payslips' : 'Generate Payslips' ?>
                 </button>
                 <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="emailPayslips(false)">
                     📧 Email Pending
