@@ -100,9 +100,14 @@
       const msgDiv = document.getElementById('actionMessage');
       msgDiv.innerHTML = '<div class="fw-payroll__loading">Calculating payroll... This may take a moment.</div>';
 
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
       fetch('/payroll/ajax/run_calculate.php', {
         method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRF-Token': csrfToken
+        },
         body: 'run_id=' + this.runId
       })
       .then(res => res.json())
@@ -141,10 +146,14 @@
       if (!confirm('Post this pay run to Finance? This will create journal entries.')) return;
       const msgDiv = document.getElementById('actionMessage');
       msgDiv.innerHTML = '<div class="fw-payroll__loading">Posting to finance...</div>';
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
       // Send request to new endpoint that handles GL posting
       fetch('/payroll/ajax/run.post_gl.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRF-Token': csrfToken
+        },
         body: 'run_id=' + this.runId
       })
       .then(res => res.json())
@@ -166,9 +175,14 @@
       const msgDiv = document.getElementById('actionMessage');
       msgDiv.innerHTML = '<div class="fw-payroll__loading">Updating status...</div>';
 
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
       fetch('/payroll/ajax/run_update_status.php', {
         method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRF-Token': csrfToken
+        },
         body: 'run_id=' + this.runId + '&status=' + newStatus
       })
       .then(res => res.json())

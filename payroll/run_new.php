@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-01-21-PAYROLL-1');
+define('ASSET_VERSION', '2026-04-25-PAYROLL-CSRF');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
