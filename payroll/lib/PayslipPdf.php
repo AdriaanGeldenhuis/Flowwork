@@ -315,9 +315,7 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     // Header row
     $hdrY = $secY + 18;
     $pdf->text($earnX, $hdrY, 'DESCRIPTION', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW * 0.55, $hdrY, 'QTY', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW * 0.78, $hdrY, 'RATE', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW,        $hdrY, 'AMOUNT', 7, true, '#6b7280');
+    $pdf->textRight($earnX + $colW, $hdrY, 'AMOUNT', 7, true, '#6b7280');
     $pdf->text($dedX, $hdrY, 'DESCRIPTION', 7, true, '#6b7280');
     $pdf->textRight($dedX + $colW, $hdrY, 'AMOUNT', 7, true, '#6b7280');
     $pdf->line($earnX, $hdrY + 6, $earnX + $colW, $hdrY + 6, '#e5e7eb', 0.6);
@@ -330,9 +328,6 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     $eY = $rowY;
     foreach ($earningRows as $r) {
         $pdf->text($earnX, $eY, $r['name'], 9.5, false, '#1f2937');
-        $qtyStr = $r['qty'] == floor($r['qty']) ? (string)(int)$r['qty'] : number_format($r['qty'], 2);
-        $pdf->textRight($earnX + $colW * 0.55, $eY, $qtyStr, 9.5, false, '#1f2937');
-        $pdf->textRight($earnX + $colW * 0.78, $eY, $money($r['rate']), 9.5, false, '#1f2937');
         $pdf->textRight($earnX + $colW, $eY, $money($r['amt']), 9.5, false, '#1f2937');
         $eY += $rowH;
         $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#f1f2f4', 0.3);
