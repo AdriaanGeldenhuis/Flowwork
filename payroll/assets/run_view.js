@@ -73,11 +73,11 @@
                 <div class="fw-payroll__run-emp-no">${emp.employee_no}</div>
               </div>
             </div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${gross.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${paye.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${uif.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount">R ${deductions.toFixed(2)}</div>
-            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount fw-payroll__run-emp-net">R ${net.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="Gross">R ${gross.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="PAYE">R ${paye.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="UIF">R ${uif.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount" data-label="Deductions">R ${deductions.toFixed(2)}</div>
+            <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--amount fw-payroll__run-emp-net" data-label="Net Pay">R ${net.toFixed(2)}</div>
             <div class="fw-payroll__run-emp-col fw-payroll__run-emp-col--actions">
               <button class="fw-payroll__icon-btn" onclick="event.stopPropagation(); PayrollRunView.viewEmployee(${emp.employee_id})" title="View Details">
                 <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
