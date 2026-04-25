@@ -10,23 +10,27 @@
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/../includes/companies.php';
 
 // Asset version for cache busting
 define('ASSET_VERSION', '2025-10-07-1');
 
 // Fetch user data from session
 $firstName = $_SESSION['user_first_name'] ?? 'Welcome';
-$userId    = $_SESSION['user_id'];
-$companyId = $_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
+$companyId = (int)$_SESSION['company_id'];
 
-// Fetch company data for branding
-$stmt = $DB->prepare("SELECT c.name, c.business_type FROM companies c JOIN users u ON u.company_id = c.id WHERE u.id = ?");
-$stmt->execute([$userId]);
+// Fetch the active company (resolved by auth_gate, may differ from
+// users.company_id if the user has switched).
+$stmt = $DB->prepare("SELECT name, business_type FROM companies WHERE id = ?");
+$stmt->execute([$companyId]);
 $company = $stmt->fetch();
 
 $companyName   = $company['name'] ?? 'Your Company';
 $businessType  = $company['business_type'] ?? 'construction';
 $companyLogo   = null; // Placeholder for future logo upload support
+$userCompanies = fw_user_companies($userId);
+$csrfToken     = Csrf::token();
 
 // --------- Project & Task Metrics ---------
 try {
@@ -72,6 +76,7 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flowwork Dashboard – <?= htmlspecialchars($companyName) ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <link rel="stylesheet" href="/home/dashboard.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-dashboard" data-theme="light">
@@ -145,6 +150,25 @@ try {
                         </svg>
                     </button>
                     <nav class="fw-dashboard__kebab-menu" id="kebabMenu" role="menu" aria-hidden="true">
+                        <?php if (count($userCompanies) > 1): ?>
+                            <div class="fw-dashboard__kebab-section-label">Switch company</div>
+                            <?php foreach ($userCompanies as $uc): ?>
+                                <?php $isActive = ((int)$uc['id'] === $companyId); ?>
+                                <button
+                                    type="button"
+                                    class="fw-dashboard__kebab-item fw-dashboard__kebab-item--company<?= $isActive ? ' is-active' : '' ?>"
+                                    role="menuitem"
+                                    data-fw-switch-company="<?= (int)$uc['id'] ?>"
+                                    <?= $isActive ? 'aria-current="true" disabled' : '' ?>
+                                >
+                                    <span class="fw-dashboard__kebab-item-name"><?= htmlspecialchars($uc['name']) ?></span>
+                                    <?php if ($isActive): ?>
+                                        <span class="fw-dashboard__kebab-item-badge" aria-hidden="true">&#10003;</span>
+                                    <?php endif; ?>
+                                </button>
+                            <?php endforeach; ?>
+                            <div class="fw-dashboard__kebab-divider" role="separator"></div>
+                        <?php endif; ?>
                         <a href="/admin/" class="fw-dashboard__kebab-item" role="menuitem">Admin/Settings</a>
                         <a href="/contact/" class="fw-dashboard__kebab-item" role="menuitem">Contact Us</a>
                         <a href="/help/" class="fw-dashboard__kebab-item" role="menuitem">Help</a>
@@ -239,5 +263,6 @@ try {
         window.FW_BASE_URL = '';
     </script>
     <script src="/home/dashboard.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/shared/company_switcher.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

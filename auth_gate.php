@@ -1,6 +1,7 @@
 <?php
 // auth_gate.php
 require_once __DIR__ . '/init.php';
+require_once __DIR__ . '/includes/companies.php';
 
 if (empty($_SESSION['user_id'])) {
   // Try auto-login via "Remember Me" cookie
@@ -91,8 +92,13 @@ if ($user['status'] !== 'active') {
   redirect('/login.php?msg=account_suspended');
 }
 
-// Set company context
-$_SESSION['company_id'] = (int)$user['company_id'];
+// Set company context — honour an active-company switch if the user
+// still has access via user_companies, otherwise fall back to their
+// primary company on users.company_id.
+$_SESSION['company_id'] = fw_resolve_active_company_id(
+    (int)$_SESSION['user_id'],
+    (int)$user['company_id']
+);
 
 // CSRF protection for state-changing requests
 if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE', 'PATCH'])) {
