@@ -107,6 +107,17 @@ try {
         } catch (Exception $psEx) {
             error_log('Payslip generation error: ' . $psEx->getMessage());
         }
+
+        // Best-effort: email the freshly generated payslips. Failures are
+        // logged but never block the status change — workers without an
+        // email address or with SMTP problems can be retried from the
+        // payslips page.
+        try {
+            require_once __DIR__ . '/../lib/PayslipEmailer.php';
+            emailPayslips($DB, (int)$companyId, (int)$runId, true);
+        } catch (Exception $emEx) {
+            error_log('Payslip email error: ' . $emEx->getMessage());
+        }
     }
 
     // Handle auto-post logic: if locked and auto-post is enabled

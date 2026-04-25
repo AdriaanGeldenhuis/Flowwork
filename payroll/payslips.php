@@ -101,11 +101,18 @@ foreach ($employees as $emp) {
 
             <div id="psMessage" class="ps-message"></div>
             <div class="fw-payroll__action-bar">
+                <a class="fw-payroll__btn fw-payroll__btn--secondary" href="/payroll/run_view.php?id=<?= (int)$runId ?>">← Back to Run</a>
                 <button class="fw-payroll__btn fw-payroll__btn--primary" id="generateBtn" <?php if ($allGenerated) echo 'style="display:none"'; ?> onclick="generatePayslips()">
                     🔄 Generate Payslips
                 </button>
+                <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="emailPayslips(false)">
+                    📧 Email Pending
+                </button>
+                <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="emailPayslips(true)">
+                    📧 Re-send All
+                </button>
                 <?php if ($allGenerated): ?>
-                    <div class="fw-payroll__alert fw-payroll__alert--success">All payslips generated.</div>
+                    <div class="fw-payroll__alert fw-payroll__alert--success" style="margin-left:auto">All payslips generated.</div>
                 <?php endif; ?>
             </div>
 
@@ -116,6 +123,7 @@ foreach ($employees as $emp) {
                         <th>Employee No.</th>
                         <th>Net Pay</th>
                         <th>Payslip</th>
+                        <th>Emailed</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -136,6 +144,15 @@ foreach ($employees as $emp) {
                                 <span style="color:#888">Not generated</span>
                             <?php endif; ?>
                         </td>
+                        <td>
+                            <?php if (!empty($emp['payslip_emailed_at'])): ?>
+                                <span style="color:#10b981" title="<?= htmlspecialchars($emp['payslip_emailed_at']) ?>">✓ Sent</span>
+                            <?php elseif (!empty($emp['payslip_email_error'])): ?>
+                                <span style="color:#ef4444" title="<?= htmlspecialchars($emp['payslip_email_error']) ?>">⚠ Failed</span>
+                            <?php else: ?>
+                                <span style="color:#888">—</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -148,6 +165,43 @@ foreach ($employees as $emp) {
 </main>
 
 <script>
+function emailPayslips(force) {
+    const label = force
+        ? 'Re-send payslips to ALL employees (including those already emailed)?'
+        : 'Email payslips to employees who have not been emailed yet?';
+    if (!confirm(label)) return;
+
+    const msg = document.getElementById('psMessage');
+    msg.className = 'ps-message';
+    msg.textContent = 'Emailing payslips...';
+
+    const params = new URLSearchParams({ run_id: '<?= (int)$runId ?>' });
+    if (force) params.append('force', '1');
+
+    fetch('/payroll/ajax/payslip_email.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                msg.className = 'ps-message success';
+                let txt = 'Sent ' + data.sent + ', skipped ' + data.skipped + ', failed ' + data.failed + '.';
+                if (data.errors && data.errors.length) txt += '\n\n' + data.errors.join('\n');
+                msg.textContent = txt;
+                setTimeout(() => location.reload(), 2500);
+            } else {
+                msg.className = 'ps-message error';
+                msg.textContent = data.error || 'Email failed';
+            }
+        })
+        .catch(err => {
+            msg.className = 'ps-message error';
+            msg.textContent = 'Network error';
+        });
+}
+
 function generatePayslips() {
     const msg = document.getElementById('psMessage');
     const btn = document.getElementById('generateBtn');

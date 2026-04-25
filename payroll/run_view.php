@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-25-PAYROLL-RUNVIEW-CSS');
+define('ASSET_VERSION', '2026-04-25-PAYROLL-PAYSLIPS-EMAIL');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -134,6 +134,7 @@ $canPost = $run['status'] === 'locked';
                             <a href="/payroll/employees.php" class="fw-payroll__kebab-item">Employees</a>
                             <a href="/payroll/payitems.php" class="fw-payroll__kebab-item">Pay Items</a>
                             <a href="/payroll/runs.php" class="fw-payroll__kebab-item">Pay Runs</a>
+                            <a href="/payroll/payslips.php?run_id=<?= (int)$runId ?>" class="fw-payroll__kebab-item">Payslips</a>
                             <a href="/payroll/reports.php" class="fw-payroll__kebab-item">Reports</a>
                             <a href="/payroll/settings.php" class="fw-payroll__kebab-item">Settings</a>
                         </nav>
@@ -222,6 +223,15 @@ $canPost = $run['status'] === 'locked';
                         </button>
                         <button class="fw-payroll__btn fw-payroll__btn--primary" onclick="PayrollRunView.exportBank()">
                             💳 Export Bank File
+                        </button>
+                    <?php endif; ?>
+
+                    <?php if (in_array($run['status'], ['locked', 'posted'], true)): ?>
+                        <a class="fw-payroll__btn fw-payroll__btn--secondary" href="/payroll/payslips.php?run_id=<?= (int)$runId ?>">
+                            📄 View Payslips
+                        </a>
+                        <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollRunView.emailPayslips()">
+                            📧 Email Payslips
                         </button>
                     <?php endif; ?>
                 </div>
