@@ -69,8 +69,11 @@
       const msgDiv = document.getElementById('formMessage');
       msgDiv.innerHTML = '<div class="fw-payroll__loading">Creating pay run...</div>';
 
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
       fetch('/payroll/ajax/run_create.php', {
         method: 'POST',
+        headers: { 'X-CSRF-Token': csrfToken },
         body: formData
       })
       .then(res => res.json())
