@@ -12569,7 +12569,14 @@ INSERT INTO `crm_regions` (`id`, `name`) VALUES
 (7, 'Mpumalanga'),
 (8, 'North West'),
 (9, 'Northern Cape'),
-(2, 'Western Cape');
+(2, 'Western Cape'),
+(10, 'Botswana'),
+(11, 'Lesotho'),
+(12, 'Mozambique'),
+(13, 'Namibia'),
+(14, 'eSwatini'),
+(15, 'Zimbabwe'),
+(16, 'Zambia');
 
 -- --------------------------------------------------------
 
@@ -17135,7 +17142,7 @@ ALTER TABLE `crm_opportunities`
 -- AUTO_INCREMENT for table `crm_regions`
 --
 ALTER TABLE `crm_regions`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT for table `crm_tags`

@@ -1737,6 +1737,17 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+select.fw-crm__input option {
+  background: #ffffff;
+  color: #1a1d29;
+  padding: 8px 12px;
+}
+
+.fw-crm[data-theme="dark"] select.fw-crm__input option {
+  background: #1a1d29;
+  color: #e7ecf2;
+}
+
 .fw-crm__input::placeholder,
 .fw-crm__textarea::placeholder {
   color: #9ca3af;
