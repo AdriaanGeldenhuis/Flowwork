@@ -8,6 +8,8 @@
 
 require_once __DIR__ . '/../../mail/lib/SecureVault.php';
 require_once __DIR__ . '/../../mail/lib/SmtpSender.php';
+require_once __DIR__ . '/PayslipGenerator.php'; // for fw_payslip_tax_year_start
+require_once __DIR__ . '/PayslipPdf.php';
 
 /**
  * Email payslips for every employee in a run that has an email address and a
@@ -34,21 +36,57 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
         throw new Exception('No SMTP-enabled email account configured for this company');
     }
 
-    $stmtCo = $db->prepare("SELECT name FROM companies WHERE id = ?");
+    $stmtCo = $db->prepare("SELECT * FROM companies WHERE id = ?");
     $stmtCo->execute([$companyId]);
-    $companyName = $stmtCo->fetchColumn() ?: 'Payroll';
+    $company = $stmtCo->fetch(PDO::FETCH_ASSOC) ?: ['name' => 'Payroll'];
+    $companyName = $company['name'] ?? 'Payroll';
+
+    $stmtRun = $db->prepare("SELECT * FROM pay_runs WHERE id = ? AND company_id = ?");
+    $stmtRun->execute([$runId, $companyId]);
+    $run = $stmtRun->fetch(PDO::FETCH_ASSOC);
+    if (!$run) {
+        throw new Exception('Pay run not found');
+    }
+    $taxYearStart = fw_payslip_tax_year_start($run['pay_date']);
 
     $stmt = $db->prepare(
-        "SELECT pre.id, pre.employee_id, pre.payslip_path, pre.payslip_emailed_at,
-                pre.net_cents, e.first_name, e.last_name, e.email,
-                pr.name AS run_name, pr.period_start, pr.period_end, pr.pay_date
+        "SELECT pre.*, e.first_name, e.last_name, e.employee_no, e.id_number,
+                e.tax_number, e.hire_date, e.pay_frequency, e.bank_name,
+                e.bank_account_no, e.branch_code, e.email
          FROM pay_run_employees pre
          JOIN employees e ON e.id = pre.employee_id
-         JOIN pay_runs pr ON pr.id = pre.run_id
          WHERE pre.run_id = ? AND pre.company_id = ?"
     );
     $stmt->execute([$runId, $companyId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $linesStmt = $db->prepare(
+        "SELECT prl.qty, prl.rate_cents, prl.amount_cents, prl.description,
+                pi.name AS item_name, pi.code AS item_code, pi.type
+         FROM pay_run_lines prl
+         LEFT JOIN payitems pi ON pi.id = prl.payitem_id
+         WHERE prl.run_id = ? AND prl.employee_id = ? AND prl.company_id = ?
+         ORDER BY pi.type ASC, prl.id ASC"
+    );
+
+    $ytdStmt = $db->prepare(
+        "SELECT
+            COALESCE(SUM(pre.gross_cents), 0)            AS gross,
+            COALESCE(SUM(pre.taxable_income_cents), 0)   AS taxable,
+            COALESCE(SUM(pre.paye_cents), 0)             AS paye,
+            COALESCE(SUM(pre.uif_employee_cents), 0)     AS uif_emp,
+            COALESCE(SUM(pre.uif_employer_cents), 0)     AS uif_empr,
+            COALESCE(SUM(pre.sdl_cents), 0)              AS sdl,
+            COALESCE(SUM(pre.other_deductions_cents), 0) AS other_ded,
+            COALESCE(SUM(pre.net_cents), 0)              AS net
+         FROM pay_run_employees pre
+         JOIN pay_runs pr ON pr.id = pre.run_id
+         WHERE pre.company_id = ?
+           AND pre.employee_id = ?
+           AND pr.pay_date >= ?
+           AND pr.pay_date <= ?
+           AND pr.status IN ('locked','posted')"
+    );
 
     $pass = SecureVault::decrypt($acc['password_encrypted'] ?? '');
 
@@ -62,7 +100,7 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
         $empName = trim($row['first_name'] . ' ' . $row['last_name']);
         $to      = trim((string)$row['email']);
 
-        if ($to === '' || empty($row['payslip_path'])) {
+        if ($to === '') {
             $result['skipped']++;
             continue;
         }
@@ -71,24 +109,36 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
             continue;
         }
 
-        $absPath = realpath(__DIR__ . '/../..' . $row['payslip_path']);
-        if (!$absPath || !is_file($absPath)) {
+        try {
+            $linesStmt->execute([$runId, (int)$row['employee_id'], $companyId]);
+            $lines = $linesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $ytdStmt->execute([$companyId, (int)$row['employee_id'], $taxYearStart, $run['pay_date']]);
+            $ytd = $ytdStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+            $pdfBytes = renderPayslipPdf($company, $run, $row, $lines, $ytd, $taxYearStart);
+        } catch (Exception $e) {
             $result['failed']++;
-            $result['errors'][] = "$empName: payslip file not found";
-            $upd->execute([null, 'payslip file not found', (int)$row['id']]);
-            continue;
-        }
-        $body = file_get_contents($absPath);
-        if ($body === false) {
-            $result['failed']++;
-            $result['errors'][] = "$empName: could not read payslip";
-            $upd->execute([null, 'could not read payslip', (int)$row['id']]);
+            $result['errors'][] = "$empName: " . $e->getMessage();
+            $upd->execute([null, substr($e->getMessage(), 0, 255), (int)$row['id']]);
             continue;
         }
 
-        $subject = 'Payslip: ' . $row['run_name']
-                 . ' (' . date('d M Y', strtotime($row['period_start']))
-                 . ' – ' . date('d M Y', strtotime($row['period_end'])) . ')';
+        $periodLabel = date('d M Y', strtotime($run['period_start']))
+                     . ' – ' . date('d M Y', strtotime($run['period_end']));
+        $subject = 'Payslip: ' . $run['name'] . ' (' . $periodLabel . ')';
+
+        $coverHtml = '<p>Hi ' . htmlspecialchars($row['first_name'])
+                   . ',</p><p>Please find your payslip attached for <strong>'
+                   . htmlspecialchars($run['name']) . '</strong> ('
+                   . htmlspecialchars($periodLabel) . ').</p>'
+                   . '<p>Pay date: <strong>' . htmlspecialchars(date('d M Y', strtotime($run['pay_date'])))
+                   . '</strong><br>Net pay: <strong>R '
+                   . number_format(((int)$row['net_cents']) / 100, 2, '.', ' ')
+                   . '</strong></p><p>Regards,<br>' . htmlspecialchars($companyName) . '</p>';
+
+        $filename = 'payslip-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $empName)
+                  . '-' . date('Ymd', strtotime($run['pay_date'])) . '.pdf';
 
         $send = SmtpSender::send([
             'host'       => $acc['smtp_server'],
@@ -99,7 +149,12 @@ function emailPayslips(PDO $db, int $companyId, int $runId, bool $onlyMissing = 
             'from'       => $acc['email_address'],
             'to'         => [$to],
             'subject'    => $subject,
-            'html'       => $body,
+            'html'       => $coverHtml,
+            'attachments' => [[
+                'filename' => $filename,
+                'mime'     => 'application/pdf',
+                'content'  => $pdfBytes,
+            ]],
         ]);
 
         if (!empty($send['ok'])) {

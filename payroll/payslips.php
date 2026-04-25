@@ -52,7 +52,8 @@ foreach ($employees as $emp) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payslips – <?= htmlspecialchars($run['name']) ?></title>
-    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=2025-01-21-PAYROLL-1">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=2026-04-25-PAYROLL-PAYSLIPS-PDF">
     <style>
         .ps-message { margin: 16px 0; }
         .ps-message.success { color: green; }
@@ -178,9 +179,13 @@ function emailPayslips(force) {
     const params = new URLSearchParams({ run_id: '<?= (int)$runId ?>' });
     if (force) params.append('force', '1');
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
     fetch('/payroll/ajax/payslip_email.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': csrfToken
+        },
         body: params.toString()
     })
         .then(res => res.json())
@@ -208,7 +213,7 @@ function generatePayslips() {
     msg.className = 'ps-message';
     msg.textContent = 'Generating payslips...';
     btn.disabled = true;
-    fetch('/payroll/ajax/payslip_generate.php?run_id=<?= $runId ?>')
+    fetch('/payroll/ajax/payslip_generate.php?run_id=<?= $runId ?>', { method: 'GET' })
         .then(res => res.json())
         .then(data => {
             if (data.ok) {
