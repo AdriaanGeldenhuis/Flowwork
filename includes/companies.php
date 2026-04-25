@@ -39,6 +39,61 @@ function fw_user_can_access_company(int $userId, int $companyId): bool
     return (bool)$stmt->fetchColumn();
 }
 
+// Role for the user inside a specific company. Prefers the per-tenant
+// role on user_companies (the multi-company source of truth) and falls
+// back to users.role for legacy users that pre-date user_companies.
+function fw_user_role_in_company(int $userId, int $companyId): ?string
+{
+    global $DB;
+
+    $stmt = $DB->prepare(
+        "SELECT role FROM user_companies WHERE user_id = ? AND company_id = ?"
+    );
+    $stmt->execute([$userId, $companyId]);
+    $role = $stmt->fetchColumn();
+    if ($role !== false) {
+        return (string)$role;
+    }
+
+    $stmt = $DB->prepare(
+        "SELECT role FROM users WHERE id = ? AND company_id = ?"
+    );
+    $stmt->execute([$userId, $companyId]);
+    $role = $stmt->fetchColumn();
+    return $role !== false ? (string)$role : null;
+}
+
+function fw_active_user_is_admin(): bool
+{
+    if (empty($_SESSION['user_id']) || empty($_SESSION['company_id'])) {
+        return false;
+    }
+    $role = fw_user_role_in_company(
+        (int)$_SESSION['user_id'],
+        (int)$_SESSION['company_id']
+    );
+    return $role === 'admin';
+}
+
+// Drop-in replacement for the old "SELECT role FROM users ..." block at
+// the top of every admin page. $format='json' emits a JSON 403 instead
+// of a HTML one, for AJAX endpoints.
+function fw_require_admin(string $format = 'html'): void
+{
+    if (fw_active_user_is_admin()) {
+        return;
+    }
+
+    http_response_code(403);
+    if ($format === 'json') {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'success' => false, 'error' => 'Admin access required']);
+    } else {
+        echo 'Access denied - Admin only';
+    }
+    exit;
+}
+
 function fw_resolve_active_company_id(int $userId, int $defaultCompanyId): int
 {
     $candidate = (int)($_SESSION['active_company_id'] ?? 0);

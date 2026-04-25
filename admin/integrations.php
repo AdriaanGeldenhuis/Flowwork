@@ -5,15 +5,8 @@ require_once __DIR__ . '/../auth_gate.php';
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
-// Check admin access
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-
-if ($user['role'] !== 'admin') {
-    http_response_code(403);
-    die('Access denied - Admin only');
-}
+require_once __DIR__ . '/../includes/companies.php';
+fw_require_admin();
 
 // Fetch company with Yoco keys
 $stmt = $DB->prepare("SELECT * FROM companies WHERE id = ?");

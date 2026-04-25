@@ -3,6 +3,8 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../includes/companies.php';
 
+fw_require_admin();
+
 $userId          = (int)$_SESSION['user_id'];
 $activeCompanyId = (int)$_SESSION['company_id'];
 $companies       = fw_user_companies($userId);
@@ -18,10 +20,16 @@ include __DIR__ . '/_layout_top.php';
                     <h1 class="fw-admin__page-title">Companies</h1>
                     <p class="fw-admin__page-subtitle">Switch between, or add another, company tied to your account (<?= (int)$count ?> of <?= (int)$limit['max'] ?> on the <?= htmlspecialchars($limit['plan']) ?> plan).</p>
                 </div>
-                <a href="/admin/company_new.php" class="fw-admin__btn fw-admin__btn--primary <?= $atLimit ? 'is-disabled' : '' ?>"
-                   <?= $atLimit ? 'aria-disabled="true"' : '' ?>>
-                    + Add Company
-                </a>
+                <?php if ($atLimit): ?>
+                    <button type="button" class="fw-admin__btn fw-admin__btn--primary" disabled
+                            title="Plan limit reached. Upgrade to add more companies.">
+                        + Add Company
+                    </button>
+                <?php else: ?>
+                    <a href="/admin/company_new.php" class="fw-admin__btn fw-admin__btn--primary">
+                        + Add Company
+                    </a>
+                <?php endif; ?>
             </header>
 
             <?php if (!empty($_GET['created'])): ?>
@@ -31,6 +39,7 @@ include __DIR__ . '/_layout_top.php';
             <?php endif; ?>
 
             <div class="fw-admin__card">
+                <div class="fw-admin__table-wrapper">
                 <table class="fw-admin__table">
                     <thead>
                         <tr>
@@ -67,6 +76,7 @@ include __DIR__ . '/_layout_top.php';
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
             </div>
 <?php include __DIR__ . '/_layout_bottom.php'; ?>
 <script src="/shared/company_switcher.js?v=2026-04-25-1"></script>

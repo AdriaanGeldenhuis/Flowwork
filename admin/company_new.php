@@ -4,6 +4,8 @@ require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../includes/business_types.php';
 require_once __DIR__ . '/../includes/companies.php';
 
+fw_require_admin();
+
 $userId = (int)$_SESSION['user_id'];
 $error  = '';
 $prefill = [
