@@ -74,10 +74,6 @@ $upcomingRuns = $stmt->fetchAll();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payroll – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="/payroll/assets/payroll.css?v=<?= ASSET_VERSION ?>">
-    <!-- Overview styles for the payroll dashboard -->
-    <link rel="stylesheet" href="/payroll/assets/overview.css?v=<?= ASSET_VERSION ?>">
-    <!-- Modernised overview styling to match CRM aesthetics -->
-    <link rel="stylesheet" href="/payroll/css/payroll.overview.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body>
     <main class="fw-payroll">
