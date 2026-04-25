@@ -201,8 +201,108 @@
     },
 
     addEmployee: function() {
-      alert('Add Employee feature coming in next batch!');
-      // Will implement: modal to select employees not yet in run
+      const modal = document.getElementById('addEmployeeModal');
+      const body = document.getElementById('addEmployeeModalBody');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      body.innerHTML = '<div class="fw-payroll__loading">Loading employees...</div>';
+
+      fetch('/payroll/ajax/run_employees_available.php?run_id=' + this.runId)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.ok) {
+            body.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + (data.error || 'Load failed') + '</div>';
+            return;
+          }
+
+          if (data.employees.length === 0) {
+            body.innerHTML = '<div class="fw-payroll__empty-state">No active ' + data.frequency + ' employees available to add.</div>';
+            return;
+          }
+
+          let html = `
+            <p class="fw-payroll__page-subtitle" style="margin-bottom:12px">
+              Showing active <strong>${data.frequency}</strong> employees not yet in this run.
+            </p>
+            <label class="fw-payroll__checkbox-wrapper" style="margin-bottom:12px;font-weight:600">
+              <input type="checkbox" class="fw-payroll__checkbox" id="addEmpSelectAll" onchange="PayrollRunView.toggleAllAvailable(this.checked)">
+              Select all
+            </label>
+            <div class="fw-payroll__add-emp-list">
+          `;
+
+          data.employees.forEach(emp => {
+            const salary = (parseFloat(emp.base_salary_cents || 0) / 100).toFixed(2);
+            html += `
+              <label class="fw-payroll__checkbox-wrapper fw-payroll__add-emp-row">
+                <input type="checkbox" class="fw-payroll__checkbox fw-payroll__add-emp-checkbox" value="${emp.id}">
+                <span class="fw-payroll__add-emp-name">${emp.first_name} ${emp.last_name}</span>
+                <span class="fw-payroll__add-emp-meta">${emp.employee_no} &middot; R ${salary}</span>
+              </label>
+            `;
+          });
+
+          html += '</div>';
+          body.innerHTML = html;
+        })
+        .catch(err => {
+          body.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">Network error</div>';
+          console.error(err);
+        });
+    },
+
+    toggleAllAvailable: function(checked) {
+      document.querySelectorAll('.fw-payroll__add-emp-checkbox').forEach(cb => {
+        cb.checked = checked;
+      });
+    },
+
+    closeAddEmployeeModal: function() {
+      document.getElementById('addEmployeeModal').setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    },
+
+    confirmAddEmployees: function() {
+      const checked = Array.from(document.querySelectorAll('.fw-payroll__add-emp-checkbox:checked'));
+      if (checked.length === 0) {
+        alert('Select at least one employee to add.');
+        return;
+      }
+
+      const btn = document.getElementById('addEmployeeConfirmBtn');
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+      const params = new URLSearchParams();
+      params.append('run_id', this.runId);
+      checked.forEach(cb => params.append('employee_ids[]', cb.value));
+
+      fetch('/payroll/ajax/run_employee_add.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-CSRF-Token': csrfToken
+        },
+        body: params.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        btn.disabled = false;
+        btn.textContent = 'Add Selected';
+        if (data.ok) {
+          this.closeAddEmployeeModal();
+          location.reload();
+        } else {
+          alert(data.error || 'Add failed');
+        }
+      })
+      .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Add Selected';
+        alert('Network error');
+        console.error(err);
+      });
     },
 
     viewEmployee: function(employeeId) {

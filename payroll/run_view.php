@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-25-PAYROLL-CSRF');
+define('ASSET_VERSION', '2026-04-25-PAYROLL-ADDEMP');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -240,6 +240,28 @@ $canPost = $run['status'] === 'locked';
                 <span id="themeIndicator">Theme: Light</span>
             </footer>
 
+        </div>
+
+        <!-- Add Employees to Run Modal -->
+        <div class="fw-payroll__modal-overlay" id="addEmployeeModal" aria-hidden="true">
+            <div class="fw-payroll__modal">
+                <div class="fw-payroll__modal-header">
+                    <h3 class="fw-payroll__modal-title">Add Employees to Pay Run</h3>
+                    <button class="fw-payroll__modal-close" onclick="PayrollRunView.closeAddEmployeeModal()" aria-label="Close">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="fw-payroll__modal-body" id="addEmployeeModalBody">
+                    <div class="fw-payroll__loading">Loading employees...</div>
+                </div>
+                <div class="fw-payroll__modal-footer">
+                    <button type="button" class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollRunView.closeAddEmployeeModal()">Cancel</button>
+                    <button type="button" class="fw-payroll__btn fw-payroll__btn--primary" id="addEmployeeConfirmBtn" onclick="PayrollRunView.confirmAddEmployees()">Add Selected</button>
+                </div>
+            </div>
         </div>
 
         <!-- Employee Detail Modal -->
