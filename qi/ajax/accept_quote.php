@@ -56,13 +56,33 @@ try {
 
     $update = $DB->prepare("
         UPDATE quotes
-           SET status = 'accepted', accepted_at = NOW(), accepted_ip = ?,
+           SET status = 'accepted', accepted_at = NOW(), accepted_by_ip = ?,
                declined_at = NULL, declined_ip = NULL, updated_at = NOW()
          WHERE id = ?
     ");
     $update->execute([$ipAddress, $quote['id']]);
 
     $DB->commit();
+
+    $invoiceId = null;
+    $invoiceNumber = null;
+    try {
+        require_once __DIR__ . '/../lib/QuoteConverter.php';
+        $convCompanyId = (int)$quote['company_id'];
+        $convUserId = (int)($_SESSION['user_id'] ?? 0);
+        if (!$convUserId) {
+            // Public token path: fall back to the quote creator so created_by is populated.
+            $stmtCb = $DB->prepare("SELECT created_by FROM quotes WHERE id = ?");
+            $stmtCb->execute([$quote['id']]);
+            $convUserId = (int)($stmtCb->fetchColumn() ?: 0);
+        }
+        $converter = new QuoteConverter($DB);
+        $convResult = $converter->convert((int)$quote['id'], $convCompanyId, $convUserId);
+        $invoiceId = $convResult['invoice_id'];
+        $invoiceNumber = $convResult['invoice_number'];
+    } catch (Exception $convEx) {
+        error_log('Auto invoice from accept failed: ' . $convEx->getMessage());
+    }
 
     try {
         require_once __DIR__ . '/../services/Mailer.php';
@@ -86,7 +106,12 @@ try {
         error_log('Accept quote notification email failed: ' . $mailEx->getMessage());
     }
 
-    echo json_encode(['ok' => true, 'message' => 'Quote accepted successfully']);
+    echo json_encode([
+        'ok' => true,
+        'message' => 'Quote accepted successfully',
+        'invoice_id' => $invoiceId,
+        'invoice_number' => $invoiceNumber,
+    ]);
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();
     error_log('Accept quote error: ' . $e->getMessage());
