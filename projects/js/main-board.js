@@ -468,8 +468,8 @@ window.BoardApp.showBoardMembers = function() {
         <select id="memberRoleSelect" class="fw-select">
           <option value="viewer">Viewer</option>
           <option value="member">Member</option>
-          <option value="editor">Editor</option>
-          <option value="admin">Admin</option>
+          <option value="manager">Manager</option>
+          <option value="owner">Owner</option>
         </select>
       </div>
       <button class="fw-btn fw-btn--primary" onclick="BoardApp.addBoardMember()">Add Member</button>
