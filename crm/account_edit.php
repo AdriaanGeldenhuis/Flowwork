@@ -238,11 +238,23 @@ $regions = $DB->query("SELECT * FROM crm_regions ORDER BY name ASC")->fetchAll()
                         </div>
                         <div class="fw-crm__form-group">
                             <label class="fw-crm__checkbox-wrapper">
-                                <input type="checkbox" name="preferred" class="fw-crm__checkbox" 
+                                <input type="checkbox" name="preferred" class="fw-crm__checkbox"
                                        <?= $account['preferred'] ? 'checked' : '' ?>>
                                 <span>Preferred Supplier/Customer</span>
                             </label>
                         </div>
+                    </div>
+
+                    <?php $isDeleted = !empty($account['deleted_at']); ?>
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__checkbox-wrapper">
+                            <input type="checkbox" name="deleted" class="fw-crm__checkbox"
+                                   <?= $isDeleted ? 'checked' : '' ?>>
+                            <span>Deleted (hide from default list)</span>
+                        </label>
+                        <?php if ($isDeleted): ?>
+                            <small class="fw-crm__help-text">Deleted on <?= date('d M Y H:i', strtotime($account['deleted_at'])) ?>. Untick to restore.</small>
+                        <?php endif; ?>
                     </div>
                 </div>
 

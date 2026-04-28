@@ -54,8 +54,17 @@ try {
         $statusVal = $_POST['status'] ?? 'active';
         $preferredVal = isset($_POST['preferred']) ? 1 : 0;
         $notesVal = trim($_POST['notes'] ?? '');
+        $deletedFlag = isset($_POST['deleted']) ? 1 : 0;
 
-        // UPDATE with EXACTLY 14 parameters
+        // Soft-delete handling: only stamp deleted_at when transitioning to deleted,
+        // and only clear it when restoring. This preserves the original delete time.
+        if ($deletedFlag) {
+            $deletedAtSql = 'CASE WHEN deleted_at IS NULL THEN NOW() ELSE deleted_at END';
+        } else {
+            $deletedAtSql = 'NULL';
+        }
+
+        // UPDATE with EXACTLY 14 parameters (deleted_at uses inline SQL, not bound)
         $stmt = $DB->prepare("
             UPDATE crm_accounts SET
                 name = ?,
@@ -70,6 +79,7 @@ try {
                 status = ?,
                 preferred = ?,
                 notes = ?,
+                deleted_at = $deletedAtSql,
                 updated_at = NOW()
             WHERE id = ? AND company_id = ?
         ");

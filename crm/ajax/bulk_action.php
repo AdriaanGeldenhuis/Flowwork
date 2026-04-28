@@ -67,6 +67,43 @@ try {
             echo json_encode(['ok' => true, 'affected' => $affected]);
             break;
 
+        case 'soft_delete':
+        case 'restore':
+            $isDelete = ($action === 'soft_delete');
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            if ($isDelete) {
+                $stmt = $DB->prepare("
+                    UPDATE crm_accounts
+                    SET deleted_at = NOW(), updated_at = NOW()
+                    WHERE id IN ($placeholders) AND company_id = ? AND deleted_at IS NULL
+                ");
+            } else {
+                $stmt = $DB->prepare("
+                    UPDATE crm_accounts
+                    SET deleted_at = NULL, updated_at = NOW()
+                    WHERE id IN ($placeholders) AND company_id = ? AND deleted_at IS NOT NULL
+                ");
+            }
+            $params = array_merge($ids, [$companyId]);
+            $stmt->execute($params);
+            $affected = $stmt->rowCount();
+
+            $auditAction = $isDelete ? 'crm_bulk_soft_delete' : 'crm_bulk_restore';
+            $stmt = $DB->prepare("
+                INSERT INTO audit_log (company_id, user_id, action, entity_type, entity_id, details, created_at)
+                VALUES (?, ?, ?, 'crm_account', 0, ?, NOW())
+            ");
+            $stmt->execute([
+                $companyId,
+                $userId,
+                $auditAction,
+                json_encode(['ids' => $ids, 'affected' => $affected])
+            ]);
+
+            $DB->commit();
+            echo json_encode(['ok' => true, 'affected' => $affected]);
+            break;
+
         default:
             throw new Exception('Unknown bulk action');
     }
