@@ -909,6 +909,11 @@
   background: #6b7280;
 }
 
+.fw-crm__badge--deleted {
+  background: #b91c1c;
+  margin-left: 8px;
+}
+
 .fw-crm__badge--prospect {
   background: var(--neon-purple);
 }
@@ -2869,6 +2874,26 @@ body.fw-crm-modal-open {
   align-items: center;
   padding: 0 4px;
   cursor: pointer;
+}
+.fw-crm__delete-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+  color: var(--fw-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.fw-crm__delete-check input[type="checkbox"] {
+  margin: 0;
+}
+.fw-crm__account-row--deleted .fw-crm__account-card {
+  opacity: 0.55;
+}
+.fw-crm__account-row--deleted .fw-crm__account-name {
+  text-decoration: line-through;
 }
 .fw-crm__bulk-bar {
   display: flex;

@@ -16,6 +16,8 @@ $search = trim($_GET['search'] ?? '');
 $status = $_GET['status'] ?? '';
 $industry = $_GET['industry'] ?? '';
 $region = $_GET['region'] ?? '';
+// deleted: '' or '0' = active only (default), '1' = deleted only, 'all' = both
+$deletedFilter = $_GET['deleted'] ?? '';
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 25;
 $offset = ($page - 1) * $perPage;
@@ -23,6 +25,12 @@ $offset = ($page - 1) * $perPage;
 try {
     $whereSql = " WHERE a.company_id = ? AND a.type = ?";
     $params = [$companyId, $type];
+
+    if ($deletedFilter === '1') {
+        $whereSql .= " AND a.deleted_at IS NOT NULL";
+    } elseif ($deletedFilter !== 'all') {
+        $whereSql .= " AND a.deleted_at IS NULL";
+    }
 
     if ($search !== '') {
         $whereSql .= " AND (a.name LIKE ? OR a.email LIKE ? OR a.phone LIKE ?)";
@@ -60,6 +68,7 @@ try {
             a.email,
             a.phone,
             a.status,
+            a.deleted_at,
             (SELECT CONCAT(c.first_name, ' ', c.last_name)
              FROM crm_contacts c
              WHERE c.account_id = a.id AND c.company_id = a.company_id AND c.is_primary = 1

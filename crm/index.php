@@ -21,12 +21,12 @@ $companyName = $company['name'] ?? 'Company';
 // Get active tab from URL
 $activeTab = $_GET['tab'] ?? 'overview';
 
-// Always fetch tab counts (used in tab headers on every tab)
-$suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier'");
+// Always fetch tab counts (used in tab headers on every tab) - exclude soft-deleted
+$suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND deleted_at IS NULL");
 $suppliersCount->execute([$companyId]);
 $totalSuppliers = $suppliersCount->fetchColumn();
 
-$customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'customer'");
+$customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'customer' AND deleted_at IS NULL");
 $customersCount->execute([$companyId]);
 $totalCustomers = $customersCount->fetchColumn();
 
@@ -380,6 +380,11 @@ if ($activeTab === 'overview') {
                         <select id="filterRegion" class="fw-crm__select">
                             <option value="">All Regions</option>
                         </select>
+                        <select id="filterDeleted" class="fw-crm__select" title="Deleted accounts">
+                            <option value="0">Active (not deleted)</option>
+                            <option value="1">Deleted only</option>
+                            <option value="all">All (incl. deleted)</option>
+                        </select>
                     </div>
                     <a href="/crm/account_new.php?type=supplier" class="fw-crm__btn fw-crm__btn--primary">
                         + New Supplier
@@ -408,6 +413,11 @@ if ($activeTab === 'overview') {
                         </select>
                         <select id="filterRegion" class="fw-crm__select">
                             <option value="">All Regions</option>
+                        </select>
+                        <select id="filterDeleted" class="fw-crm__select" title="Deleted accounts">
+                            <option value="0">Active (not deleted)</option>
+                            <option value="1">Deleted only</option>
+                            <option value="all">All (incl. deleted)</option>
                         </select>
                     </div>
                     <a href="/crm/account_new.php?type=customer" class="fw-crm__btn fw-crm__btn--primary">
