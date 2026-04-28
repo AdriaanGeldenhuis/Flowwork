@@ -56,7 +56,7 @@ try {
 
     $update = $DB->prepare("
         UPDATE quotes
-           SET status = 'accepted', accepted_at = NOW(), accepted_ip = ?,
+           SET status = 'accepted', accepted_at = NOW(), accepted_by_ip = ?,
                declined_at = NULL, declined_ip = NULL, updated_at = NOW()
          WHERE id = ?
     ");
