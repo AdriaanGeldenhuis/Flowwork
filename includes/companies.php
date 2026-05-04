@@ -125,13 +125,15 @@ function fw_user_company_count(int $userId): int
 }
 
 // Plan limit comes from the user's primary company (the one set on
-// users.company_id at registration). max_companies is copied from the
-// plan onto the company at sign-up time.
+// users.company_id at registration). We read max_companies from the
+// linked plan so that updates to the plans table apply immediately,
+// rather than the per-company snapshot that was copied at sign-up time.
 function fw_user_plan_company_limit(int $userId): array
 {
     global $DB;
     $stmt = $DB->prepare(
-        "SELECT c.max_companies, p.name AS plan_name
+        "SELECT COALESCE(p.max_companies, c.max_companies) AS max_companies,
+                p.name AS plan_name
          FROM users u
          JOIN companies c ON c.id = u.company_id
          LEFT JOIN plans p ON p.id = c.plan_id
@@ -169,10 +171,16 @@ function fw_create_company_for_user(int $userId, string $name, string $businessT
     }
 
     // Inherit plan + seat limits from the user's primary company so the
-    // new tenant matches the existing subscription.
+    // new tenant matches the existing subscription. Prefer the live values
+    // on the plans row over the per-company snapshot, so plan upgrades
+    // (e.g. Business 3 -> 5 companies) apply without a backfill.
     $stmt = $DB->prepare(
-        "SELECT plan_id, max_users, max_companies
-         FROM companies WHERE id = (SELECT company_id FROM users WHERE id = ?)"
+        "SELECT c.plan_id,
+                COALESCE(p.max_users, c.max_users) AS max_users,
+                COALESCE(p.max_companies, c.max_companies) AS max_companies
+         FROM companies c
+         LEFT JOIN plans p ON p.id = c.plan_id
+         WHERE c.id = (SELECT company_id FROM users WHERE id = ?)"
     );
     $stmt->execute([$userId]);
     $primary = $stmt->fetch();

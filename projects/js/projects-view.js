@@ -67,9 +67,16 @@
 
   function showDropdown(dropdown, button) {
     closeAllDropdowns();
+    // The board card gets a 3D `transform` on hover, which makes any
+    // position:fixed descendant be containing-blocked by the card
+    // instead of the viewport — placing the dropdown offscreen.
+    // Reparent to <body> so position:fixed is truly viewport-relative.
+    if (dropdown.parentElement !== document.body) {
+      document.body.appendChild(dropdown);
+    }
     dropdown.classList.add('show');
     currentDropdown = dropdown;
-    
+
     // Position dropdown
     const rect = button.getBoundingClientRect();
     dropdown.style.top = (rect.bottom + 4) + 'px';
@@ -986,7 +993,7 @@
                 <circle cx="12" cy="19" r="2"/>
               </svg>
             </button>
-            <div class="fw-board-dropdown">
+            <div class="fw-board-dropdown" data-board-id="${board.board_id}">
               <button class="fw-board-dropdown__item" onclick="BoardActions.rename(${board.board_id}, '${board.title.replace(/'/g, "\\'")}')">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -1021,15 +1028,21 @@
       html += '</div>';
     }
 
+    // Remove any board dropdowns left in <body> from a previous render
+    // (showDropdown reparents them out of the card, so they survive innerHTML resets).
+    document.querySelectorAll('body > .fw-board-dropdown').forEach(d => d.remove());
+
     container.innerHTML = html;
-    
+
     // Attach dropdown listeners
     document.querySelectorAll('.fw-board-menu-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const dropdown = btn.nextElementSibling;
-        if (dropdown && dropdown.classList.contains('fw-board-dropdown')) {
+        // Find the dropdown via boardId — it may have been reparented to <body>.
+        const boardId = btn.dataset.boardId;
+        const dropdown = document.querySelector('.fw-board-dropdown[data-board-id="' + boardId + '"]');
+        if (dropdown) {
           if (dropdown.classList.contains('show')) {
             closeAllDropdowns();
           } else {
