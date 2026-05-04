@@ -183,11 +183,10 @@
         const safeName = escapeHtml(acc.name || '?');
         const initials = (acc.name || '?').substring(0, 2).toUpperCase();
         const avatarClass = accountType === 'supplier' ? 'fw-crm__account-avatar--supplier' : 'fw-crm__account-avatar--customer';
+        const checked = selectedIds.has(String(acc.id)) ? 'checked' : '';
         const isDeleted = !!acc.deleted_at;
-        const deletedChecked = isDeleted ? 'checked' : '';
         const rowClass = isDeleted ? 'fw-crm__account-row fw-crm__account-row--deleted' : 'fw-crm__account-row';
         const deletedBadge = isDeleted ? '<span class="fw-crm__badge fw-crm__badge--deleted">Deleted</span>' : '';
-        const deletedTitle = isDeleted ? 'Untick to restore this account' : 'Tick to delete this account';
 
         const tags = (acc.tags || []).map(tag =>
           '<span class="fw-crm__tag" style="background:' + escapeHtml(tag.color || '#06b6d4') + '">' + escapeHtml(tag.name) + '</span>'
@@ -195,8 +194,8 @@
 
         return `
           <div class="${rowClass}">
-            <label class="fw-crm__bulk-check" title="${deletedTitle}">
-              <input type="checkbox" class="fw-crm__checkbox fw-crm__delete-cb" data-id="${parseInt(acc.id, 10)}" ${deletedChecked}>
+            <label class="fw-crm__bulk-check" title="Select for bulk action">
+              <input type="checkbox" class="fw-crm__checkbox fw-crm__bulk-cb" data-id="${parseInt(acc.id, 10)}" ${checked}>
             </label>
             <a href="/crm/account_view.php?id=${parseInt(acc.id, 10)}" class="fw-crm__account-card">
               <div class="fw-crm__account-avatar ${avatarClass}">${escapeHtml(initials)}</div>
@@ -255,52 +254,7 @@
         });
       });
 
-      // Attach inline delete-tickbox handlers (per-row soft delete / restore)
-      listContainer.querySelectorAll('.fw-crm__delete-cb').forEach(cb => {
-        // Don't let clicks on the checkbox bubble up to the parent <a>
-        cb.addEventListener('click', e => e.stopPropagation());
-        cb.addEventListener('change', function(e) {
-          e.stopPropagation();
-          const id = parseInt(this.dataset.id, 10);
-          const willDelete = this.checked;
-          const verb = willDelete ? 'delete' : 'restore';
-          if (!confirm('Are you sure you want to ' + verb + ' this account?')) {
-            this.checked = !willDelete;
-            return;
-          }
-          toggleDeleted(id, willDelete, this);
-        });
-      });
-
       updateBulkBar();
-    }
-
-    function toggleDeleted(id, willDelete, cb) {
-      const params = new URLSearchParams();
-      params.append('action', willDelete ? 'soft_delete' : 'restore');
-      params.append('ids[]', id);
-
-      cb.disabled = true;
-      fetch('/crm/ajax/bulk_action.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString()
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.ok) {
-            loadAccounts(currentPage);
-          } else {
-            cb.checked = !willDelete;
-            cb.disabled = false;
-            alert(data.error || 'Action failed');
-          }
-        })
-        .catch(() => {
-          cb.checked = !willDelete;
-          cb.disabled = false;
-          alert('Network error');
-        });
     }
 
     // Bulk action bar
@@ -316,11 +270,17 @@
         bar.className = 'fw-crm__bulk-bar';
         bar.innerHTML = `
           <span class="fw-crm__bulk-count"></span>
-          <select class="fw-crm__select fw-crm__bulk-status-select">
-            <option value="">Change Status...</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="prospect">Prospect</option>
+          <select class="fw-crm__select fw-crm__bulk-action-select">
+            <option value="">Choose action...</option>
+            <optgroup label="Change status">
+              <option value="status:active">Set status: Active</option>
+              <option value="status:inactive">Set status: Inactive</option>
+              <option value="status:prospect">Set status: Prospect</option>
+            </optgroup>
+            <optgroup label="Lifecycle">
+              <option value="soft_delete">Delete</option>
+              <option value="restore">Restore</option>
+            </optgroup>
           </select>
           <button class="fw-crm__btn fw-crm__btn--secondary fw-crm__bulk-apply">Apply</button>
           <button class="fw-crm__btn fw-crm__btn--secondary fw-crm__bulk-clear">Clear</button>
@@ -340,14 +300,28 @@
 
     function applyBulkAction() {
       const bar = document.getElementById('bulkBar');
-      const statusSelect = bar.querySelector('.fw-crm__bulk-status-select');
-      const newStatus = statusSelect.value;
-      if (!newStatus) { alert('Select a status first'); return; }
-      if (!confirm('Change status of ' + selectedIds.size + ' account(s) to "' + newStatus + '"?')) return;
+      const actionSelect = bar.querySelector('.fw-crm__bulk-action-select');
+      const value = actionSelect.value;
+      if (!value) { alert('Choose an action first'); return; }
 
       const params = new URLSearchParams();
-      params.append('action', 'update_status');
-      params.append('status', newStatus);
+      let confirmMsg;
+      if (value.startsWith('status:')) {
+        const newStatus = value.slice('status:'.length);
+        confirmMsg = 'Change status of ' + selectedIds.size + ' account(s) to "' + newStatus + '"?';
+        params.append('action', 'update_status');
+        params.append('status', newStatus);
+      } else if (value === 'soft_delete') {
+        confirmMsg = 'Delete ' + selectedIds.size + ' account(s)? They can be restored later.';
+        params.append('action', 'soft_delete');
+      } else if (value === 'restore') {
+        confirmMsg = 'Restore ' + selectedIds.size + ' account(s)?';
+        params.append('action', 'restore');
+      } else {
+        alert('Unknown action');
+        return;
+      }
+      if (!confirm(confirmMsg)) return;
       selectedIds.forEach(id => params.append('ids[]', id));
 
       fetch('/crm/ajax/bulk_action.php', {
