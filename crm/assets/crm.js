@@ -183,12 +183,11 @@
         const safeName = escapeHtml(acc.name || '?');
         const initials = (acc.name || '?').substring(0, 2).toUpperCase();
         const avatarClass = accountType === 'supplier' ? 'fw-crm__account-avatar--supplier' : 'fw-crm__account-avatar--customer';
-        const checked = selectedIds.has(String(acc.id)) ? 'checked' : '';
         const isDeleted = !!acc.deleted_at;
         const deletedChecked = isDeleted ? 'checked' : '';
         const rowClass = isDeleted ? 'fw-crm__account-row fw-crm__account-row--deleted' : 'fw-crm__account-row';
         const deletedBadge = isDeleted ? '<span class="fw-crm__badge fw-crm__badge--deleted">Deleted</span>' : '';
-        const deletedTitle = isDeleted ? 'Untick to restore this account' : 'Tick to mark this account as deleted';
+        const deletedTitle = isDeleted ? 'Untick to restore this account' : 'Tick to delete this account';
 
         const tags = (acc.tags || []).map(tag =>
           '<span class="fw-crm__tag" style="background:' + escapeHtml(tag.color || '#06b6d4') + '">' + escapeHtml(tag.name) + '</span>'
@@ -196,8 +195,8 @@
 
         return `
           <div class="${rowClass}">
-            <label class="fw-crm__bulk-check" title="Select for bulk action">
-              <input type="checkbox" class="fw-crm__checkbox fw-crm__bulk-cb" data-id="${parseInt(acc.id, 10)}" ${checked}>
+            <label class="fw-crm__bulk-check" title="${deletedTitle}">
+              <input type="checkbox" class="fw-crm__checkbox fw-crm__delete-cb" data-id="${parseInt(acc.id, 10)}" ${deletedChecked}>
             </label>
             <a href="/crm/account_view.php?id=${parseInt(acc.id, 10)}" class="fw-crm__account-card">
               <div class="fw-crm__account-avatar ${avatarClass}">${escapeHtml(initials)}</div>
@@ -209,10 +208,6 @@
                 <div class="fw-crm__account-tags">${tags}</div>
               </div>
             </a>
-            <label class="fw-crm__delete-check" title="${deletedTitle}">
-              <input type="checkbox" class="fw-crm__checkbox fw-crm__delete-cb" data-id="${parseInt(acc.id, 10)}" ${deletedChecked}>
-              <span>Deleted</span>
-            </label>
           </div>
         `;
       }).join('');
