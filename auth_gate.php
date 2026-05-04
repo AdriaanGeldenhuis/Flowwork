@@ -100,6 +100,16 @@ $_SESSION['company_id'] = fw_resolve_active_company_id(
     (int)$user['company_id']
 );
 
+// Refresh per-tenant role into the session so legacy callers that read
+// $_SESSION['role'] (projects, finance permissions, etc.) see the role
+// for the *active* company, including admin promotions made via
+// /admin/users.php. Falls back to users.role for legacy accounts that
+// pre-date user_companies.
+$_SESSION['role'] = fw_user_role_in_company(
+    (int)$_SESSION['user_id'],
+    (int)$_SESSION['company_id']
+) ?? 'viewer';
+
 // CSRF protection for state-changing requests
 if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE', 'PATCH'])) {
     Csrf::validate();
