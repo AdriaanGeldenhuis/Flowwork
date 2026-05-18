@@ -83,7 +83,7 @@
 }
 
 .fw-qi__doc-logo {
-  max-width: 480px;
+  max-width: var(--qi-logo-size, 200px);
   max-height: 160px;
   object-fit: contain;
   margin-bottom: 16px;
@@ -96,7 +96,7 @@
 .fw-qi__doc-company p {
   margin: 1px 0;
   font-size: 13px;
-  color: #374151;
+  color: var(--qi-text-color, #374151);
   line-height: 1.6;
 }
 
@@ -110,15 +110,26 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 12px;
+  gap: 8px;
 }
 
 .fw-qi__doc-title {
-  display: none;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--qi-heading-color);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0;
+  line-height: 1.1;
 }
 
 .fw-qi__doc-number {
-  display: none;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--qi-text-dark, #1f2937);
+  padding: 4px 10px;
+  background: rgba(0,0,0,0.04);
+  border-radius: var(--qi-radius);
 }
 
 .fw-qi[data-theme="dark"] .fw-qi__doc-number {
@@ -139,7 +150,7 @@
 .fw-qi__doc-meta p {
   margin: 1px 0;
   font-size: 13px;
-  color: #374151;
+  color: var(--qi-text-color, #374151);
 }
 
 /* ========== PROJECT HEADING ========== */
@@ -151,7 +162,7 @@
 .fw-qi__classic-project h2 {
   font-size: 15px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--qi-heading-color);
   margin: 0;
 }
 
@@ -233,7 +244,7 @@
 .fw-qi__doc-section h3 {
   font-size: 11px;
   font-weight: 800;
-  color: #1f2937;
+  color: var(--qi-heading-color);
   margin: 0 0 10px 0;
   padding-bottom: 8px;
   border-bottom: 1px solid #d1d5db;
@@ -244,7 +255,7 @@
 .fw-qi__doc-section p {
   font-size: 13px;
   text-align: center;
-  color: #374151;
+  color: var(--qi-text-color, #374151);
 }
 
 /* ========== TABLE ========== */
@@ -260,7 +271,7 @@
 }
 
 .fw-qi__doc-table thead {
-  background: #f0f0f0;
+  background: var(--qi-primary);
 }
 
 .fw-qi__doc-table th {
@@ -268,7 +279,7 @@
   text-align: left;
   font-size: 12px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--qi-table-header-text, #ffffff);
   text-transform: none;
   letter-spacing: 0;
   border-bottom: 1px solid #9ca3af;
@@ -282,7 +293,7 @@
   padding: 8px 12px;
   border-bottom: 1px solid #e5e7eb;
   font-size: 13px;
-  color: #374151;
+  color: var(--qi-text-color, #374151);
 }
 
 .fw-qi[data-theme="dark"] .fw-qi__doc-table td {
@@ -343,28 +354,28 @@
 
 .fw-qi__doc-total-row span:first-child {
   font-weight: 700;
-  color: #1f2937;
+  color: var(--qi-text-dark, #1f2937);
 }
 
 .fw-qi__doc-total-row span:last-child {
   font-weight: 400;
-  color: #374151;
+  color: var(--qi-text-color, #374151);
 }
 
 .fw-qi__doc-total-row--grand {
   padding-top: 8px;
   margin-top: 4px;
-  border-top: 1px solid #1f2937 !important;
+  border-top: 1px solid var(--qi-text-dark, #1f2937) !important;
   border-bottom: none !important;
   font-size: 16px;
   font-weight: 900;
-  color: #1f2937;
+  color: var(--qi-text-dark, #1f2937);
 }
 
 .fw-qi__doc-total-row--grand span:first-child,
 .fw-qi__doc-total-row--grand span:last-child {
   font-weight: 900;
-  color: #1f2937;
+  color: var(--qi-text-dark, #1f2937);
 }
 
 .fw-qi__doc-total-row--balance {
@@ -426,7 +437,7 @@
   background: transparent;
   border-top: none;
   font-size: 13px;
-  color: #374151;
+  color: var(--qi-text-color, #374151);
   line-height: 1.7;
   text-align: center;
 }
@@ -483,6 +494,15 @@
 .fw-qi__badge--part-paid {
   background: rgba(245,158,11,0.15);
   color: #f59e0b;
+}
+
+.fw-qi__badge--cancelled,
+.fw-qi__badge--void,
+.fw-qi__badge--written_off,
+.fw-qi__badge--uncollectible,
+.fw-qi__badge--refunded {
+  background: rgba(100,116,139,0.15);
+  color: #475569;
 }
 
 /* ========== ALERTS ========== */
@@ -1107,16 +1127,13 @@
 /* ========== FORCE LIGHT THEME INSIDE THE DOCUMENT ==========
    The app shell can be in dark mode, but the invoice/quote document
    itself is a printable artifact and must always render with light
-   styling so it stays readable and matches the PDF output. This block
-   undoes every dark-mode override that targets anything inside
-   .fw-qi__document. */
+   styling so it stays readable and matches the PDF output. The user's
+   branding settings (background, text color, primary color) still flow
+   through via the CSS variables defined in :root by the view file. */
 .fw-qi[data-theme="dark"] .fw-qi__document {
-  background: #ffffff !important;
-  color: #374151 !important;
-  --qi-bg: #ffffff;
-  --qi-doc-bg: #ffffff;
-  --qi-text-color: #374151;
-  --qi-text: #374151;
+  background: var(--qi-doc-bg, #ffffff) !important;
+  color: var(--qi-text-color, #374151) !important;
+  --qi-bg: var(--qi-doc-bg, #ffffff);
   --qi-text-dark: #1f2937;
   --qi-text-dk: #1f2937;
   --qi-text-muted: #6b7280;
@@ -1129,36 +1146,36 @@
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-company p,
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-meta p,
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-bill-to p {
-  color: #374151 !important;
+  color: var(--qi-text-color, #374151) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table thead {
-  background: #f0f0f0 !important;
+  background: var(--qi-primary) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table th {
-  color: #1f2937 !important;
+  color: var(--qi-table-header-text, #ffffff) !important;
   border-bottom-color: #9ca3af !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table td {
-  color: #374151 !important;
+  color: var(--qi-text-color, #374151) !important;
   border-bottom-color: #e5e7eb !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table tbody {
-  background: #ffffff !important;
+  background: var(--qi-doc-bg, #ffffff) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table tbody tr:hover {
   background: #fafafa !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row,
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row span {
-  color: #374151 !important;
+  color: var(--qi-text-color, #374151) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row span:first-child,
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row--grand,
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-total-row--grand span {
-  color: #1f2937 !important;
+  color: var(--qi-text-dark, #1f2937) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-detail-box {
-  background: #ffffff !important;
+  background: var(--qi-doc-bg, #ffffff) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__payment-detail-row {
   border-bottom-color: rgba(0,0,0,0.05) !important;
@@ -1166,7 +1183,7 @@
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-footer {
   background: #f3f4f6 !important;
   border-top-color: #e5e7eb !important;
-  color: #374151 !important;
+  color: var(--qi-text-color, #374151) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-number {
   background: rgba(0,0,0,0.05) !important;

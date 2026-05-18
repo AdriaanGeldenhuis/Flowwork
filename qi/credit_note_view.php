@@ -10,7 +10,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-06-QI-v2');
+define('ASSET_VERSION', '2026-05-18-QI-branding-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -256,40 +256,31 @@ function format_currency($amount) {
                         <?php if ($creditNote['logo_url']): ?>
                             <img src="<?= htmlspecialchars($creditNote['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                         <?php endif; ?>
-                    <div class="fw-qi__doc-company">
-                        <h1 class="fw-qi__doc-title">CREDIT NOTE</h1>
-                        <?php if ($showAddress): ?>
-                            <p><?= htmlspecialchars($creditNote['company_address1'] ?? '') ?>
-                            <?php if (!empty($creditNote['company_address2'])): ?><br><?= htmlspecialchars($creditNote['company_address2']) ?><?php endif; ?>
-                            <br><?= htmlspecialchars($creditNote['company_city'] ?? '') ?>, <?= htmlspecialchars($creditNote['company_region'] ?? '') ?> <?= htmlspecialchars($creditNote['company_postal'] ?? '') ?></p>
-                        <?php endif; ?>
-                        <?php if ($showPhone && !empty($creditNote['company_phone'])): ?>
-                            <p>Tel: <?= htmlspecialchars($creditNote['company_phone']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showEmail && !empty($creditNote['company_email'])): ?>
-                            <p>Email: <?= htmlspecialchars($creditNote['company_email']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showWebsite && !empty($creditNote['website'])): ?>
-                            <p>Website: <?= htmlspecialchars($creditNote['website']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showVat && !empty($creditNote['vat_number'])): ?>
-                            <p>VAT No: <?= htmlspecialchars($creditNote['vat_number']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showTax && !empty($creditNote['tax_number'])): ?>
-                            <p>Tax No: <?= htmlspecialchars($creditNote['tax_number']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showReg && !empty($creditNote['reg_number'])): ?>
-                            <p>Reg No: <?= htmlspecialchars($creditNote['reg_number']) ?></p>
-                        <?php endif; ?>
+                        <div class="fw-qi__doc-company">
+                            <h1><?= htmlspecialchars($companyName) ?></h1>
+                            <?php if ($showAddress): ?>
+                                <?php if (!empty($creditNote['company_address1'])): ?><p><?= htmlspecialchars($creditNote['company_address1']) ?></p><?php endif; ?>
+                                <?php if (!empty($creditNote['company_address2'])): ?><p><?= htmlspecialchars($creditNote['company_address2']) ?></p><?php endif; ?>
+                                <?php if (!empty($creditNote['company_city'])): ?><p><?= htmlspecialchars($creditNote['company_city']) ?>, <?= htmlspecialchars($creditNote['company_postal'] ?? '') ?></p><?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($showReg && !empty($creditNote['reg_number'])): ?><p><strong>Reg No:</strong> <?= htmlspecialchars($creditNote['reg_number']) ?></p><?php endif; ?>
+                            <?php if ($showTax && !empty($creditNote['tax_number'])): ?><p><strong>Tax:</strong> <?= htmlspecialchars($creditNote['tax_number']) ?></p><?php endif; ?>
+                            <?php if ($showVat && !empty($creditNote['vat_number'])): ?><p><strong>VAT No:</strong> <?= htmlspecialchars($creditNote['vat_number']) ?></p><?php endif; ?>
+                            <?php if ($showPhone && !empty($creditNote['company_phone'])): ?><p><?= htmlspecialchars($creditNote['company_phone']) ?></p><?php endif; ?>
+                            <?php if ($showEmail && !empty($creditNote['company_email'])): ?><p><?= htmlspecialchars($creditNote['company_email']) ?></p><?php endif; ?>
+                            <?php if ($showWebsite && !empty($creditNote['website'])): ?><p><?= htmlspecialchars($creditNote['website']) ?></p><?php endif; ?>
+                        </div>
                     </div>
-                    </div><!-- /.fw-qi__doc-header-left -->
-                    <div class="fw-qi__doc-meta">
-                        <h2>Credit Note #: <?= htmlspecialchars($creditNote['credit_note_number']) ?></h2>
-                        <p>Issue Date: <?= htmlspecialchars(date('d M Y', strtotime($creditNote['issue_date']))) ?></p>
-                        <p>Status: <?= htmlspecialchars(ucfirst($creditNote['status'])) ?></p>
-                        <?php if (!empty($creditNote['linked_invoice_number'])): ?>
-                            <p>Invoice: <?= htmlspecialchars($creditNote['linked_invoice_number']) ?></p>
-                        <?php endif; ?>
+                    <div class="fw-qi__doc-header-right">
+                        <h2 class="fw-qi__doc-title">CREDIT NOTE</h2>
+                        <div class="fw-qi__doc-number"><?= htmlspecialchars($creditNote['credit_note_number']) ?></div>
+                        <table class="fw-qi__doc-info-table" style="margin-top:8px;">
+                            <tr><td>Issue Date:</td><td><strong><?= date('d M Y', strtotime($creditNote['issue_date'])) ?></strong></td></tr>
+                            <?php if (!empty($creditNote['linked_invoice_number'])): ?>
+                                <tr><td>Invoice:</td><td><strong><?= htmlspecialchars($creditNote['linked_invoice_number']) ?></strong></td></tr>
+                            <?php endif; ?>
+                        </table>
+                        <span class="fw-qi__badge fw-qi__badge--<?= htmlspecialchars($creditNote['status']) ?>"><?= strtoupper(str_replace('_', ' ', $creditNote['status'])) ?></span>
 
                         <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                             <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Credit To</h3>

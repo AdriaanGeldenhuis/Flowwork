@@ -10,7 +10,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-07-QI-pinch-v2');
+define('ASSET_VERSION', '2026-05-18-QI-branding-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
