@@ -70,10 +70,22 @@ const InvoiceView = {
 
     downloadPDF() {
         if (!this.invoiceId) return;
-        // Route through generate_pdf.php so the browser's own print engine
-        // renders the same HTML/CSS as the on-screen invoice. The print dialog
-        // auto-opens; the user picks "Save as PDF" for pixel-perfect output.
-        window.open('/qi/ajax/generate_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
+        // Stream the real PDF (download_pdf.php sends Content-Disposition:
+        // attachment) and trigger the browser's native download handler so it
+        // works in desktop browsers, mobile browsers, and the Android WebView.
+        UI.downloadFile('/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId);
+    },
+
+    printInvoice() {
+        if (!this.invoiceId) return;
+        // Try to open the printable HTML page (browser's print dialog gives
+        // pixel-perfect output on desktop). If window.open is blocked or
+        // dropped (e.g. Android WebView with the default WebChromeClient),
+        // fall back to streaming the real PDF.
+        const w = window.open('/qi/ajax/generate_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
+        if (!w) {
+            UI.downloadFile('/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId);
+        }
     },
 
     async _callAction(url, body, successMsg, reloadUrl) {
@@ -236,7 +248,7 @@ const InvoiceView = {
 
     async exportBeforeDelete() {
         if (!this.invoiceId) return;
-        window.open('/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId, '_blank');
+        UI.downloadFile('/qi/ajax/download_pdf.php?type=invoice&id=' + this.invoiceId);
     },
 
     /**

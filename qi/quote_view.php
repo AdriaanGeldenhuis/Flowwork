@@ -10,7 +10,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-05-18-QI-branding-v1');
+define('ASSET_VERSION', '2026-05-18-QI-pdf-download-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -262,8 +262,8 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
         <?php endif; ?>
         
         <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
-        
-        <button onclick="window.open('/qi/ajax/generate_pdf.php?type=quote&id=<?= (int)$quoteId ?>','_blank')" class="fw-qi__kebab-item">
+
+        <button onclick="QuoteView.printQuote()" class="fw-qi__kebab-item">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
                 <polyline points="6 9 6 2 18 2 18 9"/>
                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
@@ -548,9 +548,21 @@ $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
 },
         
         downloadPDF() {
-            // Use the browser's print engine via generate_pdf.php so the
-            // downloaded PDF matches the on-screen quote exactly.
-            window.open('/qi/ajax/generate_pdf.php?type=quote&id=' + this.quoteId, '_blank');
+            // Stream the real PDF (download_pdf.php sends Content-Disposition:
+            // attachment) — works in desktop browsers, mobile browsers, and
+            // the Android WebView. Avoids window.open which is dropped by the
+            // default Android WebChromeClient.
+            UI.downloadFile('/qi/ajax/download_pdf.php?type=quote&id=' + this.quoteId);
+        },
+
+        printQuote() {
+            // Try the printable HTML page first (browser's print dialog gives
+            // pixel-perfect output on desktop). If window.open is blocked or
+            // dropped (Android WebView), fall back to streaming the real PDF.
+            const w = window.open('/qi/ajax/generate_pdf.php?type=quote&id=' + this.quoteId, '_blank');
+            if (!w) {
+                UI.downloadFile('/qi/ajax/download_pdf.php?type=quote&id=' + this.quoteId);
+            }
         },
         
         async duplicateQuote() {

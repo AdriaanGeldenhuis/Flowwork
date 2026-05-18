@@ -9,7 +9,7 @@ require_once __DIR__ . '/finances/lib/Csrf.php';
 
 // Centralized CRM asset version for cache busting
 if (!defined('CRM_ASSET_VERSION')) {
-    define('CRM_ASSET_VERSION', '2026-05-04-v2');
+    define('CRM_ASSET_VERSION', '2026-05-18-pdf-download-v1');
 }
 
 // Helper function to get CRM settings

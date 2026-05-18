@@ -54,5 +54,34 @@ const UI = {
     async fetchJSON(url, options = {}) {
         const res = await fetch(url, options);
         return res.json();
+    },
+
+    /**
+     * Trigger a file download in a way that works across desktop browsers,
+     * mobile browsers, and the Android WebView native app.
+     *
+     * The server must respond with `Content-Disposition: attachment` so the
+     * browser/WebView treats the response as a download rather than a
+     * navigation. We use a hidden anchor + click() instead of
+     * `window.open('_blank')` because new-window popups are blocked or
+     * silently dropped in Android WebView (default WebChromeClient does not
+     * implement onCreateWindow).
+     *
+     * Android: navigating to the URL triggers DownloadListener once the
+     * Content-Disposition header arrives — DownloadManager then fetches the
+     * file with the WebView's session cookies and saves it to Downloads.
+     *
+     * @param {string} url    The URL that returns the file as an attachment.
+     * @param {string} [name] Optional suggested filename (server filename wins).
+     */
+    downloadFile(url, name) {
+        const a = document.createElement('a');
+        a.href = url;
+        if (name) a.download = name;
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 100);
     }
 };
