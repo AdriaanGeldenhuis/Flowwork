@@ -4,10 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
-
-function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
-    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
-}
+require_once __DIR__ . '/../lib/Branding.php';
 
 // Get token from query string
 $token = $_GET['token'] ?? '';
@@ -84,36 +81,20 @@ try {
     $stmt->execute([$quote['id']]);
     $lines = $stmt->fetchAll();
 
-    // Determine settings
-    $primaryColor = sanitize_css_color($quote['primary_color'] ?? '#fbbf24');
-    $secondaryColor = sanitize_css_color($quote['secondary_color'] ?? '#f59e0b', '#f59e0b');
-    $headingColor = sanitize_css_color($quote['qi_heading_color'] ?? '', $primaryColor);
-    $textColor = $quote['qi_text_color'] ?? '';
-    $tableHeaderText = $quote['qi_table_header_text'] ?? '#ffffff';
-    $bgColor = $quote['qi_bg_color'] ?? '';
-    $borderRadius = max(0, min(24, (int)($quote['qi_border_radius'] ?? 8)));
-    $logoSize = max(80, min(400, (int)($quote['qi_logo_size'] ?? 200)));
-    $logoPosition = in_array($quote['qi_logo_position'] ?? 'left', ['left','center','right']) ? $quote['qi_logo_position'] : 'left';
-    $docTitle = htmlspecialchars($quote['qi_quote_title'] ?? 'QUOTATION');
-    $template = in_array($quote['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $quote['qi_template'] : 'modern';
-    $customCss = $quote['qi_custom_css'] ?? '';
-    $fontFamily = $quote['qi_font_family'] ?? 'system-ui';
-    $fontMap = [
-        'system-ui' => 'system-ui, -apple-system, sans-serif',
-        'montserrat' => "'Montserrat', sans-serif",
-        'helvetica' => "'Helvetica Neue', Helvetica, Arial, sans-serif",
-        'georgia' => "Georgia, serif",
-        'inter' => "'Inter', sans-serif"
-    ];
-    $fontStack = $fontMap[$fontFamily] ?? $fontMap['system-ui'];
+    // Colour, text and font customisation — resolved centrally (qi/lib/Branding.php).
+    $brand = Branding::resolve($quote, 'quote');
+    $docTitle     = htmlspecialchars($brand['title']);
+    $template     = $brand['template'];
+    $logoPosition = $brand['logo_position'];
+    $customCss    = Branding::customCss($brand);
 
-    $showAddress = (int)($quote['qi_show_company_address'] ?? 1);
-    $showPhone = (int)($quote['qi_show_company_phone'] ?? 1);
-    $showEmail = (int)($quote['qi_show_company_email'] ?? 1);
-    $showWebsite = (int)($quote['qi_show_company_website'] ?? 1);
-    $showVat = (int)($quote['qi_show_vat_number'] ?? 1);
-    $showTax = (int)($quote['qi_show_tax_number'] ?? 1);
-    $showReg = (int)($quote['qi_show_reg_number'] ?? 1);
+    $showAddress = $brand['show']['address'];
+    $showPhone   = $brand['show']['phone'];
+    $showEmail   = $brand['show']['email'];
+    $showWebsite = $brand['show']['website'];
+    $showVat     = $brand['show']['vat'];
+    $showTax     = $brand['show']['tax'];
+    $showReg     = $brand['show']['reg'];
 
 } catch (Exception $e) {
     echo '<h1>Database error</h1>';
@@ -127,21 +108,12 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($quote['quote_number']) ?> – <?= htmlspecialchars($quote['company_name']) ?></title>
-    <link rel="stylesheet" href="/qi/assets/qi.css?v=2025-01-21-QI-PUBLIC">
-    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=2025-01-21-QI-PUBLIC">
+    <?= Branding::fontHeadLinks() ?>
+
+    <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= htmlspecialchars(CRM_ASSET_VERSION) ?>">
+    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= htmlspecialchars(CRM_ASSET_VERSION) ?>">
     <style>
-        :root {
-            --accent-qi: <?= $primaryColor ?>;
-            --accent-qi-secondary: <?= $secondaryColor ?>;
-            --doc-font: <?= $fontStack ?>;
-            --qi-heading: <?= $headingColor ?>;
-            --qi-border-radius: <?= $borderRadius ?>px;
-            --qi-logo-max-w: <?= $logoSize ?>px;
-            --qi-th-text: <?= $tableHeaderText ?>;
-            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
-            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
-        }
-        .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+<?= Branding::documentStyle($brand) ?>
         <?= $customCss ?>
     </style>
 </head>

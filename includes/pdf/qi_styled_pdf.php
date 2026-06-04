@@ -11,6 +11,10 @@
  *   $lines = array of line items (item_description, quantity, unit_price, line_total)
  */
 
+if (!class_exists('Branding')) {
+    require_once __DIR__ . '/../../qi/lib/Branding.php';
+}
+
 function qi_generate_styled_pdf(array $doc, array $lines, string $outputPath): void
 {
     $pdf = new QiStyledPdfWriter($doc, $lines);
@@ -43,6 +47,13 @@ class QiStyledPdfWriter
     private int $fontRegId;
     private int $fontBoldId;
 
+    // PDF base-14 font names, chosen from the company's qi_font_family.
+    private string $fontReg = 'Helvetica';
+    private string $fontBold = 'Helvetica-Bold';
+
+    // Company display toggles (which detail rows to print). Default ON.
+    private array $show;
+
     // Colours
     private string $accentR;
     private string $accentG;
@@ -63,19 +74,43 @@ class QiStyledPdfWriter
         $this->lines = $lines;
 
         // Parse branding colours from company settings
-        $primary = $doc['primary_color'] ?? '#fbbf24';
+        $primary = Branding::sanitizeColor($doc['primary_color'] ?? null, '#fbbf24');
         [$this->accentR, $this->accentG, $this->accentB] = $this->hexToRgb($primary);
 
-        $heading = $doc['qi_heading_color'] ?: $primary;
+        $heading = Branding::sanitizeColor(($doc['qi_heading_color'] ?? '') ?: $primary, $primary);
         [$this->headingR, $this->headingG, $this->headingB] = $this->hexToRgb($heading);
 
         if (!empty($doc['qi_text_color'])) {
-            [$this->textR, $this->textG, $this->textB] = $this->hexToRgb($doc['qi_text_color']);
+            [$this->textR, $this->textG, $this->textB] = $this->hexToRgb(
+                Branding::sanitizeColor($doc['qi_text_color'], '#374151')
+            );
         }
 
-        if (!empty($doc['qi_table_header_text'])) {
-            [$this->thTextR, $this->thTextG, $this->thTextB] = $this->hexToRgb($doc['qi_table_header_text']);
+        // Table-header text: honour an explicit colour that reads on the
+        // primary, otherwise auto-pick black/white so it stays legible
+        // (matches the on-screen / printed document).
+        $theadText = Branding::sanitizeColor($doc['qi_table_header_text'] ?? null, '#ffffff');
+        if (Branding::contrastRatio($theadText, $primary) < 3.0) {
+            $theadText = Branding::idealInk($primary);
         }
+        [$this->thTextR, $this->thTextG, $this->thTextB] = $this->hexToRgb($theadText);
+
+        // Font: map qi_font_family to a PDF base-14 font (serif -> Times).
+        $fontKey = (string)($doc['qi_font_family'] ?? 'system-ui');
+        [$this->fontReg, $this->fontBold] = Branding::PDF_FONTS[$fontKey] ?? Branding::PDF_FONTS['system-ui'];
+
+        // Display toggles (default ON when the column is null/missing).
+        $tog = static fn($v) => $v === null ? true : (bool)(int)$v;
+        $this->show = [
+            'address' => $tog($doc['qi_show_company_address'] ?? null),
+            'phone'   => $tog($doc['qi_show_company_phone']   ?? null),
+            'email'   => $tog($doc['qi_show_company_email']   ?? null),
+            'website' => $tog($doc['qi_show_company_website'] ?? null),
+            'vat'     => $tog($doc['qi_show_vat_number']      ?? null),
+            'tax'     => $tog($doc['qi_show_tax_number']      ?? null),
+            'reg'     => $tog($doc['qi_show_reg_number']      ?? null),
+            'payment' => $tog($doc['qi_show_payment_details'] ?? null),
+        ];
     }
 
     private function hexToRgb(string $hex): array
@@ -192,13 +227,15 @@ class QiStyledPdfWriter
         // Company info lines (left side — address, phone, email only)
         $leftY = $this->y - 40;
         $infoLines = [];
-        $addr1 = trim(($this->doc['company_address1'] ?? '') . ' ' . ($this->doc['company_address2'] ?? ''));
-        if ($addr1) $infoLines[] = $addr1;
-        $cityLine = trim(($this->doc['company_city'] ?? '') . ', ' . ($this->doc['company_region'] ?? '') . ' ' . ($this->doc['company_postal'] ?? ''));
-        if ($cityLine && $cityLine !== ', ') $infoLines[] = $cityLine;
-        if (!empty($this->doc['company_phone'])) $infoLines[] = 'Tel: ' . $this->doc['company_phone'];
-        if (!empty($this->doc['company_email'])) $infoLines[] = $this->doc['company_email'];
-        if (!empty($this->doc['website'])) $infoLines[] = $this->doc['website'];
+        if ($this->show['address']) {
+            $addr1 = trim(($this->doc['company_address1'] ?? '') . ' ' . ($this->doc['company_address2'] ?? ''));
+            if ($addr1) $infoLines[] = $addr1;
+            $cityLine = trim(($this->doc['company_city'] ?? '') . ', ' . ($this->doc['company_region'] ?? '') . ' ' . ($this->doc['company_postal'] ?? ''));
+            if ($cityLine && $cityLine !== ', ') $infoLines[] = $cityLine;
+        }
+        if ($this->show['phone'] && !empty($this->doc['company_phone'])) $infoLines[] = 'Tel: ' . $this->doc['company_phone'];
+        if ($this->show['email'] && !empty($this->doc['company_email'])) $infoLines[] = $this->doc['company_email'];
+        if ($this->show['website'] && !empty($this->doc['website'])) $infoLines[] = $this->doc['website'];
         foreach ($infoLines as $line) {
             $this->text('F1', 8, $x, $leftY, $line, '0.35', '0.35', '0.35');
             $leftY -= 11;
@@ -217,15 +254,15 @@ class QiStyledPdfWriter
 
         // Registration numbers (right side, below dates)
         $rightY -= 5;
-        if (!empty($this->doc['vat_number'])) {
+        if ($this->show['vat'] && !empty($this->doc['vat_number'])) {
             $this->textRight('F1', 8, $rightX, $rightY, 'VAT No: ' . $this->doc['vat_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
-        if (!empty($this->doc['tax_number'])) {
+        if ($this->show['tax'] && !empty($this->doc['tax_number'])) {
             $this->textRight('F1', 8, $rightX, $rightY, 'Tax No: ' . $this->doc['tax_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
-        if (!empty($this->doc['reg_number'])) {
+        if ($this->show['reg'] && !empty($this->doc['reg_number'])) {
             $this->textRight('F1', 8, $rightX, $rightY, 'Reg No: ' . $this->doc['reg_number'], '0.45', '0.45', '0.45');
             $rightY -= 11;
         }
@@ -394,7 +431,7 @@ class QiStyledPdfWriter
     private function drawSections(): void
     {
         // Payment Details
-        if (!empty($this->doc['bank_name']) || !empty($this->doc['bank_account_number'])) {
+        if ($this->show['payment'] && (!empty($this->doc['bank_name']) || !empty($this->doc['bank_account_number']))) {
             $this->drawSection('Payment Details', function () {
                 $lines = [];
                 if (!empty($this->doc['bank_name'])) $lines[] = 'Bank: ' . $this->doc['bank_name'];
@@ -444,9 +481,12 @@ class QiStyledPdfWriter
 
     private function drawFooterText(): void
     {
-        if (empty($this->doc['invoice_footer_text'])) return;
+        // Per-type footer: download_pdf / senders set _footer_text; fall back to
+        // the invoice footer for any legacy caller.
+        $footer = $this->doc['_footer_text'] ?? $this->doc['invoice_footer_text'] ?? '';
+        if ($footer === '' || $footer === null) return;
 
-        $lines = $this->wrapText($this->doc['invoice_footer_text'], 8, $this->contentW());
+        $lines = $this->wrapText((string)$footer, 8, $this->contentW());
         $this->checkSpace(20 + count($lines) * 11);
 
         $cx = $this->pageW / 2;
@@ -507,9 +547,9 @@ class QiStyledPdfWriter
         $catalogId = $addObj('');
         $pagesId = $addObj('');
 
-        // Fonts (Helvetica + Helvetica-Bold)
-        $fontRegId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-        $fontBoldId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+        // Fonts (base-14, mapped from the company's font choice)
+        $fontRegId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontReg . ' >>');
+        $fontBoldId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontBold . ' >>');
 
         $pageObjIds = [];
         foreach ($this->pages as $streamContent) {

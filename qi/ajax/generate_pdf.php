@@ -7,6 +7,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Branding.php';
 
 $companyId = $_SESSION['company_id'];
 $type      = $_GET['type'] ?? 'quote';
@@ -24,10 +25,6 @@ function fmt($amount) {
     return 'R ' . number_format((float)$amount, 2);
 }
 
-function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
-    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
-}
-
 try {
     if ($type === 'quote') {
         $stmt = $DB->prepare(
@@ -39,6 +36,7 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
+                    c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
@@ -83,6 +81,7 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
+                    c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
@@ -131,6 +130,7 @@ try {
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number, c.qi_show_reg_number,
+                    c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
                     c.qi_table_header_text, c.qi_bg_color, c.qi_border_radius, c.qi_logo_size,
                     c.qi_logo_position, c.qi_template, c.qi_font_family, c.qi_custom_css,
@@ -173,36 +173,22 @@ try {
         }
     }
 
-    // Display toggles
-    $showAddress = (int)($doc['qi_show_company_address'] ?? 1);
-    $showPhone   = (int)($doc['qi_show_company_phone']   ?? 1);
-    $showEmail   = (int)($doc['qi_show_company_email']   ?? 1);
-    $showWebsite = (int)($doc['qi_show_company_website'] ?? 1);
-    $showVat     = (int)($doc['qi_show_vat_number']      ?? 1);
-    $showTax     = (int)($doc['qi_show_tax_number']      ?? 1);
-    $showReg     = (int)($doc['qi_show_reg_number']      ?? 1);
+    // Colour, text and font customisation — resolved centrally (qi/lib/Branding.php)
+    // so this printable page matches the on-screen document exactly.
+    $brand = Branding::resolve($doc, $type);
+    $docType      = $brand['title'];
+    $template     = $brand['template'];
+    $logoPosition = $brand['logo_position'];
+    $customCss    = Branding::customCss($brand);
 
-    // Branding — identical to invoice_view.php
-    $primaryColor    = sanitize_css_color($doc['primary_color'] ?? '#fbbf24');
-    $secondaryColor  = sanitize_css_color($doc['secondary_color'] ?? '#f59e0b', '#f59e0b');
-    $headingColor    = sanitize_css_color($doc['qi_heading_color'] ?? '', $primaryColor);
-    $textColor       = $doc['qi_text_color'] ?? '';
-    $tableHeaderText = $doc['qi_table_header_text'] ?: '#ffffff';
-    $bgColor         = $doc['qi_bg_color'] ?? '';
-    $borderRadius    = max(0, min(24, (int)($doc['qi_border_radius'] ?? 8)));
-    $logoSize        = max(80, min(400, (int)($doc['qi_logo_size'] ?? 200)));
-    $logoPosition    = in_array($doc['qi_logo_position'] ?? 'left', ['left','center','right']) ? $doc['qi_logo_position'] : 'left';
-    $template        = in_array($doc['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $doc['qi_template'] : 'modern';
-    $fontFamily      = $doc['qi_font_family'] ?? 'system-ui';
-    $customCss       = $doc['qi_custom_css'] ?? '';
-    $fontMap = [
-        'system-ui'  => 'system-ui, -apple-system, sans-serif',
-        'montserrat' => "'Montserrat', sans-serif",
-        'helvetica'  => "'Helvetica Neue', Helvetica, Arial, sans-serif",
-        'georgia'    => 'Georgia, serif',
-        'inter'      => "'Inter', sans-serif"
-    ];
-    $fontStack = $fontMap[$fontFamily] ?? $fontMap['system-ui'];
+    $showAddress = $brand['show']['address'];
+    $showPhone   = $brand['show']['phone'];
+    $showEmail   = $brand['show']['email'];
+    $showWebsite = $brand['show']['website'];
+    $showVat     = $brand['show']['vat'];
+    $showTax     = $brand['show']['tax'];
+    $showReg     = $brand['show']['reg'];
+    $showPayment = $brand['show']['payment'];
 
 } catch (Exception $e) {
     http_response_code(500);
@@ -216,27 +202,14 @@ try {
 <meta charset="UTF-8">
 <title><?= htmlspecialchars($docNumber) ?></title>
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<?= Branding::fontHeadLinks() ?>
 
 <!-- Use the SAME template CSS as the app -->
 <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
 
 <style>
-    /* Branding variables — identical to invoice_view.php */
-    :root {
-        --accent-qi: <?= $primaryColor ?>;
-        --accent-qi-secondary: <?= $secondaryColor ?>;
-        --doc-font: <?= $fontStack ?>;
-        --qi-heading: <?= $headingColor ?>;
-        --qi-border-radius: <?= $borderRadius ?>px;
-        --qi-logo-max-w: <?= $logoSize ?>px;
-        --qi-th-text: <?= $tableHeaderText ?>;
-        <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
-        <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
-    }
-    .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+    /* Branding variables — resolved centrally (qi/lib/Branding.php) */
+<?= Branding::documentStyle($brand) ?>
     <?= $customCss ?>
 
     /* PDF-specific overrides for A4 print layout */
@@ -529,7 +502,7 @@ try {
         <?php endif; ?>
 
         <!-- Payment & Bank Details -->
-        <?php if (!empty($doc['bank_name']) || !empty($doc['bank_account_number'])): ?>
+        <?php if ($showPayment && (!empty($doc['bank_name']) || !empty($doc['bank_account_number']))): ?>
             <div class="fw-qi__doc-section">
                 <h3>Payment Details</h3>
                 <p>
@@ -556,10 +529,10 @@ try {
             </div>
         <?php endif; ?>
 
-        <!-- Footer Text -->
-        <?php if (!empty($doc['invoice_footer_text'])): ?>
+        <!-- Footer Text (per document type) -->
+        <?php if (!empty($brand['footer'])): ?>
             <div class="fw-qi__doc-footer">
-                <p><?= nl2br(htmlspecialchars($doc['invoice_footer_text'])) ?></p>
+                <p><?= nl2br(htmlspecialchars($brand['footer'])) ?></p>
             </div>
         <?php endif; ?>
     </div>

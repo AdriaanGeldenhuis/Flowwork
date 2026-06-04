@@ -4,12 +4,9 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
-function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
-    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
-}
-
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Branding.php';
 
 define('ASSET_VERSION', '2026-06-04-QI-payment-calc-v1');
 
@@ -25,7 +22,7 @@ if (!$invoiceId) {
 try {
     // Fetch invoice details with company, customer and creator
     $stmt = $DB->prepare(
-        "SELECT i.*,\n               u.first_name AS creator_first_name,\n               u.last_name AS creator_last_name,\n               c.name AS company_name,\n               c.logo_url,\n               c.vat_number,\n               c.tax_number,\n               c.reg_number,\n               c.website,\n               c.phone AS company_phone,\n               c.email AS company_email,\n               c.address_line1 AS company_address1,\n               c.address_line2 AS company_address2,\n               c.city AS company_city,\n               c.region AS company_region,\n               c.postal AS company_postal,\n               c.bank_name,\n               c.bank_account_number,\n               c.bank_branch_code,\n               c.invoice_footer_text,\n               c.primary_color,\n               c.secondary_color,\n               c.qi_font_family,\n               c.qi_show_company_address,\n               c.qi_show_company_phone,\n               c.qi_show_company_email,\n               c.qi_show_company_website,\n               c.qi_show_vat_number,\n               c.qi_show_tax_number,\n               c.qi_show_reg_number,\n               c.qi_heading_color,\n               c.qi_text_color,\n               c.qi_table_header_text,\n               c.qi_bg_color,\n               c.qi_border_radius,\n               c.qi_logo_size,\n               c.qi_logo_position,\n               c.qi_template,\n               c.qi_custom_css,\n               c.qi_invoice_title,\n               ca.name AS customer_name,\n               ca.email AS customer_email,\n               ca.phone AS customer_phone,\n               ca.vat_no AS customer_vat,\n               ca.reg_no AS customer_reg,\n               addr.line1 AS customer_address1,\n               addr.line2 AS customer_address2,\n               addr.city AS customer_city,\n               addr.region AS customer_region,\n               addr.postal_code AS customer_postal,\n               p.name AS project_name\n        FROM invoices i\n        LEFT JOIN users u ON i.created_by = u.id\n        LEFT JOIN companies c ON i.company_id = c.id\n        LEFT JOIN crm_accounts ca ON i.customer_id = ca.id\n        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)\n        LEFT JOIN projects p ON i.project_id = p.project_id\n        WHERE i.id = ? AND i.company_id = ?"
+        "SELECT i.*,\n               u.first_name AS creator_first_name,\n               u.last_name AS creator_last_name,\n               c.name AS company_name,\n               c.logo_url,\n               c.vat_number,\n               c.tax_number,\n               c.reg_number,\n               c.website,\n               c.phone AS company_phone,\n               c.email AS company_email,\n               c.address_line1 AS company_address1,\n               c.address_line2 AS company_address2,\n               c.city AS company_city,\n               c.region AS company_region,\n               c.postal AS company_postal,\n               c.bank_name,\n               c.bank_account_number,\n               c.bank_branch_code,\n               c.invoice_footer_text,\n               c.primary_color,\n               c.secondary_color,\n               c.qi_font_family,\n               c.qi_show_company_address,\n               c.qi_show_company_phone,\n               c.qi_show_company_email,\n               c.qi_show_company_website,\n               c.qi_show_vat_number,\n               c.qi_show_tax_number,\n               c.qi_show_reg_number,\n               c.qi_show_payment_details,\n               c.qi_heading_color,\n               c.qi_text_color,\n               c.qi_table_header_text,\n               c.qi_bg_color,\n               c.qi_border_radius,\n               c.qi_logo_size,\n               c.qi_logo_position,\n               c.qi_template,\n               c.qi_custom_css,\n               c.qi_invoice_title,\n               ca.name AS customer_name,\n               ca.email AS customer_email,\n               ca.phone AS customer_phone,\n               ca.vat_no AS customer_vat,\n               ca.reg_no AS customer_reg,\n               addr.line1 AS customer_address1,\n               addr.line2 AS customer_address2,\n               addr.city AS customer_city,\n               addr.region AS customer_region,\n               addr.postal_code AS customer_postal,\n               p.name AS project_name\n        FROM invoices i\n        LEFT JOIN users u ON i.created_by = u.id\n        LEFT JOIN companies c ON i.company_id = c.id\n        LEFT JOIN crm_accounts ca ON i.customer_id = ca.id\n        LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)\n        LEFT JOIN projects p ON i.project_id = p.project_id\n        WHERE i.id = ? AND i.company_id = ?"
     );
     $stmt->execute([$invoiceId, $companyId]);
     $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -101,36 +98,22 @@ $canForceDelete       = $isAdmin;
 $canArchive           = !$isArchived;
 $canUnarchive         = $isArchived;
 
-// Colour and font customisation
-$primaryColor   = sanitize_css_color($invoice['primary_color'] ?? '#fbbf24');
-$secondaryColor = sanitize_css_color($invoice['secondary_color'] ?? '#f59e0b', '#f59e0b');
-$headingColor = sanitize_css_color($invoice['qi_heading_color'] ?? '', $primaryColor);
-$textColor = $invoice['qi_text_color'] ?? '';
-$tableHeaderText = $invoice['qi_table_header_text'] ?? '#ffffff';
-$bgColor = $invoice['qi_bg_color'] ?? '';
-$borderRadius = max(0, min(24, (int)($invoice['qi_border_radius'] ?? 8)));
-$logoSize = max(80, min(400, (int)($invoice['qi_logo_size'] ?? 200)));
-$logoPosition = in_array($invoice['qi_logo_position'] ?? 'left', ['left','center','right']) ? $invoice['qi_logo_position'] : 'left';
-$docTitle = htmlspecialchars($invoice['qi_invoice_title'] ?? 'INVOICE');
-$customCss = $invoice['qi_custom_css'] ?? '';
-$template = in_array($invoice['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $invoice['qi_template'] : 'modern';
-$fontFamily     = $invoice['qi_font_family'] ?? 'system-ui';
-$fontMap = [
-    'system-ui'  => 'system-ui, -apple-system, sans-serif',
-    'montserrat' => "'Montserrat', sans-serif",
-    'helvetica'  => "'Helvetica Neue', Helvetica, Arial, sans-serif",
-    'georgia'    => 'Georgia, serif',
-    'inter'      => "'Inter', sans-serif"
-];
-$fontStack = $fontMap[$fontFamily] ?? $fontMap['system-ui'];
+// Colour, text and font customisation — resolved centrally (qi/lib/Branding.php)
+// so the on-screen invoice, the printable page and the downloaded PDF match.
+$brand = Branding::resolve($invoice, 'invoice');
+$docTitle     = htmlspecialchars($brand['title']);
+$template     = $brand['template'];
+$logoPosition = $brand['logo_position'];
+$customCss    = Branding::customCss($brand);
 
-$showAddress = (int)($invoice['qi_show_company_address'] ?? 1);
-$showPhone   = (int)($invoice['qi_show_company_phone']   ?? 1);
-$showEmail   = (int)($invoice['qi_show_company_email']   ?? 1);
-$showWebsite = (int)($invoice['qi_show_company_website'] ?? 1);
-$showVat     = (int)($invoice['qi_show_vat_number']      ?? 1);
-$showTax     = (int)($invoice['qi_show_tax_number']      ?? 1);
-$showReg     = (int)($invoice['qi_show_reg_number']      ?? 1);
+$showAddress = $brand['show']['address'];
+$showPhone   = $brand['show']['phone'];
+$showEmail   = $brand['show']['email'];
+$showWebsite = $brand['show']['website'];
+$showVat     = $brand['show']['vat'];
+$showTax     = $brand['show']['tax'];
+$showReg     = $brand['show']['reg'];
+$showPayment = $brand['show']['payment'];
 
 // Helper to format amounts
 function format_currency($amount) {
@@ -146,26 +129,14 @@ function format_currency($amount) {
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($invoice['invoice_number']) ?> – <?= htmlspecialchars($invoice['company_name']) ?></title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <?= Branding::fontHeadLinks() ?>
+
 
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
 
     <style>
-        :root {
-            --accent-qi: <?= $primaryColor ?>;
-            --accent-qi-secondary: <?= $secondaryColor ?>;
-            --doc-font: <?= $fontStack ?>;
-            --qi-heading: <?= $headingColor ?>;
-            --qi-border-radius: <?= $borderRadius ?>px;
-            --qi-logo-max-w: <?= $logoSize ?>px;
-            --qi-th-text: <?= $tableHeaderText ?>;
-            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
-            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
-        }
-        .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+<?= Branding::documentStyle($brand) ?>
 
         /* Live "what's paid / left / %" breakdown inside the Record Payment modal */
         .fw-qi__payment-calc {
@@ -651,7 +622,7 @@ function format_currency($amount) {
                 <?php endif; ?>
 
                 <!-- Payment & Bank Details -->
-                <?php if ($invoice['bank_name'] || $invoice['bank_account_number']): ?>
+                <?php if ($showPayment && ($invoice['bank_name'] || $invoice['bank_account_number'])): ?>
                     <div class="fw-qi__doc-section">
                         <h3>Payment Details</h3>
                         <p>

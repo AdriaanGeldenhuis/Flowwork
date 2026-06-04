@@ -10,6 +10,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Branding.php';
 require_once __DIR__ . '/../../includes/pdf/qi_styled_pdf.php';
 
 $companyId = $_SESSION['company_id'];
@@ -32,7 +33,10 @@ try {
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                    c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
+                    c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
+                    c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
@@ -72,7 +76,10 @@ try {
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                    c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
+                    c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
+                    c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
@@ -117,7 +124,10 @@ try {
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                    c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
+                    c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
+                    c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
                     c.invoice_footer_text, c.quote_footer_text,
                     ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
                     ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
@@ -148,6 +158,12 @@ try {
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    // Resolve branding so the title + footer match the rest of the app
+    // (the writer reads colours/font/toggles straight off $doc).
+    $brand = Branding::resolve($doc, $type);
+    $doc['_doc_type']    = $brand['title'];
+    $doc['_footer_text'] = $brand['footer'];
 
     // Generate PDF
     $pdf = new QiStyledPdfWriter($doc, $lines);
