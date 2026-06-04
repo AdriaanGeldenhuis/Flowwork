@@ -11,7 +11,7 @@ function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-20-QI-delete-options-v1');
+define('ASSET_VERSION', '2026-06-04-QI-payment-calc-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -149,6 +149,53 @@ function format_currency($amount) {
             <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
         }
         .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+
+        /* Live "what's paid / left / %" breakdown inside the Record Payment modal */
+        .fw-qi__payment-calc {
+            margin-top: 4px;
+            padding: 12px 14px;
+            border: 1px solid var(--fw-border, #e5e7eb);
+            border-radius: 10px;
+            background: var(--fw-surface-2, #f9fafb);
+        }
+        .fw-qi[data-theme="dark"] .fw-qi__payment-calc {
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(255,255,255,0.12);
+        }
+        .fw-qi__payment-calc-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 13px;
+            padding: 3px 0;
+            color: var(--fw-text, #374151);
+        }
+        .fw-qi__payment-calc-row--strong {
+            font-weight: 700;
+            border-top: 1px solid var(--fw-border, #e5e7eb);
+            margin-top: 4px;
+            padding-top: 7px;
+        }
+        .fw-qi__payment-progress {
+            height: 8px;
+            border-radius: 999px;
+            background: var(--fw-border, #e5e7eb);
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .fw-qi__payment-progress-bar {
+            height: 100%;
+            background: var(--accent-qi, #fbbf24);
+            border-radius: 999px;
+            transition: width .2s ease;
+        }
+        .fw-qi__payment-calc-pct {
+            text-align: right;
+            font-size: 12px;
+            margin-top: 5px;
+            font-weight: 600;
+            color: var(--fw-text-muted, #6b7280);
+        }
 
         /* The invoice document always renders the desktop layout at a fixed
            940px wide. On phones it sits inside .fw-qi__doc-viewport which
@@ -488,6 +535,14 @@ function format_currency($amount) {
                 <?php if (!empty($milestones)): ?>
                     <div class="fw-qi__doc-section fw-qi__milestones-view">
                         <h3>Payment Schedule</h3>
+                        <?php
+                            $schedPaid    = max(0, (float)$invoice['total'] - (float)$invoice['balance_due']);
+                            $schedPaidPct = (float)$invoice['total'] > 0 ? ($schedPaid / (float)$invoice['total']) * 100 : 0;
+                        ?>
+                        <p style="margin:-4px 0 12px;font-size:13px;color:#6b7280;">
+                            Paid <?= format_currency($schedPaid) ?> of <?= format_currency($invoice['total']) ?>
+                            (<?= number_format($schedPaidPct, 1) ?>%) — Outstanding <?= format_currency($invoice['balance_due']) ?>
+                        </p>
                         <div class="fw-qi__doc-table-wrap">
                         <table class="fw-qi__doc-table fw-qi__milestones-table">
                             <thead>
@@ -604,25 +659,26 @@ function format_currency($amount) {
                             <input type="date" name="payment_date" class="fw-qi__input" value="<?= date('Y-m-d') ?>" required>
                         </div>
                         <?php if (!empty($milestones)): ?>
-                        <div class="fw-qi__form-group">
-                            <label class="fw-qi__label">Payment Phase</label>
-                            <select name="milestone_id" class="fw-qi__input" id="milestoneSelect" onchange="InvoiceView.onMilestoneSelect()">
-                                <option value="">— General payment —</option>
-                                <?php $firstUnpaidSelected = false; ?>
-                                <?php foreach ($milestones as $ms): ?>
-                                    <?php if ($ms['status'] !== 'paid'): ?>
-                                        <option value="<?= $ms['id'] ?>" data-remaining="<?= number_format($ms['amount'] - $ms['amount_paid'], 2, '.', '') ?>"<?php if (!$firstUnpaidSelected) { echo ' selected'; $firstUnpaidSelected = true; } ?>>
-                                            <?= htmlspecialchars($ms['label']) ?> (<?= number_format($ms['percentage'], 1) ?>% — R <?= number_format($ms['amount'] - $ms['amount_paid'], 2) ?> remaining)
-                                        </option>
-                                    <?php endif; ?>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+                        <p class="fw-qi__text-muted" style="margin:-4px 0 14px;font-size:12px;">
+                            This payment is applied to your payment schedule automatically — the oldest unpaid phase first.
+                        </p>
                         <?php endif; ?>
                         <div class="fw-qi__form-group">
                             <label class="fw-qi__label">Amount (R) <span class="fw-qi__required">*</span></label>
-                            <input type="number" name="amount" class="fw-qi__input" min="0.01" step="0.01" placeholder="0.00" required>
-                            <small class="fw-qi__text-muted">Outstanding balance: R <?= number_format($invoice['balance_due'], 2) ?></small>
+                            <input type="number" name="amount" class="fw-qi__input" min="0.01" step="0.01" placeholder="0.00" required oninput="InvoiceView.updatePaymentCalc()">
+                        </div>
+                        <?php
+                            $invTotal   = (float)$invoice['total'];
+                            $invPaid    = max(0, $invTotal - (float)$invoice['balance_due']);
+                            $invPaidPct = $invTotal > 0 ? ($invPaid / $invTotal) * 100 : 0;
+                        ?>
+                        <div class="fw-qi__payment-calc" id="paymentCalc">
+                            <div class="fw-qi__payment-calc-row"><span>Invoice total</span><span><?= format_currency($invTotal) ?></span></div>
+                            <div class="fw-qi__payment-calc-row"><span>Already paid</span><span id="calcPaid"><?= format_currency($invPaid) ?></span></div>
+                            <div class="fw-qi__payment-calc-row"><span>This payment</span><span id="calcThis">R 0.00</span></div>
+                            <div class="fw-qi__payment-calc-row fw-qi__payment-calc-row--strong"><span>Outstanding after</span><span id="calcRemaining"><?= format_currency($invoice['balance_due']) ?></span></div>
+                            <div class="fw-qi__payment-progress"><div class="fw-qi__payment-progress-bar" id="calcBar" style="width:<?= round(min(100, max(0, $invPaidPct)), 1) ?>%;"></div></div>
+                            <div class="fw-qi__payment-calc-pct" id="calcPct"><?= number_format($invPaidPct, 1) ?>% paid</div>
                         </div>
                         <div class="fw-qi__form-group">
                             <label class="fw-qi__label">Method <span class="fw-qi__required">*</span></label>
@@ -664,6 +720,7 @@ function format_currency($amount) {
             customerEmail: '<?= addslashes($invoice['customer_email'] ?? '') ?>',
             customerName: '<?= addslashes($invoice['customer_name'] ?? 'Customer') ?>',
             balanceDue: parseFloat('<?= (float)$invoice['balance_due'] ?>'),
+            invoiceTotal: parseFloat('<?= (float)$invoice['total'] ?>'),
             hasMilestones: <?= !empty($milestones) ? 'true' : 'false' ?>
         });
     </script>

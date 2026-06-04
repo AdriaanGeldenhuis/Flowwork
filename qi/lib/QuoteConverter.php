@@ -85,9 +85,11 @@ class QuoteConverter {
                 $stmt->execute([$quoteId, $companyId]);
                 $quoteMilestones = $stmt->fetchAll();
                 if (!empty($quoteMilestones)) {
-                    $msInsert = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('invoice', ?, ?, ?, ?, ?, ?, 'pending', ?)");
-                    foreach ($quoteMilestones as $ms) {
+                    $msInsert = $DB->prepare("INSERT INTO payment_milestones (entity_type, entity_id, company_id, label, percentage, amount, due_date, status, sort_order) VALUES ('invoice', ?, ?, ?, ?, ?, ?, ?, ?)");
+                    foreach ($quoteMilestones as $idx => $ms) {
                         $msAmount = round($quote['total'] * ($ms['percentage'] / 100), 2);
+                        // First phase is immediately payable; the rest wait their turn.
+                        $msStatus = ($idx === 0) ? 'due' : 'pending';
                         $msInsert->execute([
                             $invoiceId,
                             $companyId,
@@ -95,6 +97,7 @@ class QuoteConverter {
                             $ms['percentage'],
                             $msAmount,
                             $ms['due_date'],
+                            $msStatus,
                             $ms['sort_order'],
                         ]);
                     }

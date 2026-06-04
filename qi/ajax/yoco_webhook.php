@@ -115,6 +115,9 @@ if ($reference && $status && preg_match('/paid|success|complete/', $status)) {
                 // Allocate payment to invoice
                 $stmt = $DB->prepare('INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)');
                 $stmt->execute([$paymentId, $invoiceId, $amountPaid]);
+                // Spread the payment across the payment schedule (no-op if none)
+                require_once __DIR__ . '/../lib/MilestoneAllocator.php';
+                MilestoneAllocator::allocate($DB, $invCompanyId, $invoiceId, (int)$paymentId, $amountPaid);
                 // Update invoice
                 $newBalance = $balanceDue - $amountPaid;
                 $newStatus  = ($newBalance <= 0.001) ? 'paid' : 'part-paid';

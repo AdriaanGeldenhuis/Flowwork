@@ -176,7 +176,7 @@ $counts = $stmt->fetch();
                             <option value="viewed">Viewed</option>
                             <option value="paid">Paid</option>
                             <option value="overdue">Overdue</option>
-                            <option value="partial">Partially Paid</option>
+                            <option value="part-paid">Partially Paid</option>
                         <?php elseif ($activeTab === 'recurring'): ?>
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>

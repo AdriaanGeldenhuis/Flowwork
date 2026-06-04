@@ -66,45 +66,25 @@ try {
     ");
     $stmt->execute([$paymentId, $invoiceId, $amount]);
 
-    // If milestone-based payment, update milestone tracking
-    if ($milestoneId) {
-        // Validate milestone belongs to this invoice
-        $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE id = ? AND entity_type = 'invoice' AND entity_id = ? AND company_id = ?");
-        $stmt->execute([$milestoneId, $invoiceId, $companyId]);
-        $milestone = $stmt->fetch();
-
-        if (!$milestone) {
-            throw new Exception('Payment milestone not found');
-        }
-
-        $msRemaining = $milestone['amount'] - $milestone['amount_paid'];
-        if ($amount > $msRemaining + 0.01) {
-            throw new Exception('Payment amount exceeds milestone remaining (R ' . number_format($msRemaining, 2) . ')');
-        }
-
-        // Record milestone payment link
-        $stmt = $DB->prepare("INSERT INTO milestone_payments (milestone_id, payment_id, amount) VALUES (?, ?, ?)");
-        $stmt->execute([$milestoneId, $paymentId, $amount]);
-
-        // Update milestone amount_paid and status
-        $newMsPaid = $milestone['amount_paid'] + $amount;
-        $msStatus = ($newMsPaid >= $milestone['amount'] - 0.01) ? 'paid' : 'due';
-        $stmt = $DB->prepare("UPDATE payment_milestones SET amount_paid = ?, status = ?, updated_at = NOW() WHERE id = ?");
-        $stmt->execute([min($newMsPaid, $milestone['amount']), $msStatus, $milestoneId]);
-
-        // If milestone is now fully paid, advance the next pending milestone to 'due'
-        if ($msStatus === 'paid') {
-            $nextStmt = $DB->prepare("UPDATE payment_milestones SET status = 'due' WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? AND status = 'pending' ORDER BY sort_order ASC LIMIT 1");
-            $nextStmt->execute([$invoiceId, $companyId]);
-        }
+    // ── Allocate the payment across the payment schedule (waterfall) ─────────────
+    // A recorded payment always reduces the invoice's outstanding balance. When the
+    // invoice has a payment schedule, MilestoneAllocator spreads the amount across
+    // its phases (oldest unpaid first) and re-derives each phase's status, so the
+    // schedule's paid figures and percentages stay consistent with the balance no
+    // matter what amount is entered — the user just types what was received and the
+    // rest is worked out automatically. ($milestoneId is accepted for backward
+    // compatibility but no longer forces a single-phase allocation.)
+    if (!empty($invoice['has_milestones'])) {
+        require_once __DIR__ . '/../lib/MilestoneAllocator.php';
+        MilestoneAllocator::allocate($DB, $companyId, $invoiceId, (int)$paymentId, $amount);
     }
 
     // Update invoice balance and status
-    $newBalance = $invoice['balance_due'] - $amount;
-    // Determine new status: fully paid => paid; partial => part-paid; else keep existing
-    if ($newBalance <= 0) {
-        $newStatus = 'paid';
-        $paidAt    = date('Y-m-d H:i:s');
+    $newBalance = round((float)$invoice['balance_due'] - $amount, 2);
+    // Determine new status: fully paid => paid; partial => part-paid
+    if ($newBalance <= 0.005) {
+        $newStatus  = 'paid';
+        $paidAt     = date('Y-m-d H:i:s');
         $newBalance = 0; // ensure no negative balance
     } else {
         $newStatus = 'part-paid';

@@ -129,11 +129,20 @@ try {
             $stmt = $DB->prepare("DELETE FROM payment_allocations WHERE invoice_id = ?");
             $stmt->execute([$invoiceId]);
 
-            // Reset milestone tracking on this invoice
+            // Reset milestone tracking on this invoice, then re-arm the first phase
             $stmt = $DB->prepare("
                 UPDATE payment_milestones
                    SET amount_paid = 0, status = 'pending'
                  WHERE entity_type='invoice' AND entity_id = ? AND company_id = ?
+            ");
+            $stmt->execute([$invoiceId, $companyId]);
+
+            $stmt = $DB->prepare("
+                UPDATE payment_milestones
+                   SET status = 'due'
+                 WHERE entity_type='invoice' AND entity_id = ? AND company_id = ?
+                 ORDER BY sort_order ASC, id ASC
+                 LIMIT 1
             ");
             $stmt->execute([$invoiceId, $companyId]);
 

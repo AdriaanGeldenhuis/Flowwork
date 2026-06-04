@@ -5,6 +5,7 @@ const InvoiceView = {
     customerEmail: '',
     customerName: '',
     balanceDue: 0,
+    invoiceTotal: 0,
     hasMilestones: false,
 
     init: function (opts) {
@@ -12,23 +13,38 @@ const InvoiceView = {
         this.customerEmail = opts.customerEmail || '';
         this.customerName = opts.customerName || '';
         this.balanceDue = opts.balanceDue || 0;
+        this.invoiceTotal = opts.invoiceTotal || 0;
         this.hasMilestones = opts.hasMilestones || false;
     },
 
     /**
-     * When a milestone is selected in the payment modal, pre-fill the amount
+     * Recompute the live "paid / outstanding / %" breakdown in the payment modal
+     * as the user types an amount. Mirrors the server's logic: the amount is simply
+     * subtracted from the outstanding balance and the percentage is worked out from
+     * the actual paid total.
      */
-    onMilestoneSelect: function() {
-        const select = document.getElementById('milestoneSelect');
-        if (!select) return;
-        const option = select.options[select.selectedIndex];
-        const remaining = option?.dataset?.remaining;
-        if (remaining && parseFloat(remaining) > 0) {
-            const amountInput = document.querySelector('#paymentForm input[name="amount"]');
-            if (amountInput) {
-                amountInput.value = remaining;
-            }
-        }
+    updatePaymentCalc: function () {
+        const form = document.getElementById('paymentForm');
+        if (!form) return;
+        const total = this.invoiceTotal || 0;
+        const alreadyPaid = Math.max(0, total - this.balanceDue);
+
+        let amt = parseFloat(form.amount.value);
+        if (isNaN(amt) || amt < 0) amt = 0;
+
+        const newPaid = Math.min(total, alreadyPaid + amt);
+        const remaining = Math.max(0, this.balanceDue - amt);
+        const pct = total > 0 ? Math.min(100, (newPaid / total) * 100) : 0;
+
+        const fmt = (n) => 'R ' + Number(n).toFixed(2);
+        const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+
+        setText('calcPaid', fmt(alreadyPaid));
+        setText('calcThis', fmt(amt));
+        setText('calcRemaining', fmt(remaining));
+        setText('calcPct', pct.toFixed(1) + '% paid');
+        const bar = document.getElementById('calcBar');
+        if (bar) bar.style.width = pct.toFixed(1) + '%';
     },
 
     async sendInvoice() {
@@ -280,8 +296,8 @@ const InvoiceView = {
         if (overlay) {
             overlay.classList.add('fw-qi__modal-overlay--active');
         }
-        // Auto-fill amount from pre-selected milestone
-        this.onMilestoneSelect();
+        // Render the initial paid / outstanding / % breakdown
+        this.updatePaymentCalc();
     },
 
     /**
@@ -327,10 +343,8 @@ const InvoiceView = {
             submitBtn.textContent = 'Recording...';
         }
         try {
-            // Get milestone selection if present
-            const milestoneSelect = document.getElementById('milestoneSelect');
-            const milestoneId = milestoneSelect ? milestoneSelect.value || null : null;
-
+            // The payment is allocated across the schedule automatically server-side
+            // (oldest unpaid phase first), so no per-phase selection is sent.
             const data = await UI.fetchJSON('/qi/ajax/record_payment.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -340,8 +354,7 @@ const InvoiceView = {
                     amount: amount,
                     method: method,
                     reference: reference,
-                    notes: notes,
-                    milestone_id: milestoneId
+                    notes: notes
                 })
             });
             if (data.ok) {
