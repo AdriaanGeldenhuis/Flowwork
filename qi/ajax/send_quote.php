@@ -5,6 +5,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Branding.php';
 
 header('Content-Type: application/json');
 
@@ -39,15 +40,29 @@ try {
     
     // Get quote details along with customer and company info
     $stmt = $DB->prepare(
-        "SELECT q.*, 
-               ca.name  AS customer_name,
-               ca.email AS customer_email,
-               c.name   AS company_name,
-               c.email  AS company_email
-        FROM quotes q
-        LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
-        LEFT JOIN companies c     ON q.company_id = c.id
-        WHERE q.id = ? AND q.company_id = ?"
+        "SELECT q.*,
+                c.name AS company_name, c.logo_url, c.vat_number, c.tax_number, c.reg_number,
+                c.website, c.phone AS company_phone, c.email AS company_email,
+                c.address_line1 AS company_address1, c.address_line2 AS company_address2,
+                c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
+                c.bank_name, c.bank_account_number, c.bank_branch_code,
+                c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
+                c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
+                c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
+                c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
+                c.invoice_footer_text, c.quote_footer_text,
+                ca.name AS customer_name, ca.email AS customer_email, ca.phone AS customer_phone,
+                ca.vat_no AS customer_vat, ca.reg_no AS customer_reg,
+                addr.line1 AS customer_address1, addr.line2 AS customer_address2,
+                addr.city AS customer_city, addr.region AS customer_region, addr.postal_code AS customer_postal,
+                p.name AS project_name
+         FROM quotes q
+         LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
+         LEFT JOIN companies c ON q.company_id = c.id
+         LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
+         LEFT JOIN projects p ON q.project_id = p.project_id
+         WHERE q.id = ? AND q.company_id = ?"
     );
     $stmt->execute([$quoteId, $companyId]);
     $quote = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -56,33 +71,28 @@ try {
         throw new Exception('Quote not found');
     }
 
-    // Ensure pdf_path exists; if not, generate a simple PDF now (Section 7)
+    // Ensure pdf_path exists; if not, generate the branded PDF now so the
+    // emailed document matches the on-screen and downloaded versions.
     $pdfPath = $quote['pdf_path'] ?? null;
     if (empty($pdfPath)) {
-        require_once __DIR__ . '/../../includes/pdf/qi_pdf.php';
+        require_once __DIR__ . '/../../includes/pdf/qi_styled_pdf.php';
+
         // Fetch quote line items
         $stmtLines = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
         $stmtLines->execute([$quoteId]);
         $lineRows = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
-        // Build content lines similar to generate_pdf.php
-        $contentLines = [];
-        $contentLines[] = 'Quote: ' . $quote['quote_number'];
-        $contentLines[] = 'Date Issued: ' . date('Y-m-d', strtotime($quote['issue_date']));
-        $contentLines[] = 'Expires: ' . date('Y-m-d', strtotime($quote['expiry_date']));
-        $contentLines[] = 'Company: ' . $quote['company_name'];
-        $contentLines[] = 'Customer: ' . $quote['customer_name'];
-        $contentLines[] = ' ';
-        $contentLines[] = 'Description | Qty | Unit Price | Line Total';
-        foreach ($lineRows as $li) {
-            $contentLines[] = $li['item_description'] . ' | ' . (float)$li['quantity'] . ' | ' . number_format((float)$li['unit_price'], 2) . ' | ' . number_format((float)$li['line_total'], 2);
-        }
-        $contentLines[] = ' ';
-        $contentLines[] = 'Subtotal: ' . number_format((float)$quote['subtotal'], 2);
-        if ((float)$quote['discount'] > 0) {
-            $contentLines[] = 'Discount: ' . number_format((float)$quote['discount'], 2);
-        }
-        $contentLines[] = 'VAT (15%): ' . number_format((float)$quote['tax'], 2);
-        $contentLines[] = 'Total: ' . number_format((float)$quote['total'], 2);
+
+        // Branding + document meta (same shape the download endpoint uses)
+        $brand = Branding::resolve($quote, 'quote');
+        $quote['_doc_type']    = $brand['title'];
+        $quote['_doc_title']   = 'Quote #: ' . $quote['quote_number'];
+        $quote['_footer_text'] = $brand['footer'];
+        $quote['_dates'] = [
+            'Issue Date' => date('d M Y', strtotime($quote['issue_date'])),
+            'Expires'    => date('d M Y', strtotime($quote['expiry_date'])),
+            'Status'     => ucfirst($quote['status']),
+        ];
+
         // Determine file paths
         $safeCode = preg_replace('~[^A-Za-z0-9_-]~', '_', $quote['quote_number']);
         $dir      = __DIR__ . '/../../storage/qi/' . $companyId . '/quote';
@@ -91,8 +101,11 @@ try {
         }
         $absPath = $dir . '/' . $safeCode . '.pdf';
         $relPath = '/storage/qi/' . $companyId . '/quote/' . $safeCode . '.pdf';
-        // Generate PDF
-        qi_generate_simple_pdf($contentLines, $absPath);
+
+        // Generate branded PDF
+        $pdf = new QiStyledPdfWriter($quote, $lineRows);
+        file_put_contents($absPath, $pdf->render());
+
         // Update record
         $upd = $DB->prepare("UPDATE quotes SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
         $upd->execute([$relPath, $quoteId, $companyId]);

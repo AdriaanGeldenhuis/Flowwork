@@ -3,12 +3,9 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
-function sanitize_css_color(string $color, string $fallback = '#fbbf24'): string {
-    return preg_match('/^#[0-9a-fA-F]{3,8}$/', $color) ? $color : $fallback;
-}
-
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Branding.php';
 
 define('ASSET_VERSION', '2026-05-18-QI-pdf-download-v1');
 
@@ -54,6 +51,7 @@ try {
                c.qi_show_vat_number,
                c.qi_show_tax_number,
                c.qi_show_reg_number,
+               c.qi_show_payment_details,
                c.qi_heading_color,
                c.qi_text_color,
                c.qi_table_header_text,
@@ -111,35 +109,20 @@ try {
 $companyName = $creditNote['company_name'] ?? 'Company';
 $canApply = ($creditNote['status'] === 'approved' && $creditNote['invoice_id']);
 
-// Branding
-$primaryColor   = sanitize_css_color($creditNote['primary_color'] ?? '#fbbf24');
-$secondaryColor = sanitize_css_color($creditNote['secondary_color'] ?? '#f59e0b', '#f59e0b');
-$headingColor   = sanitize_css_color($creditNote['qi_heading_color'] ?? '', $primaryColor);
-$textColor      = $creditNote['qi_text_color'] ?? '';
-$tableHeaderText = $creditNote['qi_table_header_text'] ?? '#ffffff';
-$bgColor        = $creditNote['qi_bg_color'] ?? '';
-$borderRadius   = max(0, min(24, (int)($creditNote['qi_border_radius'] ?? 8)));
-$logoSize       = max(80, min(400, (int)($creditNote['qi_logo_size'] ?? 200)));
-$logoPosition   = in_array($creditNote['qi_logo_position'] ?? 'left', ['left','center','right']) ? $creditNote['qi_logo_position'] : 'left';
-$customCss      = $creditNote['qi_custom_css'] ?? '';
-$template       = in_array($creditNote['qi_template'] ?? 'modern', ['modern','classic','minimal','bold','corporate']) ? $creditNote['qi_template'] : 'modern';
-$fontFamily     = $creditNote['qi_font_family'] ?? 'system-ui';
-$fontMap = [
-    'system-ui'  => 'system-ui, -apple-system, sans-serif',
-    'montserrat' => "'Montserrat', sans-serif",
-    'helvetica'  => "'Helvetica Neue', Helvetica, Arial, sans-serif",
-    'georgia'    => 'Georgia, serif',
-    'inter'      => "'Inter', sans-serif"
-];
-$fontStack = $fontMap[$fontFamily] ?? $fontMap['system-ui'];
+// Colour, text and font customisation — resolved centrally (qi/lib/Branding.php).
+$brand = Branding::resolve($creditNote, 'credit_note');
+$template     = $brand['template'];
+$logoPosition = $brand['logo_position'];
+$customCss    = Branding::customCss($brand);
 
-$showAddress = (int)($creditNote['qi_show_company_address'] ?? 1);
-$showPhone   = (int)($creditNote['qi_show_company_phone']   ?? 1);
-$showEmail   = (int)($creditNote['qi_show_company_email']   ?? 1);
-$showWebsite = (int)($creditNote['qi_show_company_website'] ?? 1);
-$showVat     = (int)($creditNote['qi_show_vat_number']      ?? 1);
-$showTax     = (int)($creditNote['qi_show_tax_number']      ?? 1);
-$showReg     = (int)($creditNote['qi_show_reg_number']      ?? 1);
+$showAddress = $brand['show']['address'];
+$showPhone   = $brand['show']['phone'];
+$showEmail   = $brand['show']['email'];
+$showWebsite = $brand['show']['website'];
+$showVat     = $brand['show']['vat'];
+$showTax     = $brand['show']['tax'];
+$showReg     = $brand['show']['reg'];
+$showPayment = $brand['show']['payment'];
 
 function format_currency($amount) {
     return 'R ' . number_format((float)$amount, 2);
@@ -154,26 +137,14 @@ function format_currency($amount) {
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= htmlspecialchars($creditNote['credit_note_number']) ?> – <?= htmlspecialchars($companyName) ?></title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <?= Branding::fontHeadLinks() ?>
+
 
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
 
     <style>
-        :root {
-            --accent-qi: <?= $primaryColor ?>;
-            --accent-qi-secondary: <?= $secondaryColor ?>;
-            --doc-font: <?= $fontStack ?>;
-            --qi-heading: <?= $headingColor ?>;
-            --qi-border-radius: <?= $borderRadius ?>px;
-            --qi-logo-max-w: <?= $logoSize ?>px;
-            --qi-th-text: <?= $tableHeaderText ?>;
-            <?php if ($textColor): ?>--qi-text: <?= $textColor ?>;<?php endif; ?>
-            <?php if ($bgColor): ?>--qi-doc-bg: <?= $bgColor ?>;<?php endif; ?>
-        }
-        .fw-qi__document, .fw-qi__document * { font-family: <?= $fontStack ?> !important; }
+<?= Branding::documentStyle($brand) ?>
         <?= $customCss ?>
     </style>
 </head>

@@ -14,9 +14,10 @@
   --qi-heading-color: var(--qi-heading, var(--qi-primary));
   --qi-text-color: var(--qi-text, #374151);
   --qi-text-dark: var(--qi-text-dk, #1f2937);
-  --qi-text-muted: #6b7280;
+  --qi-text-muted: var(--qi-muted, #6b7280);
   --qi-bg: var(--qi-doc-bg, #ffffff);
   --qi-table-header-text: var(--qi-th-text, #ffffff);
+  --qi-table-header-bg: var(--qi-thead-bg, var(--qi-primary));
   --qi-radius: var(--qi-border-radius, 8px);
   --qi-logo-size: var(--qi-logo-max-w, 200px);
   --qi-font: var(--doc-font, system-ui, -apple-system, sans-serif);
@@ -38,6 +39,8 @@
 
 .fw-qi__document {
   background: var(--qi-bg);
+  color: var(--qi-text-color);
+  font-family: var(--qi-font);
   max-width: 900px;
   margin: 40px auto;
   box-shadow: none;
@@ -271,7 +274,7 @@
 }
 
 .fw-qi__doc-table thead {
-  background: var(--qi-primary);
+  background: var(--qi-table-header-bg);
 }
 
 .fw-qi__doc-table th {
@@ -1149,7 +1152,7 @@
   color: var(--qi-text-color, #374151) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table thead {
-  background: var(--qi-primary) !important;
+  background: var(--qi-table-header-bg) !important;
 }
 .fw-qi[data-theme="dark"] .fw-qi__document .fw-qi__doc-table th {
   color: var(--qi-table-header-text, #ffffff) !important;

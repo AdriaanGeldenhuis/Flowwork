@@ -5,6 +5,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Branding.php';
 
 define('ASSET_VERSION', '2026-04-06-QI-v2');
 
@@ -157,6 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Q&I Settings – <?= htmlspecialchars($company['name']) ?></title>
+    <?= Branding::fontHeadLinks() ?>
+
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-qi__color-input-wrapper { display: flex; gap: 12px; align-items: center; }
@@ -483,7 +486,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 </div>
                             </div>
                             <div class="fw-qi__form-group">
-                                <label class="fw-qi__label">Secondary Color</label>
+                                <label class="fw-qi__label">Secondary Color <small>(table header gradient &amp; accents)</small></label>
                                 <div class="fw-qi__color-input-wrapper">
                                     <input type="color" name="secondary_color" class="fw-qi__color-picker" value="<?= htmlspecialchars($company['secondary_color'] ?? '#f59e0b') ?>" id="secondaryColor">
                                     <input type="text" class="fw-qi__input fw-qi__input--color" value="<?= htmlspecialchars($company['secondary_color'] ?? '#f59e0b') ?>" readonly id="secondaryColorText">
@@ -508,7 +511,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </div>
                         <div class="fw-qi__form-row" style="margin-top:16px;">
                             <div class="fw-qi__form-group">
-                                <label class="fw-qi__label">Table Header Text</label>
+                                <label class="fw-qi__label">Table Header Text <small>(auto-adjusts for contrast)</small></label>
                                 <div class="fw-qi__color-input-wrapper">
                                     <input type="color" name="qi_table_header_text" class="fw-qi__color-picker" value="<?= htmlspecialchars($company['qi_table_header_text'] ?? '#ffffff') ?>" data-sync="thTextColorText">
                                     <input type="text" class="fw-qi__input fw-qi__input--color" value="<?= htmlspecialchars($company['qi_table_header_text'] ?? '#ffffff') ?>" readonly id="thTextColorText">
