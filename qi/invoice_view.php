@@ -327,7 +327,7 @@ function format_currency($amount) {
                         <?php endif; ?>
 
                         <hr style="margin:8px 0;border:none;border-top:1px solid var(--fw-border);">
-                        <button onclick="window.open('/qi/ajax/generate_pdf.php?type=invoice&id=<?= (int)$invoiceId ?>','_blank')" class="fw-qi__kebab-item">
+                        <button onclick="InvoiceView.printInvoice()" class="fw-qi__kebab-item">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
                                 <polyline points="6 9 6 2 18 2 18 9" />
                                 <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
@@ -411,36 +411,29 @@ function format_currency($amount) {
                         <?php if ($invoice['logo_url']): ?>
                             <img src="<?= htmlspecialchars($invoice['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                         <?php endif; ?>
-                    <div class="fw-qi__doc-company">
-                        <h1 class="fw-qi__doc-title"><?= $docTitle ?></h1>
-                        <?php if ($showAddress): ?>
-                            <p><?= htmlspecialchars($invoice['company_address1']) ?><?php if (!empty($invoice['company_address2'])): ?><br><?= htmlspecialchars($invoice['company_address2']) ?><?php endif; ?><br><?= htmlspecialchars($invoice['company_city']) ?>, <?= htmlspecialchars($invoice['company_region']) ?> <?= htmlspecialchars($invoice['company_postal']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showPhone && $invoice['company_phone']): ?>
-                            <p>Tel: <?= htmlspecialchars($invoice['company_phone']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showEmail && $invoice['company_email']): ?>
-                            <p>Email: <?= htmlspecialchars($invoice['company_email']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showWebsite && $invoice['website']): ?>
-                            <p>Website: <?= htmlspecialchars($invoice['website']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showVat && $invoice['vat_number']): ?>
-                            <p>VAT No: <?= htmlspecialchars($invoice['vat_number']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showTax && $invoice['tax_number']): ?>
-                            <p>Tax No: <?= htmlspecialchars($invoice['tax_number']) ?></p>
-                        <?php endif; ?>
-                        <?php if ($showReg && $invoice['reg_number']): ?>
-                            <p>Reg No: <?= htmlspecialchars($invoice['reg_number']) ?></p>
-                        <?php endif; ?>
+                        <div class="fw-qi__doc-company">
+                            <h1><?= htmlspecialchars($invoice['company_name']) ?></h1>
+                            <?php if ($showAddress): ?>
+                                <?php if ($invoice['company_address1']): ?><p><?= htmlspecialchars($invoice['company_address1']) ?></p><?php endif; ?>
+                                <?php if ($invoice['company_address2']): ?><p><?= htmlspecialchars($invoice['company_address2']) ?></p><?php endif; ?>
+                                <?php if ($invoice['company_city']): ?><p><?= htmlspecialchars($invoice['company_city']) ?>, <?= htmlspecialchars($invoice['company_postal']) ?></p><?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($showReg && $invoice['reg_number']): ?><p><strong>Reg No:</strong> <?= htmlspecialchars($invoice['reg_number']) ?></p><?php endif; ?>
+                            <?php if ($showTax && $invoice['tax_number']): ?><p><strong>Tax:</strong> <?= htmlspecialchars($invoice['tax_number']) ?></p><?php endif; ?>
+                            <?php if ($showVat && $invoice['vat_number']): ?><p><strong>VAT No:</strong> <?= htmlspecialchars($invoice['vat_number']) ?></p><?php endif; ?>
+                            <?php if ($showPhone && $invoice['company_phone']): ?><p><?= htmlspecialchars($invoice['company_phone']) ?></p><?php endif; ?>
+                            <?php if ($showEmail && $invoice['company_email']): ?><p><?= htmlspecialchars($invoice['company_email']) ?></p><?php endif; ?>
+                            <?php if ($showWebsite && $invoice['website']): ?><p><?= htmlspecialchars($invoice['website']) ?></p><?php endif; ?>
+                        </div>
                     </div>
-                    </div><!-- /.fw-qi__doc-header-left -->
-                    <div class="fw-qi__doc-meta">
-                        <h2>Invoice #: <?= htmlspecialchars($invoice['invoice_number']) ?></h2>
-                        <p>Issue Date: <?= htmlspecialchars(date('d M Y', strtotime($invoice['issue_date']))) ?></p>
-                        <p>Due Date: <?= htmlspecialchars(date('d M Y', strtotime($invoice['due_date']))) ?></p>
-                        <p>Status: <?= htmlspecialchars(ucfirst($invoice['status'])) ?></p>
+                    <div class="fw-qi__doc-header-right">
+                        <h2 class="fw-qi__doc-title"><?= $docTitle ?></h2>
+                        <div class="fw-qi__doc-number"><?= htmlspecialchars($invoice['invoice_number']) ?></div>
+                        <table class="fw-qi__doc-info-table" style="margin-top:8px;">
+                            <tr><td>Issue Date:</td><td><strong><?= date('d M Y', strtotime($invoice['issue_date'])) ?></strong></td></tr>
+                            <tr><td>Due Date:</td><td><strong><?= date('d M Y', strtotime($invoice['due_date'])) ?></strong></td></tr>
+                        </table>
+                        <span class="fw-qi__badge fw-qi__badge--<?= htmlspecialchars($invoice['status']) ?>"><?= strtoupper(str_replace('_', ' ', $invoice['status'])) ?></span>
 
                         <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                             <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
@@ -470,7 +463,7 @@ function format_currency($amount) {
                                 <p style="margin:3px 0;">Reg No: <?= htmlspecialchars($invoice['customer_reg']) ?></p>
                             <?php endif; ?>
                         </div>
-                                            </div>
+                    </div>
                 </div>
 
                 <?php if ($invoice['project_name']): ?>

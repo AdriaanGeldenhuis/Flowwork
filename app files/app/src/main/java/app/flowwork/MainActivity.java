@@ -2,15 +2,18 @@ package app.flowwork;
 
 import android.Manifest;
 import android.app.DownloadManager;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Message;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -43,10 +46,42 @@ public class MainActivity extends AppCompatActivity {
         settings.setDatabaseEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        // Required for window.open() (e.g. the "Print" button on invoice/quote
+        // pages). Without these, window.open silently returns null and the
+        // user sees nothing happen.
+        settings.setSupportMultipleWindows(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
 
         // WebViewClient
         webView.setWebViewClient(new WebViewClient());
-        webView.setWebChromeClient(new WebChromeClient());
+
+        // WebChromeClient — handle window.open by forwarding the target URL to
+        // the system browser. This lets the user use the browser's print/save
+        // features for the printable HTML preview, while the main WebView
+        // stays on the document view.
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog,
+                    boolean isUserGesture, Message resultMsg) {
+                WebView popup = new WebView(view.getContext());
+                popup.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView v,
+                            WebResourceRequest request) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, request.getUrl()));
+                        } catch (Exception ignored) {
+                        }
+                        return true;
+                    }
+                });
+                WebView.WebViewTransport transport =
+                        (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(popup);
+                resultMsg.sendToTarget();
+                return true;
+            }
+        });
 
         // Handle file downloads (PDF, CSV, etc.)
         webView.setDownloadListener(new DownloadListener() {
@@ -62,7 +97,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void downloadFile(String url, String contentDisposition, String mimeType) {
-        // On Android 9 and below, request storage permission first
+        // On Android 9 and below, request storage permission first.
+        // Android 10+ uses scoped storage and doesn't need WRITE_EXTERNAL_STORAGE
+        // for DownloadManager writing into the public Downloads directory.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         != PackageManager.PERMISSION_GRANTED) {
@@ -78,7 +115,9 @@ public class MainActivity extends AppCompatActivity {
         String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
 
         DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-        request.setMimeType(mimeType);
+        if (mimeType != null && !mimeType.isEmpty()) {
+            request.setMimeType(mimeType);
+        }
 
         // Pass session cookies so the download is authenticated
         String cookies = CookieManager.getInstance().getCookie(url);
@@ -88,15 +127,20 @@ public class MainActivity extends AppCompatActivity {
         request.addRequestHeader("User-Agent", webView.getSettings().getUserAgentString());
 
         request.setTitle(fileName);
-        request.setDescription("Downloading file...");
+        request.setDescription("Downloading " + fileName);
         request.setNotificationVisibility(
                 DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
         request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+        // Make the file visible in the Downloads app / file pickers.
+        request.allowScanningByMediaScanner();
 
         DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-        dm.enqueue(request);
-
-        Toast.makeText(this, "Downloading " + fileName, Toast.LENGTH_SHORT).show();
+        if (dm != null) {
+            dm.enqueue(request);
+            Toast.makeText(this, "Downloading " + fileName, Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Download service unavailable", Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
