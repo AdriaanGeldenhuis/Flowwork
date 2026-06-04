@@ -48,6 +48,23 @@ try {
         $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    // Fetch the individual payments allocated to this invoice (payment history).
+    // Each "Record Payment" / Yoco / refund entry shows here as its own line, so
+    // multiple payments are never silently rolled into a single figure.
+    $stmt = $DB->prepare(
+        "SELECT p.payment_date, p.method, p.reference, pa.amount, p.created_at
+         FROM payment_allocations pa
+         JOIN payments p ON pa.payment_id = p.id
+         WHERE pa.invoice_id = ? AND p.company_id = ?
+         ORDER BY p.payment_date ASC, p.id ASC"
+    );
+    $stmt->execute([$invoiceId, $companyId]);
+    $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $paymentsTotal = 0.0;
+    foreach ($payments as $pmt) {
+        $paymentsTotal += (float)$pmt['amount'];
+    }
+
     // Current user name for greeting
     $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
     $stmt->execute([$userId]);
@@ -545,6 +562,7 @@ function format_currency($amount) {
                                     <th style="text-align:right;">Amount</th>
                                     <th>Due Date</th>
                                     <th style="text-align:right;">Paid</th>
+                                    <th style="text-align:right;">Outstanding</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -576,16 +594,57 @@ function format_currency($amount) {
                                             $msStatusLabel = 'Upcoming';
                                         }
                                     ?>
+                                    <?php $msOutstanding = max(0, (float)$ms['amount'] - (float)$ms['amount_paid']); ?>
                                     <tr class="<?= $isNowPayable ? 'fw-qi__milestone-row--active' : '' ?>">
                                         <td><?= htmlspecialchars($ms['label']) ?></td>
                                         <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
                                         <td style="text-align:right;"><?= format_currency($ms['amount']) ?></td>
                                         <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
                                         <td style="text-align:right;"><?= format_currency($ms['amount_paid']) ?></td>
+                                        <td style="text-align:right;"><?= format_currency($msOutstanding) ?></td>
                                         <td><span class="fw-qi__milestone-badge fw-qi__milestone-badge--<?= $msStatusClass ?>"><?= $msStatusLabel ?></span></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
+                        </table>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Payments Received (individual payment history) -->
+                <?php if (!empty($payments)): ?>
+                    <div class="fw-qi__doc-section fw-qi__payments-view">
+                        <h3>Payments Received</h3>
+                        <div class="fw-qi__doc-table-wrap">
+                        <table class="fw-qi__doc-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Method</th>
+                                    <th>Reference</th>
+                                    <th style="text-align:right;">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($payments as $pmt): ?>
+                                    <tr>
+                                        <td><?= $pmt['payment_date'] ? date('d M Y', strtotime($pmt['payment_date'])) : '—' ?></td>
+                                        <td><?= htmlspecialchars(ucfirst($pmt['method'])) ?></td>
+                                        <td><?= htmlspecialchars($pmt['reference'] !== '' && $pmt['reference'] !== null ? $pmt['reference'] : '—') ?></td>
+                                        <td style="text-align:right;"><?= format_currency($pmt['amount']) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" style="text-align:right;font-weight:700;">Total received</td>
+                                    <td style="text-align:right;font-weight:700;"><?= format_currency($paymentsTotal) ?></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3" style="text-align:right;">Outstanding</td>
+                                    <td style="text-align:right;"><?= format_currency($invoice['balance_due']) ?></td>
+                                </tr>
+                            </tfoot>
                         </table>
                         </div>
                     </div>
