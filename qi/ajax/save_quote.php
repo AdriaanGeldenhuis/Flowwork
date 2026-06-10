@@ -43,7 +43,8 @@ $defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
 
 // Resolve document currency + exchange rate (1 unit = X ZAR, used for GL conversion)
 $currency = strtoupper(trim($input['currency'] ?? ''));
-if (!Currencies::isValid($currency)) {
+$clientSentCurrency = Currencies::isValid($currency);
+if (!$clientSentCurrency) {
     $currency = Currencies::isValid($qiSettings['default_currency'] ?? null)
         ? strtoupper($qiSettings['default_currency'])
         : Currencies::BASE;
@@ -93,16 +94,24 @@ try {
         // UPDATE
         $quoteId = (int)$input['quote_id'];
         
-        $stmt = $DB->prepare("SELECT status FROM quotes WHERE id = ? AND company_id = ?");
+        $stmt = $DB->prepare("SELECT status, currency, exchange_rate FROM quotes WHERE id = ? AND company_id = ?");
         $stmt->execute([$quoteId, $companyId]);
         $existing = $stmt->fetch();
-        
+
         if (!$existing) {
             throw new Exception('Quote not found');
         }
-        
+
         if ($existing['status'] !== 'draft') {
             throw new Exception('Only draft quotes can be edited');
+        }
+
+        // If the request didn't carry a valid currency (e.g. stale cached form
+        // JS), keep the document's existing currency/rate rather than silently
+        // re-denominating it to the company default.
+        if (!$clientSentCurrency && Currencies::isValid($existing['currency'] ?? null)) {
+            $currency = strtoupper($existing['currency']);
+            $exchangeRate = (float)($existing['exchange_rate'] ?? 1) ?: 1.0;
         }
         
         $stmt = $DB->prepare("

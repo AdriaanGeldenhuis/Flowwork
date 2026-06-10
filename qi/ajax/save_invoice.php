@@ -43,7 +43,8 @@ $defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
 
 // Resolve document currency + exchange rate (1 unit = X ZAR, used for GL conversion)
 $currency = strtoupper(trim($input['currency'] ?? ''));
-if (!Currencies::isValid($currency)) {
+$clientSentCurrency = Currencies::isValid($currency);
+if (!$clientSentCurrency) {
     $currency = Currencies::isValid($qiSettings['default_currency'] ?? null)
         ? strtoupper($qiSettings['default_currency'])
         : Currencies::BASE;
@@ -93,7 +94,7 @@ try {
         // UPDATE
         $invoiceId = (int)$input['invoice_id'];
         
-        $stmt = $DB->prepare("SELECT status, total, balance_due FROM invoices WHERE id = ? AND company_id = ?");
+        $stmt = $DB->prepare("SELECT status, total, balance_due, currency, exchange_rate FROM invoices WHERE id = ? AND company_id = ?");
         $stmt->execute([$invoiceId, $companyId]);
         $existing = $stmt->fetch();
 
@@ -103,6 +104,14 @@ try {
 
         if ($existing['status'] !== 'draft') {
             throw new Exception('Only draft invoices can be edited');
+        }
+
+        // If the request didn't carry a valid currency (e.g. stale cached form
+        // JS), keep the document's existing currency/rate rather than silently
+        // re-denominating it to the company default.
+        if (!$clientSentCurrency && Currencies::isValid($existing['currency'] ?? null)) {
+            $currency = strtoupper($existing['currency']);
+            $exchangeRate = (float)($existing['exchange_rate'] ?? 1) ?: 1.0;
         }
 
         // Recalculate balance_due: preserve amount already paid
