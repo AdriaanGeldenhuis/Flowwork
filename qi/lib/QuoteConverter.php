@@ -39,8 +39,8 @@ class QuoteConverter {
             $stmt = $DB->prepare("INSERT INTO invoices (
                     company_id, invoice_number, quote_id, customer_id, contact_id, project_id,
                     issue_date, due_date, status, subtotal, discount, tax, total, balance_due,
-                    currency, terms, notes, created_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                    currency, exchange_rate, terms, notes, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
             $stmt->execute([
                 $companyId,
                 $invoiceNumber,
@@ -56,6 +56,7 @@ class QuoteConverter {
                 $quote['total'],
                 $quote['total'],
                 $quote['currency'],
+                $quote['exchange_rate'] ?? 1,
                 $quote['terms'],
                 $quote['notes'],
                 $userId,

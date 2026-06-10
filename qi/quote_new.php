@@ -5,8 +5,9 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-FORM');
+define('ASSET_VERSION', '2026-06-10-QI-CURRENCY');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -52,6 +53,12 @@ $stmt->execute([$companyId]);
 $qiSettings = $stmt->fetch();
 $defaultTerms = $qiSettings['default_terms'] ?? '';
 $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettings['default_tax_rate']) ? floatval($qiSettings['default_tax_rate']) : 15.0;
+
+// Document currency: existing quote keeps its currency, new quotes use the company default
+$defaultCurrency = Currencies::isValid($qiSettings['default_currency'] ?? null) ? strtoupper($qiSettings['default_currency']) : Currencies::BASE;
+$docCurrency = $editMode ? (Currencies::isValid($quoteData['currency'] ?? null) ? strtoupper($quoteData['currency']) : Currencies::BASE) : $defaultCurrency;
+$docRate = $editMode ? (float)($quoteData['exchange_rate'] ?? 1) : ($docCurrency === Currencies::BASE ? 1.0 : 0.0);
+$docSymbol = Currencies::symbol($docCurrency);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -137,6 +144,17 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
                         </div>
                     </div>
 
+                    <div class="fw-qi__form-row">
+                        <div class="fw-qi__form-group">
+                            <label class="fw-qi__label">Currency</label>
+                            <select name="currency" id="currencySelect" class="fw-qi__input"><?= Currencies::options($docCurrency) ?></select>
+                        </div>
+                        <div class="fw-qi__form-group" id="exchangeRateGroup" style="<?= $docCurrency === Currencies::BASE ? 'display:none;' : '' ?>">
+                            <label class="fw-qi__label">Exchange Rate (1 <span class="qi-currency-code"><?= htmlspecialchars($docCurrency) ?></span> = ? ZAR)</label>
+                            <input type="number" name="exchange_rate" id="exchangeRateInput" class="fw-qi__input" step="0.000001" min="0" value="<?= $docRate > 0 ? number_format($docRate, 6, '.', '') : '' ?>" placeholder="Fetched automatically">
+                        </div>
+                    </div>
+
                     <div class="fw-qi__form-group">
                         <label class="fw-qi__label">Project (Optional)</label>
                         <select name="project_id" class="fw-qi__input">
@@ -200,15 +218,15 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
                     <div class="fw-qi-form__totals">
                         <div class="fw-qi-form__total-row">
                             <span>Subtotal:</span>
-                            <span id="subtotalDisplay">R 0.00</span>
+                            <span id="subtotalDisplay"><?= htmlspecialchars($docSymbol) ?> 0.00</span>
                         </div>
                         <div class="fw-qi-form__total-row">
                             <span>VAT (15%):</span>
-                            <span id="taxDisplay">R 0.00</span>
+                            <span id="taxDisplay"><?= htmlspecialchars($docSymbol) ?> 0.00</span>
                         </div>
                         <div class="fw-qi-form__total-row fw-qi-form__total-row--grand">
                             <span>TOTAL:</span>
-                            <span id="totalDisplay">R 0.00</span>
+                            <span id="totalDisplay"><?= htmlspecialchars($docSymbol) ?> 0.00</span>
                         </div>
                     </div>
                 </div>
@@ -270,6 +288,7 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
 
     <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.currency.js?v=<?= ASSET_VERSION ?>"></script>
     <!-- Quote-specific logic -->
     <script>
         // Provide configuration for the quote form to the external JS
@@ -279,6 +298,13 @@ $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettin
         };
         // Default tax rate percentage for quote calculations
         window.defaultTaxRate = <?= json_encode($defaultTaxRate) ?>;
+        // Document currency state (rate = 1 unit of currency in ZAR)
+        window.qiCurrency = {
+            code: <?= json_encode($docCurrency) ?>,
+            rate: <?= json_encode($docRate) ?>,
+            base: <?= json_encode(Currencies::BASE) ?>,
+            symbols: <?= json_encode(Currencies::symbolMap()) ?>
+        };
     </script>
     <script src="/qi/assets/qi.quote.js?v=<?= ASSET_VERSION ?>"></script>
 

@@ -24,6 +24,39 @@ if (!$customerId || empty($lines)) {
     exit;
 }
 
+// Credit notes inherit the linked invoice's currency; standalone credit notes
+// use the company default currency with a fresh rate lookup.
+require_once __DIR__ . '/../lib/Currencies.php';
+$currency = Currencies::BASE;
+$exchangeRate = 1.0;
+if ($invoiceId) {
+    $stmtInv = $DB->prepare("SELECT currency, exchange_rate FROM invoices WHERE id = ? AND company_id = ?");
+    $stmtInv->execute([$invoiceId, $companyId]);
+    $invRow = $stmtInv->fetch();
+    if (!$invRow) {
+        echo json_encode(['ok' => false, 'error' => 'Linked invoice not found']);
+        exit;
+    }
+    if (Currencies::isValid($invRow['currency'] ?? null)) {
+        $currency = strtoupper($invRow['currency']);
+        $exchangeRate = (float)($invRow['exchange_rate'] ?? 1) ?: 1.0;
+    }
+} else {
+    $stmtCur = $DB->prepare("SELECT default_currency FROM qi_settings WHERE company_id = ?");
+    $stmtCur->execute([$companyId]);
+    $defCur = $stmtCur->fetchColumn();
+    if (Currencies::isValid($defCur) && strtoupper($defCur) !== Currencies::BASE) {
+        $currency = strtoupper($defCur);
+        require_once __DIR__ . '/../../finances/lib/CurrencyService.php';
+        $svc = new CurrencyService($DB, (int)$companyId);
+        $exchangeRate = (float)($svc->getRate($currency, $issueDate) ?? 0);
+        if ($exchangeRate <= 0) {
+            echo json_encode(['ok' => false, 'error' => "No exchange rate available for {$currency}. Add one under Finances → Exchange Rates."]);
+            exit;
+        }
+    }
+}
+
 try {
     $DB->beginTransaction();
 
@@ -46,12 +79,12 @@ try {
     $stmt = $DB->prepare("
         INSERT INTO credit_notes (
             company_id, credit_note_number, invoice_id, customer_id,
-            issue_date, status, subtotal, tax, total, reason, created_by
-        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+            issue_date, status, subtotal, tax, total, currency, exchange_rate, reason, created_by
+        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $companyId, $creditNoteNumber, $invoiceId, $customerId,
-        $issueDate, $subtotal, $tax, $total, $reason, $userId
+        $issueDate, $subtotal, $tax, $total, $currency, $exchangeRate, $reason, $userId
     ]);
 
     $creditNoteId = $DB->lastInsertId();

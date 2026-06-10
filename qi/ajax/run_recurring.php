@@ -60,27 +60,40 @@ try {
 
     $total = $subtotal - $discount + $tax;
 
-    // Create invoice - use qi_settings for payment terms
+    // Create invoice - use qi_settings for payment terms and default currency
     $issueDate = date('Y-m-d');
-    $stmtTerms = $DB->prepare("SELECT default_payment_terms FROM qi_settings WHERE company_id = ?");
+    $stmtTerms = $DB->prepare("SELECT default_payment_terms, default_currency FROM qi_settings WHERE company_id = ?");
     $stmtTerms->execute([$companyId]);
     $termsRow = $stmtTerms->fetch();
     $paymentDays = ($termsRow && $termsRow['default_payment_terms']) ? (int)$termsRow['default_payment_terms'] : 30;
     $dueDate = date('Y-m-d', strtotime("+{$paymentDays} days"));
 
+    require_once __DIR__ . '/../lib/Currencies.php';
+    $currency = Currencies::isValid($termsRow['default_currency'] ?? null) ? strtoupper($termsRow['default_currency']) : Currencies::BASE;
+    $exchangeRate = 1.0;
+    if ($currency !== Currencies::BASE) {
+        require_once __DIR__ . '/../../finances/lib/CurrencyService.php';
+        $svc = new CurrencyService($DB, (int)$companyId);
+        $exchangeRate = (float)($svc->getRate($currency, $issueDate) ?? 0);
+        if ($exchangeRate <= 0) {
+            error_log("Recurring invoice: no {$currency} exchange rate for {$issueDate}; using 1.0");
+            $exchangeRate = 1.0;
+        }
+    }
+
     $stmt = $DB->prepare("
         INSERT INTO invoices (
             company_id, invoice_number, customer_id,
             issue_date, due_date, status,
-            subtotal, discount, tax, total, balance_due, currency,
+            subtotal, discount, tax, total, balance_due, currency, exchange_rate,
             terms, notes, created_by
-        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, 'ZAR', ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $companyId, $invoiceNumber, $recurring['customer_id'],
         $issueDate, $dueDate,
-        $subtotal, $discount, $tax, $total, $total,
-        $recurring['terms'], 'Generated from recurring: ' . $recurring['template_name'], $userId
+        $subtotal, $discount, $tax, $total, $total, $currency, $exchangeRate,
+        $recurring['terms'] ?? '', 'Generated from recurring: ' . ($recurring['template_name'] ?? ('#' . $recurringId)), $userId
     ]);
 
     $invoiceId = $DB->lastInsertId();
@@ -156,7 +169,7 @@ try {
 
     // Post journal entry for the generated invoice (Section 11)
     try {
-        require_once __DIR__ . '/../../services/JournalPoster.php';
+        require_once __DIR__ . '/../services/JournalPoster.php';
         $poster = new JournalPoster($DB, $companyId, $userId);
         $poster->postInvoice((int)$invoiceId);
     } catch (Exception $e) {

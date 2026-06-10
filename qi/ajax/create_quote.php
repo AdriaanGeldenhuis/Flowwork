@@ -2,6 +2,7 @@
 // /qi/ajax/create_quote.php - COMPLETE FILE
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/Currencies.php';
 
 header('Content-Type: application/json');
 
@@ -19,6 +20,27 @@ $lines = $_POST['lines'] ?? [];
 
 if (!$customerId || empty($lines)) {
     echo json_encode(['ok' => false, 'error' => 'Invalid input - customer and lines required']);
+    exit;
+}
+
+// Resolve document currency + exchange rate (1 unit = X ZAR)
+$currency = strtoupper(trim($_POST['currency'] ?? ''));
+if (!Currencies::isValid($currency)) {
+    $stmtCur = $DB->prepare("SELECT default_currency FROM qi_settings WHERE company_id = ?");
+    $stmtCur->execute([$companyId]);
+    $defCur = $stmtCur->fetchColumn();
+    $currency = Currencies::isValid($defCur) ? strtoupper($defCur) : Currencies::BASE;
+}
+$exchangeRate = isset($_POST['exchange_rate']) ? (float)$_POST['exchange_rate'] : 0.0;
+if ($currency === Currencies::BASE) {
+    $exchangeRate = 1.0;
+} elseif ($exchangeRate <= 0) {
+    require_once __DIR__ . '/../../finances/lib/CurrencyService.php';
+    $svc = new CurrencyService($DB, (int)$companyId);
+    $exchangeRate = (float)($svc->getRate($currency, $issueDate) ?? 0);
+}
+if ($exchangeRate <= 0) {
+    echo json_encode(['ok' => false, 'error' => "No exchange rate available for {$currency}. Add one under Finances → Exchange Rates."]);
     exit;
 }
 
@@ -67,14 +89,14 @@ try {
         INSERT INTO quotes (
             company_id, quote_number, customer_id, project_id,
             issue_date, expiry_date, status,
-            subtotal, discount, tax, total, currency,
+            subtotal, discount, tax, total, currency, exchange_rate,
             terms, notes, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, 'ZAR', ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $companyId, $quoteNumber, $customerId, $projectId,
         $issueDate, $expiryDate,
-        $subtotal, $totalDiscount, $totalTax, $total,
+        $subtotal, $totalDiscount, $totalTax, $total, $currency, $exchangeRate,
         $terms, $notes, $userId
     ]);
 

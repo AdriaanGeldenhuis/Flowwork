@@ -6,6 +6,7 @@ const InvoiceView = {
     customerName: '',
     balanceDue: 0,
     invoiceTotal: 0,
+    currencySymbol: 'R',
     hasMilestones: false,
 
     init: function (opts) {
@@ -14,6 +15,7 @@ const InvoiceView = {
         this.customerName = opts.customerName || '';
         this.balanceDue = opts.balanceDue || 0;
         this.invoiceTotal = opts.invoiceTotal || 0;
+        this.currencySymbol = opts.currencySymbol || 'R';
         this.hasMilestones = opts.hasMilestones || false;
     },
 
@@ -36,7 +38,7 @@ const InvoiceView = {
         const remaining = Math.max(0, this.balanceDue - amt);
         const pct = total > 0 ? Math.min(100, (newPaid / total) * 100) : 0;
 
-        const fmt = (n) => 'R ' + Number(n).toFixed(2);
+        const fmt = (n) => this.currencySymbol + ' ' + Number(n).toFixed(2);
         const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
         setText('calcPaid', fmt(alreadyPaid));

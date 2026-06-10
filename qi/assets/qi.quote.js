@@ -6,6 +6,11 @@
 (function() {
     'use strict';
 
+    // Symbol of the document's currency (falls back to ZAR's "R")
+    function curSym() {
+        return (window.QICurrency) ? QICurrency.symbol() : 'R';
+    }
+
     // Add a new line item to the form
     function addLine() {
         const container = document.getElementById('lineItemsContainer');
@@ -51,7 +56,7 @@
             const price = parseFloat(line.querySelector('[name="item_price[]"]').value) || 0;
             const lineTotal = qty * price;
             const totalField = line.querySelector('[name="item_total[]"]');
-            if (totalField) totalField.value = 'R ' + lineTotal.toFixed(2);
+            if (totalField) totalField.value = curSym() + ' ' + lineTotal.toFixed(2);
             subtotal += lineTotal;
         });
         // Use global defaultTaxRate if provided (percentage), else default to 15%
@@ -61,9 +66,9 @@
         const subtotalDisplay = document.getElementById('subtotalDisplay');
         const taxDisplay = document.getElementById('taxDisplay');
         const totalDisplay = document.getElementById('totalDisplay');
-        if (subtotalDisplay) subtotalDisplay.textContent = 'R ' + subtotal.toFixed(2);
-        if (taxDisplay) taxDisplay.textContent = 'R ' + tax.toFixed(2);
-        if (totalDisplay) totalDisplay.textContent = 'R ' + total.toFixed(2);
+        if (subtotalDisplay) subtotalDisplay.textContent = curSym() + ' ' + subtotal.toFixed(2);
+        if (taxDisplay) taxDisplay.textContent = curSym() + ' ' + tax.toFixed(2);
+        if (totalDisplay) totalDisplay.textContent = curSym() + ' ' + total.toFixed(2);
     }
 
     // Handle form submission to save quote
@@ -98,6 +103,8 @@
             project_id: formData.get('project_id') || null,
             issue_date: formData.get('issue_date'),
             expiry_date: formData.get('expiry_date'),
+            currency: (window.QICurrency) ? QICurrency.code() : (formData.get('currency') || 'ZAR'),
+            exchange_rate: (window.QICurrency) ? QICurrency.rate() : 1,
             subtotal: subtotal,
             discount: 0,
             tax: tax,
@@ -147,6 +154,18 @@
                 removeLine(e.target);
             }
         });
+        // Currency selector: live rate lookup + optional price conversion on switch
+        if (window.QICurrency) {
+            QICurrency.init(window.qiCurrency || {});
+            QICurrency.attach({
+                select: document.getElementById('currencySelect'),
+                rateInput: document.getElementById('exchangeRateInput'),
+                rateRow: document.getElementById('exchangeRateGroup'),
+                getDate: () => document.querySelector('[name="issue_date"]')?.value || '',
+                getPriceInputs: () => Array.from(document.querySelectorAll('[name="item_price[]"]')),
+                recalc: calculateTotals
+            });
+        }
         // Initialize totals
         calculateTotals();
         // Expose addLine/removeLine for inline button handlers

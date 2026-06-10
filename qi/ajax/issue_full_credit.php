@@ -46,12 +46,13 @@ try {
     $stmt = $DB->prepare("
         INSERT INTO credit_notes (
             company_id, credit_note_number, invoice_id, customer_id,
-            issue_date, status, subtotal, tax, total, reason, created_by
-        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)
+            issue_date, status, subtotal, tax, total, currency, exchange_rate, reason, created_by
+        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
         $companyId, $cnNumber, $invoiceId, $inv['customer_id'],
         date('Y-m-d'), $inv['subtotal'], $inv['tax'], $inv['total'],
+        $inv['currency'] ?: 'ZAR', $inv['exchange_rate'] ?? 1,
         $reason, $userId,
     ]);
     $cnId = (int)$DB->lastInsertId();

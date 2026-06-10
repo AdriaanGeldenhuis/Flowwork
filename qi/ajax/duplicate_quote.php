@@ -40,8 +40,8 @@ try {
     $insertHdr = $DB->prepare("INSERT INTO quotes (
             company_id, quote_number, public_token, customer_id, contact_id, project_id,
             issue_date, expiry_date, status, subtotal, discount, tax, total,
-            currency, terms, notes, created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+            currency, exchange_rate, terms, notes, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
     // Generate a new public token for the duplicate
     $publicToken = bin2hex(random_bytes(16));
     // Set new issue date and expiry date
@@ -61,6 +61,7 @@ try {
         $original['tax'],
         $original['total'],
         $original['currency'],
+        $original['exchange_rate'] ?? 1,
         $original['terms'],
         $original['notes'],
         $userId

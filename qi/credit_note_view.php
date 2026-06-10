@@ -6,8 +6,9 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-05-18-QI-pdf-download-v1');
+define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -124,8 +125,15 @@ $showTax     = $brand['show']['tax'];
 $showReg     = $brand['show']['reg'];
 $showPayment = $brand['show']['payment'];
 
+// Document currency formatting (credit notes inherit the linked invoice's currency)
+$docCurrency = Currencies::isValid($creditNote['currency'] ?? null) ? strtoupper($creditNote['currency']) : Currencies::BASE;
+$docSymbol   = Currencies::symbol($docCurrency);
+$docRate     = (float)($creditNote['exchange_rate'] ?? 1) ?: 1.0;
+$isForeign   = ($docCurrency !== Currencies::BASE);
+
+$GLOBALS['qiDocSymbol'] = $docSymbol;
 function format_currency($amount) {
-    return 'R ' . number_format((float)$amount, 2);
+    return $GLOBALS['qiDocSymbol'] . ' ' . number_format((float)$amount, 2);
 }
 
 ?>
@@ -334,6 +342,12 @@ function format_currency($amount) {
                         <span>TOTAL CREDIT:</span>
                         <span><?= format_currency($creditNote['total']) ?></span>
                     </div>
+                    <?php if ($isForeign): ?>
+                        <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
+                            <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
+                            <span>R <?= number_format((float)$creditNote['total'] * $docRate, 2) ?></span>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Reason (if not shown above) -->

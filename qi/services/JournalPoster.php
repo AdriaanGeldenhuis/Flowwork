@@ -34,6 +34,34 @@ class JournalPoster
     }
 
     /**
+     * Resolve the ZAR conversion rate for a document row. The ledger is kept
+     * in ZAR (SARS s25D: translate at the rate on the transaction date), so
+     * foreign-currency documents are converted using the exchange_rate
+     * captured when the document was created.
+     *
+     * @param array $row Document row with 'currency' and 'exchange_rate'
+     * @return array [string $currency, float $rate]
+     */
+    private function resolveFx(array $row): array
+    {
+        $currency = strtoupper(trim($row['currency'] ?? 'ZAR')) ?: 'ZAR';
+        if ($currency === 'ZAR') {
+            return ['ZAR', 1.0];
+        }
+        $rate = (float)($row['exchange_rate'] ?? 1);
+        return [$currency, $rate > 0 ? $rate : 1.0];
+    }
+
+    /** Human-readable FX suffix for journal descriptions, e.g. " (USD @ 18.45)". */
+    private function fxNote(string $currency, float $rate): string
+    {
+        if ($currency === 'ZAR') {
+            return '';
+        }
+        return ' (' . $currency . ' @ ' . rtrim(rtrim(number_format($rate, 6, '.', ''), '0'), '.') . ')';
+    }
+
+    /**
      * Resolve the output tax_code_id for SARS VAT201 compliance.
      * Returns the STD/STANDARD code id, or null if not found.
      */
@@ -162,6 +190,13 @@ class JournalPoster
             $salesTotals[$lineCode] += $net;
             $totalVat += $vat;
         }
+        // Convert document-currency amounts to ZAR for the ledger. The debit is
+        // taken as the sum of the rounded credits so the journal stays balanced.
+        [$fxCurrency, $fxRate] = $this->resolveFx($invoice);
+        foreach ($salesTotals as $code => $amt) {
+            $salesTotals[$code] = round($amt * $fxRate, 2);
+        }
+        $totalVat = round($totalVat * $fxRate, 2);
         // Total invoice amount equals sum of net sales and VAT
         $total = array_sum($salesTotals) + $totalVat;
         // Begin new transaction for journal posting
@@ -175,7 +210,7 @@ class JournalPoster
                 ) VALUES (?, ?, ?, ?, 'qi', 'invoice', ?, 'invoice', ?, ?, NOW(), 'posted', ?, NOW())"
             );
             $reference  = $invoice['invoice_number'];
-            $desc       = 'Invoice ' . $invoice['invoice_number'];
+            $desc       = 'Invoice ' . $invoice['invoice_number'] . $this->fxNote($fxCurrency, $fxRate);
             $stmt->execute([
                 $this->companyId,
                 $entryDate,
@@ -269,9 +304,10 @@ class JournalPoster
         if (!empty($payment['journal_id'])) {
             $this->deleteJournal((int)$payment['journal_id']);
         }
-        // Fetch allocations
+        // Fetch allocations (with each invoice's currency for ZAR conversion)
         $stmt = $this->db->prepare(
-            "SELECT pa.amount, i.customer_id, i.invoice_number FROM payment_allocations pa
+            "SELECT pa.amount, i.customer_id, i.invoice_number, i.currency, i.exchange_rate
+             FROM payment_allocations pa
              LEFT JOIN invoices i ON pa.invoice_id = i.id
              WHERE pa.payment_id = ?"
         );
@@ -283,10 +319,13 @@ class JournalPoster
         // Determine accounts
         $bankCode = $this->getAccountCodeBySetting('finance_bank_account_id', '1110');
         $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1200');
-        // Compute total amount
+        // Payment amounts are recorded in the invoice's currency — convert each
+        // allocation to ZAR at the invoice's captured rate
         $totalAmt = 0.0;
-        foreach ($allocs as $al) {
-            $totalAmt += floatval($al['amount']);
+        foreach ($allocs as $idx => $al) {
+            [, $fxRate] = $this->resolveFx($al);
+            $allocs[$idx]['amount_zar'] = round(floatval($al['amount']) * $fxRate, 2);
+            $totalAmt += $allocs[$idx]['amount_zar'];
         }
         // Begin journal transaction
         $this->db->beginTransaction();
@@ -331,7 +370,7 @@ class JournalPoster
                  VALUES (?, ?, ?, 0, ?, ?, ?)"
             );
             foreach ($allocs as $al) {
-                $amt = floatval($al['amount']);
+                $amt = floatval($al['amount_zar'] ?? $al['amount']);
                 $cust = $al['customer_id'] ?: null;
                 $ref  = $al['invoice_number'] ?: $reference;
                 $stmtLine->execute([
@@ -413,12 +452,18 @@ class JournalPoster
             $salesTotals[$lineCode] += $net;
             $totalVat += $vat;
         }
+        // Convert document-currency amounts to ZAR for the ledger
+        [$fxCurrency, $fxRate] = $this->resolveFx($credit);
+        foreach ($salesTotals as $code => $amt) {
+            $salesTotals[$code] = round($amt * $fxRate, 2);
+        }
+        $totalVat = round($totalVat * $fxRate, 2);
         $totalCredit = array_sum($salesTotals) + $totalVat;
         // Create journal entry
         $this->db->beginTransaction();
         try {
             $reference = $credit['credit_note_number'];
-            $desc      = 'Credit Note ' . $reference;
+            $desc      = 'Credit Note ' . $reference . $this->fxNote($fxCurrency, $fxRate);
             // Insert journal entry (status='posted' — auto-posted from QI)
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (

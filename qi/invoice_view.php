@@ -7,8 +7,9 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-06-04-QI-payment-calc-v1');
+define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -115,9 +116,16 @@ $showTax     = $brand['show']['tax'];
 $showReg     = $brand['show']['reg'];
 $showPayment = $brand['show']['payment'];
 
-// Helper to format amounts
+// Document currency formatting
+$docCurrency = Currencies::isValid($invoice['currency'] ?? null) ? strtoupper($invoice['currency']) : Currencies::BASE;
+$docSymbol   = Currencies::symbol($docCurrency);
+$docRate     = (float)($invoice['exchange_rate'] ?? 1) ?: 1.0;
+$isForeign   = ($docCurrency !== Currencies::BASE);
+
+// Helper to format amounts in the invoice's currency
+$GLOBALS['qiDocSymbol'] = $docSymbol;
 function format_currency($amount) {
-    return 'R ' . number_format((float)$amount, 2);
+    return $GLOBALS['qiDocSymbol'] . ' ' . number_format((float)$amount, 2);
 }
 
 ?>
@@ -420,6 +428,9 @@ function format_currency($amount) {
                         <table class="fw-qi__doc-info-table" style="margin-top:8px;">
                             <tr><td>Issue Date:</td><td><strong><?= date('d M Y', strtotime($invoice['issue_date'])) ?></strong></td></tr>
                             <tr><td>Due Date:</td><td><strong><?= date('d M Y', strtotime($invoice['due_date'])) ?></strong></td></tr>
+                            <?php if ($isForeign): ?>
+                                <tr><td>Currency:</td><td><strong><?= htmlspecialchars($docCurrency) ?> (<?= htmlspecialchars(Currencies::name($docCurrency)) ?>)</strong></td></tr>
+                            <?php endif; ?>
                         </table>
                         <span class="fw-qi__badge fw-qi__badge--<?= htmlspecialchars($invoice['status']) ?>"><?= strtoupper(str_replace('_', ' ', $invoice['status'])) ?></span>
 
@@ -504,6 +515,12 @@ function format_currency($amount) {
                         <span>TOTAL:</span>
                         <span><?= format_currency($invoice['total']) ?></span>
                     </div>
+                    <?php if ($isForeign): ?>
+                        <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
+                            <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
+                            <span>R <?= number_format((float)$invoice['total'] * $docRate, 2) ?></span>
+                        </div>
+                    <?php endif; ?>
                     <?php if ((float)$invoice['balance_due'] < (float)$invoice['total']): ?>
                         <div class="fw-qi__doc-total-row" style="margin-top:8px;">
                             <span>Balance Due:</span>
@@ -687,8 +704,11 @@ function format_currency($amount) {
                         </p>
                         <?php endif; ?>
                         <div class="fw-qi__form-group">
-                            <label class="fw-qi__label">Amount (R) <span class="fw-qi__required">*</span></label>
+                            <label class="fw-qi__label">Amount (<?= htmlspecialchars($docSymbol) ?>) <span class="fw-qi__required">*</span></label>
                             <input type="number" name="amount" class="fw-qi__input" min="0.01" step="0.01" placeholder="0.00" required oninput="InvoiceView.updatePaymentCalc()">
+                            <?php if ($isForeign): ?>
+                                <p class="fw-qi__text-muted" style="margin:6px 0 0;font-size:12px;">Enter the amount in <?= htmlspecialchars($docCurrency) ?> — the invoice currency.</p>
+                            <?php endif; ?>
                         </div>
                         <?php
                             $invTotal   = (float)$invoice['total'];
@@ -698,7 +718,7 @@ function format_currency($amount) {
                         <div class="fw-qi__payment-calc" id="paymentCalc">
                             <div class="fw-qi__payment-calc-row"><span>Invoice total</span><span><?= format_currency($invTotal) ?></span></div>
                             <div class="fw-qi__payment-calc-row"><span>Already paid</span><span id="calcPaid"><?= format_currency($invPaid) ?></span></div>
-                            <div class="fw-qi__payment-calc-row"><span>This payment</span><span id="calcThis">R 0.00</span></div>
+                            <div class="fw-qi__payment-calc-row"><span>This payment</span><span id="calcThis"><?= htmlspecialchars($docSymbol) ?> 0.00</span></div>
                             <div class="fw-qi__payment-calc-row fw-qi__payment-calc-row--strong"><span>Outstanding after</span><span id="calcRemaining"><?= format_currency($invoice['balance_due']) ?></span></div>
                             <div class="fw-qi__payment-progress"><div class="fw-qi__payment-progress-bar" id="calcBar" style="width:<?= round(min(100, max(0, $invPaidPct)), 1) ?>%;"></div></div>
                             <div class="fw-qi__payment-calc-pct" id="calcPct"><?= number_format($invPaidPct, 1) ?>% paid</div>
@@ -744,6 +764,7 @@ function format_currency($amount) {
             customerName: '<?= addslashes($invoice['customer_name'] ?? 'Customer') ?>',
             balanceDue: parseFloat('<?= (float)$invoice['balance_due'] ?>'),
             invoiceTotal: parseFloat('<?= (float)$invoice['total'] ?>'),
+            currencySymbol: <?= json_encode($docSymbol) ?>,
             hasMilestones: <?= !empty($milestones) ? 'true' : 'false' ?>
         });
     </script>

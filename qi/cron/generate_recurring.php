@@ -51,27 +51,40 @@ try {
 
             $total = $subtotal - $discount + $tax;
 
-            // Create invoice - use qi_settings for payment terms
+            // Create invoice - use qi_settings for payment terms and default currency
             $issueDate = date('Y-m-d');
-            $stmtTerms = $DB->prepare("SELECT default_payment_terms FROM qi_settings WHERE company_id = ?");
+            $stmtTerms = $DB->prepare("SELECT default_payment_terms, default_currency FROM qi_settings WHERE company_id = ?");
             $stmtTerms->execute([$rec['company_id']]);
             $termsRow = $stmtTerms->fetch();
             $paymentDays = ($termsRow && $termsRow['default_payment_terms']) ? (int)$termsRow['default_payment_terms'] : 30;
             $dueDate = date('Y-m-d', strtotime("+{$paymentDays} days"));
 
+            require_once __DIR__ . '/../lib/Currencies.php';
+            $currency = Currencies::isValid($termsRow['default_currency'] ?? null) ? strtoupper($termsRow['default_currency']) : Currencies::BASE;
+            $exchangeRate = 1.0;
+            if ($currency !== Currencies::BASE) {
+                require_once __DIR__ . '/../../finances/lib/CurrencyService.php';
+                $svc = new CurrencyService($DB, (int)$rec['company_id']);
+                $exchangeRate = (float)($svc->getRate($currency, $issueDate) ?? 0);
+                if ($exchangeRate <= 0) {
+                    error_log("Recurring cron: no {$currency} exchange rate for {$issueDate} (company {$rec['company_id']}); using 1.0");
+                    $exchangeRate = 1.0;
+                }
+            }
+
             $stmt = $DB->prepare("
                 INSERT INTO invoices (
                     company_id, invoice_number, customer_id,
                     issue_date, due_date, status,
-                    subtotal, discount, tax, total, balance_due, currency,
+                    subtotal, discount, tax, total, balance_due, currency, exchange_rate,
                     terms, notes, created_by
-                ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, 'ZAR', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $rec['company_id'], $invoiceNumber, $rec['customer_id'],
                 $issueDate, $dueDate,
-                $subtotal, $discount, $tax, $total, $total,
-                $rec['terms'], 'Auto-generated from recurring: ' . $rec['template_name'], $rec['created_by']
+                $subtotal, $discount, $tax, $total, $total, $currency, $exchangeRate,
+                $rec['terms'] ?? '', 'Auto-generated from recurring: ' . ($rec['template_name'] ?? ('#' . $rec['id'])), $rec['created_by']
             ]);
 
             $invoiceId = $DB->lastInsertId();
@@ -129,8 +142,7 @@ try {
 
             // Post journal entry for the generated invoice (Section 11)
             try {
-                // JournalPoster is located two levels above this cron directory
-                require_once __DIR__ . '/../../services/JournalPoster.php';
+                require_once __DIR__ . '/../services/JournalPoster.php';
                 // Use the recurring created_by as the user posting this journal (fallback to 1)
                 $userId = $rec['created_by'] ?: 1;
                 $poster = new JournalPoster($DB, $rec['company_id'], $userId);

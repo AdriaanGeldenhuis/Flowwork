@@ -6,8 +6,9 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-04-06-QI-v2');
+define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -33,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'update_company') {
         try {
             $stmt = $DB->prepare("
-                UPDATE companies 
+                UPDATE companies
                 SET name = ?, vat_number = ?, tax_number = ?, reg_number = ?,
                     phone = ?, email = ?, website = ?,
                     address_line1 = ?, address_line2 = ?, city = ?, region = ?, postal = ?,
@@ -46,6 +47,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $_POST['address_line1'], $_POST['address_line2'], $_POST['city'], $_POST['region'], $_POST['postal'],
                 $companyId
             ]);
+
+            // Default currency for new quotes/invoices (stored in qi_settings)
+            $defaultCurrency = strtoupper(trim($_POST['default_currency'] ?? 'ZAR'));
+            if (!Currencies::isValid($defaultCurrency)) {
+                $defaultCurrency = Currencies::BASE;
+            }
+            $stmt = $DB->prepare("
+                INSERT INTO qi_settings (company_id, default_currency)
+                VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE default_currency = VALUES(default_currency)
+            ");
+            $stmt->execute([$companyId, $defaultCurrency]);
+
             $message = 'Company details updated!';
             $messageType = 'success';
             
@@ -150,6 +164,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 }
+
+// Current per-company QI defaults (read after any save so the form shows fresh values)
+$stmt = $DB->prepare("SELECT default_currency FROM qi_settings WHERE company_id = ? LIMIT 1");
+$stmt->execute([$companyId]);
+$qiDefaults = $stmt->fetch();
+$currentDefaultCurrency = Currencies::isValid($qiDefaults['default_currency'] ?? null)
+    ? strtoupper($qiDefaults['default_currency'])
+    : Currencies::BASE;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -279,6 +301,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         <div class="fw-qi__form-group">
                             <label class="fw-qi__label">Registration Number</label>
                             <input type="text" name="reg_number" class="fw-qi__input" value="<?= htmlspecialchars($company['reg_number'] ?? '') ?>">
+                        </div>
+                    </div>
+
+                    <div class="fw-qi__form-section">
+                        <h3 class="fw-qi__form-section-title">Document Defaults</h3>
+                        <div class="fw-qi__form-group">
+                            <label class="fw-qi__label">Default Currency</label>
+                            <select name="default_currency" class="fw-qi__input"><?= Currencies::options($currentDefaultCurrency) ?></select>
+                            <p class="fw-qi__help-text">New quotes and invoices start in this currency. You can still switch currency per document; amounts convert at the exchange rate for the document date (Finances → Exchange Rates, with automatic lookup as fallback).</p>
                         </div>
                     </div>
 

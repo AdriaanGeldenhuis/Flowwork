@@ -2,8 +2,9 @@
 // /qi/invoice_new.php
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-1');
+define('ASSET_VERSION', '2026-06-10-QI-CURRENCY');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -75,6 +76,12 @@ $defaultTerms = $qiSettings['default_terms'] ?? '';
 
 $issueDate = $editMode ? $invoiceData['issue_date'] : date('Y-m-d');
 $dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . $defaultPaymentTerms . ' days'));
+
+// Document currency: existing invoice keeps its currency, new invoices use the company default
+$defaultCurrency = Currencies::isValid($qiSettings['default_currency'] ?? null) ? strtoupper($qiSettings['default_currency']) : Currencies::BASE;
+$docCurrency = $editMode ? (Currencies::isValid($invoiceData['currency'] ?? null) ? strtoupper($invoiceData['currency']) : Currencies::BASE) : $defaultCurrency;
+$docRate = $editMode ? (float)($invoiceData['exchange_rate'] ?? 1) : ($docCurrency === Currencies::BASE ? 1.0 : 0.0);
+$docSymbol = Currencies::symbol($docCurrency);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -195,6 +202,17 @@ $dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . 
                             <input type="date" name="due_date" class="fw-qi__input" value="<?= $dueDate ?>" required>
                         </div>
                     </div>
+
+                    <div class="fw-qi__form-row">
+                        <div class="fw-qi__form-group">
+                            <label class="fw-qi__label">Currency</label>
+                            <select name="currency" id="currencySelect" class="fw-qi__input"><?= Currencies::options($docCurrency) ?></select>
+                        </div>
+                        <div class="fw-qi__form-group" id="exchangeRateGroup" style="<?= $docCurrency === Currencies::BASE ? 'display:none;' : '' ?>">
+                            <label class="fw-qi__label">Exchange Rate (1 <span class="qi-currency-code"><?= htmlspecialchars($docCurrency) ?></span> = ? ZAR)</label>
+                            <input type="number" name="exchange_rate" id="exchangeRateInput" class="fw-qi__input" step="0.000001" min="0" value="<?= $docRate > 0 ? number_format($docRate, 6, '.', '') : '' ?>" placeholder="Fetched automatically">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="fw-qi__form-section">
@@ -208,19 +226,19 @@ $dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . 
                     <div class="fw-qi__totals-grid">
                         <div class="fw-qi__total-row">
                             <span>Subtotal:</span>
-                            <strong id="displaySubtotal">R 0.00</strong>
+                            <strong id="displaySubtotal"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                         <div class="fw-qi__total-row">
                             <span>Discount:</span>
-                            <strong id="displayDiscount">R 0.00</strong>
+                            <strong id="displayDiscount"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                         <div class="fw-qi__total-row">
                             <span>VAT (15%):</span>
-                            <strong id="displayTax">R 0.00</strong>
+                            <strong id="displayTax"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                         <div class="fw-qi__total-row fw-qi__total-row--grand">
                             <span>Total:</span>
-                            <strong id="displayTotal">R 0.00</strong>
+                            <strong id="displayTotal"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                     </div>
                     <input type="hidden" name="subtotal" id="inputSubtotal" value="0">
@@ -289,7 +307,30 @@ $dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . 
 
     <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.currency.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>
+        // Document currency state (rate = 1 unit of currency in ZAR)
+        QICurrency.init({
+            code: <?= json_encode($docCurrency) ?>,
+            rate: <?= json_encode($docRate) ?>,
+            base: <?= json_encode(Currencies::BASE) ?>,
+            symbols: <?= json_encode(Currencies::symbolMap()) ?>
+        });
+    </script>
     <script src="/qi/assets/qi-form.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>
+        // Wire the currency selector: live rate lookup + price conversion on switch
+        document.addEventListener('DOMContentLoaded', function() {
+            QICurrency.attach({
+                select: document.getElementById('currencySelect'),
+                rateInput: document.getElementById('exchangeRateInput'),
+                rateRow: document.getElementById('exchangeRateGroup'),
+                getDate: () => document.querySelector('[name="issue_date"]')?.value || '',
+                getPriceInputs: () => Array.from(document.querySelectorAll('.line-price')),
+                recalc: QI.calculateTotals
+            });
+        });
+    </script>
     <script>
         // Override form endpoint for invoices
         document.getElementById('invoiceForm').addEventListener('submit', async function(e) {
@@ -315,6 +356,8 @@ $dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . 
                 payload.project_id = form.project_id ? form.project_id.value || null : null;
                 payload.issue_date = form.issue_date ? form.issue_date.value : '';
                 payload.due_date = form.due_date ? form.due_date.value : '';
+                payload.currency = QICurrency.code();
+                payload.exchange_rate = QICurrency.rate();
                 // Use totals calculated by QI.calculateTotals
                 payload.subtotal = parseFloat(document.getElementById('inputSubtotal').value) || 0;
                 payload.discount = parseFloat(document.getElementById('inputDiscount').value) || 0;
