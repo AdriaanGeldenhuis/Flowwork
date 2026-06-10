@@ -36,8 +36,8 @@ try {
             company_id, invoice_number, customer_id, contact_id, project_id,
             issue_date, due_date, status,
             subtotal, discount, tax, total, balance_due,
-            currency, terms, notes, created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            currency, exchange_rate, terms, notes, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     ");
     $stmt->execute([
         $companyId, $newNumber,
@@ -45,7 +45,8 @@ try {
         $issueDate, $dueDate,
         $original['subtotal'], $original['discount'], $original['tax'],
         $original['total'], $original['total'],  // balance_due = total on new draft
-        $original['currency'], $original['terms'], $original['notes'], $userId,
+        $original['currency'], $original['exchange_rate'] ?? 1,
+        $original['terms'], $original['notes'], $userId,
     ]);
     $newId = (int)$DB->lastInsertId();
 

@@ -6,6 +6,7 @@ const InvoiceView = {
     customerName: '',
     balanceDue: 0,
     invoiceTotal: 0,
+    currencySymbol: 'R',
     hasMilestones: false,
 
     init: function (opts) {
@@ -14,6 +15,7 @@ const InvoiceView = {
         this.customerName = opts.customerName || '';
         this.balanceDue = opts.balanceDue || 0;
         this.invoiceTotal = opts.invoiceTotal || 0;
+        this.currencySymbol = opts.currencySymbol || 'R';
         this.hasMilestones = opts.hasMilestones || false;
     },
 
@@ -36,7 +38,7 @@ const InvoiceView = {
         const remaining = Math.max(0, this.balanceDue - amt);
         const pct = total > 0 ? Math.min(100, (newPaid / total) * 100) : 0;
 
-        const fmt = (n) => 'R ' + Number(n).toFixed(2);
+        const fmt = (n) => this.currencySymbol + ' ' + Number(n).toFixed(2);
         const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
         setText('calcPaid', fmt(alreadyPaid));
@@ -257,7 +259,7 @@ const InvoiceView = {
         if (!amount || amount <= 0) { UI.toast('Invalid amount'); return; }
         const reference = prompt('Refund reference (bank ref, etc.):') || '';
         const reason = prompt('Reason (optional):') || '';
-        if (!UI.confirm('Record a refund of R ' + amount.toFixed(2) + ' against this invoice?')) return;
+        if (!UI.confirm('Record a refund of ' + this.currencySymbol + ' ' + amount.toFixed(2) + ' against this invoice?')) return;
         await this._callAction('/qi/ajax/refund_invoice.php',
             { invoice_id: this.invoiceId, amount, reference, reason }, 'Refund recorded');
     },
@@ -370,7 +372,7 @@ const InvoiceView = {
                 })
             });
             if (data.ok) {
-                UI.toast('Payment recorded successfully!\n\nNew balance: R ' + parseFloat(data.new_balance).toFixed(2));
+                UI.toast('Payment recorded successfully!\n\nNew balance: ' + this.currencySymbol + ' ' + parseFloat(data.new_balance).toFixed(2));
                 window.location.reload();
             } else {
                 UI.toast('Error: ' + (data.error || 'Payment could not be recorded'));
@@ -414,7 +416,7 @@ const InvoiceView = {
                 body: JSON.stringify({ credit_note_id: creditId, invoice_id: this.invoiceId })
             });
             if (res.ok) {
-                UI.toast('Credit note applied successfully!\n\nNew balance: R ' + parseFloat(res.new_balance).toFixed(2));
+                UI.toast('Credit note applied successfully!\n\nNew balance: ' + this.currencySymbol + ' ' + parseFloat(res.new_balance).toFixed(2));
                 window.location.reload();
             } else {
                 UI.toast('Error: ' + (res.error || 'Could not apply credit note'));

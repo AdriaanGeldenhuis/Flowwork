@@ -6,6 +6,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
+require_once __DIR__ . '/../lib/Currencies.php';
 
 header('Content-Type: application/json');
 
@@ -32,13 +33,34 @@ if (empty($lineItems) || !is_array($lineItems)) {
     exit;
 }
 
-// Fetch default tax rate from qi_settings
-$stmtTax = $DB->prepare("SELECT default_tax_rate FROM qi_settings WHERE company_id = ?");
+// Fetch default tax rate and currency from qi_settings
+$stmtTax = $DB->prepare("SELECT default_tax_rate, default_currency FROM qi_settings WHERE company_id = ?");
 $stmtTax->execute([$companyId]);
 $qiSettings = $stmtTax->fetch();
 $defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
     ? floatval($qiSettings['default_tax_rate']) / 100
     : 0.15;
+
+// Resolve document currency + exchange rate (1 unit = X ZAR, used for GL conversion)
+$currency = strtoupper(trim($input['currency'] ?? ''));
+$clientSentCurrency = Currencies::isValid($currency);
+if (!$clientSentCurrency) {
+    $currency = Currencies::isValid($qiSettings['default_currency'] ?? null)
+        ? strtoupper($qiSettings['default_currency'])
+        : Currencies::BASE;
+}
+$exchangeRate = isset($input['exchange_rate']) ? (float)$input['exchange_rate'] : 0.0;
+if ($currency === Currencies::BASE) {
+    $exchangeRate = 1.0;
+} elseif ($exchangeRate <= 0) {
+    require_once __DIR__ . '/../../finances/lib/CurrencyService.php';
+    $svc = new CurrencyService($DB, (int)$companyId);
+    $exchangeRate = (float)($svc->getRate($currency, $input['issue_date'] ?? date('Y-m-d')) ?? 0);
+}
+if ($exchangeRate <= 0) {
+    echo json_encode(['ok' => false, 'error' => "No exchange rate available for {$currency}. Enter a rate on the form or add one under Finances → Exchange Rates."]);
+    exit;
+}
 
 // Recalculate subtotal, tax and total to prevent tampering
 $subtotalCalc = 0;
@@ -72,7 +94,7 @@ try {
         // UPDATE
         $invoiceId = (int)$input['invoice_id'];
         
-        $stmt = $DB->prepare("SELECT status, total, balance_due FROM invoices WHERE id = ? AND company_id = ?");
+        $stmt = $DB->prepare("SELECT status, total, balance_due, currency, exchange_rate FROM invoices WHERE id = ? AND company_id = ?");
         $stmt->execute([$invoiceId, $companyId]);
         $existing = $stmt->fetch();
 
@@ -82,6 +104,14 @@ try {
 
         if ($existing['status'] !== 'draft') {
             throw new Exception('Only draft invoices can be edited');
+        }
+
+        // If the request didn't carry a valid currency (e.g. stale cached form
+        // JS), keep the document's existing currency/rate rather than silently
+        // re-denominating it to the company default.
+        if (!$clientSentCurrency && Currencies::isValid($existing['currency'] ?? null)) {
+            $currency = strtoupper($existing['currency']);
+            $exchangeRate = (float)($existing['exchange_rate'] ?? 1) ?: 1.0;
         }
 
         // Recalculate balance_due: preserve amount already paid
@@ -100,6 +130,8 @@ try {
                 tax = ?,
                 total = ?,
                 balance_due = ?,
+                currency = ?,
+                exchange_rate = ?,
                 terms = ?,
                 notes = ?,
                 updated_at = NOW()
@@ -117,6 +149,8 @@ try {
             $input['tax'],
             $input['total'],
             $newBalanceDue,
+            $currency,
+            $exchangeRate,
             $input['terms'] ?? '',
             $input['notes'] ?? '',
             $invoiceId,
@@ -135,7 +169,13 @@ try {
         [$invoiceNumber, $seqNum] = $alloc->allocate($companyId, 'invoice', $input['issue_date'] ?? null, true);
 
         // Insert new invoice; balance_due initially equals total
-        $stmt = $DB->prepare("\n            INSERT INTO invoices (\n                company_id, invoice_number, customer_id, contact_id, project_id,\n                issue_date, due_date, status, subtotal, discount, tax, total, balance_due,\n                currency, terms, notes, created_by, created_at, updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, 'ZAR', ?, ?, ?, NOW(), NOW())\n        ");
+        $stmt = $DB->prepare("
+            INSERT INTO invoices (
+                company_id, invoice_number, customer_id, contact_id, project_id,
+                issue_date, due_date, status, subtotal, discount, tax, total, balance_due,
+                currency, exchange_rate, terms, notes, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        ");
 
         $stmt->execute([
             $companyId,
@@ -151,6 +191,8 @@ try {
             $input['total'],
             // balance_due
             $input['total'],
+            $currency,
+            $exchangeRate,
             $input['terms'] ?? '',
             $input['notes'] ?? '',
             $userId

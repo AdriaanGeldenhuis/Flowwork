@@ -5,6 +5,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../lib/Branding.php';
+require_once __DIR__ . '/../lib/Currencies.php';
 
 // Get token from query string
 $token = $_GET['token'] ?? '';
@@ -96,6 +97,11 @@ try {
     $showTax     = $brand['show']['tax'];
     $showReg     = $brand['show']['reg'];
 
+    // Document currency formatting
+    $docCurrency = Currencies::isValid($quote['currency'] ?? null) ? strtoupper($quote['currency']) : Currencies::BASE;
+    $docSymbol   = Currencies::symbol($docCurrency);
+    $isForeign   = ($docCurrency !== Currencies::BASE);
+
 } catch (Exception $e) {
     echo '<h1>Database error</h1>';
     exit;
@@ -162,6 +168,9 @@ try {
                         <div class="fw-qi__doc-ref"><strong>Quote #:</strong> <?= htmlspecialchars($quote['quote_number']) ?></div>
                         <div class="fw-qi__doc-ref"><strong>Date:</strong> <?= htmlspecialchars($quote['issue_date']) ?></div>
                         <div class="fw-qi__doc-ref"><strong>Valid Until:</strong> <?= htmlspecialchars($quote['expiry_date']) ?></div>
+                        <?php if ($isForeign): ?>
+                            <div class="fw-qi__doc-ref"><strong>Currency:</strong> <?= htmlspecialchars($docCurrency) ?> (<?= htmlspecialchars(Currencies::name($docCurrency)) ?>)</div>
+                        <?php endif; ?>
 
                         <div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                             <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Quote To</h3>
@@ -200,17 +209,17 @@ try {
                                 <tr>
                                     <td><?= htmlspecialchars($line['item_description']) ?></td>
                                     <td style="text-align:right;"><?= number_format($qty, 2) ?></td>
-                                    <td style="text-align:right;">R <?= number_format($price, 2) ?></td>
-                                    <td style="text-align:right;">R <?= number_format($lineTotal, 2) ?></td>
+                                    <td style="text-align:right;"><?= htmlspecialchars($docSymbol) ?> <?= number_format($price, 2) ?></td>
+                                    <td style="text-align:right;"><?= htmlspecialchars($docSymbol) ?> <?= number_format($lineTotal, 2) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                     <div class="fw-qi__doc-totals">
                         <?php $tax = (float)$quote['tax']; $total = (float)$quote['total']; ?>
-                        <div class="fw-qi__doc-total-row"><span>Subtotal:</span><span>R <?= number_format($subtotal, 2) ?></span></div>
-                        <div class="fw-qi__doc-total-row"><span>VAT:</span><span>R <?= number_format($tax, 2) ?></span></div>
-                        <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span>R <?= number_format($total, 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row"><span>Subtotal:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($subtotal, 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row"><span>VAT:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($tax, 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($total, 2) ?></span></div>
                     </div>
                 </div>
                 <?php if ($quote['terms']): ?>

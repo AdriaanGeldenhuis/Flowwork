@@ -2,6 +2,7 @@
 // /crm/account_new.php - COMPLETE WITH BACK BUTTON
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/../qi/lib/Currencies.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
@@ -199,6 +200,14 @@ $regions = $DB->query("SELECT * FROM crm_regions ORDER BY name ASC")->fetchAll()
 
                     <div class="fw-crm__form-row">
                         <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Billing Currency</label>
+                            <select name="currency" class="fw-crm__input">
+                                <option value="">— Company default —</option>
+                                <?= Currencies::options('') ?>
+                            </select>
+                            <small class="fw-crm__help-text">Quotes &amp; invoices for this account start in this currency.</small>
+                        </div>
+                        <div class="fw-crm__form-group">
                             <label class="fw-crm__label">Status</label>
                             <select name="status" class="fw-crm__input">
                                 <option value="active">Active</option>
@@ -206,6 +215,9 @@ $regions = $DB->query("SELECT * FROM crm_regions ORDER BY name ASC")->fetchAll()
                                 <option value="prospect">Prospect</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="fw-crm__form-row">
                         <div class="fw-crm__form-group">
                             <label class="fw-crm__checkbox-wrapper">
                                 <input type="checkbox" name="preferred" class="fw-crm__checkbox">

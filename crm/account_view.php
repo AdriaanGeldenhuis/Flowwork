@@ -2,6 +2,7 @@
 // /crm/account_view.php - FINAL WORKING VERSION
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/../qi/lib/Currencies.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
@@ -347,6 +348,12 @@ try {
                                     <div class="fw-crm__info-item">
                                         <dt>Region</dt>
                                         <dd><?= htmlspecialchars($account['region_name']) ?></dd>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($account['currency'])): ?>
+                                    <div class="fw-crm__info-item">
+                                        <dt>Billing Currency</dt>
+                                        <dd><?= htmlspecialchars(strtoupper($account['currency'])) ?> (<?= htmlspecialchars(Currencies::name($account['currency'])) ?>)</dd>
                                     </div>
                                     <?php endif; ?>
                                     <div class="fw-crm__info-item">

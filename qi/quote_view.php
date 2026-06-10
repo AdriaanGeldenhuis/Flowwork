@@ -6,8 +6,9 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-05-18-QI-pdf-download-v1');
+define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -130,6 +131,12 @@ $showVat     = $brand['show']['vat'];
 $showTax     = $brand['show']['tax'];
 $showReg     = $brand['show']['reg'];
 $showPayment = $brand['show']['payment'];
+
+// Document currency formatting
+$docCurrency = Currencies::isValid($quote['currency'] ?? null) ? strtoupper($quote['currency']) : Currencies::BASE;
+$docSymbol   = Currencies::symbol($docCurrency);
+$docRate     = (float)($quote['exchange_rate'] ?? 1) ?: 1.0;
+$isForeign   = ($docCurrency !== Currencies::BASE);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -330,6 +337,9 @@ $showPayment = $brand['show']['payment'];
                         <table class="fw-qi__doc-info-table" style="margin-top:8px;">
                             <tr><td>Quote Date:</td><td><strong><?= date('d M Y', strtotime($quote['issue_date'])) ?></strong></td></tr>
                             <tr><td>Valid Until:</td><td><strong><?= date('d M Y', strtotime($quote['expiry_date'])) ?></strong></td></tr>
+                            <?php if ($isForeign): ?>
+                                <tr><td>Currency:</td><td><strong><?= htmlspecialchars($docCurrency) ?> (<?= htmlspecialchars(Currencies::name($docCurrency)) ?>)</strong></td></tr>
+                            <?php endif; ?>
                         </table>
                         <span class="fw-qi__badge fw-qi__badge--<?= $quote['status'] ?>"><?= strtoupper($quote['status']) ?></span>
 
@@ -365,8 +375,8 @@ $showPayment = $brand['show']['payment'];
                                         <td><?= $idx + 1 ?></td>
                                         <td><?= htmlspecialchars($line['item_description']) ?></td>
                                         <td class="fw-qi__doc-table-center"><?= number_format($line['quantity'], 2) ?></td>
-                                        <td class="fw-qi__doc-table-right">R <?= number_format($line['unit_price'], 2) ?></td>
-                                        <td class="fw-qi__doc-table-right"><strong>R <?= number_format($line['line_total'], 2) ?></strong></td>
+                                        <td class="fw-qi__doc-table-right"><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['unit_price'], 2) ?></td>
+                                        <td class="fw-qi__doc-table-right"><strong><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['line_total'], 2) ?></strong></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
@@ -375,10 +385,16 @@ $showPayment = $brand['show']['payment'];
                         </tbody>
                     </table>
                     <div class="fw-qi__doc-totals">
-                        <div class="fw-qi__doc-total-row"><span>Subtotal:</span><span>R <?= number_format($quote['subtotal'], 2) ?></span></div>
-                        <div class="fw-qi__doc-total-row"><span>Discount:</span><span>R <?= number_format($quote['discount'], 2) ?></span></div>
-                        <div class="fw-qi__doc-total-row"><span>VAT:</span><span>R <?= number_format($quote['tax'], 2) ?></span></div>
-                        <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span>R <?= number_format($quote['total'], 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row"><span>Subtotal:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['subtotal'], 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row"><span>Discount:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['discount'], 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row"><span>VAT:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['tax'], 2) ?></span></div>
+                        <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['total'], 2) ?></span></div>
+                        <?php if ($isForeign): ?>
+                            <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
+                                <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
+                                <span>R <?= number_format((float)$quote['total'] * $docRate, 2) ?></span>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -400,7 +416,7 @@ $showPayment = $brand['show']['payment'];
                                     <tr>
                                         <td><?= htmlspecialchars($ms['label']) ?></td>
                                         <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
-                                        <td style="text-align:right;">R <?= number_format($ms['amount'], 2) ?></td>
+                                        <td style="text-align:right;"><?= htmlspecialchars($docSymbol) ?> <?= number_format($ms['amount'], 2) ?></td>
                                         <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
                                     </tr>
                                 <?php endforeach; ?>

@@ -12,6 +12,15 @@
     return div.innerHTML;
   }
 
+  // Currency symbol for a list row. ZAR (or unknown) shows "R"; foreign
+  // documents show their own symbol from window.QI_CURRENCY_SYMBOLS, or the
+  // ISO code itself as a safe fallback.
+  function moneySym(code) {
+    if (!code || code === 'ZAR') return 'R';
+    const map = window.QI_CURRENCY_SYMBOLS || {};
+    return map[code] || code;
+  }
+
   function getCookie(name) {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
     return match ? match[2] : null;
@@ -224,7 +233,7 @@ function renderOverview(data) {
                                                 <td>
                                                     <span class="fw-qi__overdue-badge-sm">${parseInt(inv.days_overdue)}d overdue</span>
                                                 </td>
-                                                <td class="fw-qi__table-align-right"><strong>R ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
+                                                <td class="fw-qi__table-align-right"><strong>${esc(moneySym(inv.currency))} ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
@@ -261,7 +270,7 @@ function renderOverview(data) {
                                                         esc(new Date(inv.due_date).toLocaleDateString())
                                                     }
                                                 </td>
-                                                <td class="fw-qi__table-align-right"><strong>R ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
+                                                <td class="fw-qi__table-align-right"><strong>${esc(moneySym(inv.currency))} ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
@@ -298,7 +307,7 @@ function renderOverview(data) {
                                                         esc(new Date(q.expiry_date).toLocaleDateString())
                                                     }
                                                 </td>
-                                                <td class="fw-qi__table-align-right"><strong>R ${parseFloat(q.total).toFixed(2)}</strong></td>
+                                                <td class="fw-qi__table-align-right"><strong>${esc(moneySym(q.currency))} ${parseFloat(q.total).toFixed(2)}</strong></td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
@@ -338,7 +347,7 @@ function renderOverview(data) {
                                             <div class="fw-qi__payment-customer">${esc(pmt.customer_name)}</div>
                                             <div class="fw-qi__payment-invoice">${esc(pmt.invoice_number)} • ${esc(new Date(pmt.payment_date).toLocaleDateString())}</div>
                                         </div>
-                                        <div class="fw-qi__payment-amount">R ${parseFloat(pmt.amount).toFixed(2)}</div>
+                                        <div class="fw-qi__payment-amount">${esc(moneySym(pmt.currency))} ${parseFloat(pmt.amount).toFixed(2)}</div>
                                     </div>
                                 `).join('')}
                             </div>
@@ -539,7 +548,7 @@ function renderMiniChart(data) {
                         value = `<span class="fw-qi__badge fw-qi__badge--${esc(item.status)}">${esc(item.status_label || item.status)}</span>`;
                     }
                 } else if (h.key === 'total' || h.key === 'balance_due') {
-                    value = 'R ' + parseFloat(value || 0).toFixed(2);
+                    value = esc(moneySym(item.currency)) + ' ' + parseFloat(value || 0).toFixed(2);
                 } else {
                     value = esc(value);
                 }

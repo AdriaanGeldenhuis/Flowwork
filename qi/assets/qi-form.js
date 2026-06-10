@@ -6,6 +6,11 @@ window.QI = window.QI || {};
 
   let lineItemCounter = 0;
 
+  // Symbol of the document's currency (falls back to ZAR's "R")
+  function curSym() {
+    return (window.QICurrency) ? QICurrency.symbol() : 'R';
+  }
+
   // ========== LINE ITEMS ==========
   QI.addLineItem = function() {
     lineItemCounter++;
@@ -59,12 +64,12 @@ window.QI = window.QI || {};
         </div>
 
         <div class="fw-qi__form-group">
-          <label class="fw-qi__label">Unit Price (R)</label>
+          <label class="fw-qi__label">Unit Price (<span class="qi-currency-symbol">${curSym()}</span>)</label>
           <input type="number" name="lines[${lineItemCounter}][unit_price]" class="fw-qi__input line-price" step="0.01" value="0.00" min="0" required>
         </div>
 
         <div class="fw-qi__form-group">
-          <label class="fw-qi__label">Discount (R)</label>
+          <label class="fw-qi__label">Discount (<span class="qi-currency-symbol">${curSym()}</span>)</label>
           <input type="number" name="lines[${lineItemCounter}][discount]" class="fw-qi__input line-discount" step="0.01" value="0.00" min="0">
         </div>
 
@@ -78,7 +83,7 @@ window.QI = window.QI || {};
 
         <div class="fw-qi__form-group">
           <label class="fw-qi__label">Line Total</label>
-          <div class="fw-qi__line-total" data-line-id="${lineItemCounter}">R 0.00</div>
+          <div class="fw-qi__line-total" data-line-id="${lineItemCounter}">${curSym()} 0.00</div>
         </div>
       </div>
     `;
@@ -122,7 +127,7 @@ window.QI = window.QI || {};
       // Update line total display
       const lineTotalDisplay = document.querySelector(`.fw-qi__line-total[data-line-id="${lineId}"]`);
       if (lineTotalDisplay) {
-        lineTotalDisplay.textContent = 'R ' + lineTotal.toFixed(2);
+        lineTotalDisplay.textContent = curSym() + ' ' + lineTotal.toFixed(2);
       }
 
       subtotal += lineSubtotal;
@@ -132,17 +137,25 @@ window.QI = window.QI || {};
 
     const grandTotal = subtotal - totalDiscount + totalTax;
 
-    // Update displays
-    document.getElementById('displaySubtotal').textContent = 'R ' + subtotal.toFixed(2);
-    document.getElementById('displayDiscount').textContent = 'R ' + totalDiscount.toFixed(2);
-    document.getElementById('displayTax').textContent = 'R ' + totalTax.toFixed(2);
-    document.getElementById('displayTotal').textContent = 'R ' + grandTotal.toFixed(2);
+    // Update displays (displayDiscount is absent on the credit note form)
+    const setDisplay = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = curSym() + ' ' + val.toFixed(2);
+    };
+    setDisplay('displaySubtotal', subtotal);
+    setDisplay('displayDiscount', totalDiscount);
+    setDisplay('displayTax', totalTax);
+    setDisplay('displayTotal', grandTotal);
 
-    // Update hidden inputs
-    document.getElementById('inputSubtotal').value = subtotal.toFixed(2);
-    document.getElementById('inputDiscount').value = totalDiscount.toFixed(2);
-    document.getElementById('inputTax').value = totalTax.toFixed(2);
-    document.getElementById('inputTotal').value = grandTotal.toFixed(2);
+    // Update hidden inputs (inputDiscount is absent on the credit note form)
+    const setInput = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val.toFixed(2);
+    };
+    setInput('inputSubtotal', subtotal);
+    setInput('inputDiscount', totalDiscount);
+    setInput('inputTax', totalTax);
+    setInput('inputTotal', grandTotal);
 
     // Recalculate milestone amounts when total changes
     if (document.getElementById('enableMilestones')?.checked) {
@@ -186,7 +199,7 @@ window.QI = window.QI || {};
           <label class="fw-qi__label">Type</label>
           <select class="fw-qi__input ms-type" onchange="QI.onMilestoneTypeChange(${milestoneCounter})">
             <option value="percentage" ${!defaultAmount ? 'selected' : ''}>Percentage (%)</option>
-            <option value="fixed" ${defaultAmount ? 'selected' : ''}>Fixed Amount (R)</option>
+            <option value="fixed" ${defaultAmount ? 'selected' : ''}>Fixed Amount (${curSym()})</option>
           </select>
         </div>
         <div class="fw-qi__form-group ms-pct-group" ${defaultAmount ? 'style="display:none;"' : ''}>
@@ -194,7 +207,7 @@ window.QI = window.QI || {};
           <input type="number" class="fw-qi__input ms-percentage" value="${defaultPct || ''}" step="0.01" min="0.01" max="100" placeholder="e.g. 50">
         </div>
         <div class="fw-qi__form-group ms-fixed-group" ${!defaultAmount ? 'style="display:none;"' : ''}>
-          <label class="fw-qi__label">Amount (R)</label>
+          <label class="fw-qi__label">Amount (<span class="qi-currency-symbol">${curSym()}</span>)</label>
           <input type="number" class="fw-qi__input ms-fixed-amount" value="${defaultAmount || ''}" step="0.01" min="0.01" placeholder="e.g. 5000">
         </div>
         <div class="fw-qi__form-group">
@@ -203,7 +216,7 @@ window.QI = window.QI || {};
         </div>
         <div class="fw-qi__form-group">
           <label class="fw-qi__label">Calculated</label>
-          <div class="fw-qi__milestone-amount" data-ms-id="${milestoneCounter}">R 0.00</div>
+          <div class="fw-qi__milestone-amount" data-ms-id="${milestoneCounter}">${curSym()} 0.00</div>
         </div>
         <div class="fw-qi__form-group fw-qi__milestone-remove-col">
           <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="QI.removeMilestone(${milestoneCounter})">Remove</button>
@@ -263,7 +276,7 @@ window.QI = window.QI || {};
 
       const amountDisplay = document.querySelector(`.fw-qi__milestone-amount[data-ms-id="${msId}"]`);
       if (amountDisplay) {
-        amountDisplay.textContent = 'R ' + amount.toFixed(2);
+        amountDisplay.textContent = curSym() + ' ' + amount.toFixed(2);
       }
     });
 
@@ -273,7 +286,7 @@ window.QI = window.QI || {};
     // Update summary
     const pctDisplay = document.getElementById('milestoneTotalPct');
     if (pctDisplay) {
-      pctDisplay.textContent = totalPct.toFixed(2) + '% (R ' + totalAllocated.toFixed(2) + ')';
+      pctDisplay.textContent = totalPct.toFixed(2) + '% (' + curSym() + ' ' + totalAllocated.toFixed(2) + ')';
       pctDisplay.style.color = Math.abs(totalPct - 100) < 0.01 ? 'var(--accent-qi, #10b981)' : '#ef4444';
     }
 
@@ -283,10 +296,10 @@ window.QI = window.QI || {};
       if (Math.abs(totalPct - 100) < 0.01) {
         validationEl.style.display = 'none';
       } else if (totalPct < 100) {
-        validationEl.textContent = `${(100 - totalPct).toFixed(2)}% (R ${(grandTotal - totalAllocated).toFixed(2)}) still unallocated`;
+        validationEl.textContent = `${(100 - totalPct).toFixed(2)}% (${curSym()} ${(grandTotal - totalAllocated).toFixed(2)}) still unallocated`;
         validationEl.style.display = 'block';
       } else {
-        validationEl.textContent = `${(totalPct - 100).toFixed(2)}% (R ${(totalAllocated - grandTotal).toFixed(2)}) over-allocated`;
+        validationEl.textContent = `${(totalPct - 100).toFixed(2)}% (${curSym()} ${(totalAllocated - grandTotal).toFixed(2)}) over-allocated`;
         validationEl.style.display = 'block';
       }
     }

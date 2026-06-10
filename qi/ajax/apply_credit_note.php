@@ -46,6 +46,12 @@ try {
     if (!$invoice) {
         throw new Exception('Linked invoice not found');
     }
+    // Both amounts are in document currency — they must be the same currency
+    $creditCurrency  = strtoupper($credit['currency'] ?? 'ZAR') ?: 'ZAR';
+    $invoiceCurrency = strtoupper($invoice['currency'] ?? 'ZAR') ?: 'ZAR';
+    if ($creditCurrency !== $invoiceCurrency) {
+        throw new Exception("Currency mismatch: credit note is in {$creditCurrency} but the invoice is in {$invoiceCurrency}");
+    }
     // Calculate new balance and status
     $creditAmount = (float)$credit['total'];
     if ($creditAmount <= 0) {

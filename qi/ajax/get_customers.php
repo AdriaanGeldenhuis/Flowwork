@@ -9,10 +9,10 @@ $company_id = $_SESSION['company_id'];
 
 try {
     $stmt = $pdo->prepare("
-        SELECT id, name 
-        FROM crm_accounts 
-        WHERE company_id = ? 
-        AND type = 'customer' 
+        SELECT id, name, currency
+        FROM crm_accounts
+        WHERE company_id = ?
+        AND type = 'customer'
         AND status = 'active'
         ORDER BY name
     ");

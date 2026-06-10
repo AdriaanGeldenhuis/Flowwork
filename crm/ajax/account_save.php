@@ -2,6 +2,7 @@
 // /crm/ajax/account_save.php - FINAL FIXED VERSION
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../qi/lib/Currencies.php';
 
 header('Content-Type: application/json');
 
@@ -17,7 +18,7 @@ try {
     // Validate required fields
     $name = trim($_POST['name'] ?? '');
     $type = $_POST['type'] ?? 'supplier';
-    
+
     if ($name === '') {
         throw new Exception('Account name is required');
     }
@@ -30,6 +31,12 @@ try {
     $phone = trim($_POST['phone'] ?? '');
     if ($phone && !preg_match('/^\+/', $phone)) {
         $phone = '+27' . ltrim($phone, '0');
+    }
+
+    // Preferred billing currency for this account (NULL = company default)
+    $accountCurrency = strtoupper(trim($_POST['currency'] ?? ''));
+    if (!Currencies::isValid($accountCurrency)) {
+        $accountCurrency = null;
     }
 
     if ($isEdit) {
@@ -64,7 +71,7 @@ try {
             $deletedAtSql = 'NULL';
         }
 
-        // UPDATE with EXACTLY 14 parameters (deleted_at uses inline SQL, not bound)
+        // UPDATE with EXACTLY 15 parameters (deleted_at uses inline SQL, not bound)
         $stmt = $DB->prepare("
             UPDATE crm_accounts SET
                 name = ?,
@@ -76,6 +83,7 @@ try {
                 website = ?,
                 industry_id = ?,
                 region_id = ?,
+                currency = ?,
                 status = ?,
                 preferred = ?,
                 notes = ?,
@@ -94,16 +102,17 @@ try {
             $websiteVal ?: null,                      // 7
             $industryId,                              // 8
             $regionId,                                // 9
-            $statusVal,                               // 10
-            $preferredVal,                            // 11
-            $notesVal ?: null,                        // 12
-            $accountId,                               // 13
-            $companyId                                // 14
+            $accountCurrency,                         // 10
+            $statusVal,                               // 11
+            $preferredVal,                            // 12
+            $notesVal ?: null,                        // 13
+            $accountId,                               // 14
+            $companyId                                // 15
         ];
 
         // SAFETY CHECK
-        if (count($executeParams) !== 14) {
-            throw new Exception('Parameter count mismatch: ' . count($executeParams) . ' instead of 14');
+        if (count($executeParams) !== 15) {
+            throw new Exception('Parameter count mismatch: ' . count($executeParams) . ' instead of 15');
         }
 
         $stmt->execute($executeParams);
@@ -135,11 +144,11 @@ try {
         $stmt = $DB->prepare("
             INSERT INTO crm_accounts (
                 company_id, type, name, legal_name, reg_no, vat_no,
-                phone, email, website, industry_id, region_id, status,
+                phone, email, website, industry_id, region_id, currency, status,
                 preferred, notes, created_by, created_at
             ) VALUES (
                 ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, NOW()
             )
         ");
@@ -156,6 +165,7 @@ try {
             trim($_POST['website'] ?? '') ?: null,
             !empty($_POST['industry_id']) ? (int)$_POST['industry_id'] : null,
             !empty($_POST['region_id']) ? (int)$_POST['region_id'] : null,
+            $accountCurrency,
             $_POST['status'] ?? 'active',
             isset($_POST['preferred']) ? 1 : 0,
             trim($_POST['notes'] ?? '') ?: null,

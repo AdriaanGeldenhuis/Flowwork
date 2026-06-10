@@ -14,7 +14,7 @@ $type = $_GET['type'] ?? 'quotes';
 try {
     if ($type === 'quotes') {
         $stmt = $DB->prepare("
-            SELECT q.id, q.quote_number, q.issue_date, q.expiry_date, q.total, q.status, q.created_at,
+            SELECT q.id, q.quote_number, q.issue_date, q.expiry_date, q.total, q.currency, q.status, q.created_at,
                    ca.name AS customer_name
             FROM quotes q
             LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
@@ -27,7 +27,7 @@ try {
 
     } elseif ($type === 'invoices') {
         $stmt = $DB->prepare("
-            SELECT i.id, i.invoice_number, i.issue_date, i.due_date, i.total, i.status, i.created_at,
+            SELECT i.id, i.invoice_number, i.issue_date, i.due_date, i.total, i.currency, i.status, i.created_at,
                    ca.name AS customer_name
             FROM invoices i
             LEFT JOIN crm_accounts ca ON i.customer_id = ca.id

@@ -55,7 +55,7 @@ try {
                 $params[] = '%' . $q . '%';
             }
             $countQuery = 'SELECT COUNT(*) AS total FROM quotes q LEFT JOIN crm_accounts ca ON q.customer_id = ca.id ' . $where;
-            $rowsQuery = 'SELECT q.id, q.quote_number, q.issue_date, q.expiry_date, q.total, q.status, ca.name AS customer_name
+            $rowsQuery = 'SELECT q.id, q.quote_number, q.issue_date, q.expiry_date, q.total, q.currency, q.status, ca.name AS customer_name
                           FROM quotes q
                           LEFT JOIN crm_accounts ca ON q.customer_id = ca.id ' . $where . '
                           ORDER BY q.created_at DESC
@@ -76,7 +76,7 @@ try {
                 $params[] = '%' . $q . '%';
             }
             $countQuery = 'SELECT COUNT(*) AS total FROM invoices i LEFT JOIN crm_accounts ca ON i.customer_id = ca.id ' . $where;
-            $rowsQuery = 'SELECT i.id, i.invoice_number, i.issue_date, i.due_date, i.total, i.status, i.balance_due, ca.name AS customer_name
+            $rowsQuery = 'SELECT i.id, i.invoice_number, i.issue_date, i.due_date, i.total, i.currency, i.status, i.balance_due, ca.name AS customer_name
                           FROM invoices i
                           LEFT JOIN crm_accounts ca ON i.customer_id = ca.id ' . $where . '
                           ORDER BY i.created_at DESC
@@ -125,7 +125,7 @@ try {
                 $params[] = '%' . $q . '%';
             }
             $countQuery = 'SELECT COUNT(*) AS total FROM credit_notes cn LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id ' . $where;
-            $rowsQuery = 'SELECT cn.id, cn.credit_note_number, cn.issue_date, cn.total, cn.status, ca.name AS customer_name
+            $rowsQuery = 'SELECT cn.id, cn.credit_note_number, cn.issue_date, cn.total, cn.currency, cn.status, ca.name AS customer_name
                           FROM credit_notes cn
                           LEFT JOIN crm_accounts ca ON cn.customer_id = ca.id ' . $where . '
                           ORDER BY cn.created_at DESC

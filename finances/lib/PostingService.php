@@ -211,6 +211,19 @@ class PostingService
                 }
             }
         }
+        // Convert document-currency sales/VAT to ZAR at the invoice's captured
+        // rate (1 unit = X ZAR). Inventory/COGS costs are already in ZAR.
+        $fxCurrency = strtoupper(trim($invoice['currency'] ?? 'ZAR')) ?: 'ZAR';
+        $fxRate = (float)($invoice['exchange_rate'] ?? 1);
+        if ($fxCurrency === 'ZAR' || $fxRate <= 0) {
+            $fxRate = 1.0;
+        }
+        if ($fxRate != 1.0) {
+            foreach ($salesTotals as $code => $amt) {
+                $salesTotals[$code] = round($amt * $fxRate, 2);
+            }
+            $totalVat = round($totalVat * $fxRate, 2);
+        }
         $total = array_sum($salesTotals) + $totalVat;
         // Post journal
         $this->db->beginTransaction();
@@ -224,6 +237,9 @@ class PostingService
             );
             $reference = $invoice['invoice_number'];
             $desc      = 'Invoice ' . $reference;
+            if ($fxCurrency !== 'ZAR') {
+                $desc .= ' (' . $fxCurrency . ' @ ' . rtrim(rtrim(number_format($fxRate, 6, '.', ''), '0'), '.') . ')';
+            }
             $stmt->execute([
                 $this->companyId,
                 $entryDate,
@@ -349,9 +365,10 @@ class PostingService
         if (!empty($payment['journal_id'])) {
             $this->deleteJournal((int)$payment['journal_id']);
         }
-        // Fetch allocations
+        // Fetch allocations (with each invoice's currency for ZAR conversion)
         $stmt = $this->db->prepare(
-            "SELECT pa.amount, i.customer_id, i.invoice_number FROM payment_allocations pa
+            "SELECT pa.amount, i.customer_id, i.invoice_number, i.currency, i.exchange_rate
+             FROM payment_allocations pa
              LEFT JOIN invoices i ON pa.invoice_id = i.id
              WHERE pa.payment_id = ?"
         );
@@ -377,10 +394,16 @@ class PostingService
             $bankCode = $this->accounts->get('finance_bank_account_id', '1110');
         }
         $arCode = $this->accounts->get('finance_ar_account_id', '1200');
-        // Compute total amount
+        // Payment amounts are recorded in the invoice's currency — convert each
+        // allocation to ZAR at the invoice's captured rate (1 unit = X ZAR)
         $totalAmt = 0.0;
-        foreach ($allocs as $al) {
-            $totalAmt += floatval($al['amount']);
+        foreach ($allocs as $idx => $al) {
+            $fxRate = (float)($al['exchange_rate'] ?? 1);
+            if (strtoupper(trim($al['currency'] ?? 'ZAR')) === 'ZAR' || $al['currency'] === null || $fxRate <= 0) {
+                $fxRate = 1.0;
+            }
+            $allocs[$idx]['amount_zar'] = round(floatval($al['amount']) * $fxRate, 2);
+            $totalAmt += $allocs[$idx]['amount_zar'];
         }
         // Post journal
         $this->db->beginTransaction();
@@ -424,7 +447,7 @@ class PostingService
                  VALUES (?, ?, ?, 0, ?, ?, ?)"
             );
             foreach ($allocs as $al) {
-                $amt  = floatval($al['amount']);
+                $amt  = floatval($al['amount_zar'] ?? $al['amount']);
                 $cust = $al['customer_id'] ?: null;
                 $ref  = $al['invoice_number'] ?: $reference;
                 $stmtLine->execute([
@@ -514,6 +537,16 @@ class PostingService
                 $primaryTaxRate = $taxRate;
             }
         }
+        // Convert document-currency amounts to ZAR at the credit note's captured rate
+        $fxCurrency = strtoupper(trim($credit['currency'] ?? 'ZAR')) ?: 'ZAR';
+        $fxRate = (float)($credit['exchange_rate'] ?? 1);
+        if ($fxCurrency === 'ZAR' || $fxRate <= 0) {
+            $fxRate = 1.0;
+        }
+        if ($fxRate != 1.0) {
+            $netTotal = round($netTotal * $fxRate, 2);
+            $vatTotal = round($vatTotal * $fxRate, 2);
+        }
         $total = $netTotal + $vatTotal;
         $outputTaxCodeId = $this->resolveOutputTaxCodeId($primaryTaxRate);
         // Post journal
@@ -528,6 +561,9 @@ class PostingService
             );
             $reference = $credit['credit_note_number'];
             $desc      = 'Credit Note ' . $reference;
+            if ($fxCurrency !== 'ZAR') {
+                $desc .= ' (' . $fxCurrency . ' @ ' . rtrim(rtrim(number_format($fxRate, 6, '.', ''), '0'), '.') . ')';
+            }
             $stmt->execute([
                 $this->companyId,
                 $entryDate,

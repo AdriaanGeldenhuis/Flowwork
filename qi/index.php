@@ -2,8 +2,9 @@
 // /qi/index.php
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-04-07-QI-crm-look');
+define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -311,6 +312,10 @@ $counts = $stmt->fetch();
                 window.location.href = routes[this.activeTab] || '/qi/quote_new.php';
             }
         };
+    </script>
+    <script>
+        // Currency symbols for list/dashboard rows (foreign-currency documents)
+        window.QI_CURRENCY_SYMBOLS = <?= json_encode(Currencies::symbolMap()) ?>;
     </script>
     <?php if ($activeTab === 'overview'): ?>
     <!-- Load Chart.js and the overview logic when on the overview tab -->

@@ -2,8 +2,9 @@
 // /qi/credit_note_new.php
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2025-01-21-QI-1');
+define('ASSET_VERSION', '2026-06-10-QI-CURRENCY');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -46,6 +47,17 @@ $user = $stmt->fetch();
 $firstName = $user['first_name'] ?? 'User';
 
 $issueDate = date('Y-m-d');
+
+// Credit notes inherit the linked invoice's currency; standalone ones use the company default
+if ($invoice && Currencies::isValid($invoice['currency'] ?? null)) {
+    $docCurrency = strtoupper($invoice['currency']);
+} else {
+    $stmt = $DB->prepare("SELECT default_currency FROM qi_settings WHERE company_id = ? LIMIT 1");
+    $stmt->execute([$companyId]);
+    $defCur = $stmt->fetchColumn();
+    $docCurrency = Currencies::isValid($defCur) ? strtoupper($defCur) : Currencies::BASE;
+}
+$docSymbol = Currencies::symbol($docCurrency);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -126,7 +138,10 @@ $issueDate = date('Y-m-d');
                     <?php if ($invoice): ?>
                         <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
                         <div class="fw-qi__alert fw-qi__alert--info">
-                            <strong>Linked to Invoice:</strong> <?= htmlspecialchars($invoice['invoice_number']) ?> (R <?= number_format($invoice['total'], 2) ?>)
+                            <strong>Linked to Invoice:</strong> <?= htmlspecialchars($invoice['invoice_number']) ?> (<?= htmlspecialchars($docSymbol) ?> <?= number_format($invoice['total'], 2) ?>)
+                            <?php if ($docCurrency !== Currencies::BASE): ?>
+                                — amounts in <?= htmlspecialchars($docCurrency) ?>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
 
@@ -147,15 +162,15 @@ $issueDate = date('Y-m-d');
                     <div class="fw-qi__totals-grid">
                         <div class="fw-qi__total-row">
                             <span>Subtotal:</span>
-                            <strong id="displaySubtotal">R 0.00</strong>
+                            <strong id="displaySubtotal"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                         <div class="fw-qi__total-row">
                             <span>VAT (15%):</span>
-                            <strong id="displayTax">R 0.00</strong>
+                            <strong id="displayTax"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                         <div class="fw-qi__total-row fw-qi__total-row--grand">
                             <span>Credit Total:</span>
-                            <strong id="displayTotal">R 0.00</strong>
+                            <strong id="displayTotal"><?= htmlspecialchars($docSymbol) ?> 0.00</strong>
                         </div>
                     </div>
                     <input type="hidden" name="subtotal" id="inputSubtotal" value="0">
@@ -183,6 +198,16 @@ $issueDate = date('Y-m-d');
 
     <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.currency.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>
+        // Credit note amounts are in the (inherited) document currency
+        QICurrency.init({
+            code: <?= json_encode($docCurrency) ?>,
+            rate: 1,
+            base: <?= json_encode(Currencies::BASE) ?>,
+            symbols: <?= json_encode(Currencies::symbolMap()) ?>
+        });
+    </script>
     <script src="/qi/assets/qi-form.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         <?php if (!empty($invoiceLines)): ?>

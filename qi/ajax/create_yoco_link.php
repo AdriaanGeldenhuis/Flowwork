@@ -35,7 +35,7 @@ if ($invoiceId <= 0) {
 
 try {
     // Fetch invoice and verify ownership
-    $stmt = $DB->prepare('SELECT id, invoice_number, balance_due, status, yoco_payment_link FROM invoices WHERE id = ? AND company_id = ?');
+    $stmt = $DB->prepare('SELECT id, invoice_number, balance_due, status, currency, yoco_payment_link FROM invoices WHERE id = ? AND company_id = ?');
     $stmt->execute([$invoiceId, $companyId]);
     $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$invoice) {
@@ -44,6 +44,11 @@ try {
     }
     if ($invoice['status'] === 'paid') {
         echo json_encode(['ok' => false, 'error' => 'Invoice already paid']);
+        return;
+    }
+    // Yoco processes card payments in ZAR only
+    if (!empty($invoice['currency']) && strtoupper($invoice['currency']) !== 'ZAR') {
+        echo json_encode(['ok' => false, 'error' => 'Yoco payment links are only available for ZAR invoices. This invoice is in ' . strtoupper($invoice['currency']) . '.']);
         return;
     }
     if (!empty($invoice['yoco_payment_link'])) {

@@ -8,6 +8,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/Branding.php';
+require_once __DIR__ . '/../lib/Currencies.php';
 
 $companyId = $_SESSION['company_id'];
 $type      = $_GET['type'] ?? 'quote';
@@ -19,10 +20,13 @@ if (!$id) {
     exit;
 }
 
-define('ASSET_VERSION', '2026-04-06-QI-v2');
+define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 
+// Formats amounts in the document's currency; the symbol is set after the
+// document is fetched (defaults to ZAR's "R").
+$GLOBALS['qiPdfSymbol'] = 'R';
 function fmt($amount) {
-    return 'R ' . number_format((float)$amount, 2);
+    return $GLOBALS['qiPdfSymbol'] . ' ' . number_format((float)$amount, 2);
 }
 
 try {
@@ -171,6 +175,15 @@ try {
             $stmt->execute([$id, $companyId]);
             $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
+    }
+
+    // Document currency: symbol used by fmt(), plus a Currency line for foreign docs
+    $docCurrency = Currencies::isValid($doc['currency'] ?? null) ? strtoupper($doc['currency']) : Currencies::BASE;
+    $docFxRate   = (float)($doc['exchange_rate'] ?? 1) ?: 1.0;
+    $isForeign   = ($docCurrency !== Currencies::BASE);
+    $GLOBALS['qiPdfSymbol'] = Currencies::symbol($docCurrency);
+    if ($isForeign) {
+        $dates['Currency'] = $docCurrency . ' (' . Currencies::name($docCurrency) . ')';
     }
 
     // Colour, text and font customisation — resolved centrally (qi/lib/Branding.php)
@@ -449,6 +462,12 @@ try {
                 <span>TOTAL:</span>
                 <span><?= fmt($doc['total']) ?></span>
             </div>
+            <?php if ($isForeign): ?>
+                <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
+                    <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docFxRate, 4) ?> ZAR):</span>
+                    <span>R <?= number_format((float)$doc['total'] * $docFxRate, 2) ?></span>
+                </div>
+            <?php endif; ?>
             <?php if ($type === 'invoice' && (float)($doc['balance_due'] ?? 0) < (float)$doc['total']): ?>
                 <div class="fw-qi__doc-total-row" style="margin-top:8px;">
                     <span>Balance Due:</span>
