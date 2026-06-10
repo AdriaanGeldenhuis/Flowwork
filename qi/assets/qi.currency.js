@@ -55,6 +55,8 @@ window.QICurrency = (function () {
      *   getDate():      returns the document date for rate lookup
      *   getPriceInputs(): returns price <input>s to offer conversion on switch
      *   recalc():       totals recalculation callback
+     *   customerSelect: customer <select> whose options carry data-currency —
+     *                   picking a customer auto-switches to their currency
      * }
      */
     function attach(opts) {
@@ -110,6 +112,22 @@ window.QICurrency = (function () {
             opts.rateInput.addEventListener('input', function () {
                 const v = parseFloat(opts.rateInput.value);
                 rate = (v > 0) ? v : 0;
+            });
+        }
+
+        // Picking a customer with a preferred billing currency switches the
+        // document to it (runs the normal change flow: rate lookup + optional
+        // price conversion).
+        if (opts.customerSelect) {
+            opts.customerSelect.addEventListener('change', function () {
+                const opt = opts.customerSelect.options[opts.customerSelect.selectedIndex];
+                const cur = opt ? (opt.getAttribute('data-currency') || '').toUpperCase() : '';
+                if (cur && cur !== code) {
+                    select.value = cur;
+                    if (select.value === cur) { // only if the option exists
+                        select.dispatchEvent(new Event('change'));
+                    }
+                }
             });
         }
 

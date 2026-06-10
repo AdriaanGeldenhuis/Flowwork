@@ -163,7 +163,8 @@
                 rateRow: document.getElementById('exchangeRateGroup'),
                 getDate: () => document.querySelector('[name="issue_date"]')?.value || '',
                 getPriceInputs: () => Array.from(document.querySelectorAll('[name="item_price[]"]')),
-                recalc: calculateTotals
+                recalc: calculateTotals,
+                customerSelect: document.querySelector('select[name="customer_id"]')
             });
         }
         // Initialize totals

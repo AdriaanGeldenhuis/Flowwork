@@ -51,8 +51,8 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Fetch customers
-$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' AND status = 'active' ORDER BY name");
+// Fetch customers (with their preferred billing currency)
+$stmt = $DB->prepare("SELECT id, name, currency FROM crm_accounts WHERE company_id = ? AND type = 'customer' AND status = 'active' ORDER BY name");
 $stmt->execute([$companyId]);
 $customers = $stmt->fetchAll();
 
@@ -162,7 +162,8 @@ $docSymbol = Currencies::symbol($docCurrency);
                             <select name="customer_id" class="fw-qi__input" required>
                                 <option value="">Select Customer...</option>
                                 <?php foreach ($customers as $c): ?>
-                                    <option value="<?= $c['id'] ?>" <?= ($editMode && $invoiceData['customer_id'] == $c['id']) ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
+                                    <?php $custCur = Currencies::isValid($c['currency'] ?? null) ? strtoupper($c['currency']) : ''; ?>
+                                    <option value="<?= $c['id'] ?>" data-currency="<?= $custCur ?>" <?= ($editMode && $invoiceData['customer_id'] == $c['id']) ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -327,7 +328,8 @@ $docSymbol = Currencies::symbol($docCurrency);
                 rateRow: document.getElementById('exchangeRateGroup'),
                 getDate: () => document.querySelector('[name="issue_date"]')?.value || '',
                 getPriceInputs: () => Array.from(document.querySelectorAll('.line-price')),
-                recalc: QI.calculateTotals
+                recalc: QI.calculateTotals,
+                customerSelect: document.querySelector('select[name="customer_id"]')
             });
         });
     </script>

@@ -123,11 +123,12 @@ $docSymbol = Currencies::symbol($docCurrency);
                         <select name="customer_id" class="fw-qi__input" required>
                             <option value="">Select customer...</option>
                             <?php
-                            $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? ORDER BY name");
+                            $stmt = $DB->prepare("SELECT id, name, currency FROM crm_accounts WHERE company_id = ? ORDER BY name");
                             $stmt->execute([$companyId]);
                             while ($customer = $stmt->fetch()) {
                                 $selected = ($editMode && $quoteData['customer_id'] == $customer['id']) ? 'selected' : '';
-                                echo '<option value="' . $customer['id'] . '" ' . $selected . '>' . htmlspecialchars($customer['name']) . '</option>';
+                                $custCur = Currencies::isValid($customer['currency'] ?? null) ? strtoupper($customer['currency']) : '';
+                                echo '<option value="' . $customer['id'] . '" data-currency="' . $custCur . '" ' . $selected . '>' . htmlspecialchars($customer['name']) . '</option>';
                             }
                             ?>
                         </select>
