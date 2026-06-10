@@ -214,7 +214,10 @@ class PostingService
         // Convert document-currency sales/VAT to ZAR at the invoice's captured
         // rate (1 unit = X ZAR). Inventory/COGS costs are already in ZAR.
         $fxCurrency = strtoupper(trim($invoice['currency'] ?? 'ZAR')) ?: 'ZAR';
-        $fxRate = ($fxCurrency === 'ZAR') ? 1.0 : (((float)($invoice['exchange_rate'] ?? 1) > 0) ? (float)$invoice['exchange_rate'] : 1.0);
+        $fxRate = (float)($invoice['exchange_rate'] ?? 1);
+        if ($fxCurrency === 'ZAR' || $fxRate <= 0) {
+            $fxRate = 1.0;
+        }
         if ($fxRate != 1.0) {
             foreach ($salesTotals as $code => $amt) {
                 $salesTotals[$code] = round($amt * $fxRate, 2);
@@ -395,9 +398,10 @@ class PostingService
         // allocation to ZAR at the invoice's captured rate (1 unit = X ZAR)
         $totalAmt = 0.0;
         foreach ($allocs as $idx => $al) {
-            $fxRate = (strtoupper(trim($al['currency'] ?? 'ZAR')) === 'ZAR' || $al['currency'] === null)
-                ? 1.0
-                : (((float)($al['exchange_rate'] ?? 1) > 0) ? (float)$al['exchange_rate'] : 1.0);
+            $fxRate = (float)($al['exchange_rate'] ?? 1);
+            if (strtoupper(trim($al['currency'] ?? 'ZAR')) === 'ZAR' || $al['currency'] === null || $fxRate <= 0) {
+                $fxRate = 1.0;
+            }
             $allocs[$idx]['amount_zar'] = round(floatval($al['amount']) * $fxRate, 2);
             $totalAmt += $allocs[$idx]['amount_zar'];
         }
@@ -535,7 +539,10 @@ class PostingService
         }
         // Convert document-currency amounts to ZAR at the credit note's captured rate
         $fxCurrency = strtoupper(trim($credit['currency'] ?? 'ZAR')) ?: 'ZAR';
-        $fxRate = ($fxCurrency === 'ZAR') ? 1.0 : (((float)($credit['exchange_rate'] ?? 1) > 0) ? (float)$credit['exchange_rate'] : 1.0);
+        $fxRate = (float)($credit['exchange_rate'] ?? 1);
+        if ($fxCurrency === 'ZAR' || $fxRate <= 0) {
+            $fxRate = 1.0;
+        }
         if ($fxRate != 1.0) {
             $netTotal = round($netTotal * $fxRate, 2);
             $vatTotal = round($vatTotal * $fxRate, 2);
