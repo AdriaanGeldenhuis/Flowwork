@@ -348,8 +348,8 @@ $isForeign   = ($docCurrency !== Currencies::BASE);
                             <p style="margin:4px 0;"><strong><?= htmlspecialchars($quote['customer_name'] ?? 'No Customer') ?></strong></p>
                             <?php if (!empty($quote['customer_address1'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address1']) ?></p><?php endif; ?>
                             <?php if (!empty($quote['customer_address2'])): ?><p style="margin:3px 0;"><?= htmlspecialchars($quote['customer_address2']) ?></p><?php endif; ?>
-                            <?php $custCity = trim(($quote['customer_city'] ?? '') . ', ' . ($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? '')); ?>
-                            <?php if ($custCity && $custCity !== ', '): ?><p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
+                            <?php $custCity = implode(', ', array_filter([trim($quote['customer_city'] ?? ''), trim(($quote['customer_region'] ?? '') . ' ' . ($quote['customer_postal'] ?? ''))], fn($p) => $p !== '')); ?>
+                            <?php if ($custCity !== ''): ?><p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p><?php endif; ?>
                             <?php if ($quote['customer_phone']): ?><p style="margin:3px 0;">Tel: <?= htmlspecialchars($quote['customer_phone']) ?></p><?php endif; ?>
                             <?php if ($quote['customer_email']): ?><p style="margin:3px 0;">Email: <?= htmlspecialchars($quote['customer_email']) ?></p><?php endif; ?>
                             <?php if (!empty($quote['customer_vat'])): ?><p style="margin:3px 0;">VAT No: <?= htmlspecialchars($quote['customer_vat']) ?></p><?php endif; ?>
@@ -451,7 +451,7 @@ $isForeign   = ($docCurrency !== Currencies::BASE);
     <script>
     window.QuoteView = {
         quoteId: <?= $quoteId ?>,
-        publicToken: '<?= addslashes($quote['public_token'] ?? '') ?>',
+        publicToken: <?= json_encode($quote['public_token'] ?? '', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>,
         
         async convertToInvoice() {
             if (!confirm('Convert this quote to an invoice?\n\n✓ Creates new invoice\n✓ Copies all items\n✓ Ready to send\n\nContinue?')) {

@@ -26,7 +26,18 @@ define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
 // document is fetched (defaults to ZAR's "R").
 $GLOBALS['qiPdfSymbol'] = 'R';
 function fmt($amount) {
-    return $GLOBALS['qiPdfSymbol'] . ' ' . number_format((float)$amount, 2);
+    // Non-breaking space so the currency symbol never wraps onto its own line
+    // in the narrow print columns.
+    return $GLOBALS['qiPdfSymbol'] . "\u{00A0}" . number_format((float)$amount, 2);
+}
+
+// VAT summary label reflecting the document's effective tax rate.
+function qi_vat_label($doc) {
+    $base = (float)($doc['subtotal'] ?? 0) - (float)($doc['discount'] ?? 0);
+    $rate = $base > 0 ? ((float)($doc['tax'] ?? 0) / $base) * 100 : 0.0;
+    $rateStr = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
+    if ($rateStr === '' || $rateStr === '-0') { $rateStr = '0'; }
+    return 'VAT (' . $rateStr . '%)';
 }
 
 try {
@@ -282,6 +293,36 @@ try {
     .fw-qi__milestone-badge {
         white-space: nowrap;
     }
+    /* Numeric columns must never wrap the currency symbol onto its own line */
+    .fw-qi__doc-table td[style*="right"],
+    .fw-qi__doc-table th[style*="right"],
+    .fw-qi__doc-total-row span:last-child {
+        white-space: nowrap;
+    }
+    /* Never render the horizontal scrollbar affordance into the PDF; the bold
+       template enlarges the milestones table, so shrink its padding/font so
+       the 7 columns fit A4 with content-sized (auto) columns rather than
+       clipping, scrolling, or truncating the amounts. */
+    .fw-qi__doc-table-wrap {
+        overflow: visible !important;
+    }
+    [data-template="bold"] .fw-qi__milestones-table {
+        table-layout: auto;
+    }
+    [data-template="bold"] .fw-qi__milestones-table th,
+    [data-template="bold"] .fw-qi__milestones-table td {
+        padding: 7px 5px;
+        font-size: 10.5px;
+    }
+    [data-template="bold"] .fw-qi__milestones-table .fw-qi__milestone-badge {
+        font-size: 9px;
+        padding: 3px 7px;
+    }
+    /* Amounts in any doc table must show in full, never ellipsized. */
+    .fw-qi__doc-table td[style*="right"] {
+        overflow: visible;
+        text-overflow: clip;
+    }
 
     /* Print toolbar */
     .print-bar {
@@ -334,7 +375,9 @@ try {
             box-shadow: none !important;
             border: none !important;
             border-radius: 0;
-            page-break-after: always;
+            /* No page-break-after: it stranded the footer alone on a blank
+               trailing page. The document is the last (only) flow element,
+               so it needs no forced break after it. */
         }
         /* Force two-column header in print */
         .fw-qi__doc-header {
@@ -354,6 +397,13 @@ try {
         .fw-qi__doc-totals { page-break-inside: avoid; }
         .fw-qi__doc-table thead { display: table-header-group; }
         .fw-qi__doc-table tbody tr { page-break-inside: avoid; }
+        /* Keep a section heading with its content, and don't split the short
+           Payment Details / Terms blocks or strand the footer. */
+        .fw-qi__doc-section { page-break-inside: avoid; }
+        .fw-qi__doc-section h3 { break-after: avoid; page-break-after: avoid; }
+        .fw-qi__milestones-view h3,
+        .fw-qi__payments-view h3 { break-after: avoid; page-break-after: avoid; }
+        .fw-qi__doc-footer { page-break-inside: avoid; }
     }
     @page {
         size: A4;
@@ -412,8 +462,14 @@ try {
                     <?php if (!empty($doc['customer_address2'])): ?>
                         <p style="margin:3px 0;"><?= htmlspecialchars($doc['customer_address2']) ?></p>
                     <?php endif; ?>
-                    <?php $custCity = trim(($doc['customer_city'] ?? '') . ', ' . ($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? '')); ?>
-                    <?php if ($custCity && $custCity !== ', '): ?>
+                    <?php
+                        $custCityParts = array_filter([
+                            trim($doc['customer_city'] ?? ''),
+                            trim(($doc['customer_region'] ?? '') . ' ' . ($doc['customer_postal'] ?? '')),
+                        ], fn($p) => $p !== '');
+                        $custCity = implode(', ', $custCityParts);
+                    ?>
+                    <?php if ($custCity !== ''): ?>
                         <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
                     <?php endif; ?>
                     <?php if (!empty($doc['customer_phone'])): ?>
@@ -475,7 +531,7 @@ try {
                 </div>
             <?php endif; ?>
             <div class="fw-qi__doc-total-row">
-                <span>VAT (15%):</span>
+                <span><?= qi_vat_label($doc) ?>:</span>
                 <span><?= fmt($doc['tax']) ?></span>
             </div>
             <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand">
@@ -485,7 +541,7 @@ try {
             <?php if ($isForeign): ?>
                 <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
                     <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docFxRate, 4) ?> ZAR):</span>
-                    <span>R <?= number_format((float)$doc['total'] * $docFxRate, 2) ?></span>
+                    <span>R&nbsp;<?= number_format((float)$doc['total'] * $docFxRate, 2) ?></span>
                 </div>
             <?php endif; ?>
             <?php if ($type === 'invoice' && (float)($doc['balance_due'] ?? 0) < (float)$doc['total']): ?>
@@ -621,13 +677,9 @@ try {
             </div>
         <?php endif; ?>
 
-        <!-- Notes -->
-        <?php if (!empty($doc['notes'])): ?>
-            <div class="fw-qi__doc-section">
-                <h3>Internal Notes</h3>
-                <p><?= nl2br(htmlspecialchars($doc['notes'])) ?></p>
-            </div>
-        <?php endif; ?>
+        <?php // The "notes" field is an internal note (labelled "Internal Notes"
+              // on the on-screen view) and is intentionally omitted from this
+              // customer-facing printable document. ?>
 
         <!-- Footer Text (per document type) -->
         <?php if (!empty($brand['footer'])): ?>

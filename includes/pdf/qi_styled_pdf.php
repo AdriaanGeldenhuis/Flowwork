@@ -14,6 +14,9 @@
 if (!class_exists('Branding')) {
     require_once __DIR__ . '/../../qi/lib/Branding.php';
 }
+if (!class_exists('Currencies')) {
+    require_once __DIR__ . '/../../qi/lib/Currencies.php';
+}
 
 function qi_generate_styled_pdf(array $doc, array $lines, string $outputPath): void
 {
@@ -58,6 +61,14 @@ class QiStyledPdfWriter
 
     // Company display toggles (which detail rows to print). Default ON.
     private array $show;
+
+    // Document currency — the writer used to hardcode "R". Now it mirrors the
+    // on-screen/print surfaces: symbol from the doc's currency, plus the
+    // ZAR-equivalent line for foreign documents.
+    private string $curSymbol = 'R';
+    private string $curCode = 'ZAR';
+    private float $fxRate = 1.0;
+    private bool $isForeign = false;
 
     // Company logo, decoded via GD into raw RGB (+ alpha soft-mask) ready to
     // embed as a PDF image XObject. Null when there is no logo or it can't
@@ -110,6 +121,12 @@ class QiStyledPdfWriter
         // Font: map qi_font_family to a PDF base-14 font (serif -> Times).
         $fontKey = (string)($doc['qi_font_family'] ?? 'system-ui');
         [$this->fontReg, $this->fontBold] = Branding::PDF_FONTS[$fontKey] ?? Branding::PDF_FONTS['system-ui'];
+
+        // Document currency (matches invoice_view.php / generate_pdf.php).
+        $this->curCode   = Currencies::isValid($doc['currency'] ?? null) ? strtoupper($doc['currency']) : Currencies::BASE;
+        $this->curSymbol = Currencies::symbol($this->curCode);
+        $this->fxRate    = (float)($doc['exchange_rate'] ?? 1) ?: 1.0;
+        $this->isForeign = ($this->curCode !== Currencies::BASE);
 
         // Company logo (same image the on-screen invoice shows top-left).
         $this->loadLogo();
@@ -341,8 +358,29 @@ class QiStyledPdfWriter
 
     private function approxWidth(string $text, float $fontSize): float
     {
-        // Approximate width using average char width for Helvetica (~0.52 of font size)
-        return strlen($text) * $fontSize * 0.52;
+        // Approximate width using average char width for Helvetica (~0.52 of
+        // font size). Measure the WinAnsi-transcoded string so multibyte UTF-8
+        // characters count as one glyph each (not 2-3 bytes) — otherwise
+        // right-aligned accented text lands short of the margin.
+        return strlen($this->win($text)) * $fontSize * 0.52;
+    }
+
+    /**
+     * Transcode UTF-8 to Windows-1252 (the WinAnsiEncoding the base-14 fonts
+     * declare) so accented and common punctuation glyphs render correctly
+     * instead of as mojibake. Characters with no CP1252 equivalent are
+     * transliterated (e.g. № -> "No", ✓ dropped); never fatal.
+     */
+    private function win(string $s): string
+    {
+        if ($s === '') {
+            return $s;
+        }
+        $conv = @iconv('UTF-8', 'Windows-1252//TRANSLIT', $s);
+        if ($conv === false) {
+            $conv = @iconv('UTF-8', 'Windows-1252//IGNORE', $s);
+        }
+        return $conv === false ? $s : $conv;
     }
 
     // ===== DOCUMENT SECTIONS =====
@@ -383,8 +421,11 @@ class QiStyledPdfWriter
         if ($this->show['address']) {
             $addr1 = trim(($this->doc['company_address1'] ?? '') . ' ' . ($this->doc['company_address2'] ?? ''));
             if ($addr1) $infoLines[] = $addr1;
-            $cityLine = trim(($this->doc['company_city'] ?? '') . ', ' . ($this->doc['company_region'] ?? '') . ' ' . ($this->doc['company_postal'] ?? ''));
-            if ($cityLine && $cityLine !== ', ') $infoLines[] = $cityLine;
+            // Sender line: "City, Postal" (matches invoice_view.php, which omits
+            // the region). array_filter avoids stray/leading commas when parts
+            // are empty.
+            $cityLine = $this->joinParts([$this->doc['company_city'] ?? '', $this->doc['company_postal'] ?? '']);
+            if ($cityLine !== '') $infoLines[] = $cityLine;
         }
         if ($this->show['phone'] && !empty($this->doc['company_phone'])) $infoLines[] = 'Tel: ' . $this->doc['company_phone'];
         if ($this->show['email'] && !empty($this->doc['company_email'])) $infoLines[] = $this->doc['company_email'];
@@ -404,6 +445,10 @@ class QiStyledPdfWriter
 
         $rightY = $this->y - 40;
         $dates = $this->doc['_dates'] ?? [];
+        // Foreign-currency invoices show a Currency line (matches view/print).
+        if ($this->isForeign && !isset($dates['Currency'])) {
+            $dates['Currency'] = $this->curCode . ' (' . Currencies::name($this->curCode) . ')';
+        }
         foreach ($dates as $label => $value) {
             $this->textRight('F1', 9, $rightX, $rightY, $label . ': ' . $value, '0.35', '0.35', '0.35');
             $rightY -= 13;
@@ -438,8 +483,11 @@ class QiStyledPdfWriter
             $this->textRight('F1', 8, $rightX, $rightY, $this->doc['customer_address2'], '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
-        $custCity = trim(($this->doc['customer_city'] ?? '') . ', ' . ($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? ''));
-        if ($custCity && $custCity !== ', ') {
+        $custCity = $this->joinParts([
+            $this->doc['customer_city'] ?? '',
+            trim(($this->doc['customer_region'] ?? '') . ' ' . ($this->doc['customer_postal'] ?? '')),
+        ]);
+        if ($custCity !== '') {
             $this->textRight('F1', 8, $rightX, $rightY, $custCity, '0.35', '0.35', '0.35');
             $rightY -= 11;
         }
@@ -503,7 +551,14 @@ class QiStyledPdfWriter
             $descLines = $this->wrapText($desc, 9, $colQty - 10);
             $lineRowH = max($rowH, count($descLines) * 13 + 8);
 
+            // Redraw the column header when a row pushes onto a new page, so
+            // page 2+ rows are never left with unlabeled number columns.
+            $beforePage = $this->pageNum;
             $this->checkSpace($lineRowH);
+            if ($this->pageNum !== $beforePage) {
+                $this->drawTableHeader($x, $w, $headerH, $colDesc, $colQty, $colPrice, $colTotal);
+                $this->y -= $headerH;
+            }
 
             // Alternating row background
             if ($even) {
@@ -555,9 +610,18 @@ class QiStyledPdfWriter
         if ((float)($this->doc['discount'] ?? 0) > 0) {
             $totalRows[] = ['Discount:', $this->fmt($this->doc['discount'])];
         }
-        $totalRows[] = ['VAT (15%):', $this->fmt($this->doc['tax'] ?? 0)];
+        $totalRows[] = [$this->taxLabel() . ':', $this->fmt($this->doc['tax'] ?? 0)];
 
-        $needed = (count($totalRows) + 1) * $rowH + 10;
+        // ZAR-equivalent row for foreign-currency documents (matches view/print).
+        $zarRow = null;
+        if ($this->isForeign) {
+            $zarRow = [
+                'ZAR equivalent (1 ' . $this->curCode . ' = ' . number_format($this->fxRate, 4) . ' ZAR):',
+                'R ' . number_format((float)($this->doc['total'] ?? 0) * $this->fxRate, 2),
+            ];
+        }
+
+        $needed = (count($totalRows) + 1) * $rowH + 10 + ($zarRow ? $rowH : 0);
         $this->checkSpace($needed);
 
         foreach ($totalRows as $row) {
@@ -575,6 +639,15 @@ class QiStyledPdfWriter
         $this->textRight('F2', 14, $x + $boxW - 8, $this->y - 16, $this->fmt($this->doc['total'] ?? 0), $this->accentR, $this->accentG, $this->accentB);
         $this->y -= ($grandH + 5);
 
+        // ZAR equivalent (foreign only) — small muted line, its own full-width
+        // row above the box so the long label never collides with the value.
+        if ($zarRow) {
+            $labelX = $this->marginL;
+            $this->text('F1', 8, $labelX, $this->y - 11, $zarRow[0], '0.42', '0.44', '0.5');
+            $this->textRight('F1', 8, $x + $boxW - 8, $this->y - 11, $zarRow[1], '0.42', '0.44', '0.5');
+            $this->y -= 16;
+        }
+
         // Balance due (invoices)
         if (isset($this->doc['balance_due']) && (float)($this->doc['balance_due']) < (float)($this->doc['total'] ?? 0)) {
             $this->text('F1', 10, $x + 8, $this->y - 13, 'Balance Due:', '0.3', '0.3', '0.3');
@@ -583,6 +656,28 @@ class QiStyledPdfWriter
         }
 
         $this->y -= 12;
+    }
+
+    /**
+     * Tax row label. The stored tax is computed from each line's rate, so the
+     * effective rate is not always 15%. Derive it from tax / taxable base and
+     * render the real percentage (e.g. "VAT (0%)", "VAT (14%)").
+     */
+    private function taxLabel(): string
+    {
+        $tax  = (float)($this->doc['tax'] ?? 0);
+        $base = (float)($this->doc['subtotal'] ?? 0) - (float)($this->doc['discount'] ?? 0);
+        $rate = $base > 0 ? ($tax / $base) * 100 : 0.0;
+        $rateStr = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
+        if ($rateStr === '' || $rateStr === '-0') { $rateStr = '0'; }
+        return 'VAT (' . $rateStr . '%)';
+    }
+
+    /** Join address parts with a separator, dropping empty/whitespace parts. */
+    private function joinParts(array $parts, string $sep = ', '): string
+    {
+        $clean = array_filter(array_map('trim', $parts), static fn($p) => $p !== '');
+        return implode($sep, $clean);
     }
 
     private function drawMilestones(): void
@@ -619,18 +714,22 @@ class QiStyledPdfWriter
         $colPaidR  = $x + $w * 0.68;
         $colOutR   = $x + $w * 0.84;
         $colStatL  = $x + $w * 0.87;
+        // Phase label must not run into the % column — wrap it into this width.
+        $phaseW = ($colPctR - 8) - ($x + 8);
 
-        // Header bar
-        $this->rect($x, $this->y - $headerH, $w, $headerH, $this->accentR, $this->accentG, $this->accentB);
-        $midY = $this->y - ($headerH * 0.62);
-        $this->text('F2', 7.5, $x + 8, $midY, 'PHASE', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->textRight('F2', 7.5, $colPctR, $midY, '%', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->textRight('F2', 7.5, $colAmtR, $midY, 'AMOUNT', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->text('F2', 7.5, $colDueL, $midY, 'DUE DATE', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->textRight('F2', 7.5, $colPaidR, $midY, 'PAID', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->textRight('F2', 7.5, $colOutR, $midY, 'OUTSTANDING', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->text('F2', 7.5, $colStatL, $midY, 'STATUS', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->y -= $headerH;
+        $drawHead = function () use ($x, $w, $headerH, $colPctR, $colAmtR, $colDueL, $colPaidR, $colOutR, $colStatL) {
+            $this->rect($x, $this->y - $headerH, $w, $headerH, $this->accentR, $this->accentG, $this->accentB);
+            $midY = $this->y - ($headerH * 0.62);
+            $this->text('F2', 7.5, $x + 8, $midY, 'PHASE', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->textRight('F2', 7.5, $colPctR, $midY, '%', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->textRight('F2', 7.5, $colAmtR, $midY, 'AMOUNT', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->text('F2', 7.5, $colDueL, $midY, 'DUE DATE', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->textRight('F2', 7.5, $colPaidR, $midY, 'PAID', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->textRight('F2', 7.5, $colOutR, $midY, 'OUTSTANDING', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->text('F2', 7.5, $colStatL, $midY, 'STATUS', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->y -= $headerH;
+        };
+        $drawHead();
 
         // First unpaid milestone is "Now Payable" — same rule as the app
         $nowPayableId = null;
@@ -640,7 +739,13 @@ class QiStyledPdfWriter
 
         $even = false;
         foreach ($this->milestones as $ms) {
-            $this->checkSpace($rowH);
+            // Wrap the phase label into its column; row grows to fit.
+            $labelLines = $this->wrapText((string)($ms['label'] ?? ''), 8, $phaseW);
+            $thisRowH = max($rowH, count($labelLines) * 10 + 8);
+
+            $beforePage = $this->pageNum;
+            $this->checkSpace($thisRowH);
+            if ($this->pageNum !== $beforePage) { $drawHead(); }
 
             $isNowPayable = ($nowPayableId !== null && ($ms['id'] ?? null) == $nowPayableId);
             if (($ms['status'] ?? '') === 'paid') { $label = 'Paid'; }
@@ -649,17 +754,21 @@ class QiStyledPdfWriter
             else { $label = 'Upcoming'; }
 
             if ($isNowPayable) {
-                $this->rect($x, $this->y - $rowH, $w, $rowH, '1', '0.984', '0.922'); // #fffbeb highlight
+                $this->rect($x, $this->y - $thisRowH, $w, $thisRowH, '1', '0.984', '0.922'); // #fffbeb highlight
             } elseif ($even) {
-                $this->rect($x, $this->y - $rowH, $w, $rowH, '0.98', '0.98', '0.99');
+                $this->rect($x, $this->y - $thisRowH, $w, $thisRowH, '0.98', '0.98', '0.99');
             }
-            $this->line($x, $this->y - $rowH, $x + $w, $this->y - $rowH, 0.3, '0.9', '0.9', '0.9');
+            $this->line($x, $this->y - $thisRowH, $x + $w, $this->y - $thisRowH, 0.3, '0.9', '0.9', '0.9');
 
             $outstanding = max(0, (float)($ms['amount'] ?? 0) - (float)($ms['amount_paid'] ?? 0));
             $due = !empty($ms['due_date']) ? date('d M Y', strtotime($ms['due_date'])) : '-';
 
             $tY = $this->y - 13;
-            $this->text('F1', 8, $x + 8, $tY, (string)($ms['label'] ?? ''), '0.1', '0.1', '0.1');
+            $labelY = $tY;
+            foreach ($labelLines as $ll) {
+                $this->text('F1', 8, $x + 8, $labelY, $ll, '0.1', '0.1', '0.1');
+                $labelY -= 10;
+            }
             $this->textRight('F1', 8, $colPctR, $tY, number_format((float)($ms['percentage'] ?? 0), 1) . '%', '0.1', '0.1', '0.1');
             $this->textRight('F1', 8, $colAmtR, $tY, $this->fmt($ms['amount'] ?? 0), '0.1', '0.1', '0.1');
             $this->text('F1', 8, $colDueL, $tY, $due, '0.1', '0.1', '0.1');
@@ -670,7 +779,7 @@ class QiStyledPdfWriter
             elseif ($label === 'Now Payable') { $this->text('F2', 7.5, $colStatL, $tY, $label, '0.71', '0.32', '0.04'); }
             else { $this->text('F1', 7.5, $colStatL, $tY, $label, '0.45', '0.45', '0.45'); }
 
-            $this->y -= $rowH;
+            $this->y -= $thisRowH;
             $even = !$even;
         }
 
@@ -697,19 +806,23 @@ class QiStyledPdfWriter
         $colMethodL = $x + $w * 0.28;
         $colRefL    = $x + $w * 0.50;
 
-        // Header bar
-        $this->rect($x, $this->y - $headerH, $w, $headerH, $this->accentR, $this->accentG, $this->accentB);
-        $midY = $this->y - ($headerH * 0.62);
-        $this->text('F2', 7.5, $x + 8, $midY, 'DATE', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->text('F2', 7.5, $colMethodL, $midY, 'METHOD', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->text('F2', 7.5, $colRefL, $midY, 'REFERENCE', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->textRight('F2', 7.5, $x + $w - 8, $midY, 'AMOUNT', $this->thTextR, $this->thTextG, $this->thTextB);
-        $this->y -= $headerH;
+        $drawHead = function () use ($x, $w, $headerH, $colMethodL, $colRefL) {
+            $this->rect($x, $this->y - $headerH, $w, $headerH, $this->accentR, $this->accentG, $this->accentB);
+            $midY = $this->y - ($headerH * 0.62);
+            $this->text('F2', 7.5, $x + 8, $midY, 'DATE', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->text('F2', 7.5, $colMethodL, $midY, 'METHOD', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->text('F2', 7.5, $colRefL, $midY, 'REFERENCE', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->textRight('F2', 7.5, $x + $w - 8, $midY, 'AMOUNT', $this->thTextR, $this->thTextG, $this->thTextB);
+            $this->y -= $headerH;
+        };
+        $drawHead();
 
         $received = 0.0;
         $even = false;
         foreach ($this->payments as $pmt) {
+            $beforePage = $this->pageNum;
             $this->checkSpace($rowH);
+            if ($this->pageNum !== $beforePage) { $drawHead(); }
 
             if ($even) {
                 $this->rect($x, $this->y - $rowH, $w, $rowH, '0.98', '0.98', '0.99');
@@ -765,12 +878,9 @@ class QiStyledPdfWriter
             });
         }
 
-        // Notes
-        if (!empty($this->doc['notes'])) {
-            $this->drawSection('Notes', function () {
-                return $this->wrapText($this->doc['notes'], 9, $this->contentW() - 16);
-            });
-        }
+        // NOTE: the invoice "notes" field is an INTERNAL note (labelled
+        // "Internal Notes" on the on-screen view) and is deliberately NOT
+        // rendered on this customer-facing download/email PDF.
     }
 
     private function drawSection(string $title, callable $contentFn): void
@@ -865,8 +975,8 @@ class QiStyledPdfWriter
         $pagesId = $addObj('');
 
         // Fonts (base-14, mapped from the company's font choice)
-        $fontRegId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontReg . ' >>');
-        $fontBoldId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontBold . ' >>');
+        $fontRegId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontReg . ' /Encoding /WinAnsiEncoding >>');
+        $fontBoldId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontBold . ' /Encoding /WinAnsiEncoding >>');
 
         // Company logo image XObject (+ soft mask for transparency)
         $logoRes = '';
@@ -936,11 +1046,13 @@ class QiStyledPdfWriter
 
     private function esc(string $s): string
     {
+        // Transcode to WinAnsi first, then escape the PDF string delimiters.
+        $s = $this->win($s);
         return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $s);
     }
 
     private function fmt($amount): string
     {
-        return 'R ' . number_format((float)($amount ?? 0), 2);
+        return $this->curSymbol . ' ' . number_format((float)($amount ?? 0), 2);
     }
 }

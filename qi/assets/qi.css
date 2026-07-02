@@ -389,19 +389,29 @@
   top: calc(100% + 8px);
   right: 0;
   min-width: 200px;
-  background: var(--fw-panel-bg);
+  /* Near-opaque: the parent header already establishes a backdrop-filter
+     context, so this menu's own blur cannot sample the page and the busy
+     zoomed invoice behind it would otherwise show through the labels. */
+  background: rgba(255, 255, 255, 0.98);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-md);
   box-shadow: var(--fw-shadow-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   padding: 8px;
+  /* Cap height and scroll so the lower actions are never stranded below the
+     fold on short/phone viewports (the menu opens ~120px below the top). */
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-8px) scale(0.95);
   transform-origin: top right;
   transition: all var(--fw-transition-base);
   z-index: var(--z-dropdown);
+}
+
+.fw-qi[data-theme="dark"] .fw-qi__kebab-menu {
+  background: rgba(24, 31, 45, 0.98);
 }
 
 .fw-qi__kebab-menu[aria-hidden="false"] {
@@ -1068,12 +1078,12 @@ select.fw-qi__input:focus {
 }
 
 .fw-qi__modal {
-  background: var(--fw-panel-bg);
+  /* Opaque surface: with a translucent panel bg the scrolling form fields and
+     the zoomed invoice behind showed through the sticky header/footer. */
+  background: var(--fw-bg-primary, #ffffff);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
   box-shadow: var(--fw-shadow-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   max-width: 600px;
   width: 90%;
   max-height: 90vh;
@@ -1105,7 +1115,7 @@ select.fw-qi__input:focus {
   border-bottom: 1px solid var(--fw-border-base);
   position: sticky;
   top: 0;
-  background: var(--fw-panel-bg);
+  background: var(--fw-bg-primary, #ffffff);
   z-index: 1;
 }
 
@@ -1146,7 +1156,7 @@ select.fw-qi__input:focus {
   border-top: 1px solid var(--fw-border-base);
   position: sticky;
   bottom: 0;
-  background: var(--fw-panel-bg);
+  background: var(--fw-bg-primary, #ffffff);
   z-index: 1;
 }
 
@@ -1363,9 +1373,25 @@ select.fw-qi__input:focus {
   
   .fw-qi__greeting {
     order: -1;
+    /* flex-basis must be 100% (not width) — the base rule sets flex:1 i.e.
+       flex-basis:0, which otherwise wins and shrinks the greeting to "Hell…". */
+    flex: 0 0 100%;
     width: 100%;
     text-align: left;
     margin-bottom: 8px;
+  }
+
+  /* Let the brand block shrink and ellipsize a long company name instead of
+     starving the header row. */
+  .fw-qi__brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .fw-qi__company-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
   
   .fw-qi__toolbar {

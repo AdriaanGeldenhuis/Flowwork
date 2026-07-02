@@ -125,7 +125,19 @@ $isForeign   = ($docCurrency !== Currencies::BASE);
 // Helper to format amounts in the invoice's currency
 $GLOBALS['qiDocSymbol'] = $docSymbol;
 function format_currency($amount) {
-    return $GLOBALS['qiDocSymbol'] . ' ' . number_format((float)$amount, 2);
+    // Non-breaking space so the currency symbol never wraps onto its own line
+    // when a column gets squeezed (e.g. long descriptions on mobile).
+    return $GLOBALS['qiDocSymbol'] . "\u{00A0}" . number_format((float)$amount, 2);
+}
+
+// VAT summary label reflects the invoice's effective tax rate (which may be 0%
+// or non-15% depending on the line items), instead of a hardcoded "15%".
+function qi_vat_label($invoice) {
+    $base = (float)($invoice['subtotal'] ?? 0) - (float)($invoice['discount'] ?? 0);
+    $rate = $base > 0 ? ((float)($invoice['tax'] ?? 0) / $base) * 100 : 0.0;
+    $rateStr = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
+    if ($rateStr === '' || $rateStr === '-0') { $rateStr = '0'; }
+    return 'VAT (' . $rateStr . '%)';
 }
 
 ?>
@@ -444,9 +456,13 @@ function format_currency($amount) {
                                 <p style="margin:3px 0;"><?= htmlspecialchars($invoice['customer_address2']) ?></p>
                             <?php endif; ?>
                             <?php
-                                $custCity = trim(($invoice['customer_city'] ?? '') . ', ' . ($invoice['customer_region'] ?? '') . ' ' . ($invoice['customer_postal'] ?? ''));
+                                $custCityParts = array_filter([
+                                    trim($invoice['customer_city'] ?? ''),
+                                    trim(($invoice['customer_region'] ?? '') . ' ' . ($invoice['customer_postal'] ?? '')),
+                                ], fn($p) => $p !== '');
+                                $custCity = implode(', ', $custCityParts);
                             ?>
-                            <?php if ($custCity && $custCity !== ', '): ?>
+                            <?php if ($custCity !== ''): ?>
                                 <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
                             <?php endif; ?>
                             <?php if (!empty($invoice['customer_phone'])): ?>
@@ -508,7 +524,7 @@ function format_currency($amount) {
                         </div>
                     <?php endif; ?>
                     <div class="fw-qi__doc-total-row">
-                        <span>VAT (15%):</span>
+                        <span><?= qi_vat_label($invoice) ?>:</span>
                         <span><?= format_currency($invoice['tax']) ?></span>
                     </div>
                     <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand">
@@ -518,7 +534,7 @@ function format_currency($amount) {
                     <?php if ($isForeign): ?>
                         <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
                             <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
-                            <span>R <?= number_format((float)$invoice['total'] * $docRate, 2) ?></span>
+                            <span>R&nbsp;<?= number_format((float)$invoice['total'] * $docRate, 2) ?></span>
                         </div>
                     <?php endif; ?>
                     <?php if ((float)$invoice['balance_due'] < (float)$invoice['total']): ?>
@@ -760,8 +776,8 @@ function format_currency($amount) {
         // Initialize InvoiceView with necessary data
         InvoiceView.init({
             invoiceId: <?= (int)$invoiceId ?>,
-            customerEmail: '<?= addslashes($invoice['customer_email'] ?? '') ?>',
-            customerName: '<?= addslashes($invoice['customer_name'] ?? 'Customer') ?>',
+            customerEmail: <?= json_encode($invoice['customer_email'] ?? '', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>,
+            customerName: <?= json_encode($invoice['customer_name'] ?? 'Customer', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>,
             balanceDue: parseFloat('<?= (float)$invoice['balance_due'] ?>'),
             invoiceTotal: parseFloat('<?= (float)$invoice['total'] ?>'),
             currencySymbol: <?= json_encode($docSymbol) ?>,
