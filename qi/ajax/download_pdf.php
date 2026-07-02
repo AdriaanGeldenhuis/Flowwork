@@ -157,6 +157,23 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Payment schedule + payment history so the downloaded PDF matches
+        // the on-screen invoice (invoice_view.php).
+        if (!empty($doc['has_milestones'])) {
+            $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+            $stmt->execute([$id, $companyId]);
+            $doc['_milestones'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $stmt = $DB->prepare(
+            "SELECT p.payment_date, p.method, p.reference, pa.amount
+             FROM payment_allocations pa
+             JOIN payments p ON pa.payment_id = p.id
+             WHERE pa.invoice_id = ? AND p.company_id = ?
+             ORDER BY p.payment_date ASC, p.id ASC"
+        );
+        $stmt->execute([$id, $companyId]);
+        $doc['_payments'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     // Resolve branding so the title + footer match the rest of the app

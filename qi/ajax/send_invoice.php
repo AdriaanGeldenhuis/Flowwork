@@ -90,6 +90,23 @@ try {
             'Status'     => ucfirst($invoice['status']),
         ];
 
+        // Payment schedule + payment history so the emailed PDF matches the
+        // on-screen invoice (invoice_view.php).
+        if (!empty($invoice['has_milestones'])) {
+            $stmtMs = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+            $stmtMs->execute([$invoiceId, $companyId]);
+            $invoice['_milestones'] = $stmtMs->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $stmtPay = $DB->prepare(
+            "SELECT p.payment_date, p.method, p.reference, pa.amount
+             FROM payment_allocations pa
+             JOIN payments p ON pa.payment_id = p.id
+             WHERE pa.invoice_id = ? AND p.company_id = ?
+             ORDER BY p.payment_date ASC, p.id ASC"
+        );
+        $stmtPay->execute([$invoiceId, $companyId]);
+        $invoice['_payments'] = $stmtPay->fetchAll(PDO::FETCH_ASSOC);
+
         // Determine file path
         $safeCode = preg_replace('~[^A-Za-z0-9_-]~', '_', $invoice['invoice_number']);
         $baseDir = __DIR__ . '/../../storage/qi/' . $companyId . '/invoice';

@@ -67,13 +67,13 @@ try {
         $dates = [
             'Issue Date' => date('d M Y', strtotime($doc['issue_date'])),
             'Expires' => date('d M Y', strtotime($doc['expiry_date'])),
-            'Status' => ucfirst($doc['status']),
         ];
 
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $milestones = [];
+        $payments = [];
 
     } elseif ($type === 'credit_note') {
         $stmt = $DB->prepare(
@@ -112,7 +112,6 @@ try {
         $docTitle = 'Credit Note #: ' . $docNumber;
         $dates = [
             'Issue Date' => date('d M Y', strtotime($doc['issue_date'])),
-            'Status' => ucfirst($doc['status']),
         ];
         if (!empty($doc['linked_invoice_number'])) {
             $dates['Invoice'] = $doc['linked_invoice_number'];
@@ -122,6 +121,7 @@ try {
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $milestones = [];
+        $payments = [];
 
     } else {
         // Invoice
@@ -161,7 +161,6 @@ try {
         $dates = [
             'Issue Date' => date('d M Y', strtotime($doc['issue_date'])),
             'Due Date' => date('d M Y', strtotime($doc['due_date'])),
-            'Status' => ucfirst($doc['status']),
         ];
 
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
@@ -175,6 +174,23 @@ try {
             $stmt->execute([$id, $companyId]);
             $milestones = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
+
+        // Fetch the individual payments allocated to this invoice — same query
+        // as invoice_view.php so the printed payment history matches the app.
+        $stmt = $DB->prepare(
+            "SELECT p.payment_date, p.method, p.reference, pa.amount, p.created_at
+             FROM payment_allocations pa
+             JOIN payments p ON pa.payment_id = p.id
+             WHERE pa.invoice_id = ? AND p.company_id = ?
+             ORDER BY p.payment_date ASC, p.id ASC"
+        );
+        $stmt->execute([$id, $companyId]);
+        $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    $paymentsTotal = 0.0;
+    foreach ($payments as $pmt) {
+        $paymentsTotal += (float)$pmt['amount'];
     }
 
     // Document currency: symbol used by fmt(), plus a Currency line for foreign docs
@@ -217,7 +233,9 @@ try {
 
 <?= Branding::fontHeadLinks() ?>
 
-<!-- Use the SAME template CSS as the app -->
+<!-- Use the SAME stylesheets as the app (qi.css carries the global reset,
+     status badges and milestone badges; templates-pro.css the document) -->
+<link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
 <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
 
 <style>
@@ -255,6 +273,14 @@ try {
     .fw-qi__doc-table th {
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+    /* The milestones table has 7 columns — size them to content at A4 width
+       so headers like "Outstanding" and status badges don't truncate */
+    .fw-qi__milestones-table {
+        table-layout: auto;
+    }
+    .fw-qi__milestone-badge {
+        white-space: nowrap;
     }
 
     /* Print toolbar */
@@ -353,37 +379,29 @@ try {
                     <img src="<?= htmlspecialchars($doc['logo_url']) ?>" alt="Logo" class="fw-qi__doc-logo">
                 <?php endif; ?>
                 <div class="fw-qi__doc-company">
-                    <h1 class="fw-qi__doc-title"><?= htmlspecialchars($docType) ?></h1>
+                    <h1><?= htmlspecialchars($doc['company_name'] ?? '') ?></h1>
                     <?php if ($showAddress): ?>
-                        <p><?= htmlspecialchars($doc['company_address1'] ?? '') ?>
-                        <?php if (!empty($doc['company_address2'])): ?><br><?= htmlspecialchars($doc['company_address2']) ?><?php endif; ?>
-                        <br><?= htmlspecialchars($doc['company_city'] ?? '') ?>, <?= htmlspecialchars($doc['company_region'] ?? '') ?> <?= htmlspecialchars($doc['company_postal'] ?? '') ?></p>
+                        <?php if (!empty($doc['company_address1'])): ?><p><?= htmlspecialchars($doc['company_address1']) ?></p><?php endif; ?>
+                        <?php if (!empty($doc['company_address2'])): ?><p><?= htmlspecialchars($doc['company_address2']) ?></p><?php endif; ?>
+                        <?php if (!empty($doc['company_city'])): ?><p><?= htmlspecialchars($doc['company_city']) ?>, <?= htmlspecialchars($doc['company_postal'] ?? '') ?></p><?php endif; ?>
                     <?php endif; ?>
-                    <?php if ($showPhone && !empty($doc['company_phone'])): ?>
-                        <p>Tel: <?= htmlspecialchars($doc['company_phone']) ?></p>
-                    <?php endif; ?>
-                    <?php if ($showEmail && !empty($doc['company_email'])): ?>
-                        <p>Email: <?= htmlspecialchars($doc['company_email']) ?></p>
-                    <?php endif; ?>
-                    <?php if ($showWebsite && !empty($doc['website'])): ?>
-                        <p>Website: <?= htmlspecialchars($doc['website']) ?></p>
-                    <?php endif; ?>
-                    <?php if ($showVat && !empty($doc['vat_number'])): ?>
-                        <p>VAT No: <?= htmlspecialchars($doc['vat_number']) ?></p>
-                    <?php endif; ?>
-                    <?php if ($showTax && !empty($doc['tax_number'])): ?>
-                        <p>Tax No: <?= htmlspecialchars($doc['tax_number']) ?></p>
-                    <?php endif; ?>
-                    <?php if ($showReg && !empty($doc['reg_number'])): ?>
-                        <p>Reg No: <?= htmlspecialchars($doc['reg_number']) ?></p>
-                    <?php endif; ?>
+                    <?php if ($showReg && !empty($doc['reg_number'])): ?><p><strong>Reg No:</strong> <?= htmlspecialchars($doc['reg_number']) ?></p><?php endif; ?>
+                    <?php if ($showTax && !empty($doc['tax_number'])): ?><p><strong>Tax:</strong> <?= htmlspecialchars($doc['tax_number']) ?></p><?php endif; ?>
+                    <?php if ($showVat && !empty($doc['vat_number'])): ?><p><strong>VAT No:</strong> <?= htmlspecialchars($doc['vat_number']) ?></p><?php endif; ?>
+                    <?php if ($showPhone && !empty($doc['company_phone'])): ?><p><?= htmlspecialchars($doc['company_phone']) ?></p><?php endif; ?>
+                    <?php if ($showEmail && !empty($doc['company_email'])): ?><p><?= htmlspecialchars($doc['company_email']) ?></p><?php endif; ?>
+                    <?php if ($showWebsite && !empty($doc['website'])): ?><p><?= htmlspecialchars($doc['website']) ?></p><?php endif; ?>
                 </div>
             </div>
-            <div class="fw-qi__doc-meta">
-                <h2><?= htmlspecialchars($docTitle) ?></h2>
-                <?php foreach ($dates as $label => $value): ?>
-                    <p><?= htmlspecialchars($label) ?>: <?= htmlspecialchars($value) ?></p>
-                <?php endforeach; ?>
+            <div class="fw-qi__doc-header-right">
+                <h2 class="fw-qi__doc-title"><?= htmlspecialchars($docType) ?></h2>
+                <div class="fw-qi__doc-number"><?= htmlspecialchars($docNumber) ?></div>
+                <table class="fw-qi__doc-info-table" style="margin-top:8px;">
+                    <?php foreach ($dates as $label => $value): ?>
+                        <tr><td><?= htmlspecialchars($label) ?>:</td><td><strong><?= htmlspecialchars($value) ?></strong></td></tr>
+                    <?php endforeach; ?>
+                </table>
+                <span class="fw-qi__badge fw-qi__badge--<?= htmlspecialchars($doc['status']) ?>"><?= strtoupper(str_replace('_', ' ', $doc['status'])) ?></span>
 
                 <div class="fw-qi__doc-bill-to" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(0,0,0,0.08);">
                     <h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--qi-heading-color);margin:0 0 8px 0;">Bill To</h3>
@@ -421,6 +439,7 @@ try {
         <?php endif; ?>
 
         <!-- Line Items Table -->
+        <div class="fw-qi__doc-table-wrap">
         <table class="fw-qi__doc-table">
             <thead>
                 <tr>
@@ -441,6 +460,7 @@ try {
                 <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
 
         <!-- Totals Summary -->
         <div class="fw-qi__doc-totals">
@@ -476,11 +496,20 @@ try {
             <?php endif; ?>
         </div>
 
-        <!-- Payment Milestones -->
+        <!-- Payment Milestones — same markup as invoice_view.php -->
         <?php if (!empty($milestones)): ?>
-            <div class="fw-qi__doc-section">
+            <div class="fw-qi__doc-section fw-qi__milestones-view">
                 <h3>Payment Schedule</h3>
-                <table class="fw-qi__doc-table">
+                <?php
+                    $schedPaid    = max(0, (float)$doc['total'] - (float)($doc['balance_due'] ?? $doc['total']));
+                    $schedPaidPct = (float)$doc['total'] > 0 ? ($schedPaid / (float)$doc['total']) * 100 : 0;
+                ?>
+                <p style="margin:-4px 0 12px;font-size:13px;color:#6b7280;">
+                    Paid <?= fmt($schedPaid) ?> of <?= fmt($doc['total']) ?>
+                    (<?= number_format($schedPaidPct, 1) ?>%) — Outstanding <?= fmt($doc['balance_due'] ?? 0) ?>
+                </p>
+                <div class="fw-qi__doc-table-wrap">
+                <table class="fw-qi__doc-table fw-qi__milestones-table">
                     <thead>
                         <tr>
                             <th>Phase</th>
@@ -488,6 +517,7 @@ try {
                             <th style="text-align:right;">Amount</th>
                             <th>Due Date</th>
                             <th style="text-align:right;">Paid</th>
+                            <th style="text-align:right;">Outstanding</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -501,22 +531,73 @@ try {
                         <?php foreach ($milestones as $ms): ?>
                             <?php
                                 $isNowPayable = ($nowPayableId !== null && $ms['id'] == $nowPayableId);
-                                if ($ms['status'] === 'paid') { $msStatusLabel = 'Paid'; }
-                                elseif ($ms['status'] === 'overdue') { $msStatusLabel = 'Overdue'; }
-                                elseif ($isNowPayable) { $msStatusLabel = 'Now Payable'; }
-                                else { $msStatusLabel = 'Upcoming'; }
+                                if ($ms['status'] === 'paid') {
+                                    $msStatusClass = 'paid';
+                                    $msStatusLabel = 'Paid';
+                                } elseif ($ms['status'] === 'overdue') {
+                                    $msStatusClass = 'overdue';
+                                    $msStatusLabel = 'Overdue';
+                                } elseif ($isNowPayable) {
+                                    $msStatusClass = 'now-payable';
+                                    $msStatusLabel = 'Now Payable';
+                                } else {
+                                    $msStatusClass = 'upcoming';
+                                    $msStatusLabel = 'Upcoming';
+                                }
                             ?>
-                            <tr>
+                            <?php $msOutstanding = max(0, (float)$ms['amount'] - (float)$ms['amount_paid']); ?>
+                            <tr class="<?= $isNowPayable ? 'fw-qi__milestone-row--active' : '' ?>">
                                 <td><?= htmlspecialchars($ms['label']) ?></td>
                                 <td style="text-align:right;"><?= number_format($ms['percentage'], 1) ?>%</td>
                                 <td style="text-align:right;"><?= fmt($ms['amount']) ?></td>
                                 <td><?= $ms['due_date'] ? date('d M Y', strtotime($ms['due_date'])) : '—' ?></td>
                                 <td style="text-align:right;"><?= fmt($ms['amount_paid']) ?></td>
-                                <td><?= $msStatusLabel ?></td>
+                                <td style="text-align:right;"><?= fmt($msOutstanding) ?></td>
+                                <td><span class="fw-qi__milestone-badge fw-qi__milestone-badge--<?= $msStatusClass ?>"><?= $msStatusLabel ?></span></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <!-- Payments Received (individual payment history) — same markup as invoice_view.php -->
+        <?php if (!empty($payments)): ?>
+            <div class="fw-qi__doc-section fw-qi__payments-view">
+                <h3>Payments Received</h3>
+                <div class="fw-qi__doc-table-wrap">
+                <table class="fw-qi__doc-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Method</th>
+                            <th>Reference</th>
+                            <th style="text-align:right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($payments as $pmt): ?>
+                            <tr>
+                                <td><?= $pmt['payment_date'] ? date('d M Y', strtotime($pmt['payment_date'])) : '—' ?></td>
+                                <td><?= htmlspecialchars(ucfirst($pmt['method'])) ?></td>
+                                <td><?= htmlspecialchars($pmt['reference'] !== '' && $pmt['reference'] !== null ? $pmt['reference'] : '—') ?></td>
+                                <td style="text-align:right;"><?= fmt($pmt['amount']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3" style="text-align:right;font-weight:700;">Total received</td>
+                            <td style="text-align:right;font-weight:700;"><?= fmt($paymentsTotal) ?></td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" style="text-align:right;">Outstanding</td>
+                            <td style="text-align:right;"><?= fmt($doc['balance_due'] ?? 0) ?></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
             </div>
         <?php endif; ?>
 
@@ -543,7 +624,7 @@ try {
         <!-- Notes -->
         <?php if (!empty($doc['notes'])): ?>
             <div class="fw-qi__doc-section">
-                <h3>Notes</h3>
+                <h3>Internal Notes</h3>
                 <p><?= nl2br(htmlspecialchars($doc['notes'])) ?></p>
             </div>
         <?php endif; ?>
