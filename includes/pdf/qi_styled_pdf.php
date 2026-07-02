@@ -59,6 +59,11 @@ class QiStyledPdfWriter
     // Company display toggles (which detail rows to print). Default ON.
     private array $show;
 
+    // Company logo, decoded via GD into raw RGB (+ alpha soft-mask) ready to
+    // embed as a PDF image XObject. Null when there is no logo or it can't
+    // be read — the PDF then renders exactly as before.
+    private ?array $logo = null;
+
     // Colours
     private string $accentR;
     private string $accentG;
@@ -106,6 +111,9 @@ class QiStyledPdfWriter
         $fontKey = (string)($doc['qi_font_family'] ?? 'system-ui');
         [$this->fontReg, $this->fontBold] = Branding::PDF_FONTS[$fontKey] ?? Branding::PDF_FONTS['system-ui'];
 
+        // Company logo (same image the on-screen invoice shows top-left).
+        $this->loadLogo();
+
         // Display toggles (default ON when the column is null/missing).
         $tog = static fn($v) => $v === null ? true : (bool)(int)$v;
         $this->show = [
@@ -118,6 +126,119 @@ class QiStyledPdfWriter
             'reg'     => $tog($doc['qi_show_reg_number']      ?? null),
             'payment' => $tog($doc['qi_show_payment_details'] ?? null),
         ];
+    }
+
+    /**
+     * Load the company logo (doc['logo_url']) and decode it with GD into raw
+     * RGB pixels plus an alpha soft-mask, ready for embedding as a PDF image.
+     * Logos are stored as WebP (see qi/ajax/upload_logo.php) but any format
+     * GD can read works. Failure is always non-fatal: no logo, same PDF as
+     * before.
+     */
+    private function loadLogo(): void
+    {
+        try {
+            $url = trim((string)($this->doc['logo_url'] ?? ''));
+            if ($url === '' || !function_exists('imagecreatefromstring')) {
+                return;
+            }
+
+            $bytes = false;
+            if (preg_match('~^https?://~i', $url)) {
+                $ctx = stream_context_create(['http' => ['timeout' => 5]]);
+                $bytes = @file_get_contents($url, false, $ctx);
+            } else {
+                // Site-relative path (e.g. /uploads/{company}/logo/logo.webp)
+                $root = realpath(__DIR__ . '/../..');
+                $path = $root ? realpath($root . '/' . ltrim($url, '/')) : false;
+                if ($path && strpos($path, $root) === 0 && is_file($path)) {
+                    $bytes = @file_get_contents($path);
+                }
+            }
+            if ($bytes === false || $bytes === '') {
+                return;
+            }
+
+            // Check dimensions BEFORE decoding: a tiny compressed file can
+            // expand to a huge bitmap (pixel flood), so reject anything far
+            // beyond a sane logo size instead of letting GD allocate it.
+            $info = @getimagesizefromstring($bytes);
+            if ($info === false) {
+                return;
+            }
+            $srcW = (int)$info[0];
+            $srcH = (int)$info[1];
+            if ($srcW < 1 || $srcH < 1 || $srcW > 4000 || $srcH > 4000 || ($srcW * $srcH) > 4000000) {
+                return;
+            }
+
+            $img = @imagecreatefromstring($bytes);
+            if (!$img) {
+                return;
+            }
+            if (!imageistruecolor($img)) {
+                imagepalettetotruecolor($img);
+            }
+
+            $w = imagesx($img);
+            $h = imagesy($img);
+
+            // Cap pixel size to keep the embedded image small (uploads are
+            // already resized to <=800px, but logo_url may point elsewhere).
+            $maxPx = 800;
+            if ($w > $maxPx || $h > $maxPx) {
+                $scale = min($maxPx / $w, $maxPx / $h);
+                $nw = max(1, (int)round($w * $scale));
+                $nh = max(1, (int)round($h * $scale));
+                $dst = imagecreatetruecolor($nw, $nh);
+                imagealphablending($dst, false);
+                imagesavealpha($dst, true);
+                imagecopyresampled($dst, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+                imagedestroy($img);
+                $img = $dst;
+                $w = $nw;
+                $h = $nh;
+            }
+
+            $rgb = '';
+            $mask = '';
+            $hasAlpha = false;
+            for ($py = 0; $py < $h; $py++) {
+                for ($px = 0; $px < $w; $px++) {
+                    $c = imagecolorat($img, $px, $py);
+                    $rgb .= chr(($c >> 16) & 0xFF) . chr(($c >> 8) & 0xFF) . chr($c & 0xFF);
+                    $a = ($c >> 24) & 0x7F; // GD alpha: 0 = opaque, 127 = transparent
+                    $ab = 255 - (int)round($a * 255 / 127);
+                    if ($ab < 255) {
+                        $hasAlpha = true;
+                    }
+                    $mask .= chr($ab);
+                }
+            }
+            imagedestroy($img);
+
+            $data = gzcompress($rgb, 6);
+            if ($data === false) {
+                return;
+            }
+            $smask = null;
+            if ($hasAlpha) {
+                $smask = gzcompress($mask, 6);
+                if ($smask === false) {
+                    return;
+                }
+            }
+
+            $this->logo = [
+                'w' => $w,
+                'h' => $h,
+                'data' => $data,
+                'smask' => $smask,
+            ];
+        } catch (\Throwable $e) {
+            // A broken logo must never block invoice/quote PDF generation.
+            $this->logo = null;
+        }
     }
 
     private function hexToRgb(string $hex): array
@@ -212,6 +333,12 @@ class QiStyledPdfWriter
         $this->stream .= sprintf("%.3f w\n%s %s %s RG\n%.2f %.2f m %.2f %.2f l S\n", $width, $r, $g, $b, $x1, $y1, $x2, $y2);
     }
 
+    /** Draw the logo XObject; (x, y) is the lower-left corner. */
+    private function drawImage(float $x, float $y, float $w, float $h): void
+    {
+        $this->stream .= sprintf("q\n%.2f 0 0 %.2f %.2f %.2f cm\n/Im1 Do\nQ\n", $w, $h, $x, $y);
+    }
+
     private function approxWidth(string $text, float $fontSize): float
     {
         // Approximate width using average char width for Helvetica (~0.52 of font size)
@@ -225,16 +352,33 @@ class QiStyledPdfWriter
         $x = $this->marginL;
         $rightX = $this->pageW - $this->marginR;
 
-        // Document type (left) — uses heading colour
-        $docType = strtoupper($this->doc['_doc_type'] ?? 'INVOICE');
-        $this->text('F2', 18, $x, $this->y, $docType, $this->headingR, $this->headingG, $this->headingB);
+        // Left column: logo (when set) above the company block — same as the
+        // on-screen invoice, which shows the logo image top-left.
+        $leftY = $this->y;
+        if ($this->logo) {
+            // Natural size at 0.75pt/px (CSS px -> pt), fitted into the
+            // company's qi_logo_size box (clamped like Branding::resolve)
+            // and never upscaled — mirrors the on-screen max-width/
+            // max-height + object-fit: contain sizing.
+            $sizePx = max(80, min(400, (int)($this->doc['qi_logo_size'] ?? 200)));
+            $boxW = $sizePx * 0.75;
+            $boxH = 120; // on-screen max-height: 160px
+            $natW = $this->logo['w'] * 0.75;
+            $natH = $this->logo['h'] * 0.75;
+            $scale = min(1, $boxW / $natW, $boxH / $natH);
+            $drawW = $natW * $scale;
+            $drawH = $natH * $scale;
+            $logoTop = $this->y + 14; // align logo top with the text cap height
+            $this->drawImage($x, $logoTop - $drawH, $drawW, $drawH);
+            $leftY = $logoTop - $drawH - 18;
+        }
 
         // Company name
         $companyName = $this->doc['company_name'] ?? '';
-        $this->text('F2', 11, $x, $this->y - 24, $companyName, '0.15', '0.15', '0.15');
+        $this->text('F2', 11, $x, $leftY, $companyName, '0.15', '0.15', '0.15');
+        $leftY -= 16;
 
         // Company info lines (left side — address, phone, email only)
-        $leftY = $this->y - 40;
         $infoLines = [];
         if ($this->show['address']) {
             $addr1 = trim(($this->doc['company_address1'] ?? '') . ' ' . ($this->doc['company_address2'] ?? ''));
@@ -250,11 +394,15 @@ class QiStyledPdfWriter
             $leftY -= 11;
         }
 
-        // Document number + dates (right side)
-        $docNumber = $this->doc['_doc_title'] ?? '';
-        $this->textRight('F2', 14, $rightX, $this->y, $docNumber, $this->textR, $this->textG, $this->textB);
+        // Right side: document type heading + number + dates — matches the
+        // on-screen layout where "INVOICE" sits top-right above the number.
+        $docType = strtoupper($this->doc['_doc_type'] ?? 'INVOICE');
+        $this->textRight('F2', 20, $rightX, $this->y, $docType, $this->headingR, $this->headingG, $this->headingB);
 
-        $rightY = $this->y - 22;
+        $docNumber = $this->doc['_doc_title'] ?? '';
+        $this->textRight('F2', 11, $rightX, $this->y - 22, $docNumber, $this->textR, $this->textG, $this->textB);
+
+        $rightY = $this->y - 40;
         $dates = $this->doc['_dates'] ?? [];
         foreach ($dates as $label => $value) {
             $this->textRight('F1', 9, $rightX, $rightY, $label . ': ' . $value, '0.35', '0.35', '0.35');
@@ -720,6 +868,28 @@ class QiStyledPdfWriter
         $fontRegId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontReg . ' >>');
         $fontBoldId = $addObj('<< /Type /Font /Subtype /Type1 /BaseFont /' . $this->fontBold . ' >>');
 
+        // Company logo image XObject (+ soft mask for transparency)
+        $logoRes = '';
+        if ($this->logo) {
+            $smaskRef = '';
+            if ($this->logo['smask'] !== null) {
+                $smaskLen = strlen($this->logo['smask']);
+                $smaskId = $addObj(
+                    "<< /Type /XObject /Subtype /Image /Width {$this->logo['w']} /Height {$this->logo['h']} " .
+                    "/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length {$smaskLen} >>\n" .
+                    "stream\n{$this->logo['smask']}\nendstream"
+                );
+                $smaskRef = " /SMask {$smaskId} 0 R";
+            }
+            $imgLen = strlen($this->logo['data']);
+            $imgId = $addObj(
+                "<< /Type /XObject /Subtype /Image /Width {$this->logo['w']} /Height {$this->logo['h']} " .
+                "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{$smaskRef} /Length {$imgLen} >>\n" .
+                "stream\n{$this->logo['data']}\nendstream"
+            );
+            $logoRes = " /XObject << /Im1 {$imgId} 0 R >>";
+        }
+
         $pageObjIds = [];
         foreach ($this->pages as $streamContent) {
             $streamLen = strlen($streamContent);
@@ -729,7 +899,7 @@ class QiStyledPdfWriter
                 "<< /Type /Page /Parent {$pagesId} 0 R " .
                 "/MediaBox [0 0 {$this->pageW} {$this->pageH}] " .
                 "/Contents {$contentId} 0 R " .
-                "/Resources << /Font << /F1 {$fontRegId} 0 R /F2 {$fontBoldId} 0 R >> >> >>"
+                "/Resources << /Font << /F1 {$fontRegId} 0 R /F2 {$fontBoldId} 0 R >>{$logoRes} >> >>"
             );
             $pageObjIds[] = $pageId;
         }

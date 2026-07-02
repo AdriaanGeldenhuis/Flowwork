@@ -40,6 +40,14 @@ if (!in_array($mimeType, $allowedTypes)) {
     exit;
 }
 
+// Reject absurd pixel dimensions before decoding: a small compressed file
+// can expand to a multi-hundred-MB bitmap in GD (pixel flood).
+$dims = @getimagesize($file['tmp_name']);
+if ($dims === false || $dims[0] < 1 || $dims[1] < 1 || $dims[0] > 4000 || $dims[1] > 4000 || ($dims[0] * $dims[1]) > 4000000) {
+    echo json_encode(['ok' => false, 'error' => 'Image dimensions too large (max 4000px per side, 4 megapixels).']);
+    exit;
+}
+
 try {
     // Create directory structure: /uploads/{company_id}/logo/
     $uploadDir = __DIR__ . '/../../uploads/' . $companyId . '/logo';
@@ -68,12 +76,13 @@ try {
     $originalWidth = imagesx($image);
     $originalHeight = imagesy($image);
 
-    // Resize if needed (max 800px width, maintain aspect ratio)
+    // Resize if needed (max 800px on either side, maintain aspect ratio)
     $maxWidth = 800;
-    if ($originalWidth > $maxWidth) {
-        $ratio = $maxWidth / $originalWidth;
-        $newWidth = $maxWidth;
-        $newHeight = (int)($originalHeight * $ratio);
+    $maxHeight = 800;
+    if ($originalWidth > $maxWidth || $originalHeight > $maxHeight) {
+        $ratio = min($maxWidth / $originalWidth, $maxHeight / $originalHeight);
+        $newWidth = max(1, (int)round($originalWidth * $ratio));
+        $newHeight = max(1, (int)round($originalHeight * $ratio));
         
         $resized = imagecreatetruecolor($newWidth, $newHeight);
         
