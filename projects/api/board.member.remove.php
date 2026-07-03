@@ -50,6 +50,13 @@ try {
         exit;
     }
 
+    // Authorization: only a project manager/owner (or company admin) may remove
+    // members. Without this check any authenticated company user could remove
+    // anyone from any project.
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/_guard.php';
+    require_project_role((int)$board['project_id'], 'manager');
+
     // Don't allow removing yourself if you're the only owner
     $stmt = $DB->prepare("
         SELECT COUNT(*) FROM project_members

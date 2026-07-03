@@ -1,3 +1,62 @@
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
 vendor/
-composer.json
-composer.lock
+# NOTE: composer.json and composer.lock SHOULD be committed so dependency
+# versions are pinned and auditable. They were previously ignored — do not
+# re-add them here.
+
+# ---------------------------------------------------------------------------
+# Secrets & environment config
+# Any value already committed to history must be ROTATED — see
+# SECURITY-REMEDIATION.md. Ignoring here only prevents *future* commits.
+# ---------------------------------------------------------------------------
+config.php
+config.php.*.php
+mail/config.php
+mail/config.php.*.php
+*.keystore
+*.jks
+keystore.properties
+local.properties
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+php-error.log
+logs/*.log
+
+# ---------------------------------------------------------------------------
+# Production database dumps / backups (contain live data + password hashes)
+# Real migrations under Migrations/*.sql stay tracked; only the full dump is ignored.
+# ---------------------------------------------------------------------------
+Migrations/flowwwqmnt_db1.sql
+Migrations/flowwwqmnt_db1.txt
+*.sql.gz
+*.sql.zip
+*.dump
+
+# ---------------------------------------------------------------------------
+# User-uploaded content & generated documents (PII / financial). These live on
+# the server filesystem, never in git.
+# ---------------------------------------------------------------------------
+uploads/company/**/compliance/*
+uploads/receipts/**
+storage/**/*.pdf
+storage/payroll/**
+
+# Keep directory-protection files tracked even though their trees are ignored.
+!uploads/.htaccess
+!storage/.htaccess
+
+# ---------------------------------------------------------------------------
+# OS / editor cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

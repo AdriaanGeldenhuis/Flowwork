@@ -29,12 +29,25 @@ try {
     $columnId = (int)($_POST['column_id'] ?? 0);
     $targetColumnId = (int)($_POST['target_column_id'] ?? 0);
     $insertBefore = (int)($_POST['insert_before'] ?? 0);
-    
+
     if (!$columnId || !$targetColumnId) {
         http_response_code(400);
         die(json_encode(['ok' => false, 'error' => 'Column IDs required']));
     }
-    
+
+    // Authorization: caller must be able to edit this board (resolve it from the
+    // dragged column, scoped to the company) before reordering.
+    $bs = $DB->prepare("SELECT board_id FROM board_columns WHERE column_id = ? AND company_id = ?");
+    $bs->execute([$columnId, $COMPANY_ID]);
+    $brow = $bs->fetch(PDO::FETCH_ASSOC);
+    if (!$brow) {
+        http_response_code(404);
+        die(json_encode(['ok' => false, 'error' => 'Column not found']));
+    }
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role((int)$brow['board_id'], 'member');
+
     $DB->beginTransaction();
     
     try {

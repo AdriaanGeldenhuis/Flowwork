@@ -66,7 +66,12 @@ try {
         http_response_code(404);
         die(json_encode(['ok' => false, 'error' => 'Column not found']));
     }
-    
+
+    // Authorization: caller must be able to edit this board.
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role((int)$column['board_id'], 'member');
+
     // Build update query dynamically
     $updates = [];
     $params = [];

@@ -1,0 +1,13 @@
+# storage/ holds generated financial documents — payslips (ID numbers, bank
+# details, salaries) and invoice PDFs. These MUST NOT be served directly over
+# HTTP. Access them only through an authenticated PHP proxy (/download.php),
+# which checks the session, company scope and role before streaming the file.
+#
+# Deny all direct web access (Apache 2.4 and 2.2 syntax).
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

@@ -12,9 +12,12 @@
 // propagate to the response to avoid repeated webhook retries.
 
 require_once __DIR__ . '/../../init.php';
+require_once __DIR__ . '/../../includes/yoco_signature.php';
 
-// Yoco webhooks should not require authentication – this endpoint must be
-// accessible publicly. Therefore, we do not include auth_gate.php.
+// Yoco webhooks should not require a login session – this endpoint must be
+// accessible publicly. Instead of a session, every event is authenticated by
+// verifying its HMAC signature against the target company's webhook secret
+// before any payment is recorded (see below).
 
 // Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -88,6 +91,25 @@ if ($reference && $status && preg_match('/paid|success|complete/', $status)) {
             $invCompanyId = (int)$invoice['company_id'];
             $invoiceId    = (int)$invoice['id'];
             $balanceDue   = (float)$invoice['balance_due'];
+
+            // Verify the webhook signature against THIS company's secret before
+            // recording anything. Fail-closed: a missing/invalid signature (or an
+            // unconfigured secret) means we do not touch the invoice or ledger.
+            $secStmt = $DB->prepare('SELECT yoco_webhook_secret FROM companies WHERE id = ?');
+            $secStmt->execute([$invCompanyId]);
+            $webhookSecret = (string)($secStmt->fetchColumn() ?: '');
+            $sigHeaders = yoco_get_webhook_headers();
+            if (!yoco_verify_signature(
+                    $webhookSecret,
+                    $sigHeaders['id'],
+                    $sigHeaders['timestamp'],
+                    $sigHeaders['signature'],
+                    $payload)) {
+                error_log('Yoco webhook (qi) rejected: invalid/missing signature for invoice ' . $invoiceId);
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'error' => 'Invalid signature']);
+                exit;
+            }
 
             // We'll record the full outstanding balance as paid. If event
             // includes an amount, use the minimum of event amount and balance

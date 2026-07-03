@@ -53,6 +53,20 @@ try {
         throw new Exception('Valid subitem ID is required');
     }
 
+    // Authorization: resolve the subitem's board (scoped to company) and require
+    // an edit role. Company scope alone let any user edit any board's subitems.
+    $sb = $DB->prepare("SELECT board_id FROM board_subitems WHERE id = ? AND company_id = ?");
+    $sb->execute([$subitemId, $COMPANY_ID]);
+    $subRow = $sb->fetch(PDO::FETCH_ASSOC);
+    if (!$subRow) {
+        http_response_code(404);
+        throw new Exception('Subitem not found or access denied');
+    }
+    $USER_ID = (int)($_SESSION['user_id'] ?? 0);
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role((int)$subRow['board_id'], 'member');
+
     // Build update query dynamically
     $updates = [];
     $params = [];

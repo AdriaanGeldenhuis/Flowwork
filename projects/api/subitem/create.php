@@ -75,6 +75,11 @@ try {
         throw new Exception('Parent item not found or access denied');
     }
 
+    // Authorization: caller must be able to edit this board.
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role((int)$parent['board_id'], 'member');
+
     // Get next position
     $stmt = $DB->prepare("
         SELECT COALESCE(MAX(position), -1) + 1 AS next_pos

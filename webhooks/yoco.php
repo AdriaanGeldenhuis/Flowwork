@@ -4,9 +4,10 @@
 // Validates the signature using the company's webhook secret, then records the payment.
 
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../init.php';
+require_once __DIR__ . '/../includes/yoco_signature.php';
 
 // Webhook does not require authentication but we need direct DB access
 
@@ -61,34 +62,13 @@ try {
     if (empty($secret)) {
         throw new Exception('Webhook secret not configured');
     }
-    // Verify signature if headers provided
-    if ($webhookId && $webhookTimestamp && $signatureHeader) {
-        // Build signed content: id.timestamp.rawBody
-        $signedContent = $webhookId . '.' . $webhookTimestamp . '.' . $rawBody;
-        // Extract secret bytes after whsec_ prefix
-        $secretParts = explode('_', $secret, 2);
-        $base = (count($secretParts) === 2) ? $secretParts[1] : $secretParts[0];
-        $secretBytes = base64_decode($base);
-        // Compute expected signature (base64)
-        $hmac  = hash_hmac('sha256', $signedContent, $secretBytes, true);
-        $expectedSignature = base64_encode($hmac);
-        // Extract signature from header (drop version prefix if present)
-        // Signature header may contain multiple signatures separated by spaces
-        $parts = explode(' ', $signatureHeader);
-        $valid = false;
-        foreach ($parts as $part) {
-            $sigParts = explode(',', $part);
-            $sig = end($sigParts);
-            if (hash_equals($expectedSignature, $sig)) {
-                $valid = true;
-                break;
-            }
-        }
-        if (!$valid) {
-            http_response_code(403);
-            echo json_encode(['ok' => false, 'error' => 'Invalid signature']);
-            exit;
-        }
+    // Verify signature — MANDATORY. A request without valid signature headers
+    // (or with a stale timestamp) is rejected; we never fall through to
+    // recording a payment on an unsigned request.
+    if (!yoco_verify_signature($secret, $webhookId, $webhookTimestamp, $signatureHeader, $rawBody)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Invalid signature']);
+        exit;
     }
     // If invoice already paid, ignore
     if ($invoice['status'] === 'paid' || (float)$invoice['balance_due'] <= 0) {
@@ -150,5 +130,5 @@ try {
     }
     error_log('Yoco webhook error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => 'Internal error']);
 }

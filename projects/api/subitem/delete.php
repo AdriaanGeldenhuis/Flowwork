@@ -53,15 +53,22 @@ try {
         throw new Exception('Valid subitem ID is required');
     }
 
-    // Get parent item ID before deletion
-    $stmt = $DB->prepare("SELECT parent_item_id FROM board_subitems WHERE id = ? AND company_id = ?");
+    // Get parent item ID (and board) before deletion
+    $stmt = $DB->prepare("SELECT parent_item_id, board_id FROM board_subitems WHERE id = ? AND company_id = ?");
     $stmt->execute([$subitemId, $COMPANY_ID]);
-    $parentId = $stmt->fetchColumn();
+    $subRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$parentId) {
+    if (!$subRow) {
         http_response_code(404);
         throw new Exception('Subitem not found or access denied');
     }
+    $parentId = $subRow['parent_item_id'];
+
+    // Authorization: caller must be able to edit this board.
+    $USER_ID = (int)($_SESSION['user_id'] ?? 0);
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role((int)$subRow['board_id'], 'member');
 
     // Delete subitem
     $stmt = $DB->prepare("DELETE FROM board_subitems WHERE id = ? AND company_id = ?");
