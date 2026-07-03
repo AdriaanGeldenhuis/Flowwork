@@ -136,44 +136,65 @@
   }
 
   // ===== 3D TILT EFFECT =====
+  // Delegated pointer engine: works for cards rendered at any time (the
+  // projects grid loads via fetch, so per-card binding at DOMContentLoaded
+  // never sees them). Instead of writing inline transforms, it feeds the
+  // CSS custom properties (--rx/--ry for tilt, --mx/--my for the specular
+  // glare) that projects.css composes into the card transform.
   function init3DTilt() {
     if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
 
-    const cards = document.querySelectorAll('.fw-project-card');
-    cards.forEach(function(card) {
-      let tiltTimeout;
+    const SELECTOR = '.fw-project-card, .fw-board-card';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
 
-      card.addEventListener('mousemove', function(e) {
-        if (e.buttons > 0) return;
-        clearTimeout(tiltTimeout);
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
 
-        const rect = card.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        const rotateX = (y - centerY) / centerY * -2;
-        const rotateY = (x - centerX) / centerX * 2;
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
 
-        requestAnimationFrame(() => {
-          card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-4px) translateZ(20px)`;
-        });
-      });
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
 
-      card.addEventListener('mouseleave', function() {
-        clearTimeout(tiltTimeout);
-        tiltTimeout = setTimeout(() => {
-          card.style.transform = '';
-        }, 100);
-      });
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
 
-      card.addEventListener('mousedown', function() {
-        this.style.transform = 'perspective(1000px) translateY(-4px) translateZ(20px)';
-      });
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
 
-      card.addEventListener('click', function() {
-        this.style.transform = '';
-      });
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
     });
   }
 
