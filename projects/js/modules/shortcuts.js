@@ -86,13 +86,44 @@
     }
   };
 
+  // Don't hijack keystrokes while the user is typing in a field
+  // (Escape is still allowed so it can close modals/pickers).
+  const isEditable = (el) => {
+    if (!el) return false;
+    const t = el.tagName;
+    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable;
+  };
+
   // Listen for keyboard events
   document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' && isEditable(e.target)) return;
     const handler = shortcuts[e.key];
     if (handler) {
       handler(e);
     }
   });
+
+  // ===== SCREEN-READER LIVE REGION =====
+  // A single polite live region; window.fwAnnounce(msg) speaks a message to
+  // assistive tech. Reuses the existing .fw-sr-only visually-hidden class.
+  function getLiveRegion() {
+    let el = document.getElementById('fw-live');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'fw-live';
+      el.className = 'fw-sr-only';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  window.fwAnnounce = function (msg) {
+    const el = getLiveRegion();
+    el.textContent = '';
+    // Clearing then setting on the next tick makes SRs re-announce identical text.
+    setTimeout(() => { el.textContent = msg; }, 50);
+  };
 
   // ===== SELECT ALL ITEMS =====
   function selectAllItems() {
@@ -188,6 +219,7 @@
 
   // ===== TOAST NOTIFICATION =====
   function showToast(message, type = 'info') {
+    if (window.fwAnnounce) window.fwAnnounce(message);
     const toast = document.createElement('div');
     toast.className = `fw-toast fw-toast--${type}`;
     toast.style.cssText = `

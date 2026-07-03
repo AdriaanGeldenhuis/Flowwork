@@ -43,20 +43,26 @@ try {
     $stmt->execute([$boardId, $COMPANY_ID]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Get values for each item
-    foreach ($items as &$item) {
-        $stmt = $DB->prepare("
-            SELECT biv.column_id, biv.value
-            FROM board_item_values biv
-            WHERE biv.item_id = ?
+    // Batch-load all cell values in a single query (avoids an N+1 of one
+    // query per item).
+    $itemIds = array_column($items, 'id');
+    $valuesByItem = [];
+    if (!empty($itemIds)) {
+        $ph = implode(',', array_fill(0, count($itemIds), '?'));
+        $vstmt = $DB->prepare("
+            SELECT item_id, column_id, value
+            FROM board_item_values
+            WHERE item_id IN ($ph)
         ");
-        $stmt->execute([$item['id']]);
-        $values = [];
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $values[$row['column_id']] = $row['value'];
+        $vstmt->execute($itemIds);
+        while ($row = $vstmt->fetch(PDO::FETCH_ASSOC)) {
+            $valuesByItem[$row['item_id']][$row['column_id']] = $row['value'];
         }
-        $item['values'] = $values;
     }
+    foreach ($items as &$item) {
+        $item['values'] = $valuesByItem[$item['id']] ?? [];
+    }
+    unset($item);
     
     if ($format === 'csv') {
         header('Content-Type: text/csv');

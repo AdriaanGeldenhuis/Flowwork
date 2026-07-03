@@ -58,6 +58,25 @@ try {
         exit;
     }
 
+    // Authorization: only a project manager/owner (or company admin) may add
+    // members. Without this check any authenticated company user could add
+    // themselves — with role 'owner' — to any project (privilege escalation).
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/_guard.php';
+    require_project_role((int)$board['project_id'], 'manager');
+
+    // Prevent granting a role higher than the caller's own (a manager must not
+    // be able to mint an owner). Company admins may grant any role.
+    if ($USER_ROLE !== 'admin') {
+        $rs = $DB->prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND company_id = ? LIMIT 1");
+        $rs->execute([$board['project_id'], $USER_ID, $COMPANY_ID]);
+        $callerRole = $rs->fetchColumn() ?: 'manager'; // require_project_role already passed
+        if (_role_level($role) > _role_level($callerRole)) {
+            echo json_encode(['ok' => false, 'error' => 'Cannot grant a role higher than your own']);
+            exit;
+        }
+    }
+
     // Check if user is from same company (fixed: use user_id column)
     $stmt = $DB->prepare("SELECT id FROM users WHERE id = ? AND company_id = ?");
     $stmt->execute([$userId, $COMPANY_ID]);

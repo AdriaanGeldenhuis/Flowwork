@@ -21,6 +21,26 @@ if (!$columnId) {
     exit;
 }
 
+// Authorization: resolve the column's board (scoped to company) and require an
+// edit role before changing visibility.
+$look = $DB->prepare("
+    SELECT bc.board_id
+    FROM board_columns bc
+    JOIN project_boards pb ON bc.board_id = pb.board_id
+    WHERE bc.column_id = ? AND pb.company_id = ?
+");
+$look->execute([$columnId, $COMPANY_ID]);
+$col = $look->fetch(PDO::FETCH_ASSOC);
+if (!$col) {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'error' => 'Column not found']);
+    exit;
+}
+$USER_ID = $_SESSION['user_id'] ?? 0;
+$USER_ROLE = $_SESSION['role'] ?? 'viewer';
+require_once __DIR__ . '/_guard.php';
+require_board_role((int)$col['board_id'], 'member');
+
 try {
     $stmt = $DB->prepare("
         UPDATE board_columns bc

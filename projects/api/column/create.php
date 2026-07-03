@@ -89,12 +89,17 @@ try {
         WHERE board_id = ? AND company_id = ?
     ");
     $stmt->execute([$boardId, $COMPANY_ID]);
-    
+
     if (!$stmt->fetch()) {
         http_response_code(404);
         die(json_encode(['ok' => false, 'error' => 'Board not found']));
     }
-    
+
+    // Authorization: caller must be able to edit this board.
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role($boardId, 'member');
+
     // Get next position
     $stmt = $DB->prepare("
         SELECT COALESCE(MAX(position), -1) + 1 as next_position

@@ -369,3 +369,20 @@
     page-break-inside: avoid;
   }
 }
+
+/* ===== TOUCH TARGETS (small screens) ===== */
+/* Make tap targets comfortable on touch devices (WCAG 2.5.5). Scoped to
+   coarse pointers so desktop narrow windows are unaffected. */
+@media (max-width: 768px) and (pointer: coarse) {
+  .fw-icon-btn,
+  .fw-group-toggle,
+  .fw-col-add-btn,
+  .fw-kanban-card-menu {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .fw-checkbox {
+    width: 20px;
+    height: 20px;
+  }
+}

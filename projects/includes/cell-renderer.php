@@ -4,6 +4,26 @@
  * Included from board.php inside the cell TD loop
  */
 
+// Pick a legible text color (black/white) for a given background, so status
+// badges meet WCAG contrast instead of always using white. Defined once
+// (this file is included per-cell in a loop).
+if (!function_exists('fw_readable_text')) {
+    function fw_readable_text($hex) {
+        $hex = ltrim((string)$hex, '#');
+        if (strlen($hex) === 3) {
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+        }
+        if (strlen($hex) < 6) {
+            return '#ffffff';
+        }
+        $r = hexdec(substr($hex, 0, 2));
+        $g = hexdec(substr($hex, 2, 2));
+        $b = hexdec(substr($hex, 4, 2));
+        $lum = (0.2126 * $r + 0.7152 * $g + 0.0722 * $b) / 255;
+        return $lum > 0.6 ? '#1a1a1a' : '#ffffff';
+    }
+}
+
 // Supplier Cell
 if ($col['type'] === 'supplier'):
     if ($value):
@@ -29,8 +49,9 @@ if ($col['type'] === 'supplier'):
 
 // Status Cell
 elseif ($col['type'] === 'status'):
+    $__sc = $statusConfig[$value]['color'] ?? '#8b5cf6';
     if ($value): ?>
-        <span class="fw-status-badge" style="background: <?= $statusConfig[$value]['color'] ?? '#8b5cf6' ?>;">
+        <span class="fw-status-badge" style="background: <?= $__sc ?>; color: <?= fw_readable_text($__sc) ?>;">
             <?= strtoupper(htmlspecialchars($value)) ?>
         </span>
     <?php else: ?>

@@ -106,7 +106,13 @@ try {
     
     $columnType = $row['type'];
     $boardId = (int)$row['board_id'];
-    
+
+    // Authorization: caller must be able to edit this board. Company scope alone
+    // let any user edit any board's cells; require an explicit board/project role.
+    $USER_ROLE = $_SESSION['role'] ?? 'viewer';
+    require_once __DIR__ . '/../_guard.php';
+    require_board_role($boardId, 'member');
+
     // Start transaction
     $DB->beginTransaction();
     
