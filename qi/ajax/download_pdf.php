@@ -33,7 +33,7 @@ try {
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family, c.qi_logo_size,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
                     c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
@@ -76,7 +76,7 @@ try {
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family, c.qi_logo_size,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
                     c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
@@ -124,7 +124,7 @@ try {
                     c.city AS company_city, c.region AS company_region, c.postal AS company_postal,
                     c.bank_name, c.bank_account_number, c.bank_branch_code,
                     c.primary_color, c.secondary_color, c.qi_heading_color, c.qi_text_color,
-                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family,
+                    c.qi_table_header_text, c.qi_bg_color, c.qi_font_family, c.qi_logo_size,
                     c.qi_show_company_address, c.qi_show_company_phone, c.qi_show_company_email,
                     c.qi_show_company_website, c.qi_show_vat_number, c.qi_show_tax_number,
                     c.qi_show_reg_number, c.qi_show_payment_details, c.qi_quote_title, c.qi_invoice_title,
@@ -157,6 +157,23 @@ try {
         $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Payment schedule + payment history so the downloaded PDF matches
+        // the on-screen invoice (invoice_view.php).
+        if (!empty($doc['has_milestones'])) {
+            $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
+            $stmt->execute([$id, $companyId]);
+            $doc['_milestones'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $stmt = $DB->prepare(
+            "SELECT p.payment_date, p.method, p.reference, pa.amount
+             FROM payment_allocations pa
+             JOIN payments p ON pa.payment_id = p.id
+             WHERE pa.invoice_id = ? AND p.company_id = ?
+             ORDER BY p.payment_date ASC, p.id ASC"
+        );
+        $stmt->execute([$id, $companyId]);
+        $doc['_payments'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     // Resolve branding so the title + footer match the rest of the app

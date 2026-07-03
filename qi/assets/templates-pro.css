@@ -92,8 +92,19 @@
   margin-bottom: 16px;
 }
 
-.fw-qi__doc-company h1 {
+/* The company name <h1> is hidden ONLY when a logo image precedes it (the logo
+   carries the brand identity). With no logo the logo <img> is absent, so the
+   name shows — otherwise a logo-less invoice would have no issuer identity at
+   all, especially on the print/PDF surface where the app top-bar is hidden. */
+.fw-qi__doc-logo + .fw-qi__doc-company h1 {
   display: none;
+}
+.fw-qi__doc-company h1 {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--qi-heading-color);
+  margin: 0 0 4px 0;
+  line-height: 1.15;
 }
 
 .fw-qi__doc-company p {
@@ -317,6 +328,15 @@
 
 .fw-qi__doc-table-right {
   text-align: right !important;
+}
+
+/* Numeric columns (Qty / Unit Price / Line Total / Amount / Paid / Outstanding)
+   must keep the currency symbol and the number on one line — otherwise a
+   squeezed column wraps "R" onto its own line above the value. */
+.fw-qi__doc-table td[style*="right"],
+.fw-qi__doc-table th[style*="right"],
+.fw-qi__doc-total-row span:last-child {
+  white-space: nowrap;
 }
 
 .fw-qi__doc-table-wrap {
@@ -820,6 +840,20 @@
   border-color: rgba(255,255,255,0.5) !important;
 }
 
+/* The Bill To block sits inside the amber bold header. Its heading uses an
+   inline color:var(--qi-heading-color) (== primary), so it was amber-on-amber
+   and invisible; its body text defaulted to dark. Whiten the whole block. */
+[data-template="bold"] .fw-qi__doc-bill-to {
+  border-top-color: rgba(255,255,255,0.35) !important;
+}
+[data-template="bold"] .fw-qi__doc-bill-to h3 {
+  color: rgba(255,255,255,0.8) !important;
+}
+[data-template="bold"] .fw-qi__doc-bill-to p,
+[data-template="bold"] .fw-qi__doc-bill-to strong {
+  color: #ffffff !important;
+}
+
 [data-template="bold"] .fw-qi__doc-detail-box {
   border-left: 4px solid var(--qi-primary);
   background: var(--qi-primary);
@@ -901,7 +935,14 @@
 [data-template="bold"] .fw-qi__doc-total-row--grand {
   color: #ffffff !important;
   border-top: 2px solid rgba(255,255,255,0.4) !important;
-  font-size: 28px;
+  /* 28px overflowed the 340px totals box and wrapped the amount onto a second
+     line ("TOTAL:R" / "292,353.00"). 20px keeps label + value on one row for
+     seven-figure amounts. */
+  font-size: 20px;
+  gap: 12px;
+}
+[data-template="bold"] .fw-qi__doc-total-row--grand span:last-child {
+  white-space: nowrap;
 }
 
 [data-template="bold"] .fw-qi__doc-total-row--balance {
@@ -1137,6 +1178,11 @@
   background: var(--qi-doc-bg, #ffffff) !important;
   color: var(--qi-text-color, #374151) !important;
   --qi-bg: var(--qi-doc-bg, #ffffff);
+  /* Restore the light body-text colour: the dark rule above overrode
+     --qi-text-color to a pale grey (#d1d5db) for the app shell, but this
+     force-light document keeps a white background, so pale grey would be
+     near-invisible. Fall back through the branding var to the light default. */
+  --qi-text-color: var(--qi-text, #374151);
   --qi-text-dark: #1f2937;
   --qi-text-dk: #1f2937;
   --qi-text-muted: #6b7280;

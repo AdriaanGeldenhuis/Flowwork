@@ -38,7 +38,8 @@ const InvoiceView = {
         const remaining = Math.max(0, this.balanceDue - amt);
         const pct = total > 0 ? Math.min(100, (newPaid / total) * 100) : 0;
 
-        const fmt = (n) => this.currencySymbol + ' ' + Number(n).toFixed(2);
+        // Thousands separators to match the server-rendered amounts in the box.
+        const fmt = (n) => this.currencySymbol + ' ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
         setText('calcPaid', fmt(alreadyPaid));

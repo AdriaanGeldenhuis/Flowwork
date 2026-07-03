@@ -270,8 +270,8 @@ function format_currency($amount) {
                             <?php if (!empty($creditNote['customer_address2'])): ?>
                                 <p style="margin:3px 0;"><?= htmlspecialchars($creditNote['customer_address2']) ?></p>
                             <?php endif; ?>
-                            <?php $custCity = trim(($creditNote['customer_city'] ?? '') . ', ' . ($creditNote['customer_region'] ?? '') . ' ' . ($creditNote['customer_postal'] ?? '')); ?>
-                            <?php if ($custCity && $custCity !== ', '): ?>
+                            <?php $custCity = implode(', ', array_filter([trim($creditNote['customer_city'] ?? ''), trim(($creditNote['customer_region'] ?? '') . ' ' . ($creditNote['customer_postal'] ?? ''))], fn($p) => $p !== '')); ?>
+                            <?php if ($custCity !== ''): ?>
                                 <p style="margin:3px 0;"><?= htmlspecialchars($custCity) ?></p>
                             <?php endif; ?>
                             <?php if (!empty($creditNote['customer_phone'])): ?>
