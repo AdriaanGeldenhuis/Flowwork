@@ -1544,64 +1544,12 @@
   }
 
   // ===== 3D TILT FOR BOARD CARDS =====
+  // Tilt is handled by the delegated pointer engine in js/ui/proheader.js
+  // (loaded on this page too). It drives the CSS custom properties that
+  // projects.css composes into the card transform, so no per-card inline
+  // transforms are needed here — they would override the CSS engine.
   function init3DTiltBoards() {
-    const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const IS_MOBILE = window.innerWidth <= 768;
-
-    if (REDUCE_MOTION || IS_MOBILE) {
-      console.log('⏸️ 3D tilt disabled for boards (reduced motion or mobile)');
-      return;
-    }
-
-    function applyTilt(card) {
-      card.addEventListener('mousemove', function(e) {
-        const rect = card.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-
-        const rotateX = ((y - centerY) / centerY) * -8;
-        const rotateY = ((x - centerX) / centerX) * 8;
-
-        card.style.transform = `
-          perspective(1000px) 
-          rotateX(${rotateX}deg) 
-          rotateY(${rotateY}deg) 
-          translateY(-4px)
-          scale3d(1.02, 1.02, 1.02)
-        `;
-      });
-
-      card.addEventListener('mouseleave', function() {
-        card.style.transform = '';
-      });
-    }
-
-    function initExistingBoards() {
-      document.querySelectorAll('.fw-board-card').forEach(applyTilt);
-    }
-
-    const observer = new MutationObserver(function(mutations) {
-      mutations.forEach(function(mutation) {
-        mutation.addedNodes.forEach(function(node) {
-          if (node.nodeType === 1) {
-            if (node.classList && node.classList.contains('fw-board-card')) {
-              applyTilt(node);
-            }
-            node.querySelectorAll && node.querySelectorAll('.fw-board-card').forEach(applyTilt);
-          }
-        });
-      });
-    });
-
-    const container = document.getElementById('boardsListView');
-    if (container) {
-      observer.observe(container, { childList: true, subtree: true });
-    }
-
-    initExistingBoards();
-    console.log('✅ 3D tilt initialized for board cards');
+    console.log('✅ 3D tilt for board cards delegated to ProHeader engine');
   }
 
   // ===== INIT =====

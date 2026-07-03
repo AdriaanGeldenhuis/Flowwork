@@ -1,0 +1,498 @@
+/* ============================================================================
+   BOARD 3D SKIN — Dimension design system for the board page
+   Imported LAST from board.css so it overlays base/theme/layout/table/
+   components/modals/views/mobile without rewriting them.
+
+   Uses the theme variables from theme.css (--bg-*, --text-*, --border-*,
+   --interactive-*, --input-*) plus its own --b3d-* elevation tokens below.
+
+   Deliberately NO transforms on .fw-group or any table ancestor: the table
+   relies on position:sticky columns and drag-drop rect measurements.
+   ============================================================================ */
+
+/* ===== ELEVATION TOKENS ===== */
+.fw-proj,
+.fw-proj[data-theme="dark"] {
+  --b3d-rim: rgba(255, 255, 255, 0.16);
+  --b3d-glare: rgba(190, 210, 255, 0.10);
+  --b3d-key-side: rgba(0, 0, 0, 0.65);
+  --b3d-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 var(--b3d-key-side),
+    0 3px 8px rgba(0, 0, 0, 0.45);
+  --b3d-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 4px 0 var(--b3d-key-side),
+    0 7px 14px rgba(0, 0, 0, 0.5);
+  --b3d-key-shadow-active:
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    0 1px 0 var(--b3d-key-side);
+  --b3d-well:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  --b3d-group-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 10px 22px -8px rgba(0, 0, 0, 0.55),
+    0 24px 48px -20px rgba(0, 0, 0, 0.6),
+    0 30px 60px -28px rgba(139, 92, 246, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --b3d-group-shadow-hover:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 14px 30px -8px rgba(0, 0, 0, 0.6),
+    0 32px 60px -22px rgba(0, 0, 0, 0.65),
+    0 40px 80px -30px rgba(139, 92, 246, 0.42),
+    0 0 0 1px rgba(139, 92, 246, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --b3d-primary-deep: #5b21b6;
+  --b3d-primary-glow: rgba(139, 92, 246, 0.4);
+  --b3d-aurora-a: rgba(139, 92, 246, 0.16);
+  --b3d-aurora-b: rgba(0, 224, 214, 0.07);
+  --b3d-row-hover: rgba(139, 92, 246, 0.10);
+}
+
+.fw-proj[data-theme="light"] {
+  --b3d-rim: rgba(255, 255, 255, 0.9);
+  --b3d-glare: rgba(255, 255, 255, 0.45);
+  --b3d-key-side: rgba(23, 28, 50, 0.16);
+  --b3d-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(23, 28, 50, 0.05),
+    0 2px 0 var(--b3d-key-side),
+    0 3px 6px rgba(23, 28, 50, 0.10);
+  --b3d-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(23, 28, 50, 0.05),
+    0 4px 0 var(--b3d-key-side),
+    0 6px 12px rgba(23, 28, 50, 0.12);
+  --b3d-key-shadow-active:
+    inset 0 2px 4px rgba(23, 28, 50, 0.14),
+    0 1px 0 var(--b3d-key-side);
+  --b3d-well:
+    inset 0 2px 4px rgba(23, 28, 50, 0.07),
+    inset 0 1px 2px rgba(23, 28, 50, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.9);
+  --b3d-group-shadow:
+    0 1px 2px rgba(23, 28, 50, 0.05),
+    0 6px 14px -6px rgba(23, 28, 50, 0.09),
+    0 18px 36px -16px rgba(23, 28, 50, 0.14),
+    0 26px 52px -26px rgba(139, 92, 246, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  --b3d-group-shadow-hover:
+    0 2px 4px rgba(23, 28, 50, 0.06),
+    0 10px 22px -8px rgba(23, 28, 50, 0.12),
+    0 26px 48px -18px rgba(23, 28, 50, 0.18),
+    0 36px 70px -28px rgba(139, 92, 246, 0.3),
+    0 0 0 1px rgba(139, 92, 246, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  --b3d-primary-deep: #5b21b6;
+  --b3d-primary-glow: rgba(139, 92, 246, 0.25);
+  --b3d-aurora-a: rgba(139, 92, 246, 0.14);
+  --b3d-aurora-b: rgba(0, 224, 214, 0.09);
+  --b3d-row-hover: rgba(139, 92, 246, 0.06);
+}
+
+/* ===== VARIABLE ALIASES =====
+   board.css's guest-modal section references --fw-* names from the projects
+   design system that were never defined in this import chain (so those rules
+   silently resolved to nothing). Map them onto the board theme vars. */
+.fw-proj {
+  --fw-panel-bg: var(--modal-bg);
+  --fw-text-primary: var(--text-primary);
+  --fw-text-secondary: var(--text-secondary);
+  --fw-text-tertiary: var(--text-muted);
+  --fw-border: var(--border-default);
+  --fw-border-subtle: var(--border-subtle);
+  --fw-input-bg: var(--input-bg);
+  --fw-hover-bg: var(--interactive-hover);
+}
+
+/* ===== ENVIRONMENT — aurora washes behind the board ===== */
+.fw-proj {
+  background:
+    radial-gradient(1300px 640px at 15% -10%, var(--b3d-aurora-a), transparent 60%),
+    radial-gradient(1100px 560px at 88% 0%, var(--b3d-aurora-b), transparent 55%),
+    radial-gradient(900px 520px at 60% 115%, var(--b3d-aurora-a), transparent 62%),
+    var(--bg-base);
+}
+
+/* ===== HEADER — glass slab with rim light + neon hairline ===== */
+.fw-board-header {
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    var(--header-glass-shadow);
+}
+
+.fw-board-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 4%, var(--b3d-primary-glow) 30%, rgba(0, 224, 214, 0.3) 70%, transparent 96%);
+  pointer-events: none;
+}
+
+.fw-board-header__logo {
+  background: linear-gradient(135deg, #8b5cf6, #00e0d6);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.45),
+    inset 0 -3px 6px rgba(30, 10, 80, 0.45),
+    0 3px 0 var(--b3d-primary-deep),
+    0 8px 18px -4px rgba(139, 92, 246, 0.55);
+}
+
+/* Header icon buttons → pressable keys */
+.fw-board-header__btn {
+  background: var(--bg-elevated);
+  box-shadow: var(--b3d-key-shadow);
+}
+
+.fw-board-header__btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--b3d-key-shadow-hover);
+  background: var(--bg-elevated);
+  color: var(--accent-primary);
+}
+
+.fw-board-header__btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--b3d-key-shadow-active);
+}
+
+/* Header menu → 3D flip-down */
+.fw-board-header__menu {
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 24px 48px -12px rgba(5, 8, 18, 0.5),
+    0 8px 24px -8px var(--b3d-primary-glow);
+  transform: perspective(700px) rotateX(-12deg) translateY(-8px) scale(0.97);
+  transform-origin: top right;
+}
+
+.fw-board-header__menu[aria-hidden="false"] {
+  transform: perspective(700px) rotateX(0) translateY(0) scale(1);
+}
+
+/* ===== TOOLBAR ===== */
+.fw-board-toolbar {
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 10px 26px -14px rgba(10, 12, 24, 0.5),
+    0 4px 20px -6px var(--b3d-primary-glow);
+}
+
+/* View switcher → segmented control in a carved groove */
+.fw-board-toolbar__left {
+  gap: 4px;
+  padding: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--b3d-well);
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fw-board-toolbar__left::-webkit-scrollbar {
+  display: none;
+}
+
+.fw-view-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.fw-view-btn:hover {
+  background: var(--interactive-hover);
+  color: var(--accent-primary);
+  transform: none;
+  box-shadow: none;
+  border: none;
+}
+
+.fw-view-btn:active {
+  transform: scale(0.97);
+}
+
+.fw-view-btn--active,
+.fw-view-btn--active:hover {
+  background: linear-gradient(165deg, #b7a0fb 0%, #8b5cf6 55%, #7c3aed 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(60, 20, 140, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(60, 20, 140, 0.35),
+    0 2px 0 var(--b3d-primary-deep),
+    0 4px 10px -2px var(--b3d-primary-glow);
+}
+
+/* Search → carved well */
+.fw-search-input {
+  box-shadow: var(--b3d-well);
+}
+
+.fw-search-input:focus {
+  box-shadow:
+    var(--b3d-well),
+    0 0 0 3px rgba(139, 92, 246, 0.15),
+    0 0 18px -2px var(--b3d-primary-glow);
+}
+
+/* Chips + buttons → pressable keys */
+.fw-chip,
+.fw-btn--secondary,
+.fw-bulk-btn {
+  background: var(--bg-elevated);
+  box-shadow: var(--b3d-key-shadow);
+}
+
+.fw-chip:hover,
+.fw-btn--secondary:hover,
+.fw-bulk-btn:hover {
+  background: var(--bg-elevated);
+  transform: translateY(-2px);
+  box-shadow: var(--b3d-key-shadow-hover);
+}
+
+.fw-chip:active,
+.fw-btn--secondary:active,
+.fw-bulk-btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--b3d-key-shadow-active);
+}
+
+.fw-btn--primary {
+  background: linear-gradient(165deg, #b7a0fb 0%, #8b5cf6 52%, #7c3aed 100%);
+  text-shadow: 0 1px 2px rgba(60, 20, 140, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(60, 20, 140, 0.35),
+    0 3px 0 var(--b3d-primary-deep),
+    0 6px 14px -2px var(--b3d-primary-glow);
+}
+
+.fw-btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(60, 20, 140, 0.35),
+    0 5px 0 var(--b3d-primary-deep),
+    0 10px 22px -2px var(--b3d-primary-glow);
+}
+
+.fw-btn--primary:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 6px rgba(60, 20, 140, 0.5),
+    0 1px 0 var(--b3d-primary-deep);
+}
+
+/* ===== BULK ACTION BAR — floating 3D pill ===== */
+.fw-bulk-action-bar {
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 20px 44px -12px rgba(5, 8, 18, 0.5),
+    0 8px 32px rgba(139, 92, 246, 0.35);
+}
+
+/* ===== GROUPS — elevated 3D slabs (shadow-only: no transforms here,
+   the table inside depends on sticky columns & drag rect math) ===== */
+.fw-group {
+  border-radius: var(--radius-xl);
+  border-color: var(--b3d-rim);
+  box-shadow: var(--b3d-group-shadow);
+}
+
+.fw-group:hover {
+  box-shadow: var(--b3d-group-shadow-hover);
+}
+
+.fw-group-header {
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+  border-left: 3px solid var(--accent-primary);
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    inset 3px 0 12px -6px var(--b3d-primary-glow);
+}
+
+.fw-group-toggle,
+.fw-icon-btn:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.fw-group-count {
+  background: var(--bg-elevated);
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== TABLE ===== */
+/* Theme-aware edge shadow for the sticky columns (was hardcoded near-black,
+   which read as a smudge in light mode) */
+.fw-proj[data-theme="light"] .fw-col-item,
+.fw-proj[data-theme="light"] .fw-board-table tbody td.fw-col-item {
+  box-shadow: 4px 0 8px rgba(23, 28, 50, 0.07);
+}
+
+.fw-proj[data-theme="light"] .fw-col-checkbox,
+.fw-proj[data-theme="light"] .fw-board-table tbody td.fw-col-checkbox {
+  box-shadow: 2px 0 4px rgba(23, 28, 50, 0.05);
+}
+
+.fw-item-row:hover td {
+  background: var(--b3d-row-hover) !important;
+}
+
+.fw-item-row:hover td.fw-col-checkbox,
+.fw-item-row:hover td.fw-col-item {
+  background: var(--bg-elevated) !important;
+}
+
+/* Aggregation totals get the gradient-number treatment */
+.fw-agg-value,
+.fw-board-totals-group .fw-board-agg-value {
+  background: linear-gradient(160deg, #a78bfa, #8b5cf6 60%, #7c3aed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 4px var(--b3d-primary-glow));
+}
+
+.fw-board-totals-group {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow:
+    var(--b3d-group-shadow),
+    0 0 34px -8px var(--b3d-primary-glow);
+}
+
+/* ===== PILLS & BADGES — glossy bevels ===== */
+.fw-status-badge {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.22),
+    0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.fw-status-badge:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.22),
+    0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.fw-user-pill,
+.fw-supplier-pill,
+.fw-date-pill,
+.fw-priority-pill {
+  background: var(--bg-elevated);
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.fw-avatar-sm,
+.fw-supplier-icon {
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(30, 10, 80, 0.4),
+    0 2px 8px rgba(139, 92, 246, 0.35);
+}
+
+.fw-cell-checkbox--checked {
+  background: linear-gradient(165deg, #34d399, #10b981 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 0 12px rgba(16, 185, 129, 0.35);
+}
+
+/* ===== SCROLL SYNC BAR — grooved track, raised thumb ===== */
+.fw-scroll-sync-bar {
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 -8px 24px -10px rgba(5, 8, 18, 0.45);
+}
+
+.fw-scroll-sync-bar__track {
+  box-shadow: var(--b3d-well);
+}
+
+.fw-scroll-sync-bar__thumb {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(60, 20, 140, 0.4),
+    0 2px 8px rgba(139, 92, 246, 0.5);
+}
+
+/* ===== MODALS & DROPDOWNS — deep glass, 3D rise ===== */
+@keyframes fwB3dRise {
+  from {
+    opacity: 0;
+    transform: translateY(28px) rotateX(-7deg) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotateX(0) scale(1);
+  }
+}
+
+.fw-modal-overlay,
+.fw-column-modal-overlay,
+.fw-cell-picker-overlay {
+  perspective: 1400px;
+}
+
+.fw-modal-content,
+.fw-column-modal-content,
+.fw-cell-picker {
+  border-radius: var(--radius-xl);
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 40px 80px -24px rgba(5, 8, 18, 0.6),
+    0 24px 60px -12px var(--b3d-primary-glow);
+  animation: fwB3dRise 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fw-dropdown {
+  box-shadow:
+    inset 0 1px 0 var(--b3d-rim),
+    0 24px 48px -14px rgba(5, 8, 18, 0.5),
+    0 8px 24px -8px var(--b3d-primary-glow);
+}
+
+/* ===== QUICK ADD — carved well ===== */
+.fw-quick-add-input {
+  box-shadow: var(--b3d-well);
+}
+
+.fw-quick-add-input:focus {
+  box-shadow:
+    var(--b3d-well),
+    0 0 0 2px rgba(139, 92, 246, 0.15);
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  .fw-modal-content,
+  .fw-column-modal-content,
+  .fw-cell-picker {
+    animation: none;
+  }
+
+  .fw-board-header__menu {
+    transform: none;
+  }
+}

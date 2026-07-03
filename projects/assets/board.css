@@ -11,6 +11,7 @@
 @import url('modals.css');
 @import url('views.css');
 @import url('mobile.css');
+@import url('board-3d.css'); /* 3D skin — must stay last so it overlays the rest */
 
 
 /* Real-time update animations */

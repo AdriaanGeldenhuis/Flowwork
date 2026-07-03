@@ -349,7 +349,7 @@
                 </div>
                 <div class="fw-project-card__meta">
                   <span>👤 ${managerName}</span>
-                  ${proj.start_date ? `<span>📅 ${proj.start_date}</span>` : ''}
+                  ${proj.start_date && proj.start_date !== '0000-00-00' ? `<span>📅 ${proj.start_date}</span>` : ''}
                 </div>
                 <div class="fw-project-card__stats">
                   <div class="fw-project-stat">
