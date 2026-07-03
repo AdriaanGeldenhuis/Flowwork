@@ -2405,13 +2405,13 @@ select.fw-input:focus {
 }
 
 @media (max-width: 768px) {
-  /* Flatten the 3D scene on small screens — cheaper & touch has no hover */
+  /* Flatten the 3D scene on small screens — cheaper & touch has no hover.
+     Keep the opacity fade entrance (cheap), drop only the 3D rise. */
   .fw-project-card,
   .fw-board-card {
     transform: none;
     transform-style: flat;
     will-change: auto;
-    animation: none;
   }
 
   .fw-project-card__link {
@@ -2421,6 +2421,14 @@ select.fw-input:focus {
   .fw-project-card:hover,
   .fw-board-card:hover {
     transform: translateY(-4px);
+  }
+
+  /* Touch press feedback instead of hover tilt */
+  .fw-project-card:active,
+  .fw-board-card:active {
+    transform: scale(0.985);
+    box-shadow: var(--fw-shadow-md);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
   }
 
   .fw-project-card__avatar,
@@ -2440,22 +2448,60 @@ select.fw-input:focus {
     opacity: 1;
   }
 
+  /* The always-visible ⋮ button lives top-right — keep the badge clear of it */
+  .fw-project-card__header {
+    padding-right: 34px;
+  }
+
+  .fw-board-card__content {
+    padding-right: 28px;
+  }
+
   .fw-proj::before {
     display: none;
   }
 
+  /* Single-row header: [logo] Title ........ [home][theme][menu] */
   .fw-crm__header {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 12px 16px;
+    height: 60px;
+    padding: 0 14px;
+    gap: 12px;
+  }
+
+  .fw-crm__brand {
+    gap: 10px;
+  }
+
+  .fw-crm__logo-tile {
+    width: 40px;
+    height: 40px;
+  }
+
+  .fw-crm__logo-tile svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .fw-crm__brand-text {
+    display: none;
   }
 
   .fw-crm__title {
-    order: -1;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     text-align: left;
     font-size: 16px;
-    margin-bottom: 8px;
+  }
+
+  .fw-crm__controls {
+    gap: 8px;
+  }
+
+  .fw-crm__home-btn,
+  .fw-crm__theme-toggle,
+  .fw-crm__kebab-toggle {
+    width: 36px;
+    height: 36px;
   }
 
   .fw-board-toolbar {
@@ -2470,6 +2516,21 @@ select.fw-input:focus {
     width: 100%;
   }
 
+  /* Controls as a tidy 2-up grid instead of a tall stack */
+  .fw-board-toolbar__right {
+    gap: 8px;
+  }
+
+  .fw-board-toolbar__right .fw-chip,
+  .fw-board-toolbar__right .fw-btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+
+  .fw-search-wrapper {
+    width: 100%;
+  }
+
   .fw-search-input {
     width: 100%;
   }
@@ -2478,9 +2539,43 @@ select.fw-input:focus {
     padding: 16px;
   }
 
+  /* minmax(0,1fr): a bare 1fr track's MINIMUM is content-sized, so a long
+     nowrap title forces the card wider than the phone screen (clipped at
+     the right edge). Zero-min lets the ellipsis machinery do its job. */
   .fw-projects-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
+  }
+
+  /* Tighter card proportions for small screens */
+  .fw-project-card__link {
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .fw-project-card__avatar {
+    width: 56px;
+    height: 56px;
+    font-size: 20px;
+    border-radius: var(--fw-radius-sm);
+  }
+
+  .fw-project-card__title {
+    font-size: 17px;
+  }
+
+  .fw-project-card__stats {
+    gap: 0;
+    justify-content: space-between;
+  }
+
+  .fw-project-stat__value {
+    font-size: 20px;
+  }
+
+  .fw-board-card__link {
+    padding: 18px;
+    gap: 14px;
   }
 
   .proj-playground {
@@ -2496,7 +2591,7 @@ select.fw-input:focus {
   }
 
   .fw-boards-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .fw-template-grid {
@@ -2524,10 +2619,6 @@ select.fw-input:focus {
 }
 
 @media (max-width: 480px) {
-  .fw-crm__brand-text {
-    display: none;
-  }
-
   .fw-template-grid {
     grid-template-columns: 1fr;
   }
