@@ -101,7 +101,7 @@ $pageTitle = 'Project Details';
     
     <!-- Tabs -->
     <div class="fw-board-toolbar">
-        <div class="fw-board-toolbar__left">
+        <div class="fw-board-toolbar__left fw-view-tabs">
             <button class="fw-view-btn <?= $activeTab === 'overview' ? 'fw-view-btn--active' : '' ?>" onclick="window.location.href='/projects/view.php?project_id=<?= $projectId ?>'">
                 <svg width="16" height="16" fill="currentColor">
                     <rect width="16" height="3" rx="1"/>

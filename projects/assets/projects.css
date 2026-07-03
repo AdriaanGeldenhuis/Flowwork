@@ -964,6 +964,76 @@
   color: #fff;
 }
 
+/* ===== VIEW TABS — segmented control in a carved groove ===== */
+.fw-view-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-full);
+  box-shadow: var(--fw-input-well);
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fw-view-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inside the groove, tabs are flat ghosts… */
+.fw-view-tabs .fw-view-btn {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text-tertiary);
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.fw-view-tabs .fw-view-btn:hover {
+  color: var(--fw-primary);
+  background: var(--fw-primary-light);
+  transform: none;
+  box-shadow: none;
+}
+
+.fw-view-tabs .fw-view-btn:active {
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+/* …and the active tab is the raised key that pops out of it */
+.fw-view-tabs .fw-view-btn--active {
+  background: linear-gradient(165deg, #b7a0fb 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(60, 20, 140, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(60, 20, 140, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 4px 10px -2px var(--fw-primary-glow),
+    0 8px 20px -4px var(--fw-primary-glow);
+}
+
+.fw-view-tabs .fw-view-btn--active:hover {
+  color: #fff;
+  background: linear-gradient(165deg, #b7a0fb 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(60, 20, 140, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 12px 26px -6px var(--fw-primary-glow);
+}
+
 /* ===== CONTAINER ===== */
 .fw-board-container {
   padding: var(--fw-spacing-lg);
@@ -2455,6 +2525,11 @@ select.fw-input:focus {
 
   .fw-board-card__content {
     padding-right: 28px;
+  }
+
+  /* The chevron would sit right under the ⋮ button; the card is tappable anyway */
+  .fw-board-card__arrow {
+    display: none;
   }
 
   .fw-proj::before {
