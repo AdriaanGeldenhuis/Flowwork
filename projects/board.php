@@ -251,7 +251,12 @@ $stmt->execute([$COMPANY_ID]);
 $companyName = $stmt->fetchColumn() ?: 'Company';
 
 // Asset version for cache busting
-define('ASSET_VERSION', '2025-01-21-v9');
+define('ASSET_VERSION', '2025-01-21-v10');
+
+// Theme rendered server-side from the cookie so the page paints in the right
+// theme immediately (theme.css defaults .fw-proj to dark; without this, light
+// users got a dark flash until header.js ran)
+$THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 
 ?>
 <!doctype html>
@@ -263,24 +268,10 @@ define('ASSET_VERSION', '2025-01-21-v9');
     <title><?= htmlspecialchars($board['title']) ?> – Flowwork</title>
     
     <link rel="stylesheet" href="/projects/assets/board.css?v=<?= ASSET_VERSION ?>">
-    
-    <!-- ✅ CRITICAL: Initialize theme BEFORE any other scripts to prevent FOUC -->
-    <script>
-    (function() {
-        function getCookie(name) {
-            const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-            return match ? match[2] : null;
-        }
-        
-        const savedTheme = getCookie('fw_theme') || 'light';
-        document.documentElement.setAttribute('data-theme-preload', savedTheme);
-        console.log('✅ Theme preloaded:', savedTheme);
-    })();
-    </script>
 </head>
 <body class="fw-board-body" data-board-id="<?= $boardId ?>">
 
-<div class="fw-proj">
+<div class="fw-proj" data-theme="<?= $THEME ?>">
     
     <!-- ===== HEADER ===== -->
     <header class="fw-board-header">
