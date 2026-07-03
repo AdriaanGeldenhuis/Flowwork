@@ -47,10 +47,18 @@
 
     Object.keys(columns).forEach(key => {
       const col = columns[key];
-      
+
+      // Legible header text for the column's background color (WCAG contrast).
+      const _h = (col.color || '#8b5cf6').replace('#', '');
+      const _hh = _h.length === 3 ? _h.split('').map(x => x + x).join('') : _h;
+      const _lum = _hh.length >= 6
+        ? (0.2126 * parseInt(_hh.slice(0, 2), 16) + 0.7152 * parseInt(_hh.slice(2, 4), 16) + 0.0722 * parseInt(_hh.slice(4, 6), 16)) / 255
+        : 0;
+      const hdrText = _lum > 0.6 ? '#1a1a1a' : '#ffffff';
+
       html += `
         <div class="fw-kanban-column" data-status="${key}">
-          <div class="fw-kanban-column-header" style="background: ${col.color};">
+          <div class="fw-kanban-column-header" style="background: ${col.color}; color: ${hdrText};">
             <span class="fw-kanban-column-title">${col.label}</span>
             <span class="fw-kanban-column-count">${col.items.length}</span>
           </div>
@@ -81,7 +89,7 @@
                draggable="true">
             <div class="fw-kanban-card-header">
               <span class="fw-kanban-card-priority">${priorityEmoji}</span>
-              <button class="fw-kanban-card-menu" onclick="BoardApp.showItemMenu(${item.id}, event)">⋮</button>
+              <button type="button" class="fw-kanban-card-menu" aria-label="Card actions" onclick="BoardApp.showItemMenu(${item.id}, event)">⋮</button>
             </div>
             <div class="fw-kanban-card-title">${escapeHtml(item.title)}</div>
             <div class="fw-kanban-card-meta">

@@ -535,7 +535,7 @@ define('ASSET_VERSION', '2025-01-21-v9');
                 
                 <!-- Group Header -->
                 <div class="fw-group-header" style="border-left-color: <?= htmlspecialchars($group['color'] ?: '#8b5cf6') ?>;">
-                    <button class="fw-group-toggle" onclick="BoardApp.toggleGroup(<?= $group['id'] ?>)">
+                    <button type="button" class="fw-group-toggle" aria-label="Toggle group" onclick="BoardApp.toggleGroup(<?= $group['id'] ?>)">
                         <svg width="12" height="12" fill="currentColor">
                             <path d="M3 6l3 3 3-3"/>
                         </svg>
@@ -549,7 +549,7 @@ define('ASSET_VERSION', '2025-01-21-v9');
 
                     <span class="fw-group-count"><?= count($groupItems) ?></span>
 
-                    <button class="fw-icon-btn" onclick="BoardApp.showGroupMenu(<?= $group['id'] ?>, event)">
+                    <button type="button" class="fw-icon-btn" aria-label="Group actions" onclick="BoardApp.showGroupMenu(<?= $group['id'] ?>, event)">
                         <svg width="16" height="16" fill="currentColor">
                             <circle cx="8" cy="3" r="1.5"/>
                             <circle cx="8" cy="8" r="1.5"/>
@@ -590,7 +590,7 @@ define('ASSET_VERSION', '2025-01-21-v9');
                                                        class="fw-col-name-input"
                                                        value="<?= htmlspecialchars($col['name']) ?>"
                                                        onblur="BoardApp.updateColumnName(<?= $col['column_id'] ?>, this.value)" />
-                                                <button class="fw-icon-btn fw-col-menu-btn" onclick="BoardApp.showColumnMenu(<?= $col['column_id'] ?>, event)">
+                                                <button type="button" class="fw-icon-btn fw-col-menu-btn" aria-label="Column options" onclick="BoardApp.showColumnMenu(<?= $col['column_id'] ?>, event)">
                                                     <svg width="14" height="14" fill="currentColor">
                                                         <circle cx="7" cy="3" r="1.2"/>
                                                         <circle cx="7" cy="7" r="1.2"/>
@@ -603,7 +603,7 @@ define('ASSET_VERSION', '2025-01-21-v9');
                                     <?php endforeach; ?>
 
                                     <th class="fw-col-add">
-                                        <button class="fw-col-add-btn" onclick="BoardApp.showAddColumnModal()">+</button>
+                                        <button type="button" class="fw-col-add-btn" aria-label="Add column" onclick="BoardApp.showAddColumnModal()">+</button>
                                     </th>
                                 </tr>
                             </thead>
@@ -667,7 +667,7 @@ define('ASSET_VERSION', '2025-01-21-v9');
                                             <?php endforeach; ?>
 
                                             <td class="fw-col-menu">
-                                                <button class="fw-icon-btn" onclick="BoardApp.showItemMenu(<?= $item['id'] ?>, event)">
+                                                <button type="button" class="fw-icon-btn" aria-label="Item actions" onclick="BoardApp.showItemMenu(<?= $item['id'] ?>, event)">
                                                     <svg width="14" height="14" fill="currentColor">
                                                         <circle cx="7" cy="3" r="1.2"/>
                                                         <circle cx="7" cy="7" r="1.2"/>
