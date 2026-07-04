@@ -848,6 +848,140 @@ window.CRM = window.CRM || {};
     loadAccountStats();
   }
 
+  // ========== FOLLOW-UPS ==========
+  function loadFollowups() {
+    const list = document.getElementById('followupsList');
+    if (!list) return;
+    fetch('/crm/ajax/followups_list.php?linked_type=account&linked_id=' + accountId)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.ok) {
+          list.innerHTML = '<div class="fw-crm__empty-state">' + escapeHtml(data.error || 'Failed to load follow-ups') + '</div>';
+          return;
+        }
+        if (!data.events.length) {
+          list.innerHTML = '<div class="fw-crm__empty-state">No upcoming follow-ups — schedule one with the ⏰ button above</div>';
+          return;
+        }
+        list.innerHTML = data.events.map(ev => `
+          <div class="fw-crm__timeline-item">
+            <div class="fw-crm__timeline-icon">⏰</div>
+            <div class="fw-crm__timeline-content">
+              <div class="fw-crm__timeline-title">${escapeHtml(ev.title)}</div>
+              <div class="fw-crm__timeline-meta">
+                ${escapeHtml((ev.start_datetime || '').substring(0, 16))}
+                ${ev.channels && ev.channels.length ? ' • reminder: ' + escapeHtml(ev.channels.join(', ')) : ''}
+              </div>
+            </div>
+          </div>`).join('');
+      })
+      .catch(() => {
+        list.innerHTML = '<div class="fw-crm__empty-state">Network error loading follow-ups</div>';
+      });
+  }
+  if (document.getElementById('followupsList')) loadFollowups();
+
+  const followupForm = document.getElementById('followupForm');
+  if (followupForm) {
+    followupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.querySelector('button[form="followupForm"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating...'; }
+      try {
+        const res = await fetch('/crm/ajax/followup_create.php', { method: 'POST', body: new FormData(followupForm) });
+        const data = await res.json();
+        if (data.ok) {
+          CRM.closeModal('followupModal');
+          toast('Follow-up scheduled');
+          loadFollowups();
+        } else {
+          toast(data.error || 'Failed to create follow-up', 'error');
+        }
+      } catch (err) {
+        toast('Network error', 'error');
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create Follow-up'; }
+      }
+    });
+  }
+
+  // ========== SEND EMAIL ==========
+  const emailForm = document.getElementById('emailForm');
+  if (emailForm) {
+    // Load templates once, on first open of the modal
+    let templatesLoaded = false;
+    const templateSelect = document.getElementById('emailTemplateSelect');
+    const templateCache = {};
+
+    const emailModal = document.getElementById('emailModal');
+    const observer = new MutationObserver(() => {
+      if (emailModal.getAttribute('aria-hidden') === 'false' && !templatesLoaded) {
+        templatesLoaded = true;
+        fetch('/crm/ajax/email_templates.php')
+          .then(res => res.json())
+          .then(data => {
+            if (data.ok && Array.isArray(data.templates)) {
+              data.templates.forEach(t => {
+                templateCache[t.template_id] = t;
+                const opt = document.createElement('option');
+                opt.value = t.template_id;
+                opt.textContent = t.name;
+                templateSelect.appendChild(opt);
+              });
+            }
+          })
+          .catch(() => { /* templates are optional */ });
+      }
+    });
+    observer.observe(emailModal, { attributes: true, attributeFilter: ['aria-hidden'] });
+
+    if (templateSelect) {
+      templateSelect.addEventListener('change', function() {
+        const t = templateCache[this.value];
+        if (!t) return;
+        if (t.subject) emailForm.subject.value = t.subject;
+        if (t.body_html) emailForm.body.value = t.body_html.replace(/<br\s*\/?>(\n)?/gi, '\n').replace(/<[^>]+>/g, '');
+      });
+    }
+
+    emailForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.querySelector('button[form="emailForm"]');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
+      try {
+        const res = await fetch('/crm/ajax/email.compose.php', { method: 'POST', body: new FormData(emailForm) });
+        const data = await res.json();
+        if (data.ok) {
+          CRM.closeModal('emailModal');
+          toast('Email sent');
+          // The sent mail shows on the account timeline — refresh it next open
+          if (CRM.reloadTimeline) CRM.reloadTimeline();
+        } else {
+          toast(data.error || 'Failed to send email', 'error');
+        }
+      } catch (err) {
+        toast('Network error', 'error');
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send Email'; }
+      }
+    });
+  }
+
+  // ========== COPY PORTAL LINK ==========
+  const portalBtn = document.getElementById('copyPortalLink');
+  if (portalBtn) {
+    portalBtn.addEventListener('click', () => {
+      const url = window.location.origin + portalBtn.dataset.portalUrl;
+      (navigator.clipboard && navigator.clipboard.writeText
+        ? navigator.clipboard.writeText(url)
+        : Promise.reject())
+        .then(() => toast('Portal link copied to clipboard'))
+        .catch(() => {
+          window.prompt('Copy the portal link:', url);
+        });
+    });
+  }
+
   // ========== COMPLIANCE BADGE ==========
   const badge = document.getElementById('complianceBadge');
   if (badge && accountId) {

@@ -126,11 +126,11 @@ try {
         }
     }
 
-    // Projects linked to this account (column added by the
-    // 2026-07-04-projects-crm-account migration; probe like the others)
+    // Projects linked to this account. projects.client_id carries the CRM
+    // account id (opportunity_convert.php writes it); probe like the others.
     $projects = [];
     try {
-        $pStmt = $DB->prepare("SELECT project_id AS id, name, status, created_at FROM projects WHERE company_id = ? AND crm_account_id = ? ORDER BY created_at DESC LIMIT 50");
+        $pStmt = $DB->prepare("SELECT project_id AS id, name, status, created_at FROM projects WHERE company_id = ? AND client_id = ? ORDER BY created_at DESC LIMIT 50");
         $pStmt->execute([$companyId, $accountId]);
         $projects = $pStmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {

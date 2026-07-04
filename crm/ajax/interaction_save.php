@@ -31,7 +31,10 @@ try {
     }
 
     $contactId = !empty($_POST['contact_id']) ? (int)$_POST['contact_id'] : null;
-    $nextActionAt = !empty($_POST['next_action_at']) ? $_POST['next_action_at'] : null;
+    $nextActionAt = !empty($_POST['next_action_at']) ? str_replace('T', ' ', trim($_POST['next_action_at'])) : null;
+    if ($nextActionAt !== null && strtotime($nextActionAt) === false) {
+        throw new Exception('Invalid next action date/time');
+    }
 
     // INSERT interaction
     $stmt = $DB->prepare("
@@ -67,6 +70,23 @@ try {
     ]);
 
     $DB->commit();
+
+    // A next-action becomes a calendar follow-up with an in-app reminder.
+    // Failure here must not lose the interaction that just committed.
+    if ($nextActionAt !== null && strtotime($nextActionAt) > time()) {
+        try {
+            require_once __DIR__ . '/../includes/calendar_followup.php';
+            $subject = trim($_POST['subject'] ?? '') ?: ucfirst($type);
+            crm_create_followup(
+                $DB, $companyId, $userId,
+                'account', $accountId,
+                'Next action: ' . $subject,
+                $nextActionAt, 60, ['in_app']
+            );
+        } catch (Throwable $fe) {
+            error_log('CRM interaction follow-up error: ' . $fe->getMessage());
+        }
+    }
 
     echo json_encode(['ok' => true, 'interaction_id' => $interactionId]);
 

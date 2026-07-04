@@ -143,6 +143,39 @@ try {
 
 // Tagging toggle
 $tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
+
+// Mail accounts + signatures for the "Send Email" modal (same queries as /mail/compose.php)
+$stmt = $DB->prepare("SELECT account_id, account_name, email_address FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
+$stmt->execute([$companyId, $userId]);
+$mailAccounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$mailSignatures = [];
+if ($mailAccounts) {
+    $stmt = $DB->prepare("SELECT signature_id, name, is_default FROM email_signatures WHERE company_id = ? AND (user_id = ? OR user_id IS NULL) ORDER BY is_default DESC, name");
+    $stmt->execute([$companyId, $userId]);
+    $mailSignatures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Primary contact email prefills the compose "To" field
+$primaryContactEmail = '';
+foreach ($contacts as $c) {
+    if (!empty($c['email'])) {
+        $primaryContactEmail = $c['email'];
+        if ($c['is_primary']) {
+            break;
+        }
+    }
+}
+if ($primaryContactEmail === '' && !empty($account['email'])) {
+    $primaryContactEmail = $account['email'];
+}
+
+// Client portal link (customers only; token scheme lives in portal/functions.php)
+$portalUrl = '';
+if ($account['type'] === 'customer') {
+    require_once __DIR__ . '/../portal/functions.php';
+    $portalUrl = '/portal/client/index.php?cid=' . $accountId . '&token=' . generatePortalToken($accountId);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -223,6 +256,9 @@ $tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
                     <nav class="fw-crm__kebab-menu" id="kebabMenu" aria-hidden="true">
                         <a href="/crm/account_edit.php?id=<?= $accountId ?>" class="fw-crm__kebab-item">Edit Account</a>
                         <a href="/quotes/new.php?customer_id=<?= $accountId ?>" class="fw-crm__kebab-item">New Quote</a>
+                        <?php if ($portalUrl): ?>
+                        <button type="button" class="fw-crm__kebab-item" id="copyPortalLink" data-portal-url="<?= htmlspecialchars($portalUrl) ?>" style="width:100%; text-align:left; background:none; border:none; cursor:pointer;">Copy client portal link</button>
+                        <?php endif; ?>
                         <hr style="margin:4px 0; border:none; border-top:1px solid var(--fw-border-base);">
                         <a href="/crm/?tab=<?= $account['type'] === 'supplier' ? 'suppliers' : 'customers' ?>" class="fw-crm__kebab-item">Back to List</a>
                     </nav>
@@ -280,6 +316,18 @@ $tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
                     </div>
                 </div>
                 <div class="fw-crm__account-header-actions">
+                    <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.openModal('followupModal')">
+                        ⏰ Follow-up
+                    </button>
+                    <?php if ($mailAccounts): ?>
+                    <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.openModal('emailModal')">
+                        ✉️ Send Email
+                    </button>
+                    <?php else: ?>
+                    <a href="/mail/settings.php" class="fw-crm__btn fw-crm__btn--secondary" title="Connect a mail account to send email from the CRM">
+                        ✉️ Send Email
+                    </a>
+                    <?php endif; ?>
                     <a href="/crm/account_edit.php?id=<?= $accountId ?>" class="fw-crm__btn fw-crm__btn--secondary">
                         Edit
                     </a>
@@ -330,6 +378,13 @@ $tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
                         </div>
                     </div>
                     <?php endif; ?>
+
+                    <div class="fw-crm__info-card" style="margin-bottom:24px;">
+                        <h3 class="fw-crm__info-card-title">⏰ Upcoming Follow-ups</h3>
+                        <div id="followupsList">
+                            <div class="fw-crm__loading">Loading follow-ups...</div>
+                        </div>
+                    </div>
 
                     <div class="crm-playground">
                         <div class="crm-playground-header">
@@ -868,6 +923,12 @@ $tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
                         <label class="fw-crm__label">Notes <span class="fw-crm__required">*</span></label>
                         <textarea name="body" class="fw-crm__textarea" rows="5" required></textarea>
                     </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Next action (optional)</label>
+                        <input type="datetime-local" name="next_action_at" class="fw-crm__input">
+                        <small class="fw-crm__help-text">Setting this creates a follow-up reminder on your calendar</small>
+                    </div>
                 </form>
             </div>
             <div class="fw-crm__modal-footer">
@@ -876,6 +937,136 @@ $tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
             </div>
         </div>
     </div>
+
+    <!-- FOLLOW-UP MODAL -->
+    <div class="fw-crm__modal-overlay" id="followupModal" aria-hidden="true">
+        <div class="fw-crm__modal">
+            <div class="fw-crm__modal-header">
+                <h3 class="fw-crm__modal-title">Schedule Follow-up</h3>
+                <button type="button" class="fw-crm__modal-close" onclick="CRM.closeModal('followupModal')">&times;</button>
+            </div>
+            <div class="fw-crm__modal-body">
+                <form id="followupForm">
+                    <input type="hidden" name="linked_type" value="account">
+                    <input type="hidden" name="linked_id" value="<?= $accountId ?>">
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Title</label>
+                        <input type="text" name="title" class="fw-crm__input" placeholder="Follow up: <?= htmlspecialchars($account['name']) ?>" maxlength="200">
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">When <span class="fw-crm__required">*</span></label>
+                        <input type="datetime-local" name="due_datetime" class="fw-crm__input" required>
+                    </div>
+
+                    <div class="fw-crm__form-row">
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Remind me</label>
+                            <select name="minutes_before" class="fw-crm__select">
+                                <option value="15">15 minutes before</option>
+                                <option value="60" selected>1 hour before</option>
+                                <option value="1440">1 day before</option>
+                            </select>
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Via</label>
+                            <select name="channel" class="fw-crm__select">
+                                <option value="in_app" selected>In-app notification</option>
+                                <option value="email">Email</option>
+                                <option value="both">Both</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="fw-crm__modal-footer">
+                <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.closeModal('followupModal')">Cancel</button>
+                <button type="submit" form="followupForm" class="fw-crm__btn fw-crm__btn--primary">Create Follow-up</button>
+            </div>
+        </div>
+    </div>
+
+    <?php if ($mailAccounts): ?>
+    <!-- SEND EMAIL MODAL -->
+    <div class="fw-crm__modal-overlay" id="emailModal" aria-hidden="true">
+        <div class="fw-crm__modal" style="max-width:640px;">
+            <div class="fw-crm__modal-header">
+                <h3 class="fw-crm__modal-title">Send Email</h3>
+                <button type="button" class="fw-crm__modal-close" onclick="CRM.closeModal('emailModal')">&times;</button>
+            </div>
+            <div class="fw-crm__modal-body">
+                <form id="emailForm">
+                    <input type="hidden" name="crm_account_id" value="<?= $accountId ?>">
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">From</label>
+                        <select name="mail_account_id" class="fw-crm__select" required>
+                            <?php foreach ($mailAccounts as $ma): ?>
+                                <option value="<?= (int)$ma['account_id'] ?>">
+                                    <?= htmlspecialchars(($ma['account_name'] ? $ma['account_name'] . ' — ' : '') . $ma['email_address']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">To <span class="fw-crm__required">*</span></label>
+                        <input type="text" name="to" class="fw-crm__input" required
+                               value="<?= htmlspecialchars($primaryContactEmail) ?>"
+                               placeholder="email@example.com, another@example.com">
+                    </div>
+
+                    <div class="fw-crm__form-row">
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Cc</label>
+                            <input type="text" name="cc" class="fw-crm__input">
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Bcc</label>
+                            <input type="text" name="bcc" class="fw-crm__input">
+                        </div>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Template</label>
+                        <select id="emailTemplateSelect" class="fw-crm__select">
+                            <option value="">No template</option>
+                        </select>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Subject <span class="fw-crm__required">*</span></label>
+                        <input type="text" name="subject" class="fw-crm__input" required>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Message</label>
+                        <textarea name="body" class="fw-crm__textarea" rows="8"></textarea>
+                    </div>
+
+                    <?php if ($mailSignatures): ?>
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Signature</label>
+                        <select name="signature_id" class="fw-crm__select">
+                            <option value="0">No signature</option>
+                            <?php foreach ($mailSignatures as $sig): ?>
+                                <option value="<?= (int)$sig['signature_id'] ?>" <?= $sig['is_default'] ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($sig['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <?php endif; ?>
+                </form>
+            </div>
+            <div class="fw-crm__modal-footer">
+                <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.closeModal('emailModal')">Cancel</button>
+                <button type="submit" form="emailForm" class="fw-crm__btn fw-crm__btn--primary">Send Email</button>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script src="/crm/assets/account_view.js?v=<?= CRM_ASSET_VERSION ?>"></script>

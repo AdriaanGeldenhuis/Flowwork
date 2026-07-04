@@ -221,6 +221,41 @@ $companyName = $company['name'] ?? 'Company';
                 <?php endif; ?>
             </form>
             <div id="oppEditMessage" class="fw-crm__alert" style="display:none"></div>
+
+            <!-- Follow-up reminder (rides the calendar + notifications stack) -->
+            <div class="fw-crm__form-card" style="margin-top:24px;">
+                <h2 class="fw-crm__form-card-title">⏰ Schedule Follow-up</h2>
+                <form id="oppFollowupForm" class="fw-crm__form">
+                    <input type="hidden" name="linked_type" value="opportunity">
+                    <input type="hidden" name="linked_id" value="<?= (int)$opp['id'] ?>">
+                    <div class="fw-crm__form-row">
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">When <span class="fw-crm__required">*</span></label>
+                            <input type="datetime-local" name="due_datetime" class="fw-crm__input" required>
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Remind me</label>
+                            <select name="minutes_before" class="fw-crm__input">
+                                <option value="15">15 minutes before</option>
+                                <option value="60" selected>1 hour before</option>
+                                <option value="1440">1 day before</option>
+                            </select>
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Via</label>
+                            <select name="channel" class="fw-crm__input">
+                                <option value="in_app" selected>In-app notification</option>
+                                <option value="email">Email</option>
+                                <option value="both">Both</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="fw-crm__form-actions">
+                        <button type="submit" class="fw-crm__btn fw-crm__btn--secondary">Create Follow-up</button>
+                    </div>
+                </form>
+                <div id="oppFollowupMessage" class="fw-crm__alert" style="display:none"></div>
+            </div>
         </main>
     </div>
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
@@ -228,6 +263,34 @@ $companyName = $company['name'] ?? 'Company';
     (function() {
         const canEdit = <?= $canEdit ? 'true' : 'false' ?>;
         const oppId = <?= (int)$opp['id'] ?>;
+
+        // Follow-up creation (available to any member+ viewer of the opp)
+        const followupForm = document.getElementById('oppFollowupForm');
+        if (followupForm) {
+            followupForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const msg = document.getElementById('oppFollowupMessage');
+                msg.style.display = 'none';
+                fetch('/crm/ajax/followup_create.php', {
+                    method: 'POST',
+                    body: new FormData(followupForm)
+                }).then(resp => resp.json())
+                .then(data => {
+                    msg.textContent = data.ok
+                        ? 'Follow-up scheduled — it will appear on your calendar.'
+                        : (data.error || 'Failed to create follow-up.');
+                    msg.classList.toggle('fw-crm__alert--success', !!data.ok);
+                    msg.classList.toggle('fw-crm__alert--error', !data.ok);
+                    msg.style.display = 'block';
+                    if (data.ok) followupForm.reset();
+                }).catch(() => {
+                    msg.textContent = 'An error occurred.';
+                    msg.classList.remove('fw-crm__alert--success');
+                    msg.classList.add('fw-crm__alert--error');
+                    msg.style.display = 'block';
+                });
+            });
+        }
         // Form submission for editing
         if (canEdit) {
             document.getElementById('oppEditForm').addEventListener('submit', function(e) {

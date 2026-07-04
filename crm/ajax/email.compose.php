@@ -23,6 +23,8 @@ require_once __DIR__ . '/../../mail/lib/SmtpSender.php';
 
 header('Content-Type: application/json');
 
+crm_require_min_role('member');
+
 $companyId = $_SESSION['company_id'] ?? 0;
 $userId    = $_SESSION['user_id'] ?? 0;
 
