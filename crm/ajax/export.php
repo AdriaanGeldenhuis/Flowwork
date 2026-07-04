@@ -2,6 +2,9 @@
 // /crm/ajax/export.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 $companyId = $_SESSION['company_id'];
 $type = $_GET['type'] ?? 'accounts';
@@ -107,7 +110,11 @@ try {
         fclose($output);
     }
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("Export error: " . $e->getMessage());
-    die('Export failed: ' . $e->getMessage());
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: text/plain');
+    }
+    die('Export failed: ' . crm_public_error($e));
 }

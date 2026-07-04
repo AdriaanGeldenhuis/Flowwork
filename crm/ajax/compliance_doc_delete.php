@@ -2,6 +2,7 @@
 // /crm/ajax/compliance_doc_delete.php - COMPLETE WITH FILE DELETION
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -31,10 +32,11 @@ try {
         throw new Exception('Document not found');
     }
 
-    // Delete file from server if exists
+    // Delete file from server if exists (file_path is repo-relative,
+    // e.g. "uploads/compliance/comp_x.pdf" — resolve against the app root)
     if ($doc['file_path']) {
-        $fullPath = $_SERVER['DOCUMENT_ROOT'] . $doc['file_path'];
-        
+        $fullPath = __DIR__ . '/../../' . ltrim($doc['file_path'], '/');
+
         if (file_exists($fullPath)) {
             if (unlink($fullPath)) {
                 error_log("CRM: Successfully deleted file: " . $fullPath);
@@ -65,10 +67,10 @@ try {
 
     echo json_encode(['ok' => true, 'deleted_file' => $doc['file_path']]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log("CRM compliance_doc_delete error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

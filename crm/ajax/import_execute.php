@@ -2,6 +2,9 @@
 // /crm/ajax/import_execute.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 // Disable buffering for streaming
 ob_implicit_flush(true);
@@ -108,9 +111,9 @@ try {
                 importAddress($rowData, $companyId, $userId, $dryRun);
             }
             $successful++;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $failed++;
-            $errors[] = "Row {$totalRows}: " . $e->getMessage();
+            $errors[] = "Row {$totalRows}: " . crm_public_error($e);
         }
     }
 
@@ -144,7 +147,7 @@ try {
     streamProgress(100, 'Import complete!');
     streamComplete($totalRows, $successful, $failed, $errors, $dryRun);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
@@ -161,7 +164,7 @@ try {
     }
 
     error_log("Import execute error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]) . "\n";
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]) . "\n";
 }
 
 // ========== IMPORT FUNCTIONS ==========

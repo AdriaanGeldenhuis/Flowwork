@@ -1,0 +1,10 @@
+# Compliance documents are private per company. They must only be served
+# through /crm/ajax/compliance_doc_download.php, which checks the session's
+# company. Deny all direct web access (both Apache 2.2 and 2.4 syntax).
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+</IfModule>

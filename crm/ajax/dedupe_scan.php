@@ -2,6 +2,9 @@
 // /crm/ajax/dedupe_scan.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 // Disable buffering for streaming
 ob_implicit_flush(true);
@@ -183,9 +186,9 @@ try {
     streamProgress(100, 'Scan complete!');
     streamComplete($accountsScanned, $candidatesFound, $candidatesAdded);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("Dedupe scan error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]) . "\n";
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]) . "\n";
 }
 
 // ========== HELPER FUNCTION ==========

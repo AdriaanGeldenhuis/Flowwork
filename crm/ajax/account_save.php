@@ -2,6 +2,7 @@
 // /crm/ajax/account_save.php - FINAL FIXED VERSION
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../../qi/lib/Currencies.php';
 
 header('Content-Type: application/json');
@@ -244,10 +245,10 @@ try {
 
     echo json_encode(['ok' => true, 'account_id' => $accountId]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log("CRM account_save error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

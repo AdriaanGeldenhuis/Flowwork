@@ -4,6 +4,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -112,7 +113,7 @@ try {
                 $limit = 50;
             }
         }
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         // keep default
     }
     // Limit events to configured limit
@@ -120,7 +121,7 @@ try {
 
     echo json_encode($events);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('CRM account_timeline error: ' . $e->getMessage());
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['error' => crm_public_error($e)]);
 }

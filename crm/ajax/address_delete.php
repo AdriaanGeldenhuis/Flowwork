@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -21,10 +22,10 @@ try {
         'message' => 'Address deleted successfully'
     ]);
     
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('CRM address_delete error: ' . $e->getMessage());
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => crm_public_error($e)
     ]);
 }

@@ -2,6 +2,7 @@
 // /crm/ajax/compliance_policy_get.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -30,7 +31,7 @@ try {
 
     echo json_encode(['ok' => true, 'policy' => $policy]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("CRM compliance_policy_get error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }
