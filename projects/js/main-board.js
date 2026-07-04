@@ -271,6 +271,8 @@ window.BoardApp.getVisibleItems = function() {
   return items;
 };
 
+let fwLastVisibleSignature = null;
+
 window.BoardApp.refreshTableVisibility = function() {
   const hasQuery = !!window.BoardApp.searchQuery;
   const hasFilters = !!window.BoardApp.filteredItemIds;
@@ -327,10 +329,13 @@ window.BoardApp.refreshTableVisibility = function() {
     empty.remove();
   }
 
-  // Non-table views re-render from the same visible set
-  if (window.BoardApp.currentView !== 'table') {
+  // Non-table views re-render from the same visible set — but only when the
+  // set actually changed (typing a search shouldn't rebuild kanban per keystroke)
+  const signature = narrowing ? Array.from(visibleIds).sort().join(',') : '*all*';
+  if (window.BoardApp.currentView !== 'table' && signature !== fwLastVisibleSignature) {
     window.BoardApp.switchView(window.BoardApp.currentView);
   }
+  fwLastVisibleSignature = signature;
 
   if (window.fwAnnounce && narrowing) window.fwAnnounce(`${visibleCount} items match`);
 };
@@ -384,24 +389,13 @@ window.BoardApp.loadMoreItems = function() {
     });
 
     items.forEach(item => {
-      if ((window.BOARD_DATA.items || []).some(i => String(i.id) === String(item.id))) return;
-      if (window.BoardApp.addItemToDOM) window.BoardApp.addItemToDOM(item, item.group_id);
-      else window.BOARD_DATA.items.push(item);
-
-      // Render stored values + item-field-backed cells
-      const vals = window.BOARD_DATA.valuesMap[item.id] || {};
-      (window.BOARD_DATA.columns || []).forEach(col => {
-        let value = vals[col.column_id];
-        if (value === undefined || value === null || value === '') {
-          if (col.type === 'people' && item.assigned_to) value = item.assigned_to;
-          else if (col.type === 'date' && item.due_date) value = String(item.due_date).split(' ')[0];
-          else if (col.type === 'priority' && item.priority) value = item.priority;
-          else if (col.type === 'status' && item.status_label) value = item.status_label;
-        }
-        if (value !== undefined && value !== null && value !== '' && window.BoardApp.renderCellFull) {
-          window.BoardApp.renderCellFull(item.id, col.column_id, value, col.type);
-        }
-      });
+      // Skip rows already on the page (addItemToDOM also dedupes the cache)
+      if (document.querySelector(`tr.fw-item-row[data-item-id="${item.id}"]`)) return;
+      if (window.BoardApp.hydrateItemRow) {
+        window.BoardApp.hydrateItemRow(item);
+      } else {
+        window.BOARD_DATA.items.push(item);
+      }
     });
 
     const total = payload.pagination ? payload.pagination.total : window.BOARD_DATA.totalItems;

@@ -270,8 +270,10 @@
       selectAll.setAttribute('onchange', `BoardApp.toggleGroupSelection(${gid}, this.checked)`);
     }
 
-    // Table body: strip cloned rows, insert an empty state
+    // Table body: strip cloned rows, insert an empty state. The template may
+    // be a collapsed lazy group — the clone must not inherit its lazy flag.
     const tbody = clone.querySelector('tbody');
+    tbody.removeAttribute('data-lazy');
     tbody.querySelectorAll('tr.fw-item-row').forEach(tr => tr.remove());
     tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
 

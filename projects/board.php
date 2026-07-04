@@ -347,9 +347,18 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
 
 // Asset cache busting: derive the version from the newest JS/CSS mtime so a
 // deploy invalidates caches automatically (no more hand-bumped constants).
+// The directory scan (~70 stat calls) is cached in APCu for 60s when available
+// so steady-state page views do zero filesystem walking.
 function fw_asset_version(): string {
     static $ver = null;
     if ($ver !== null) return $ver;
+
+    $useApcu = function_exists('apcu_fetch') && function_exists('apcu_store');
+    if ($useApcu) {
+        $cached = apcu_fetch('fw_board_asset_version');
+        if (is_string($cached) && $cached !== '') return $ver = $cached;
+    }
+
     $latest = 0;
     foreach (array_merge(
         glob(__DIR__ . '/assets/*.css') ?: [],
@@ -360,7 +369,10 @@ function fw_asset_version(): string {
         $mtime = @filemtime($f);
         if ($mtime && $mtime > $latest) $latest = $mtime;
     }
-    return $ver = (string)($latest ?: time());
+    $ver = (string)($latest ?: time());
+
+    if ($useApcu) apcu_store('fw_board_asset_version', $ver, 60);
+    return $ver;
 }
 define('ASSET_VERSION', fw_asset_version());
 
@@ -424,7 +436,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
         </div>
 
         <div class="fw-board-header__center">
-            <h1 class="fw-board-title-display" style="margin:0;font-size:inherit;font-weight:inherit;">
+            <h1 class="fw-board-title-display" style="margin:0;">
                 <?= htmlspecialchars($board['title']) ?>
             </h1>
         </div>

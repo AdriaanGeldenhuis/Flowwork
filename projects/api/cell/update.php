@@ -117,21 +117,28 @@ try {
     $DB->beginTransaction();
 
     try {
+        // Select-then-write: correct with or without the UNIQUE(item_id,
+        // column_id) key, so it stays safe if the code deploys before
+        // Migrations/2026-07-04-board-performance.sql has been applied.
+        $stmt = $DB->prepare("
+            SELECT id
+            FROM board_item_values
+            WHERE item_id = ? AND column_id = ?
+        ");
+        $stmt->execute([$itemId, $columnId]);
+        $existingId = $stmt->fetchColumn();
+
         if ($value === null || $value === '') {
             // Clearing a cell removes the row
-            $stmt = $DB->prepare("
-                DELETE FROM board_item_values
-                WHERE item_id = ? AND column_id = ?
-            ");
-            $stmt->execute([$itemId, $columnId]);
+            if ($existingId) {
+                $stmt = $DB->prepare("DELETE FROM board_item_values WHERE item_id = ? AND column_id = ?");
+                $stmt->execute([$itemId, $columnId]);
+            }
+        } elseif ($existingId) {
+            $stmt = $DB->prepare("UPDATE board_item_values SET value = ? WHERE item_id = ? AND column_id = ?");
+            $stmt->execute([$value, $itemId, $columnId]);
         } else {
-            // Single-statement upsert (requires the UNIQUE(item_id, column_id)
-            // key — see Migrations/2026-07-04-board-performance.sql)
-            $stmt = $DB->prepare("
-                INSERT INTO board_item_values (item_id, column_id, value)
-                VALUES (?, ?, ?)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)
-            ");
+            $stmt = $DB->prepare("INSERT INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?)");
             $stmt->execute([$itemId, $columnId, $value]);
         }
 
@@ -148,20 +155,17 @@ try {
 
         // Recompute + persist this item's formula cells so page loads read
         // cached values instead of re-evaluating formulas per request.
+        // Skipped entirely on boards without formula columns.
         $formulas = [];
         try {
-            require_once __DIR__ . '/../_formula.php';
-            _fw_update_formula_columns($DB, $boardId, (int)$COMPANY_ID, $itemId);
-
             $stmt = $DB->prepare("
-                SELECT v.column_id, v.value
-                FROM board_item_values v
-                JOIN board_columns c ON v.column_id = c.column_id
-                WHERE v.item_id = ? AND c.board_id = ? AND c.type = 'formula'
+                SELECT COUNT(*) FROM board_columns
+                WHERE board_id = ? AND company_id = ? AND type = 'formula'
             ");
-            $stmt->execute([$itemId, $boardId]);
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
-                $formulas[(int)$f['column_id']] = $f['value'];
+            $stmt->execute([$boardId, $COMPANY_ID]);
+            if ((int)$stmt->fetchColumn() > 0) {
+                require_once __DIR__ . '/../_formula.php';
+                $formulas = _fw_update_formula_columns($DB, $boardId, (int)$COMPANY_ID, $itemId);
             }
         } catch (Exception $e) {
             error_log('Formula persist error: ' . $e->getMessage());
