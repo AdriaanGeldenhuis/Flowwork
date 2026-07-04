@@ -315,6 +315,78 @@ window.BoardApp.clearSearch = function() {
   input?.focus();
 };
 
+// ===== LOAD MORE ITEMS (boards past the server render cap) =====
+// Pages the remaining rows in through api/board.load.php (100 per request,
+// aligned with the 500-row server render cap).
+window.BoardApp.loadMoreItems = function() {
+  const btn = document.getElementById('loadMoreItemsBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+
+  const per = 100;
+  const loaded = (window.BOARD_DATA.items || []).length;
+  const page = Math.floor(loaded / per) + 1;
+
+  fetch(`/projects/api/board.load.php?board_id=${window.BOARD_DATA.boardId}&page=${page}&per=${per}`, {
+    headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
+    credentials: 'same-origin'
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.ok) throw new Error(data.error || 'Failed to load items');
+    const payload = data.data || {};
+    const items = payload.items || [];
+    const values = payload.values || [];
+
+    // Merge values first so renderers can read them
+    values.forEach(v => {
+      if (!window.BOARD_DATA.valuesMap[v.item_id]) window.BOARD_DATA.valuesMap[v.item_id] = {};
+      window.BOARD_DATA.valuesMap[v.item_id][v.column_id] = v.value;
+    });
+
+    items.forEach(item => {
+      if ((window.BOARD_DATA.items || []).some(i => String(i.id) === String(item.id))) return;
+      if (window.BoardApp.addItemToDOM) window.BoardApp.addItemToDOM(item, item.group_id);
+      else window.BOARD_DATA.items.push(item);
+
+      // Render stored values + item-field-backed cells
+      const vals = window.BOARD_DATA.valuesMap[item.id] || {};
+      (window.BOARD_DATA.columns || []).forEach(col => {
+        let value = vals[col.column_id];
+        if (value === undefined || value === null || value === '') {
+          if (col.type === 'people' && item.assigned_to) value = item.assigned_to;
+          else if (col.type === 'date' && item.due_date) value = String(item.due_date).split(' ')[0];
+          else if (col.type === 'priority' && item.priority) value = item.priority;
+          else if (col.type === 'status' && item.status_label) value = item.status_label;
+        }
+        if (value !== undefined && value !== null && value !== '' && window.BoardApp.renderCellFull) {
+          window.BoardApp.renderCellFull(item.id, col.column_id, value, col.type);
+        }
+      });
+    });
+
+    const total = payload.pagination ? payload.pagination.total : window.BOARD_DATA.totalItems;
+    const nowLoaded = (window.BOARD_DATA.items || []).length;
+    const countEl = document.getElementById('loadedItemCount');
+    if (countEl) countEl.textContent = nowLoaded;
+
+    if (nowLoaded >= total || items.length === 0) {
+      document.getElementById('truncationBanner')?.remove();
+      // Everything is loaded — client-side aggregations are now accurate
+      (window.BOARD_DATA.groups || []).forEach(g => {
+        if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(g.id);
+      });
+      if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+    } else if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Load more';
+    }
+  })
+  .catch(err => {
+    if (btn) { btn.disabled = false; btn.textContent = 'Load more'; }
+    if (window.BoardApp.showToast) window.BoardApp.showToast('Failed to load more items: ' + err.message, 'error');
+  });
+};
+
 // ===== FALLBACK MODALS (overridden by filters.js / views.js when loaded) =====
 window.BoardApp.showFilterModal = window.BoardApp.showFilterModal || function() {
   alert('Filters are unavailable — the filters module failed to load. Refresh the page.');

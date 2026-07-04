@@ -142,8 +142,10 @@
       tbody.appendChild(tr);
     }
     
-    // Add to local data cache
-    window.BOARD_DATA.items.push(item);
+    // Add to local data cache (skip if already tracked — e.g. lazy-group hydration)
+    if (!window.BOARD_DATA.items.some(i => String(i.id) === String(item.id))) {
+      window.BOARD_DATA.items.push(item);
+    }
     
     // Add flash animation
     tr.classList.add('fw-item-added');
@@ -401,6 +403,27 @@
     div.textContent = text;
     return div.innerHTML;
   }
+
+  // ===== HYDRATE A FULL ITEM ROW =====
+  // addItemToDOM + render every stored/field-backed cell value. Used by
+  // lazy-group expansion and load-more pagination.
+  window.BoardApp.hydrateItemRow = function(item) {
+    window.BoardApp.addItemToDOM(item, item.group_id);
+
+    const vals = (window.BOARD_DATA.valuesMap || {})[item.id] || {};
+    (window.BOARD_DATA.columns || []).forEach(col => {
+      let value = vals[col.column_id];
+      if (value === undefined || value === null || value === '') {
+        if (col.type === 'people' && item.assigned_to) value = item.assigned_to;
+        else if (col.type === 'date' && item.due_date) value = String(item.due_date).split(' ')[0];
+        else if (col.type === 'priority' && item.priority) value = item.priority;
+        else if (col.type === 'status' && item.status_label) value = item.status_label;
+      }
+      if (value !== undefined && value !== null && value !== '' && window.BoardApp.renderCellFull) {
+        window.BoardApp.renderCellFull(item.id, col.column_id, value, col.type);
+      }
+    });
+  };
 
   // ===== NEAR-REAL-TIME POLLING =====
   // Every ~20s pull board_audit_log events past our cursor and patch the DOM.

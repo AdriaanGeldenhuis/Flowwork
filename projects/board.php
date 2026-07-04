@@ -128,17 +128,30 @@ if (empty($groups)) {
 }
 
 // ===== LOAD ITEMS =====
+// Server-render up to ITEM_RENDER_CAP rows; larger boards page the rest in
+// through api/board.load.php (BoardApp.loadMoreItems). The cap must be a
+// multiple of the load-more page size (100).
+define('ITEM_RENDER_CAP', 500);
+
+$stmt = $DB->prepare("
+    SELECT COUNT(*) FROM board_items
+    WHERE board_id = ? AND company_id = ? AND archived = 0
+");
+$stmt->execute([$boardId, $COMPANY_ID]);
+$TOTAL_ITEMS = (int)$stmt->fetchColumn();
+
 $stmt = $DB->prepare("
     SELECT bi.*, u.first_name, u.last_name, bg.name AS group_name
     FROM board_items bi
     LEFT JOIN users u ON bi.assigned_to = u.id
     LEFT JOIN board_groups bg ON bi.group_id = bg.id
     WHERE bi.board_id = ? AND bi.company_id = ? AND bi.archived = 0
-    ORDER BY bg.position, bi.position
-    LIMIT 500
+    ORDER BY bi.group_id, bi.position, bi.id
+    LIMIT " . ITEM_RENDER_CAP . "
 ");
 $stmt->execute([$boardId, $COMPANY_ID]);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$ITEMS_TRUNCATED = $TOTAL_ITEMS > count($items);
 
 // ===== LOAD ITEM VALUES =====
 $itemIds = array_column($items, 'id');
@@ -158,7 +171,14 @@ if (!empty($itemIds)) {
     }
 }
 
-// ===== CALCULATE FORMULAS =====
+// ===== FORMULA VALUES =====
+// Formula results are persisted to board_item_values on every cell write
+// (api/cell/update.php) and by formula/calculate.php, so page loads normally
+// just read them out of $valuesMap. Values not yet persisted (legacy data)
+// are computed here through the sandboxed engine in api/_formula.php —
+// the old inline @eval loop is gone.
+require_once __DIR__ . '/api/_formula.php';
+
 $colNameMap = [];
 foreach ($columns as $c) {
     $colNameMap[$c['name']] = $c['column_id'];
@@ -173,39 +193,31 @@ foreach ($columns as $c) {
 
     foreach ($items as $it) {
         $iid = $it['id'];
+
+        // Persisted result available — nothing to compute
+        if (isset($valuesMap[$iid][$c['column_id']]) && $valuesMap[$iid][$c['column_id']] !== '') {
+            continue;
+        }
+
         $ctx = [];
-        
         if (isset($valuesMap[$iid])) {
             foreach ($valuesMap[$iid] as $cid => $val) {
                 $ctx[$cid] = is_numeric($val) ? (float)$val : 0.0;
             }
         }
 
-        $expr = $formulaStr;
-        foreach ($colNameMap as $name => $cid) {
-            $val = isset($ctx[$cid]) ? $ctx[$cid] : 0.0;
-            $expr = str_replace('{' . $name . '}', $val, $expr);
-        }
-
-        $result = 0;
-        try {
-            if ($expr !== '' && preg_match('/^[0-9\.\+\-\*\/\(\)\s]+$/', $expr)) {
-                $tmp = @eval('return ' . $expr . ';');
-                $result = is_numeric($tmp) ? $tmp : 0;
-            }
-        } catch (Throwable $e) {
-            $result = 0;
-        }
-
         if (!isset($valuesMap[$iid])) $valuesMap[$iid] = [];
-        $valuesMap[$iid][$c['column_id']] = number_format($result, $precision, '.', '');
+        $valuesMap[$iid][$c['column_id']] = _fw_compute_formula($formulaStr, $ctx, $colNameMap, $precision);
     }
 }
 
-// ===== LOAD ATTACHMENTS =====
+// Column types drive which auxiliary datasets are worth loading at all
+$COLUMN_TYPES = array_column($columns, 'type');
+
+// ===== LOAD ATTACHMENTS (only when a files column exists) =====
 $attachmentsMap = [];
 
-if (!empty($itemIds)) {
+if (!empty($itemIds) && in_array('files', $COLUMN_TYPES, true)) {
     $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
     $stmt = $DB->prepare("
         SELECT item_id, id, file_name, file_path, file_size
@@ -242,14 +254,43 @@ if (!empty($itemIds)) {
     }
 }
 
+// ===== BOARD TOTALS OVERRIDE (SQL over ALL items when the render is capped) =====
+// The in-PHP totals loop only sees the rendered subset; on truncated boards
+// compute number/formula aggregates in SQL so BOARD TOTALS stays correct.
+$boardTotalsOverride = [];
+if ($ITEMS_TRUNCATED) {
+    $aggCols = array_values(array_filter($columns, fn($c) => in_array($c['type'], ['number', 'formula'], true)));
+    if ($aggCols) {
+        $colIds = array_map(fn($c) => (int)$c['column_id'], $aggCols);
+        $ph = implode(',', array_fill(0, count($colIds), '?'));
+        $stmt = $DB->prepare("
+            SELECT v.column_id,
+                   SUM(v.value + 0) AS agg_sum,
+                   AVG(v.value + 0) AS agg_avg,
+                   MIN(v.value + 0) AS agg_min,
+                   MAX(v.value + 0) AS agg_max,
+                   COUNT(*) AS agg_count
+            FROM board_item_values v
+            JOIN board_items bi ON v.item_id = bi.id
+            WHERE bi.board_id = ? AND bi.company_id = ? AND bi.archived = 0
+              AND v.column_id IN ($ph)
+            GROUP BY v.column_id
+        ");
+        $stmt->execute(array_merge([$boardId, $COMPANY_ID], $colIds));
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $aggRow) {
+            $boardTotalsOverride[(int)$aggRow['column_id']] = $aggRow;
+        }
+    }
+}
+
 // ===== LAST AUDIT ID (cursor for near-real-time polling) =====
 $stmt = $DB->prepare("SELECT COALESCE(MAX(id), 0) FROM board_audit_log WHERE board_id = ?");
 $stmt->execute([$boardId]);
 $LAST_AUDIT_ID = (int)$stmt->fetchColumn();
 
-// ===== LOAD USERS =====
+// ===== LOAD USERS (email is not needed by any board renderer) =====
 $stmt = $DB->prepare("
-    SELECT id, first_name, last_name, email
+    SELECT id, first_name, last_name
     FROM users
     WHERE company_id = ? AND status = 'active'
     ORDER BY first_name
@@ -257,15 +298,18 @@ $stmt = $DB->prepare("
 $stmt->execute([$COMPANY_ID]);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// ===== LOAD SUPPLIERS =====
-$stmt = $DB->prepare("
-    SELECT id, name, phone, email, preferred
-    FROM crm_accounts
-    WHERE company_id = ? AND type = 'supplier' AND status = 'active'
-    ORDER BY preferred DESC, name ASC
-");
-$stmt->execute([$COMPANY_ID]);
-$suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// ===== LOAD SUPPLIERS (only when a supplier column exists) =====
+$suppliers = [];
+if (in_array('supplier', $COLUMN_TYPES, true)) {
+    $stmt = $DB->prepare("
+        SELECT id, name, phone, email, preferred
+        FROM crm_accounts
+        WHERE company_id = ? AND type = 'supplier' AND status = 'active'
+        ORDER BY preferred DESC, name ASC
+    ");
+    $stmt->execute([$COMPANY_ID]);
+    $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // ===== STATUS CONFIG =====
 $statusConfig = [
@@ -549,6 +593,15 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
         </div>
     </div>
 
+    <?php if ($ITEMS_TRUNCATED): ?>
+    <!-- ===== TRUNCATION BANNER ===== -->
+    <div class="fw-truncation-banner" id="truncationBanner" role="status"
+         style="display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 16px;background:rgba(245,158,11,0.12);border-bottom:1px solid rgba(245,158,11,0.3);font-size:13px;font-weight:600;">
+        <span>Showing <span id="loadedItemCount"><?= count($items) ?></span> of <?= $TOTAL_ITEMS ?> items.</span>
+        <button type="button" class="fw-btn fw-btn--secondary" id="loadMoreItemsBtn" onclick="BoardApp.loadMoreItems()" style="padding:4px 14px;">Load more</button>
+    </div>
+    <?php endif; ?>
+
     <!-- ===== BULK ACTION BAR ===== -->
     <div class="fw-bulk-action-bar" id="bulkActionBar">
         <span class="fw-bulk-count" id="bulkCount">0 selected</span>
@@ -674,7 +727,12 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                 </tr>
                             </thead>
 
-                            <tbody>
+                            <?php
+                            // Collapsed groups skip row rendering entirely (data-lazy);
+                            // groups.js hydrates them from BOARD_DATA on first expand.
+                            $isLazy = !empty($group['collapsed']) && !empty($groupItems);
+                            ?>
+                            <tbody<?= $isLazy ? ' data-lazy="1"' : '' ?>>
                                 <?php if (empty($groupItems)): ?>
                                     <tr>
                                         <td colspan="<?= 3 + count($columns) ?>" class="fw-empty-state">
@@ -683,7 +741,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                             <div class="fw-empty-text">Click "+ Add item" below to get started</div>
                                         </td>
                                     </tr>
-                                <?php else: ?>
+                                <?php elseif (!$isLazy): ?>
                                     <?php foreach ($groupItems as $item): ?>
                                         <tr class="fw-item-row" 
                                             data-item-id="<?= $item['id'] ?>" 
@@ -931,28 +989,34 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                         if (in_array($col['type'], ['number', 'formula'])) {
                                             $config = $col['config'] ? json_decode($col['config'], true) : [];
                                             $aggType = $config['agg'] ?? 'sum';
-                                            
-                                            $values = [];
-                                            foreach ($items as $item) {
-                                                if (isset($valuesMap[$item['id']][$col['column_id']])) {
-                                                    $val = $valuesMap[$item['id']][$col['column_id']];
-                                                    if (is_numeric($val)) {
-                                                        $values[] = (float)$val;
+
+                                            if (isset($boardTotalsOverride[(int)$col['column_id']])) {
+                                                // Truncated board: totals were computed in SQL over ALL items
+                                                $aggRow = $boardTotalsOverride[(int)$col['column_id']];
+                                                $result = (float)($aggRow['agg_' . $aggType] ?? $aggRow['agg_sum']);
+                                            } else {
+                                                $values = [];
+                                                foreach ($items as $item) {
+                                                    if (isset($valuesMap[$item['id']][$col['column_id']])) {
+                                                        $val = $valuesMap[$item['id']][$col['column_id']];
+                                                        if (is_numeric($val)) {
+                                                            $values[] = (float)$val;
+                                                        }
+                                                    }
+                                                }
+
+                                                $result = 0;
+                                                if (!empty($values)) {
+                                                    switch ($aggType) {
+                                                        case 'sum': $result = array_sum($values); break;
+                                                        case 'avg': $result = array_sum($values) / count($values); break;
+                                                        case 'min': $result = min($values); break;
+                                                        case 'max': $result = max($values); break;
+                                                        case 'count': $result = count($values); break;
                                                     }
                                                 }
                                             }
-                                            
-                                            $result = 0;
-                                            if (!empty($values)) {
-                                                switch ($aggType) {
-                                                    case 'sum': $result = array_sum($values); break;
-                                                    case 'avg': $result = array_sum($values) / count($values); break;
-                                                    case 'min': $result = min($values); break;
-                                                    case 'max': $result = max($values); break;
-                                                    case 'count': $result = count($values); break;
-                                                }
-                                            }
-                                            
+
                                             $precision = $config['precision'] ?? 2;
                                             $formatted = number_format($result, $precision, '.', ',');
 
@@ -1211,6 +1275,7 @@ window.BOARD_DATA = {
     attachments: <?= json_encode($attachmentsMap) ?>,
     commentCounts: <?= json_encode($commentCountsMap ?: new stdClass()) ?>,
     lastAuditId: <?= $LAST_AUDIT_ID ?>,
+    totalItems: <?= $TOTAL_ITEMS ?>,
     csrfToken: '<?= $_SESSION['csrf_token'] ?>',
     currentUserId: <?= (int)$USER_ID ?>
 };

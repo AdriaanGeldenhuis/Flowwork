@@ -24,6 +24,15 @@ function _fw_compute_formula(string $formula, array $context, array $colNameMap,
         return number_format(0, $precision, '.', '');
     }
     $expr = $formula;
+    // Normalize {Name} brace references (the board UI's formula syntax) to
+    // bracket syntax so both notations work with one engine.
+    $expr = preg_replace('/\{([^{}]*)\}/', '[$1]', $expr);
+    // Resolve name references to [#id] BEFORE whitespace normalization so
+    // column names containing spaces still resolve.
+    $expr = preg_replace_callback('/\[([^\[\]#][^\[\]]*)\]/', function ($m) use ($colNameMap) {
+        $name = trim($m[1]);
+        return isset($colNameMap[$name]) ? '[#' . (int)$colNameMap[$name] . ']' : '[#0]';
+    }, $expr);
     // Normalize whitespace
     $expr = preg_replace('/\s+/', '', $expr);
     // Evaluate supported functions first.  Recognized functions include SUM, AVG, MIN,

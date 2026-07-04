@@ -546,33 +546,32 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
     } else {
       updateCellDisplay(itemId, columnId, value, column.type);
     }
-    
-    // ✅ NUUT: Recalculate formulas if this is a number column
-    if (column.type === 'number' && window.BoardApp.recalculateFormulas) {
-      setTimeout(() => {
-        window.BoardApp.recalculateFormulas(itemId);
-      }, 150);
+
+    // Apply server-computed formula values (persisted on write) — this
+    // replaces the old client-side recalculation guesswork
+    const formulas = data && data.formulas ? data.formulas : null;
+    if (formulas && Object.keys(formulas).length > 0) {
+      Object.entries(formulas).forEach(([fColId, fValue]) => {
+        window.BOARD_DATA.valuesMap[itemId][fColId] = fValue;
+        updateCellDisplay(itemId, fColId, fValue, 'formula');
+      });
+    } else if (column.type === 'number' && window.BoardApp.recalculateFormulas) {
+      // Fallback for older API responses
+      window.BoardApp.recalculateFormulas(itemId);
     }
-    
-    // ✅ NUUT: Update aggregations
-    const row = document.querySelector(`[data-item-id="${itemId}"]`);
-    if (row) {
-      const groupId = row.dataset.groupId;
-      if (groupId && window.BoardApp.updateAggregations) {
-        setTimeout(() => {
-          window.BoardApp.updateAggregations(groupId);
-        }, 200);
-      }
+
+    // Aggregations + totals — direct sequential calls (the old setTimeout
+    // chain existed only to dodge ordering that is now guaranteed)
+    const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+    const groupId = row ? row.dataset.groupId : null;
+    if (groupId && window.BoardApp.updateAggregations) {
+      window.BoardApp.updateAggregations(groupId);
     }
-    
-    // ✅ NUUT: Update board totals
     if (window.BoardApp.updateBoardTotals) {
-      setTimeout(() => {
-        window.BoardApp.updateBoardTotals();
-      }, 250);
+      window.BoardApp.updateBoardTotals();
     }
-    
-    // ✅ NUUT: Dispatch event for formula dependencies
+
+    // Dispatch event for dependents (item panel, etc.)
     document.dispatchEvent(new CustomEvent('cellUpdated', {
       detail: { itemId, columnId, value, columnType: column.type }
     }));

@@ -115,46 +115,26 @@ try {
 
     // Start transaction
     $DB->beginTransaction();
-    
+
     try {
-        // Check if value exists
-        $stmt = $DB->prepare("
-            SELECT id 
-            FROM board_item_values 
-            WHERE item_id = ? AND column_id = ?
-        ");
-        $stmt->execute([$itemId, $columnId]);
-        $existingId = $stmt->fetchColumn();
-        
-        if ($existingId) {
-            // Update or delete
-            if ($value === null || $value === '') {
-                // Delete empty value
-                $stmt = $DB->prepare("
-                    DELETE FROM board_item_values 
-                    WHERE item_id = ? AND column_id = ?
-                ");
-                $stmt->execute([$itemId, $columnId]);
-            } else {
-                // Update existing
-                $stmt = $DB->prepare("
-                    UPDATE board_item_values 
-                    SET value = ? 
-                    WHERE item_id = ? AND column_id = ?
-                ");
-                $stmt->execute([$value, $itemId, $columnId]);
-            }
+        if ($value === null || $value === '') {
+            // Clearing a cell removes the row
+            $stmt = $DB->prepare("
+                DELETE FROM board_item_values
+                WHERE item_id = ? AND column_id = ?
+            ");
+            $stmt->execute([$itemId, $columnId]);
         } else {
-            // Insert new (only if not empty)
-            if ($value !== null && $value !== '') {
-                $stmt = $DB->prepare("
-                    INSERT INTO board_item_values (item_id, column_id, value) 
-                    VALUES (?, ?, ?)
-                ");
-                $stmt->execute([$itemId, $columnId, $value]);
-            }
+            // Single-statement upsert (requires the UNIQUE(item_id, column_id)
+            // key — see Migrations/2026-07-04-board-performance.sql)
+            $stmt = $DB->prepare("
+                INSERT INTO board_item_values (item_id, column_id, value)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE value = VALUES(value)
+            ");
+            $stmt->execute([$itemId, $columnId, $value]);
         }
-        
+
         // Update item timestamp
         $stmt = $DB->prepare("
             UPDATE board_items
@@ -165,6 +145,27 @@ try {
 
         // Commit transaction
         $DB->commit();
+
+        // Recompute + persist this item's formula cells so page loads read
+        // cached values instead of re-evaluating formulas per request.
+        $formulas = [];
+        try {
+            require_once __DIR__ . '/../_formula.php';
+            _fw_update_formula_columns($DB, $boardId, (int)$COMPANY_ID, $itemId);
+
+            $stmt = $DB->prepare("
+                SELECT v.column_id, v.value
+                FROM board_item_values v
+                JOIN board_columns c ON v.column_id = c.column_id
+                WHERE v.item_id = ? AND c.board_id = ? AND c.type = 'formula'
+            ");
+            $stmt->execute([$itemId, $boardId]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                $formulas[(int)$f['column_id']] = $f['value'];
+            }
+        } catch (Exception $e) {
+            error_log('Formula persist error: ' . $e->getMessage());
+        }
 
         // Feed the activity log (failures are swallowed inside fw_audit)
         require_once __DIR__ . '/../_audit.php';
@@ -183,10 +184,11 @@ try {
                 'item_id' => $itemId,
                 'column_id' => $columnId,
                 'value' => $value,
-                'column_type' => $columnType
+                'column_type' => $columnType,
+                'formulas' => $formulas ?: new stdClass()
             ]
         ]);
-        
+
     } catch (Exception $e) {
         $DB->rollBack();
         throw $e;

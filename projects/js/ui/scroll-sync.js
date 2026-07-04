@@ -112,15 +112,31 @@ const ScrollSync = (() => {
      * Setup scroll listeners
      */
     const setupScrollListeners = () => {
+        // Coalesce sync work into one requestAnimationFrame per frame —
+        // scroll events fire far faster than the display can paint, and each
+        // uncoalesced pass rewrote scrollLeft on every wrapper.
+        let pendingScrollLeft = null;
+        let rafScheduled = false;
+
+        const flush = () => {
+            rafScheduled = false;
+            if (pendingScrollLeft === null) return;
+            const scrollLeft = pendingScrollLeft;
+            pendingScrollLeft = null;
+            syncAll(scrollLeft);
+            updateThumb();
+        };
+
         wrappers.forEach(w => {
-            // ✅ PASSIVE FALSE FOR INSTANT SYNC
             w.addEventListener('scroll', (e) => {
                 if (isInternalUpdate) return;
-                
-                const scrollLeft = e.target.scrollLeft;
-                syncAll(scrollLeft);
-                updateThumb();
-            }, { passive: false });
+
+                pendingScrollLeft = e.target.scrollLeft;
+                if (!rafScheduled) {
+                    rafScheduled = true;
+                    requestAnimationFrame(flush);
+                }
+            }, { passive: true });
 
             // ✅ TOUCH START - PREPARE FOR SYNC
             w.addEventListener('touchstart', () => {

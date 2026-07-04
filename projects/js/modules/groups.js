@@ -17,11 +17,24 @@
   window.BoardApp.toggleGroup = function(groupId) {
     const group = document.querySelector(`[data-group-id="${groupId}"]`);
     if (!group) return;
-    
+
     const isCollapsed = group.dataset.collapsed === 'true';
     const newState = !isCollapsed;
-    
+
     group.dataset.collapsed = String(newState);
+
+    // Server-collapsed groups render without rows (data-lazy) — build them
+    // from BOARD_DATA on first expand.
+    if (!newState) {
+      const tbody = group.querySelector('tbody[data-lazy="1"]');
+      if (tbody && window.BoardApp.hydrateItemRow) {
+        tbody.removeAttribute('data-lazy');
+        (window.BOARD_DATA.items || [])
+          .filter(i => String(i.group_id) === String(groupId))
+          .forEach(item => window.BoardApp.hydrateItemRow(item));
+        if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(groupId);
+      }
+    }
     
     // Save state to server
     const form = new FormData();
