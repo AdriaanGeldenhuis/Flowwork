@@ -211,7 +211,7 @@ elseif ($col['type'] === 'tags'):
                 $hash = crc32($tag);
                 $color = $tagPalette[$hash % count($tagPalette)];
                 ?>
-                <span class="fw-tag" style="background:<?= $color ?>22;color:<?= $color ?>;border:1px solid <?= $color ?>55;"><?= htmlspecialchars($tag) ?></span>
+                <span class="fw-tag" style="background:<?= $color ?>;color:<?= fw_readable_text($color) ?>;border:1px solid <?= $color ?>;"><?= htmlspecialchars($tag) ?></span>
             <?php endforeach; ?>
         </div>
     <?php else: ?>
@@ -309,7 +309,7 @@ elseif ($col['type'] === 'dropdown'):
         $palette = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6','#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899'];
         $color = $optionColors[$value] ?? $palette[crc32($value) % count($palette)];
         ?>
-        <span class="fw-dropdown-pill" style="background:<?= $color ?>22;color:<?= $color ?>;border:1px solid <?= $color ?>55;"><?= htmlspecialchars($value) ?></span>
+        <span class="fw-dropdown-pill" style="background:<?= $color ?>;color:<?= fw_readable_text($color) ?>;border:1px solid <?= $color ?>;"><?= htmlspecialchars($value) ?></span>
     <?php else: ?>
         <button class="fw-cell-empty">+</button>
     <?php endif;

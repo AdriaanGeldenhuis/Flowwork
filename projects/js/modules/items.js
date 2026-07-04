@@ -227,6 +227,12 @@ window.BoardApp.showItemMenu = function(itemId, event) {
       </svg>
       Activity Log
     </button>
+    <button class="fw-dropdown-item" onclick="BoardApp.showMoveToGroup(${itemId})">
+      <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
+        <path d="M7 2v10M3 8l4 4 4-4" stroke="currentColor" fill="none" stroke-width="1.5"/>
+      </svg>
+      Move to Group
+    </button>
     <button class="fw-dropdown-item" onclick="BoardApp.copyItemLink(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
         <path d="M6 8a3 3 0 0 1 0-4l2-2a3 3 0 0 1 4 4l-1 1M8 6a3 3 0 0 1 0 4l-2 2a3 3 0 0 1-4-4l1-1" stroke="currentColor" fill="none" stroke-width="1.5"/>
@@ -244,6 +250,71 @@ window.BoardApp.showItemMenu = function(itemId, event) {
   
   window.BoardApp.showDropdown(event.target, html);
 };
+
+  // ===== MOVE TO GROUP (keyboard/touch-friendly alternative to dragging) =====
+  window.BoardApp.showMoveToGroup = function(itemId) {
+    window.BoardApp.closeAllDropdowns();
+
+    const item = (window.BOARD_DATA.items || []).find(i => String(i.id) === String(itemId));
+    const groups = (window.BOARD_DATA.groups || []).filter(g => !item || String(g.id) !== String(item.group_id));
+    if (groups.length === 0) {
+      if (window.BoardApp.showToast) window.BoardApp.showToast('No other group to move to', 'info');
+      return;
+    }
+
+    const esc = window.BoardApp.escapeHtml || (s => s);
+    const overlay = document.createElement('div');
+    overlay.className = 'fw-modal-overlay';
+    overlay.innerHTML = `
+      <div class="fw-modal-content fw-slide-up" style="max-width: 380px;">
+        <div class="fw-modal-header"><h3 style="margin:0;font-size:17px;font-weight:700;">Move to group</h3></div>
+        <div class="fw-modal-body">
+          <div class="fw-picker-options" style="display:flex;flex-direction:column;gap:8px;">
+            ${groups.map(g => `
+              <button type="button" class="fw-picker-option" data-group-id="${parseInt(g.id, 10)}" style="text-align:left;">
+                <span style="color:${esc(g.color || '#8b5cf6')};font-weight:700;">${esc(g.name)}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelectorAll('.fw-picker-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const groupId = btn.dataset.groupId;
+        overlay.remove();
+
+        window.BoardApp.apiCall('/projects/api/item.move.php', {
+          item_id: itemId,
+          group_id: groupId
+        }).then(() => {
+          const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+          const tbody = document.querySelector(`.fw-group[data-group-id="${groupId}"] tbody`);
+          const sourceGroupId = row ? row.dataset.groupId : null;
+          if (row && tbody) {
+            tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+            tbody.insertBefore(row, tbody.querySelector('.fw-agg-row') || tbody.querySelector('.fw-add-row') || null);
+            row.dataset.groupId = String(groupId);
+          }
+          if (item) item.group_id = groupId;
+          [sourceGroupId, groupId].forEach(gid => {
+            if (gid && window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(gid);
+            const group = document.querySelector(`.fw-group[data-group-id="${gid}"]`);
+            const countEl = group?.querySelector('.fw-group-count');
+            if (countEl) countEl.textContent = group.querySelectorAll('tr.fw-item-row').length;
+          });
+          if (window.BoardApp.showToast) window.BoardApp.showToast('Item moved', 'success');
+        }).catch(err => {
+          alert('Failed to move item: ' + err.message);
+        });
+      });
+    });
+
+    (document.querySelector('.fw-proj') || document.body).appendChild(overlay);
+    setTimeout(() => overlay.querySelector('.fw-picker-option')?.focus(), 50);
+  };
 
   // ===== COPY ITEM LINK =====
   window.BoardApp.copyItemLink = function(itemId) {

@@ -567,6 +567,8 @@ Option 3</textarea>
           td.dataset.itemId = String(itemId);
           td.dataset.columnId = String(colId);
           td.dataset.value = '';
+          td.dataset.label = column.name;
+          td.setAttribute('tabindex', '0');
           td.setAttribute('onclick', `BoardApp.editCell(${itemId}, ${colId}, '${column.type}', event)`);
           td.innerHTML = '<button class="fw-cell-empty">+</button>';
           row.insertBefore(td, menuTd || null);

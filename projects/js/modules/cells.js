@@ -594,6 +594,15 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
       .replace(/'/g, '&#039;');
   }
 
+  // Legible text color for a solid pill background (mirrors PHP fw_readable_text)
+  function readableText(color) {
+    const h = String(color || '#8b5cf6').replace('#', '');
+    const hh = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+    if (hh.length < 6) return '#ffffff';
+    const lum = (0.2126 * parseInt(hh.slice(0, 2), 16) + 0.7152 * parseInt(hh.slice(2, 4), 16) + 0.0722 * parseInt(hh.slice(4, 6), 16)) / 255;
+    return lum > 0.6 ? '#1a1a1a' : '#ffffff';
+  }
+
   function renderNumberLike(cell, columnId, value, isFormula) {
     if (value !== '' && value !== null && value !== undefined) {
       const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
@@ -820,7 +829,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           const tags = value.split(',').map(t => t.trim()).filter(t => t);
           cell.innerHTML = '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + tags.map(tag => {
             const color = palette[hash(tag) % palette.length];
-            return `<span class="fw-tag" style="background:${color}22;color:${color};border:1px solid ${color}55;">${esc(tag)}</span>`;
+            return `<span class="fw-tag" style="background:${color};color:${readableText(color)};border:1px solid ${color};">${esc(tag)}</span>`;
           }).join('') + '</div>';
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
@@ -867,7 +876,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           const palette = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6','#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899'];
           const hash = (s) => { let h=0; for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; };
           const color = optionColors[value] || palette[hash(value) % palette.length];
-          cell.innerHTML = `<span class="fw-dropdown-pill" style="background:${color}22;color:${color};border:1px solid ${color}55;">${esc(value)}</span>`;
+          cell.innerHTML = `<span class="fw-dropdown-pill" style="background:${color};color:${readableText(color)};border:1px solid ${color};">${esc(value)}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
@@ -878,6 +887,49 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
         cell.innerHTML = value ? esc(value) : '<button class="fw-cell-empty">+</button>';
     }
   }
+
+  // ===== KEYBOARD OPERABILITY =====
+  // Cells carry tabindex="0"; Enter/Space opens the editor, arrows rove focus
+  // between cells (left/right within the row, up/down across rows).
+  document.addEventListener('keydown', (e) => {
+    const cell = e.target.closest && e.target.closest('td.fw-cell');
+    if (!cell || e.target !== cell) return;
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const itemId = parseInt(cell.dataset.itemId, 10);
+      const colId = parseInt(cell.dataset.columnId, 10);
+      window.BoardApp.editCell(itemId, colId, cell.dataset.type, {
+        currentTarget: cell,
+        target: cell,
+        stopPropagation() {}
+      });
+      return;
+    }
+
+    let target = null;
+    if (e.key === 'ArrowRight') {
+      target = cell.nextElementSibling;
+      while (target && !target.classList.contains('fw-cell')) target = target.nextElementSibling;
+    } else if (e.key === 'ArrowLeft') {
+      target = cell.previousElementSibling;
+      while (target && !target.classList.contains('fw-cell')) target = target.previousElementSibling;
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const row = cell.closest('tr.fw-item-row');
+      if (row) {
+        let sibling = e.key === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling;
+        while (sibling && !sibling.classList.contains('fw-item-row')) {
+          sibling = e.key === 'ArrowDown' ? sibling.nextElementSibling : sibling.previousElementSibling;
+        }
+        if (sibling) target = sibling.querySelector(`td.fw-cell[data-column-id="${cell.dataset.columnId}"]`);
+      }
+    }
+
+    if (target) {
+      e.preventDefault();
+      target.focus();
+    }
+  });
 
   // Expose the full renderer. realtime.js wraps this as BoardApp.updateCellDOM
   // (adding flash animation, cache + aggregation updates); the direct assignment

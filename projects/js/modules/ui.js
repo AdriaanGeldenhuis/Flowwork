@@ -220,6 +220,78 @@
     }
   };
 
+  // ===== GLOBAL MODAL FOCUS MANAGEMENT =====
+  // One manager for every modal implementation on the board: adds dialog
+  // semantics, moves focus in on open, traps Tab inside the topmost overlay,
+  // and returns focus to the opener when the overlay is removed.
+  const OVERLAY_SELECTOR = '.fw-modal-overlay, .fw-column-modal-overlay';
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const openerMap = new WeakMap();
+
+  function topOverlay() {
+    // Static picker overlays (e.g. #modalGuests) participate when shown
+    const overlays = Array.from(document.querySelectorAll(
+      OVERLAY_SELECTOR + ', .fw-cell-picker-overlay[aria-hidden="false"]'
+    ));
+    return overlays.length ? overlays[overlays.length - 1] : null;
+  }
+
+  const modalObserver = new MutationObserver((mutations) => {
+    mutations.forEach(m => {
+      m.addedNodes.forEach(node => {
+        if (!(node instanceof Element) || !node.matches(OVERLAY_SELECTOR)) return;
+
+        openerMap.set(node, document.activeElement);
+
+        const content = node.querySelector('.fw-modal-content, .fw-column-modal-content');
+        if (content && !content.hasAttribute('role')) {
+          content.setAttribute('role', 'dialog');
+          content.setAttribute('aria-modal', 'true');
+        }
+
+        // Move focus in unless the modal already focused something itself
+        setTimeout(() => {
+          if (node.isConnected && !node.contains(document.activeElement)) {
+            node.querySelector(FOCUSABLE)?.focus();
+          }
+        }, 60);
+      });
+
+      m.removedNodes.forEach(node => {
+        if (!(node instanceof Element) || !node.matches || !node.matches(OVERLAY_SELECTOR)) return;
+        const opener = openerMap.get(node);
+        if (opener && opener.isConnected && typeof opener.focus === 'function') {
+          opener.focus();
+        }
+      });
+    });
+  });
+  modalObserver.observe(document.body, { childList: true, subtree: true });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const overlay = topOverlay();
+    if (!overlay) return;
+
+    const focusables = Array.from(overlay.querySelectorAll(FOCUSABLE))
+      .filter(el => el.offsetParent !== null);
+    if (focusables.length === 0) return;
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+
+    if (!overlay.contains(document.activeElement)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+
   console.log('✅ UI module loaded');
 
 })();

@@ -403,9 +403,9 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
         </div>
 
         <div class="fw-board-header__center">
-            <div class="fw-board-title-display">
+            <h1 class="fw-board-title-display" style="margin:0;font-size:inherit;font-weight:inherit;">
                 <?= htmlspecialchars($board['title']) ?>
-            </div>
+            </h1>
         </div>
 
         <div class="fw-board-header__controls">
@@ -643,7 +643,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     </div>
 
     <!-- ===== BOARD CONTAINER ===== -->
-    <div class="fw-board-container" id="boardContainer">
+    <main class="fw-board-container" id="boardContainer" aria-label="Board items">
         <?php foreach ($groups as $group): ?>
             <?php $groupItems = array_filter($items, fn($item) => $item['group_id'] == $group['id']); ?>
             
@@ -691,8 +691,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 				</colgroup>
                             <thead>
                                 <tr>
-                                    <th class="fw-col-checkbox">
-                                        <input type="checkbox" class="fw-checkbox" onchange="BoardApp.toggleGroupSelection(<?= $group['id'] ?>, this.checked)" />
+                                    <th class="fw-col-checkbox" scope="col">
+                                        <input type="checkbox" class="fw-checkbox" aria-label="Select all in <?= htmlspecialchars($group['name']) ?>" onchange="BoardApp.toggleGroupSelection(<?= $group['id'] ?>, this.checked)" />
                                     </th>
                                     
                                     <th class="fw-col-item">
@@ -749,9 +749,10 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                             draggable="true">
                                             
                                             <td class="fw-col-checkbox">
-                                                <input type="checkbox" 
-                                                       class="fw-checkbox fw-item-checkbox" 
+                                                <input type="checkbox"
+                                                       class="fw-checkbox fw-item-checkbox"
                                                        data-item-id="<?= $item['id'] ?>"
+                                                       aria-label="Select <?= htmlspecialchars($item['title']) ?>"
                                                        onchange="BoardApp.toggleItemSelection(<?= $item['id'] ?>, this.checked)" />
                                             </td>
                                             
@@ -759,6 +760,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                 <input type="text"
                                                        class="fw-item-title"
                                                        value="<?= htmlspecialchars($item['title']) ?>"
+                                                       aria-label="Item title"
                                                        onblur="BoardApp.updateItemTitle(<?= $item['id'] ?>, this.value)" />
                                                 <?php $cCount = $commentCountsMap[(int)$item['id']] ?? 0; ?>
                                                 <button type="button"
@@ -785,11 +787,13 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                     $value = $item['status_label'];
                                                 ?>
 
-                                                <td class="fw-cell" 
-                                                    data-type="<?= $col['type'] ?>" 
-                                                    data-item-id="<?= $item['id'] ?>" 
-                                                    data-column-id="<?= $col['column_id'] ?>" 
+                                                <td class="fw-cell"
+                                                    data-type="<?= $col['type'] ?>"
+                                                    data-item-id="<?= $item['id'] ?>"
+                                                    data-column-id="<?= $col['column_id'] ?>"
                                                     data-value="<?= htmlspecialchars($value ?? '') ?>"
+                                                    data-label="<?= htmlspecialchars($col['name']) ?>"
+                                                    tabindex="0"
                                                     onclick="BoardApp.editCell(<?= $item['id'] ?>, <?= $col['column_id'] ?>, '<?= $col['type'] ?>', event)">
 
                                                     <?php include __DIR__ . '/includes/cell-renderer.php'; ?>
@@ -880,10 +884,11 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                 <!-- QUICK ADD ROW -->
                                 <tr class="fw-add-row">
                                     <td colspan="<?= 3 + count($columns) ?>">
-                                        <input type="text" 
-                                               class="fw-quick-add-input" 
-                                               placeholder="+ Add item" 
-                                               data-group-id="<?= $group['id'] ?>" 
+                                        <input type="text"
+                                               class="fw-quick-add-input"
+                                               placeholder="+ Add item"
+                                               aria-label="Add item to <?= htmlspecialchars($group['name']) ?>"
+                                               data-group-id="<?= $group['id'] ?>"
                                                onkeydown="if(event.key==='Enter') BoardApp.quickAddItem(this, <?= $group['id'] ?>)" />
                                     </td>
                                 </tr>
@@ -1056,7 +1061,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 Add Group
             </button>
         </div>
-    </div>
+    </main>
 
     <!-- VIEWS -->
     <div id="fw-kanban-view" class="fw-kanban-view" style="display:none;"></div>
@@ -1303,6 +1308,7 @@ $jsFiles = [
     "modules/comments.js",
     "modules/export.js",
     "modules/dragdrop.js",
+    "modules/touch-dnd.js",
     "modules/column-dragdrop.js",
     "modules/group-dragdrop.js",
     "modules/column-visibility.js",

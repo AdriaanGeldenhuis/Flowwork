@@ -91,24 +91,31 @@
     // Build row HTML
     let html = `
       <td class="fw-col-checkbox">
-        <input type="checkbox" class="fw-checkbox fw-item-checkbox" 
+        <input type="checkbox" class="fw-checkbox fw-item-checkbox"
                data-item-id="${item.id}"
+               aria-label="Select ${escapeHtml(item.title)}"
                onchange="BoardApp.toggleItemSelection(${item.id}, this.checked)" />
       </td>
       <td class="fw-col-item">
-        <input type="text" class="fw-item-title" value="${escapeHtml(item.title)}" 
+        <input type="text" class="fw-item-title" value="${escapeHtml(item.title)}"
+          aria-label="Item title"
           onblur="BoardApp.updateItemTitle(${item.id}, this.value)" />
+        <button type="button" class="fw-item-comments-btn" data-item-id="${item.id}"
+                aria-label="Comments (0)" style="display:none;"
+                onclick="BoardApp.showComments(${item.id})">💬 <span class="fw-item-comments-count">0</span></button>
       </td>
     `;
-    
+
     // Add cells for each column
     window.BOARD_DATA.columns.forEach(col => {
       html += `
-        <td class="fw-cell" 
-          data-type="${col.type}" 
-          data-item-id="${item.id}" 
+        <td class="fw-cell"
+          data-type="${col.type}"
+          data-item-id="${item.id}"
           data-column-id="${col.column_id}"
           data-value=""
+          data-label="${escapeHtml(col.name)}"
+          tabindex="0"
           onclick="BoardApp.editCell(${item.id}, ${col.column_id}, '${col.type}', event)">
           <button class="fw-cell-empty">+</button>
         </td>

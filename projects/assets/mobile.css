@@ -75,10 +75,18 @@
 
   /* ===== CONTAINER ===== */
   .fw-board-container {
-    margin-top: 140px;
+    margin-top: calc(var(--fw-chrome-h, 140px) + 8px);
     padding: var(--spacing-sm);
     padding-bottom: 96px;
-    min-height: calc(100vh - 104px - 56px);
+    min-height: calc(100dvh - var(--fw-chrome-h, 160px));
+  }
+
+  /* 16px inputs stop iOS Safari from zooming the page on focus */
+  .fw-search-input,
+  .fw-item-title,
+  .fw-quick-add-input,
+  .fw-cell-inline-input {
+    font-size: 16px !important;
   }
 
   /* ===== GROUP ===== */
@@ -164,7 +172,7 @@
   /* ===== COMPONENTS ===== */
   .fw-status-badge {
     padding: 2px 8px;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .fw-user-pill,
@@ -287,16 +295,17 @@
   }
 
   .fw-view-btn {
-    padding: var(--spacing-xs);
-    font-size: 0;
+    padding: var(--spacing-xs) 6px;
+    font-size: 10px;
+    min-height: 40px;
   }
 
   .fw-view-btn svg {
-    margin: 0;
+    margin: 0 2px 0 0;
   }
 
   .fw-board-container {
-    margin-top: 140px;
+    margin-top: calc(var(--fw-chrome-h, 140px) + 8px);
     padding: var(--spacing-xs);
     padding-bottom: 96px;
   }
@@ -311,7 +320,7 @@
 
   .fw-board-table thead th {
     padding: 4px;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .fw-board-table tbody td {
@@ -337,7 +346,7 @@
   }
 
   .fw-board-container {
-    margin-top: 104px;
+    margin-top: calc(var(--fw-chrome-h, 104px) + 8px);
   }
 }
 
@@ -373,7 +382,7 @@
 /* ===== TOUCH TARGETS (small screens) ===== */
 /* Make tap targets comfortable on touch devices (WCAG 2.5.5). Scoped to
    coarse pointers so desktop narrow windows are unaffected. */
-@media (max-width: 768px) and (pointer: coarse) {
+@media (pointer: coarse) {
   .fw-icon-btn,
   .fw-group-toggle,
   .fw-col-add-btn,
@@ -384,5 +393,104 @@
   .fw-checkbox {
     width: 20px;
     height: 20px;
+  }
+}
+/* ============================================
+   PHONE CARD VIEW (≤600px)
+   The wide table linearizes into stacked, labelled cards per item —
+   cells keep their DOM nodes/handlers, so editors keep working.
+   ============================================ */
+@media (max-width: 600px) {
+  .fw-board-container .fw-board-table,
+  .fw-board-container .fw-board-table tbody,
+  .fw-board-container .fw-board-table tbody tr,
+  .fw-board-container .fw-board-table tbody td {
+    display: block;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  .fw-board-container .fw-board-table thead,
+  .fw-board-container .fw-board-table colgroup {
+    display: none;
+  }
+
+  .fw-board-container .fw-table-wrapper {
+    overflow-x: visible;
+  }
+
+  /* Item card */
+  .fw-board-container tr.fw-item-row {
+    position: relative;
+    margin: 0 0 10px;
+    padding: 8px 8px 8px 40px;
+    border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+    border-radius: 12px;
+    background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  .fw-board-container td.fw-col-checkbox {
+    position: absolute;
+    top: 10px;
+    left: 8px;
+    padding: 0 !important;
+    background: none !important;
+  }
+
+  .fw-board-container td.fw-col-menu {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 0 !important;
+  }
+
+  .fw-board-container td.fw-col-item {
+    background: none !important;
+    padding: 2px 36px 6px 0 !important;
+    border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+    margin-bottom: 4px;
+  }
+
+  .fw-board-container td.fw-col-item .fw-item-title {
+    font-weight: 700;
+  }
+
+  /* Labelled value rows */
+  .fw-board-container td.fw-cell {
+    display: grid !important;
+    grid-template-columns: 92px 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0 !important;
+    border: none;
+  }
+
+  .fw-board-container td.fw-cell::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #94a3b8);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Summary rows and the totals block don't translate to cards */
+  .fw-board-container tr.fw-agg-row,
+  .fw-board-container .fw-board-totals-group {
+    display: none !important;
+  }
+
+  .fw-board-container tr.fw-add-row td {
+    padding: 4px 0 !important;
+  }
+
+  /* Horizontal scroll sync is meaningless in card layout */
+  .fw-scroll-sync-bar {
+    display: none !important;
   }
 }

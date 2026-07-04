@@ -304,6 +304,11 @@
     persistCardMove(itemId, 'status', newStatus, onError);
   };
 
+  // Used by touch-dnd.js: persist a card move in whatever mode is active
+  window.BoardApp.kanbanPersistMove = function(itemId, newKey, onError) {
+    persistCardMove(itemId, getGroupBy(), newKey, onError);
+  };
+
   // ===== ADD CARD =====
   window.BoardApp.addKanbanCard = function(colKey) {
     if (window.BoardApp.dialog) {

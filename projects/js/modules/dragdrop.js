@@ -310,7 +310,8 @@
   // ===== EXPOSE FUNCTIONS =====
   window.BoardApp.dragDrop = {
     reinit: makeItemsDraggable,
-    updateCounts: updateAllGroupCounts
+    updateCounts: updateAllGroupCounts,
+    persistDrop: saveItemPosition // (itemId, newGroupId, sourceGroupId) — used by touch-dnd.js
   };
 
   // ===== INITIALIZE ON LOAD =====
