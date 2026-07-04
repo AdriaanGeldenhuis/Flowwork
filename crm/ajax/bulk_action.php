@@ -39,7 +39,7 @@ try {
     switch ($action) {
         case 'update_status':
             $newStatus = $_POST['status'] ?? '';
-            if (!in_array($newStatus, ['active', 'inactive', 'prospect'])) {
+            if (!in_array($newStatus, CRM_ACCOUNT_STATUSES)) {
                 throw new Exception('Invalid status value');
             }
 

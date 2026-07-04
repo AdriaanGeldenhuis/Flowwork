@@ -174,7 +174,7 @@ if ($activeTab === 'overview') {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="fw-crm">
     <div class="fw-crm__container">
@@ -237,6 +237,7 @@ if ($activeTab === 'overview') {
                         <a href="/crm/settings.php" class="fw-crm__kebab-item">CRM Settings</a>
                         <a href="/crm/import.php" class="fw-crm__kebab-item">Import/Export</a>
                         <a href="/crm/dedupe.php" class="fw-crm__kebab-item">Dedupe & Merge</a>
+                        <a href="/crm/compliance.php" class="fw-crm__kebab-item">Compliance</a>
                     </nav>
                 </div>
             </div>
@@ -373,6 +374,7 @@ if ($activeTab === 'overview') {
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                             <option value="prospect">Prospect</option>
+                            <option value="banned">Banned</option>
                         </select>
                         <select id="filterIndustry" class="fw-crm__select">
                             <option value="">All Industries</option>
@@ -407,6 +409,7 @@ if ($activeTab === 'overview') {
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                             <option value="prospect">Prospect</option>
+                            <option value="banned">Banned</option>
                         </select>
                         <select id="filterIndustry" class="fw-crm__select">
                             <option value="">All Industries</option>

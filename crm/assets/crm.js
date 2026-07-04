@@ -276,6 +276,7 @@
               <option value="status:active">Set status: Active</option>
               <option value="status:inactive">Set status: Inactive</option>
               <option value="status:prospect">Set status: Prospect</option>
+              <option value="status:banned">Set status: Banned</option>
             </optgroup>
             <optgroup label="Lifecycle">
               <option value="soft_delete">Delete</option>

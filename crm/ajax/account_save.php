@@ -28,6 +28,23 @@ try {
         throw new Exception('Invalid account type');
     }
 
+    // Company policy: required identifiers (settings on /crm/settings.php)
+    if (isVATRequired() && trim($_POST['vat_no'] ?? '') === '') {
+        throw new Exception('VAT number is required');
+    }
+    if (isRegNumberRequired() && trim($_POST['reg_no'] ?? '') === '') {
+        throw new Exception('Registration number is required');
+    }
+
+    // Status: validate when provided, default from settings on create
+    $statusVal = trim($_POST['status'] ?? '');
+    if ($statusVal === '') {
+        $statusVal = getCRMSetting('crm_default_' . $type . '_status', 'active');
+    }
+    if (!in_array($statusVal, CRM_ACCOUNT_STATUSES)) {
+        throw new Exception('Invalid status value');
+    }
+
     // Normalize phone
     $phone = trim($_POST['phone'] ?? '');
     if ($phone && !preg_match('/^\+/', $phone)) {
@@ -59,7 +76,6 @@ try {
         $websiteVal = trim($_POST['website'] ?? '');
         $industryId = !empty($_POST['industry_id']) ? (int)$_POST['industry_id'] : null;
         $regionId = !empty($_POST['region_id']) ? (int)$_POST['region_id'] : null;
-        $statusVal = $_POST['status'] ?? 'active';
         $preferredVal = isset($_POST['preferred']) ? 1 : 0;
         $notesVal = trim($_POST['notes'] ?? '');
         $deletedFlag = isset($_POST['deleted']) ? 1 : 0;
@@ -167,7 +183,7 @@ try {
             !empty($_POST['industry_id']) ? (int)$_POST['industry_id'] : null,
             !empty($_POST['region_id']) ? (int)$_POST['region_id'] : null,
             $accountCurrency,
-            $_POST['status'] ?? 'active',
+            $statusVal,
             isset($_POST['preferred']) ? 1 : 0,
             trim($_POST['notes'] ?? '') ?: null,
             $userId

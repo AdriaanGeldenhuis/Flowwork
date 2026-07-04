@@ -213,6 +213,7 @@ $regions = $DB->query("SELECT * FROM crm_regions ORDER BY name ASC")->fetchAll()
                                 <option value="active">Active</option>
                                 <option value="inactive">Inactive</option>
                                 <option value="prospect">Prospect</option>
+                                <option value="banned">Banned</option>
                             </select>
                         </div>
                     </div>

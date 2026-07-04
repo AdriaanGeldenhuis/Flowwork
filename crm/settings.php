@@ -2,21 +2,14 @@
 // /crm/settings.php - COMPLETE SETTINGS PAGE
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
 
-// Check if user has admin rights
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$userRole = $stmt->fetchColumn();
-
-if (!in_array($userRole, ['admin', 'owner'])) {
-    header('Location: /crm/');
-    exit;
-}
+crm_require_min_role('admin', 'html');
 
 // Fetch user info
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
@@ -35,9 +28,11 @@ $settingsStmt = $DB->prepare("SELECT setting_key, setting_value FROM company_set
 $settingsStmt->execute([$companyId]);
 $settingsRaw = $settingsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// Default settings
+// Current settings (canonical keys — the ones init.php helpers and
+// account_save.php actually read; saved via /crm/ajax/settings_save.php)
 $settings = [
-    'crm_default_status' => $settingsRaw['crm_default_status'] ?? 'active',
+    'crm_default_supplier_status' => $settingsRaw['crm_default_supplier_status'] ?? 'active',
+    'crm_default_customer_status' => $settingsRaw['crm_default_customer_status'] ?? 'active',
     'crm_enable_duplicate_check' => $settingsRaw['crm_enable_duplicate_check'] ?? '1',
     'crm_duplicate_threshold' => $settingsRaw['crm_duplicate_threshold'] ?? '0.85',
     // Timeline limit determines how many events show on the account timeline (default 50)
@@ -45,49 +40,10 @@ $settings = [
     // Toggle compliance badge display on account pages
     'crm_compliance_badge_enable' => $settingsRaw['crm_compliance_badge_enable'] ?? '1',
     'crm_phone_format' => $settingsRaw['crm_phone_format'] ?? 'international',
-    'crm_require_vat' => $settingsRaw['crm_require_vat'] ?? '0',
+    'crm_require_vat_number' => $settingsRaw['crm_require_vat_number'] ?? '0',
+    'crm_require_reg_number' => $settingsRaw['crm_require_reg_number'] ?? '0',
     'crm_enable_tags' => $settingsRaw['crm_enable_tags'] ?? '1'
 ];
-
-// Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
-    try {
-        $DB->beginTransaction();
-
-        $newSettings = [
-            'crm_default_status' => $_POST['crm_default_status'] ?? 'active',
-            'crm_enable_duplicate_check' => isset($_POST['crm_enable_duplicate_check']) ? '1' : '0',
-            // similarity threshold for duplicate detection; clamp between 0.70 and 0.95
-            'crm_duplicate_threshold' => floatval($_POST['crm_duplicate_threshold'] ?? 0.85),
-            'crm_phone_format' => $_POST['crm_phone_format'] ?? 'international',
-            'crm_require_vat' => isset($_POST['crm_require_vat']) ? '1' : '0',
-            'crm_enable_tags' => isset($_POST['crm_enable_tags']) ? '1' : '0',
-            // timeline limit number of events; default 50
-            'crm_timeline_limit' => isset($_POST['crm_timeline_limit']) ? intval($_POST['crm_timeline_limit']) : 50,
-            // compliance badge toggle
-            'crm_compliance_badge_enable' => isset($_POST['crm_compliance_badge_enable']) ? '1' : '0'
-        ];
-
-        foreach ($newSettings as $key => $value) {
-            $stmt = $DB->prepare("
-                INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
-                VALUES (?, ?, ?, NOW())
-                ON DUPLICATE KEY UPDATE setting_value = ?, updated_at = NOW()
-            ");
-            $stmt->execute([$companyId, $key, $value, $value]);
-        }
-
-        $DB->commit();
-        $successMessage = 'Settings saved successfully!';
-        $settings = $newSettings;
-
-    } catch (Exception $e) {
-        if ($DB->inTransaction()) {
-            $DB->rollBack();
-        }
-        $errorMessage = 'Failed to save settings: ' . $e->getMessage();
-    }
-}
 
 // Fetch compliance types
 $complianceTypes = $DB->prepare("SELECT * FROM crm_compliance_types WHERE company_id = ? ORDER BY name");
@@ -170,6 +126,7 @@ $types = $complianceTypes->fetchAll();
                         <a href="/crm/" class="fw-crm__kebab-item">Back to CRM</a>
                         <a href="/crm/import.php" class="fw-crm__kebab-item">Import/Export</a>
                         <a href="/crm/dedupe.php" class="fw-crm__kebab-item">Dedupe & Merge</a>
+                        <a href="/crm/compliance.php" class="fw-crm__kebab-item">Compliance</a>
                     </nav>
                 </div>
             </div>
@@ -185,33 +142,36 @@ $types = $complianceTypes->fetchAll();
                 </p>
             </div>
 
-            <?php if (isset($successMessage)): ?>
-                <div class="fw-crm__alert fw-crm__alert--success">
-                    ✓ <?= htmlspecialchars($successMessage) ?>
-                </div>
-            <?php endif; ?>
+            <div class="fw-crm__alert fw-crm__alert--success" id="settingsSuccess" style="display:none;">
+                ✓ Settings saved successfully!
+            </div>
+            <div class="fw-crm__alert fw-crm__alert--error" id="settingsError" style="display:none;"></div>
 
-            <?php if (isset($errorMessage)): ?>
-                <div class="fw-crm__alert fw-crm__alert--error">
-                    ✗ <?= htmlspecialchars($errorMessage) ?>
-                </div>
-            <?php endif; ?>
+            <!-- Settings Form (saved via /crm/ajax/settings_save.php) -->
+            <form id="crmSettingsForm" class="fw-crm__form">
 
-            <!-- Settings Form -->
-            <form method="POST" class="fw-crm__form">
-                
                 <!-- General Settings -->
                 <div class="fw-crm__form-card">
                     <h2 class="fw-crm__form-card-title">General Settings</h2>
 
                     <div class="fw-crm__form-group">
-                        <label class="fw-crm__label">Default Account Status</label>
-                        <select name="crm_default_status" class="fw-crm__input">
-                            <option value="active" <?= $settings['crm_default_status'] === 'active' ? 'selected' : '' ?>>Active</option>
-                            <option value="inactive" <?= $settings['crm_default_status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option>
-                            <option value="prospect" <?= $settings['crm_default_status'] === 'prospect' ? 'selected' : '' ?>>Prospect</option>
+                        <label class="fw-crm__label">Default Supplier Status</label>
+                        <select name="crm_default_supplier_status" class="fw-crm__input">
+                            <option value="active" <?= $settings['crm_default_supplier_status'] === 'active' ? 'selected' : '' ?>>Active</option>
+                            <option value="inactive" <?= $settings['crm_default_supplier_status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option>
+                            <option value="prospect" <?= $settings['crm_default_supplier_status'] === 'prospect' ? 'selected' : '' ?>>Prospect</option>
                         </select>
-                        <small class="fw-crm__help-text">Status assigned to new accounts by default</small>
+                        <small class="fw-crm__help-text">Status assigned to new suppliers by default</small>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Default Customer Status</label>
+                        <select name="crm_default_customer_status" class="fw-crm__input">
+                            <option value="active" <?= $settings['crm_default_customer_status'] === 'active' ? 'selected' : '' ?>>Active</option>
+                            <option value="inactive" <?= $settings['crm_default_customer_status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option>
+                            <option value="prospect" <?= $settings['crm_default_customer_status'] === 'prospect' ? 'selected' : '' ?>>Prospect</option>
+                        </select>
+                        <small class="fw-crm__help-text">Status assigned to new customers by default</small>
                     </div>
 
                     <div class="fw-crm__form-group">
@@ -225,15 +185,26 @@ $types = $complianceTypes->fetchAll();
 
                     <div class="fw-crm__form-group">
                         <label class="fw-crm__checkbox-wrapper">
-                            <input type="checkbox" name="crm_require_vat" class="fw-crm__checkbox" <?= $settings['crm_require_vat'] === '1' ? 'checked' : '' ?>>
-                            <span>Require VAT Number for Suppliers</span>
+                            <input type="hidden" name="crm_require_vat_number" value="0">
+                            <input type="checkbox" name="crm_require_vat_number" value="1" class="fw-crm__checkbox" <?= $settings['crm_require_vat_number'] === '1' ? 'checked' : '' ?>>
+                            <span>Require VAT Number</span>
                         </label>
-                        <small class="fw-crm__help-text">Make VAT number mandatory when creating suppliers</small>
+                        <small class="fw-crm__help-text">Make VAT number mandatory when creating or editing accounts</small>
                     </div>
 
                     <div class="fw-crm__form-group">
                         <label class="fw-crm__checkbox-wrapper">
-                            <input type="checkbox" name="crm_enable_tags" class="fw-crm__checkbox" <?= $settings['crm_enable_tags'] === '1' ? 'checked' : '' ?>>
+                            <input type="hidden" name="crm_require_reg_number" value="0">
+                            <input type="checkbox" name="crm_require_reg_number" value="1" class="fw-crm__checkbox" <?= $settings['crm_require_reg_number'] === '1' ? 'checked' : '' ?>>
+                            <span>Require Registration Number</span>
+                        </label>
+                        <small class="fw-crm__help-text">Make company registration number mandatory when creating or editing accounts</small>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__checkbox-wrapper">
+                            <input type="hidden" name="crm_enable_tags" value="0">
+                            <input type="checkbox" name="crm_enable_tags" value="1" class="fw-crm__checkbox" <?= $settings['crm_enable_tags'] === '1' ? 'checked' : '' ?>>
                             <span>Enable Tags</span>
                         </label>
                         <small class="fw-crm__help-text">Allow tagging of accounts for categorization</small>
@@ -246,7 +217,8 @@ $types = $complianceTypes->fetchAll();
 
                     <div class="fw-crm__form-group">
                         <label class="fw-crm__checkbox-wrapper">
-                            <input type="checkbox" name="crm_enable_duplicate_check" class="fw-crm__checkbox" <?= $settings['crm_enable_duplicate_check'] === '1' ? 'checked' : '' ?>>
+                            <input type="hidden" name="crm_enable_duplicate_check" value="0">
+                            <input type="checkbox" name="crm_enable_duplicate_check" value="1" class="fw-crm__checkbox" <?= $settings['crm_enable_duplicate_check'] === '1' ? 'checked' : '' ?>>
                             <span>Enable Duplicate Detection</span>
                         </label>
                         <small class="fw-crm__help-text">Check for duplicate accounts when creating new ones</small>
@@ -275,11 +247,18 @@ $types = $complianceTypes->fetchAll();
 
                     <div class="fw-crm__form-group">
                         <label class="fw-crm__checkbox-wrapper">
-                            <input type="checkbox" name="crm_compliance_badge_enable" class="fw-crm__checkbox"
+                            <input type="hidden" name="crm_compliance_badge_enable" value="0">
+                            <input type="checkbox" name="crm_compliance_badge_enable" value="1" class="fw-crm__checkbox"
                                    <?= $settings['crm_compliance_badge_enable'] === '1' ? 'checked' : '' ?>>
                             <span>Display Compliance Badge</span>
                         </label>
                         <small class="fw-crm__help-text">Show a compliance badge on account pages</small>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <a href="/crm/compliance.php" class="fw-crm__btn fw-crm__btn--secondary">
+                            Open Compliance Admin (policy &amp; expiry overview)
+                        </a>
                     </div>
                 </div>
 
@@ -337,7 +316,7 @@ $types = $complianceTypes->fetchAll();
                     <a href="/crm/" class="fw-crm__btn fw-crm__btn--secondary">
                         Cancel
                     </a>
-                    <button type="submit" name="save_settings" class="fw-crm__btn fw-crm__btn--primary">
+                    <button type="submit" id="settingsSubmitBtn" class="fw-crm__btn fw-crm__btn--primary">
                         Save Settings
                     </button>
                 </div>
@@ -404,6 +383,42 @@ $types = $complianceTypes->fetchAll();
 
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script>
+    // === Settings save (posts canonical keys to settings_save.php) ===
+    document.getElementById('crmSettingsForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const submitBtn = document.getElementById('settingsSubmitBtn');
+        const okBanner = document.getElementById('settingsSuccess');
+        const errBanner = document.getElementById('settingsError');
+        okBanner.style.display = 'none';
+        errBanner.style.display = 'none';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Saving...';
+
+        fetch('/crm/ajax/settings_save.php', {
+            method: 'POST',
+            body: new FormData(this)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                okBanner.style.display = '';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                errBanner.textContent = '✗ ' + (data.error || 'Failed to save settings');
+                errBanner.style.display = '';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        })
+        .catch(() => {
+            errBanner.textContent = '✗ Network error — settings not saved';
+            errBanner.style.display = '';
+        })
+        .finally(() => {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save Settings';
+        });
+    });
+
     // === Compliance Type Management ===
     function openCTModal() {
         // Reset form

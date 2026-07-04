@@ -16,11 +16,8 @@ $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 $role      = $_SESSION['role'] ?? 'viewer';
 
-// Only admins or members may create opportunities
-if (!in_array($role, ['admin', 'member'])) {
-    echo json_encode(['ok' => false, 'error' => 'Permission denied']);
-    exit;
-}
+// Members and up may create opportunities
+crm_require_min_role('member');
 
 // Read and sanitize input
 $title       = trim($_POST['title'] ?? '');

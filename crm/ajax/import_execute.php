@@ -76,6 +76,14 @@ try {
 
     streamProgress(10, 'Mapping columns...');
 
+    // Count data rows upfront so progress reporting is real
+    $totalCount = 0;
+    while (fgetcsv($handle) !== false) {
+        $totalCount++;
+    }
+    rewind($handle);
+    fgetcsv($handle); // skip headers again
+
     $totalRows = 0;
     $successful = 0;
     $failed = 0;
@@ -97,7 +105,7 @@ try {
         }
 
         // Calculate progress (15% to 90%)
-        $progressPercent = 15 + (($totalRows / max($totalRows + 1, 1)) * 75);
+        $progressPercent = 15 + (int)round(($totalRows / max($totalCount, 1)) * 75);
         if ($totalRows % 10 === 0) {
             streamProgress($progressPercent, "Processing row {$totalRows}...");
         }
@@ -208,16 +216,29 @@ function importAccount($data, $companyId, $userId, $skipDuplicates, $dryRun) {
         $phone = '+27' . ltrim($phone, '0');
     }
 
+    // Account type from the mapped column (customers were impossible to
+    // import before — the type was hardcoded to supplier)
+    $accountType = strtolower(trim($data['type'] ?? ''));
+    if (!in_array($accountType, ['supplier', 'customer'])) {
+        $accountType = 'supplier';
+    }
+
+    $status = strtolower(trim($data['status'] ?? ''));
+    if (!in_array($status, CRM_ACCOUNT_STATUSES)) {
+        $status = 'active';
+    }
+
     // Insert account
     $stmt = $DB->prepare("
         INSERT INTO crm_accounts (
             company_id, type, name, legal_name, reg_no, vat_no,
-            phone, email, website, status, notes, created_by, created_at
-        ) VALUES (?, 'supplier', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            phone, email, website, industry_id, region_id, status, notes, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     ");
 
     $stmt->execute([
         $companyId,
+        $accountType,
         $name,
         $data['legal_name'] ?? null,
         $data['reg_no'] ?? null,
@@ -225,10 +246,32 @@ function importAccount($data, $companyId, $userId, $skipDuplicates, $dryRun) {
         $phone ?: null,
         $data['email'] ?? null,
         $data['website'] ?? null,
-        $data['status'] ?? 'active',
+        importLookupId('crm_industries', $data['industry'] ?? ''),
+        importLookupId('crm_regions', $data['region'] ?? ''),
+        $status,
         $data['notes'] ?? null,
         $userId
     ]);
+}
+
+// Resolve an industry/region NAME from the CSV to its id (exact,
+// case-insensitive). Unknown names import as NULL rather than failing the row.
+function importLookupId($table, $name) {
+    global $DB;
+    static $cache = [];
+
+    $name = trim((string)$name);
+    if ($name === '') {
+        return null;
+    }
+    $key = $table . '|' . strtolower($name);
+    if (!array_key_exists($key, $cache)) {
+        $stmt = $DB->prepare("SELECT id FROM `$table` WHERE LOWER(name) = LOWER(?) LIMIT 1");
+        $stmt->execute([$name]);
+        $id = $stmt->fetchColumn();
+        $cache[$key] = $id !== false ? (int)$id : null;
+    }
+    return $cache[$key];
 }
 
 function importContact($data, $companyId, $userId, $skipDuplicates, $dryRun) {

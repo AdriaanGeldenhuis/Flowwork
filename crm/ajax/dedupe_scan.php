@@ -59,7 +59,7 @@ try {
     streamProgress(15, 'Loading accounts...');
 
     // Fetch all accounts
-    $sql = "SELECT id, name, email, phone, vat_no, reg_no FROM crm_accounts WHERE company_id = ?";
+    $sql = "SELECT id, name, email, phone, vat_no, reg_no FROM crm_accounts WHERE company_id = ? AND deleted_at IS NULL";
     $params = [$companyId];
 
     if ($type !== 'all') {

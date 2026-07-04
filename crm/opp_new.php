@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
@@ -13,11 +14,8 @@ $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 $role      = $_SESSION['role'] ?? 'viewer';
 
-// Only allow admin or member to create opportunities
-if (!in_array($role, ['admin', 'member'])) {
-    header('Location: /crm/');
-    exit;
-}
+// Members and up can create opportunities
+crm_require_min_role('member', 'html');
 
 // Fetch lists for dropdowns
 // Accounts (customers)

@@ -15,11 +15,8 @@ $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 $role      = $_SESSION['role'] ?? 'viewer';
 
-// Only admins or members can convert opportunities
-if (!in_array($role, ['admin', 'member'])) {
-    echo json_encode(['ok' => false, 'error' => 'Permission denied']);
-    exit;
-}
+// Members and up can convert opportunities
+crm_require_min_role('member');
 
 $oppId = isset($_POST['id']) ? (int)$_POST['id'] : 0;
 if ($oppId <= 0) {

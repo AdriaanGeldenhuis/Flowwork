@@ -9,8 +9,8 @@ $type = $_GET['type'] ?? 'accounts';
 $templates = [
     'accounts' => [
         'filename' => 'accounts_template.csv',
-        'headers' => ['name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone', 'website', 'status', 'industry', 'region', 'notes'],
-        'sample' => ['ABC Suppliers', 'ABC Suppliers Pty Ltd', '2021/123456/07', '4123456789', 'info@abc.co.za', '+27123456789', 'https://abc.co.za', 'active', 'Construction', 'Gauteng', 'Preferred supplier']
+        'headers' => ['name', 'type', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone', 'website', 'status', 'industry', 'region', 'notes'],
+        'sample' => ['ABC Suppliers', 'supplier', 'ABC Suppliers Pty Ltd', '2021/123456/07', '4123456789', 'info@abc.co.za', '+27123456789', 'https://abc.co.za', 'active', 'Construction', 'Gauteng', 'Preferred supplier']
     ],
     'contacts' => [
         'filename' => 'contacts_template.csv',

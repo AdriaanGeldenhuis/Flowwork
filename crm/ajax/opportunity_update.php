@@ -30,8 +30,8 @@ try {
         throw new Exception('Opportunity not found');
     }
 
-    // Check permission: admin or owner
-    if ($role !== 'admin' && (int)$opp['owner_id'] !== (int)$userId) {
+    // Check permission: admin-level role, or the opportunity's owner
+    if (crm_role_rank($role) < crm_role_rank('admin') && (int)$opp['owner_id'] !== (int)$userId) {
         throw new Exception('Permission denied');
     }
 

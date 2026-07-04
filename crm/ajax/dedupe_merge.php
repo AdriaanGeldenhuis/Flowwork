@@ -129,9 +129,25 @@ try {
 
     // 4. Compliance docs
     $stmt = $DB->prepare("
-        UPDATE crm_compliance_docs 
+        UPDATE crm_compliance_docs
         SET account_id = ?, updated_at = NOW()
         WHERE account_id = ? AND company_id = ?
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+
+    // 4b. Opportunities (previously missed — merges orphaned these)
+    $stmt = $DB->prepare("
+        UPDATE crm_opportunities
+        SET account_id = ?, updated_at = NOW()
+        WHERE account_id = ? AND company_id = ?
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+
+    // 4c. Purchase orders reference suppliers directly
+    $stmt = $DB->prepare("
+        UPDATE purchase_orders
+        SET supplier_id = ?
+        WHERE supplier_id = ? AND company_id = ?
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
 
@@ -153,11 +169,26 @@ try {
 
     // 7. Emails: repoint account_id
     $stmt = $DB->prepare("
-        UPDATE emails 
+        UPDATE emails
         SET account_id = ?, folder = folder
         WHERE account_id = ? AND company_id = ?
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
+
+    // 7b. Polymorphic email links (linked_type is the account's type string).
+    //     UPDATE IGNORE skips rows that would duplicate an existing link to
+    //     the winner; the DELETE clears those leftovers.
+    $stmt = $DB->prepare("
+        UPDATE IGNORE email_links
+        SET linked_id = ?
+        WHERE linked_id = ? AND company_id = ? AND linked_type IN ('supplier', 'customer')
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+    $stmt = $DB->prepare("
+        DELETE FROM email_links
+        WHERE linked_id = ? AND company_id = ? AND linked_type IN ('supplier', 'customer')
+    ");
+    $stmt->execute([$rightId, $companyId]);
 
     // 5. Tags (merge without duplicates)
     $stmt = $DB->prepare("
@@ -170,9 +201,11 @@ try {
     $stmt = $DB->prepare("DELETE FROM crm_account_tags WHERE account_id = ?");
     $stmt->execute([$rightId]);
 
-    // 6. Delete the right account
+    // 6. Soft-delete the losing account (audit trail + restorable via the
+    //    "Deleted only" filter; a hard DELETE also broke FK'd history rows)
     $stmt = $DB->prepare("
-        DELETE FROM crm_accounts 
+        UPDATE crm_accounts
+        SET deleted_at = NOW(), updated_at = NOW()
         WHERE id = ? AND company_id = ?
     ");
     $stmt->execute([$rightId, $companyId]);
