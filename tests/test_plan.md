@@ -77,3 +77,48 @@ Perform a full cycle:
 7. Check dashboard cards (cash, AR, AP, VAT, FA, Payroll) to ensure counters are correct.
 
 Document any errors, warnings, or inconsistencies.  This smoke test ensures that the finance module’s main flows – billing, procurement, inventory, banking, VAT, fixed assets, payroll, and reporting – work together correctly after the recent enhancements.
+---
+
+## CRM improvement pass (Phases A–E, 2026-07-04) — manual verification flows
+
+Run the SQL in `Migrations/2026-07-04-crm-settings-reconcile.sql` and
+`Migrations/2026-07-04-crm-opps-win-loss.sql` against the DB first.
+
+### Phase A — security & dead code
+- [ ] `/crm/ajax/test_save.php` and `/crm/create_test.php` return 404.
+- [ ] `/crm/overview.php` 404s; `/crm/?tab=overview` still renders the overview tab.
+- [ ] `/crm/invoice_view.php?id=X` redirects to `/qi/invoice_view.php?id=X`.
+- [ ] On an account's Compliance tab, the Download button streams the file; fetching `/uploads/compliance/<file>` directly is denied.
+- [ ] As a `member` user, calling `/crm/ajax/export.php?type=accounts` directly returns a 403/permission error.
+- [ ] Force a SQL error (e.g. temporarily rename a table in a dev DB): endpoints return `{"ok":false,"error":"Server error"}`, not SQL text.
+- [ ] `php crm/cron/generate_recurring.php` runs the QI generator via the shim.
+
+### Phase B — correctness
+- [ ] Settings page saves; reload shows persisted values; keys in `company_settings` are `crm_require_vat_number`, `crm_default_supplier_status`, `crm_default_customer_status`.
+- [ ] With "Require VAT Number" on, creating an account without VAT is rejected server-side.
+- [ ] An `owner`-role user can create and edit opportunities.
+- [ ] Merge two accounts where the loser has opportunities and POs: they now point at the winner; the loser shows under the "Deleted only" filter (not hard-deleted).
+- [ ] Import a CSV with a `type` column: `customer` rows land on the Customers tab; industry/region names resolve; progress bar moves.
+- [ ] Export with `format=xlsx` fails with a clear message instead of silently sending CSV.
+- [ ] With "Block expired suppliers" on and a supplier missing a required doc, RFQ creation is refused.
+
+### Phase C — account views
+- [ ] Timeline tab loads real events (interactions, sent emails, quotes, invoices) on first open.
+- [ ] Linked Items tab lists the account's quotes/invoices (and projects when linked) with working links.
+- [ ] "+ Tag" adds a tag without a reload; the × on a chip removes it.
+- [ ] Industry/Region filters on the suppliers/customers lists narrow results.
+- [ ] Account analytics charts show real numbers; an empty account shows "No data yet", not random values.
+- [ ] Supplier accounts show On-time/Response/Defect tiles (em-dash before the KPI cron has run).
+
+### Phase D — integrations
+- [ ] Schedule a follow-up 10 minutes out with a 5-minute reminder; run `php calendar/cron/send_reminders.php` (CLI): a notification row appears / email is attempted; the event is visible in /calendar/.
+- [ ] Logging an interaction with "Next action" set creates a follow-up (Upcoming Follow-ups card shows it).
+- [ ] Send Email modal: from/signature/template pickers populate; sending stores the mail and it appears on the Timeline tab; without a mail account the button links to /mail/settings.php.
+- [ ] Customer account kebab → "Copy client portal link" copies a working portal URL.
+- [ ] Converting a won opportunity creates a project that then appears under Linked Items.
+
+### Phase E — pipeline
+- [ ] Drag a card with amount ≥ R1,000,000 between columns: totals update correctly (the old text-parsing regex broke on grouped thousands).
+- [ ] Dropping a card into Lost asks for a reason; Skip works; closing the modal reverts the move; the reason shows on the opportunity view.
+- [ ] Owner and close-date filters narrow the board.
+- [ ] Open deals with a passed close date (or no movement for 30+ days) show the amber stale flag.

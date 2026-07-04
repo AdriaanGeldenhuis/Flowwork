@@ -21,9 +21,11 @@ if ($oppId <= 0) {
     exit;
 }
 
+const CRM_OPP_STAGES = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost', 'converted'];
+
 try {
     // Fetch opportunity and check ownership
-    $stmt = $DB->prepare("SELECT company_id, owner_id FROM crm_opportunities WHERE id = ?");
+    $stmt = $DB->prepare("SELECT company_id, owner_id, stage FROM crm_opportunities WHERE id = ?");
     $stmt->execute([$oppId]);
     $opp = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$opp || $opp['company_id'] != $companyId) {
@@ -51,12 +53,28 @@ try {
         $fields[] = 'amount = ?';
         $params[] = $amount;
     }
-    // Stage
+    // Stage (validated against the pipeline's stage list)
     if (isset($_POST['stage'])) {
         $stage = trim($_POST['stage']);
-        if ($stage === '') throw new Exception('Stage cannot be empty');
+        if (!in_array($stage, CRM_OPP_STAGES)) {
+            throw new Exception('Invalid stage');
+        }
         $fields[] = 'stage = ?';
         $params[] = $stage;
+
+        if ($stage !== $opp['stage']) {
+            $fields[] = 'stage_changed_at = NOW()';
+            // Leaving 'lost' clears any recorded loss reason
+            if ($opp['stage'] === 'lost' && $stage !== 'lost' && !isset($_POST['loss_reason'])) {
+                $fields[] = 'loss_reason = NULL';
+            }
+        }
+    }
+    // Loss reason (kanban lost-drop modal and opp_view send it)
+    if (array_key_exists('loss_reason', $_POST)) {
+        $lossReason = trim($_POST['loss_reason']);
+        $fields[] = 'loss_reason = ?';
+        $params[] = $lossReason !== '' ? mb_substr($lossReason, 0, 255) : null;
     }
     // Probability
     if (isset($_POST['probability'])) {
@@ -76,8 +94,8 @@ try {
     // Owner change
     if (isset($_POST['owner_id'])) {
         $newOwnerId = (int)$_POST['owner_id'];
-        // Only admin can change owner
-        if ($role !== 'admin') {
+        // Only admin-level roles can change owner
+        if (crm_role_rank($role) < crm_role_rank('admin')) {
             throw new Exception('Only admin can reassign owner');
         }
         // Verify the new owner exists and belongs to the company
@@ -104,7 +122,9 @@ try {
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
 
-    // Audit log entry
+    // Audit log entry (drop the CSRF token from the recorded payload)
+    $auditPayload = $_POST;
+    unset($auditPayload['csrf_token']);
     $stmt = $DB->prepare("INSERT INTO audit_log (
             company_id, user_id, action, entity_type, entity_id, details, created_at
         ) VALUES (?, ?, 'update', 'crm_opportunity', ?, ?, NOW())");
@@ -112,7 +132,7 @@ try {
         $companyId,
         $userId,
         $oppId,
-        json_encode($_POST)
+        json_encode($auditPayload)
     ]);
 
     echo json_encode(['ok' => true]);

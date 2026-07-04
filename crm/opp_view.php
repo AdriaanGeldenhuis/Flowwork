@@ -183,6 +183,17 @@ $companyName = $company['name'] ?? 'Company';
                         <div class="fw-crm__static-text"><?= ucfirst($opp['stage']) ?></div>
                     <?php endif; ?>
                 </div>
+                <div class="fw-crm__form-group" id="lossReasonGroup" style="<?= $opp['stage'] === 'lost' ? '' : 'display:none;' ?>">
+                    <label for="loss_reason" class="fw-crm__label">Loss reason</label>
+                    <?php if ($canEdit): ?>
+                        <input type="text" name="loss_reason" id="loss_reason" class="fw-crm__input" maxlength="255"
+                               value="<?= htmlspecialchars($opp['loss_reason'] ?? '') ?>"
+                               <?= $opp['stage'] === 'lost' ? '' : 'disabled' ?>
+                               placeholder="e.g. price, timing, went with competitor">
+                    <?php else: ?>
+                        <div class="fw-crm__static-text"><?= htmlspecialchars($opp['loss_reason'] ?? '') ?></div>
+                    <?php endif; ?>
+                </div>
                 <div class="fw-crm__form-group">
                     <label for="probability" class="fw-crm__label">Probability (%)</label>
                     <?php if ($canEdit): ?>
@@ -263,6 +274,18 @@ $companyName = $company['name'] ?? 'Company';
     (function() {
         const canEdit = <?= $canEdit ? 'true' : 'false' ?>;
         const oppId = <?= (int)$opp['id'] ?>;
+
+        // Loss reason only applies to lost deals (disabled inputs don't submit)
+        const stageSelect = document.getElementById('stage');
+        const lossGroup = document.getElementById('lossReasonGroup');
+        const lossInput = document.getElementById('loss_reason');
+        if (stageSelect && lossGroup) {
+            stageSelect.addEventListener('change', function() {
+                const isLost = this.value === 'lost';
+                lossGroup.style.display = isLost ? '' : 'none';
+                if (lossInput) lossInput.disabled = !isLost;
+            });
+        }
 
         // Follow-up creation (available to any member+ viewer of the opp)
         const followupForm = document.getElementById('oppFollowupForm');

@@ -21,7 +21,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Recalculate counts and totals for each stage
+    // Recalculate counts and totals for each stage from data-amount
+    // attributes (parsing the rendered "R1 234,56" text broke on formats)
     function recalcStageTotals() {
         document.querySelectorAll('.fw-opps__column').forEach(col => {
             const stage = col.getAttribute('data-stage');
@@ -29,21 +30,99 @@ document.addEventListener('DOMContentLoaded', function () {
             const cards = itemsContainer.querySelectorAll('.fw-opps__card');
             let total = 0;
             cards.forEach(card => {
-                const infoEl = card.querySelector('.fw-opps__card-info');
-                if (!infoEl) return;
-                const text = infoEl.textContent || '';
-                // Extract number portion from "R1234.56"
-                const match = text.match(/R\s*([0-9.,]+)/);
-                if (match) {
-                    // Remove commas for thousand separators
-                    const num = parseFloat(match[1].replace(/,/g, ''));
-                    if (!isNaN(num)) total += num;
-                }
+                const num = parseFloat(card.dataset.amount);
+                if (!isNaN(num)) total += num;
             });
             const countSpan = document.getElementById('count-' + stage);
             const totalSpan = document.getElementById('total-' + stage);
             if (countSpan) countSpan.textContent = cards.length;
-            if (totalSpan) totalSpan.textContent = 'R' + total.toFixed(2);
+            if (totalSpan) totalSpan.textContent = 'R' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        });
+    }
+
+    function notify(msg, type) {
+        if (window.CRM && CRM.toast) { CRM.toast(msg, type); } else { alert(msg); }
+    }
+
+    // ===== Loss reason capture =====
+    // When a deal is dropped into Lost, ask for an optional reason before
+    // sending the stage update. Cancelling the modal reverts the move.
+    const lossModal = document.getElementById('lossReasonModal');
+    const lossInput = document.getElementById('lossReasonInput');
+    let lossResolver = null;
+
+    // Ask for a loss reason. Resolves with {proceed, reason}.
+    function askLossReason() {
+        return new Promise(resolve => {
+            if (!lossModal) { resolve({ proceed: true, reason: '' }); return; }
+            lossResolver = resolve;
+            lossInput.value = '';
+            CRMModal.open('lossReasonModal');
+            lossInput.focus();
+        });
+    }
+
+    function settleLossModal(result) {
+        if (!lossResolver) return;
+        const resolve = lossResolver;
+        lossResolver = null;
+        CRMModal.close('lossReasonModal');
+        resolve(result);
+    }
+
+    if (lossModal) {
+        // Overlay-click / Escape close the modal without going through our
+        // buttons (crm.js handles those) — treat that as a cancel
+        new MutationObserver(() => {
+            if (lossResolver && !lossModal.classList.contains('fw-crm__modal-overlay--active')) {
+                const resolve = lossResolver;
+                lossResolver = null;
+                resolve({ proceed: false, reason: '' });
+            }
+        }).observe(lossModal, { attributes: true, attributeFilter: ['class'] });
+
+        document.getElementById('lossReasonSave').addEventListener('click', () => {
+            settleLossModal({ proceed: true, reason: lossInput.value.trim() });
+        });
+        document.getElementById('lossReasonSkip').addEventListener('click', () => {
+            settleLossModal({ proceed: true, reason: '' });
+        });
+        document.getElementById('lossReasonClose').addEventListener('click', () => {
+            settleLossModal({ proceed: false, reason: '' });
+        });
+        lossInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                settleLossModal({ proceed: true, reason: lossInput.value.trim() });
+            }
+        });
+    }
+
+    // Send a stage update; revert() restores the card position on failure
+    function sendStageUpdate(oppId, newStage, lossReason, revert) {
+        const params = new URLSearchParams();
+        params.append('id', oppId);
+        params.append('stage', newStage);
+        if (newStage === 'lost' && lossReason) {
+            params.append('loss_reason', lossReason);
+        }
+        fetch('/crm/ajax/opportunity_update.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        }).then(resp => resp.json())
+        .then(data => {
+            if (!data.ok) {
+                notify(data.error || 'Failed to update stage', 'error');
+                revert();
+            }
+            initCardDragHandlers();
+            recalcStageTotals();
+        }).catch(() => {
+            notify('Error communicating with server', 'error');
+            revert();
+            initCardDragHandlers();
+            recalcStageTotals();
         });
     }
 
@@ -63,41 +142,30 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Save original position for rollback on failure
                 const originalContainer = draggedCard.parentElement;
                 const originalNextSibling = draggedCard.nextElementSibling;
-                // Append card to new column
-                this.appendChild(draggedCard);
-                const newStage = this.parentElement.getAttribute('data-stage');
-                // Prepare form data
-                const params = new URLSearchParams();
-                params.append('id', oppId);
-                params.append('stage', newStage);
-                fetch('/crm/ajax/opportunity_update.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: params.toString()
-                }).then(resp => resp.json())
-                .then(data => {
-                    if (!data.ok) {
-                        alert(data.error || 'Failed to update stage');
-                        // Revert card to original column
-                        if (originalNextSibling) {
-                            originalContainer.insertBefore(draggedCard, originalNextSibling);
-                        } else {
-                            originalContainer.appendChild(draggedCard);
-                        }
-                    }
-                    initCardDragHandlers();
-                    recalcStageTotals();
-                }).catch(() => {
-                    alert('Error communicating with server');
-                    // Revert card to original column
+                const revert = () => {
                     if (originalNextSibling) {
                         originalContainer.insertBefore(draggedCard, originalNextSibling);
                     } else {
                         originalContainer.appendChild(draggedCard);
                     }
-                    initCardDragHandlers();
-                    recalcStageTotals();
-                });
+                };
+                // Append card to new column (optimistic)
+                this.appendChild(draggedCard);
+                recalcStageTotals();
+                const newStage = this.parentElement.getAttribute('data-stage');
+
+                if (newStage === 'lost') {
+                    askLossReason().then(({ proceed, reason }) => {
+                        if (!proceed) {
+                            revert();
+                            recalcStageTotals();
+                            return;
+                        }
+                        sendStageUpdate(oppId, newStage, reason, revert);
+                    });
+                } else {
+                    sendStageUpdate(oppId, newStage, '', revert);
+                }
             });
         });
     }
@@ -161,42 +229,35 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const originalContainer = card.parentElement;
         const originalNextSibling = card.nextElementSibling;
-        targetCol.appendChild(card);
-
-        const params = new URLSearchParams();
-        params.append('id', oppId);
-        params.append('stage', newStage);
-
-        fetch('/crm/ajax/opportunity_update.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: params.toString()
-        }).then(resp => resp.json())
-        .then(data => {
-            if (!data.ok) {
-                alert(data.error || 'Failed to update stage');
-                if (originalNextSibling) {
-                    originalContainer.insertBefore(card, originalNextSibling);
-                } else {
-                    originalContainer.appendChild(card);
-                }
-            }
-            // Update mobile select options
-            const select = document.getElementById('mobileStageSelect');
-            if (select) select.value = newStage;
-            document.querySelectorAll('.fw-opps__column').forEach(col => {
-                col.classList.toggle('fw-opps__column--active', col.getAttribute('data-stage') === newStage);
-            });
-            recalcStageTotals();
-        }).catch(() => {
-            alert('Error communicating with server');
+        const revert = () => {
             if (originalNextSibling) {
                 originalContainer.insertBefore(card, originalNextSibling);
             } else {
                 originalContainer.appendChild(card);
             }
-            recalcStageTotals();
+        };
+        targetCol.appendChild(card);
+
+        // Follow the moved card on mobile
+        const select = document.getElementById('mobileStageSelect');
+        if (select) select.value = newStage;
+        document.querySelectorAll('.fw-opps__column').forEach(col => {
+            col.classList.toggle('fw-opps__column--active', col.getAttribute('data-stage') === newStage);
         });
+        recalcStageTotals();
+
+        if (newStage === 'lost') {
+            askLossReason().then(({ proceed, reason }) => {
+                if (!proceed) {
+                    revert();
+                    recalcStageTotals();
+                    return;
+                }
+                sendStageUpdate(oppId, newStage, reason, revert);
+            });
+        } else {
+            sendStageUpdate(oppId, newStage, '', revert);
+        }
     }
 
     // Initialize handlers on page load
