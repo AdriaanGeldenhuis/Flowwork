@@ -212,7 +212,7 @@
           <option value="low">Low</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
-          <option value="extreme">Extreme</option>
+          <option value="critical">Critical</option>
         </select>
       `;
     } else if (valueType === 'group') {

@@ -1,17 +1,9 @@
 /* ============================================
-   FLOWWORK PROJECTS BOARD - MAIN STYLESHEET
-   Mobile-Friendly | Consistent Spacing
+   FLOWWORK PROJECTS BOARD - BOARD OVERRIDES
+   The layered stylesheets (base/theme/layout/table/components/modals/
+   views/mobile/board-3d) are linked individually by board.php so each
+   gets its own cache-busting version — do not re-import them here.
    ============================================ */
-
-@import url('base.css');
-@import url('theme.css');
-@import url('layout.css');
-@import url('table.css');
-@import url('components.css');
-@import url('modals.css');
-@import url('views.css');
-@import url('mobile.css');
-@import url('board-3d.css'); /* 3D skin — must stay last so it overlays the rest */
 
 
 /* Real-time update animations */

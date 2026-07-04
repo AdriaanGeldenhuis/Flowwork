@@ -20,15 +20,17 @@ try {
     $COMPANY_ID = $_SESSION['company_id'];
     
     $boardId = (int)($_GET['board_id'] ?? 0);
+    $itemId = (int)($_GET['item_id'] ?? 0);
     $limit = (int)($_GET['limit'] ?? 50);
-    
+
     if (!$boardId) {
         http_response_code(400);
         die(json_encode(['ok' => false, 'error' => 'Board ID required']));
     }
-    
+
     if ($limit > 200) $limit = 200;
-    
+    if ($limit < 1) $limit = 50;
+
     // Check access
     $stmt = $DB->prepare("
         SELECT board_id FROM project_boards
@@ -39,31 +41,13 @@ try {
         http_response_code(404);
         die(json_encode(['ok' => false, 'error' => 'Board not found']));
     }
-    
-    // Check if table exists
-    $stmt = $DB->query("SHOW TABLES LIKE 'board_activity'");
-    if ($stmt->rowCount() === 0) {
-        // Create table
-        $DB->exec("
-            CREATE TABLE `board_activity` (
-              `id` int(11) NOT NULL AUTO_INCREMENT,
-              `board_id` int(11) NOT NULL,
-              `user_id` int(11) NOT NULL,
-              `action` varchar(50) NOT NULL,
-              `item_id` int(11) DEFAULT NULL,
-              `details` text,
-              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              PRIMARY KEY (`id`),
-              KEY `board_id` (`board_id`),
-              KEY `created_at` (`created_at`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ");
-    }
-    
-    // Get activities
+
+    // Get activities. Mutations are logged to board_audit_log (see api/_audit.php);
+    // the old board_activity table was never written to.
+    $itemFilter = $itemId ? 'AND a.item_id = ?' : '';
     $stmt = $DB->prepare("
-        SELECT 
-            a.*,
+        SELECT
+            a.id, a.board_id, a.item_id, a.user_id, a.action, a.details, a.created_at,
             u.first_name,
             u.last_name,
             u.email,
@@ -75,14 +59,17 @@ try {
                 WHEN TIMESTAMPDIFF(DAY, a.created_at, NOW()) < 7 THEN CONCAT(TIMESTAMPDIFF(DAY, a.created_at, NOW()), ' days ago')
                 ELSE DATE_FORMAT(a.created_at, '%b %d, %Y')
             END AS time_ago
-        FROM board_activity a
+        FROM board_audit_log a
         LEFT JOIN users u ON a.user_id = u.id
         LEFT JOIN board_items bi ON a.item_id = bi.id
-        WHERE a.board_id = ?
-        ORDER BY a.created_at DESC
+        WHERE a.board_id = ? AND a.company_id = ? $itemFilter
+        ORDER BY a.id DESC
         LIMIT ?
     ");
-    $stmt->execute([$boardId, $limit]);
+    $params = [$boardId, $COMPANY_ID];
+    if ($itemId) $params[] = $itemId;
+    $params[] = $limit;
+    $stmt->execute($params);
     $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Parse details JSON

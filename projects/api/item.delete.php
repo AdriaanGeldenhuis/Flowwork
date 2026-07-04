@@ -2,6 +2,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/_guard.php';
 require_once __DIR__ . '/_respond.php';
+require_once __DIR__ . '/_audit.php';
 
 $itemId = (int)($_POST['item_id'] ?? 0);
 if (!$itemId) respond_error('Item ID required');
@@ -9,7 +10,7 @@ if (!$itemId) respond_error('Item ID required');
 try {
     // Verify item belongs to company and get board_id for role check
     $stmt = $DB->prepare("
-        SELECT bi.id, bi.board_id
+        SELECT bi.id, bi.board_id, bi.title
         FROM board_items bi
         JOIN project_boards pb ON bi.board_id = pb.board_id
         WHERE bi.id = ? AND pb.company_id = ?
@@ -34,6 +35,10 @@ try {
     $DB->prepare("DELETE FROM board_items WHERE id = ?")->execute([$itemId]);
 
     $DB->commit();
+
+    fw_audit($DB, $COMPANY_ID, $item['board_id'], null, $USER_ID, 'item_deleted', [
+        'title' => $item['title'],
+    ]);
 
     respond_ok();
 

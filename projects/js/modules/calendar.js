@@ -17,6 +17,17 @@
 
     const items = window.BOARD_DATA.items.filter(i => i.due_date);
 
+    if (items.length === 0) {
+      container.innerHTML = `
+        <div class="fw-empty-state" style="margin: 80px auto; max-width: 460px; text-align: center;">
+          <div class="fw-empty-icon">📅</div>
+          <div class="fw-empty-title">No items with due dates</div>
+          <div class="fw-empty-text">Set a Due Date on items in Table view and they will appear on this calendar.</div>
+        </div>
+      `;
+      return;
+    }
+
     const html = `
       <div class="fw-calendar-container">
         <div class="fw-calendar-header">
@@ -124,7 +135,8 @@
 
   // ===== SHOW ITEM DETAILS =====
   window.BoardApp.showItemDetails = function(itemId) {
-    const item = window.BOARD_DATA.items.find(i => i.id === itemId);
+    // Loose compare: ids arrive as strings from PHP but numbers from onclick
+    const item = window.BOARD_DATA.items.find(i => String(i.id) === String(itemId));
     if (!item) return;
 
     const html = `
@@ -141,7 +153,7 @@
         </div>
         <div class="fw-form-group">
           <label>Assigned To</label>
-          <span>${item.first_name ? `${item.first_name} ${item.last_name}` : 'Unassigned'}</span>
+          <span>${item.first_name ? escapeHtml(`${item.first_name} ${item.last_name}`) : 'Unassigned'}</span>
         </div>
         <div class="fw-form-group">
           <label>Due Date</label>

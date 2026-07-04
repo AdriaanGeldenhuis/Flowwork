@@ -20,21 +20,21 @@
       if (!data.ok) throw new Error(data.error);
       
       const comments = data.data.comments || [];
-      
+
       const commentsHtml = comments.map(c => `
         <div class="fw-comment">
-          <div class="fw-comment__avatar">${c.first_name.charAt(0)}${c.last_name.charAt(0)}</div>
+          <div class="fw-comment__avatar">${esc((c.first_name || '?').charAt(0) + (c.last_name || '?').charAt(0))}</div>
           <div class="fw-comment__content">
             <div class="fw-comment__header">
-              <span class="fw-comment__author">${c.first_name} ${c.last_name}</span>
-              <span class="fw-comment__time">${c.time_ago}</span>
+              <span class="fw-comment__author">${esc((c.first_name || '') + ' ' + (c.last_name || ''))}</span>
+              <span class="fw-comment__time">${esc(c.time_ago)}</span>
             </div>
             <div class="fw-comment__text">${formatCommentText(c.comment)}</div>
           </div>
         </div>
       `).join('');
-      
-      const modal = createModal(`💬 Comments - ${item.title}`, `
+
+      const modal = createModal(`💬 Comments - ${esc(item.title)}`, `
         <div class="fw-comments-container">
           <div class="fw-comments-list">
             ${comments.length > 0 ? commentsHtml : '<div class="fw-empty-state"><div class="fw-empty-icon">💬</div><div class="fw-empty-title">No comments yet</div><div class="fw-empty-text">Be the first to comment!</div></div>'}
@@ -65,10 +65,21 @@
     });
   };
 
+  // Escape helper — comments are user-generated content rendered via innerHTML
+  function esc(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   // ===== FORMAT COMMENT TEXT (parse mentions) =====
+  // Escape FIRST, then wrap @mentions — never feed raw comment text to innerHTML
   function formatCommentText(text) {
-    // Convert @mentions to styled spans
-    return text.replace(/@(\w+)/g, '<span class="fw-mention">@$1</span>');
+    return esc(text).replace(/@(\w+)/g, '<span class="fw-mention">@$1</span>');
   }
 
   // ===== ADD COMMENT =====
@@ -130,27 +141,11 @@
     return modal;
   }
 
-  // ===== HELPER: TOAST =====
+  // ===== HELPER: TOAST (delegates to the canonical toast in ui.js) =====
   function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `fw-toast fw-toast--${type}`;
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 12px 20px;
-      background: var(--modal-bg);
-      border: 1px solid var(--modal-border);
-      border-radius: 8px;
-      color: var(--modal-text);
-      font-size: 14px;
-      z-index: 10000;
-      backdrop-filter: blur(10px);
-    `;
-    toast.textContent = message;
-    const container = document.querySelector('.fw-proj') || document.body;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    if (typeof window.BoardApp.showToast === 'function') {
+      window.BoardApp.showToast(message, type);
+    }
   }
 
   console.log('✅ Comments module loaded');

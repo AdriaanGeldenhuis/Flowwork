@@ -157,15 +157,23 @@ try {
         
         // Update item timestamp
         $stmt = $DB->prepare("
-            UPDATE board_items 
-            SET updated_at = NOW() 
+            UPDATE board_items
+            SET updated_at = NOW()
             WHERE id = ?
         ");
         $stmt->execute([$itemId]);
-        
+
         // Commit transaction
         $DB->commit();
-        
+
+        // Feed the activity log (failures are swallowed inside fw_audit)
+        require_once __DIR__ . '/../_audit.php';
+        fw_audit($DB, $COMPANY_ID, $boardId, $itemId, $USER_ID, 'item_updated', [
+            'column_id' => $columnId,
+            'column_name' => $row['name'],
+            'value' => is_string($value) ? mb_substr($value, 0, 200) : $value,
+        ]);
+
         // Success!
         http_response_code(200);
         echo json_encode([

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/_guard.php';
 require_once __DIR__ . '/_respond.php';
+require_once __DIR__ . '/_audit.php';
 
 $itemId = (int)($_POST['item_id'] ?? 0);
 if (!$itemId) respond_error('Item ID required');
@@ -9,7 +10,7 @@ if (!$itemId) respond_error('Item ID required');
 try {
     // Verify item belongs to company and get board_id for role check
     $stmt = $DB->prepare("
-        SELECT bi.id, bi.board_id
+        SELECT bi.id, bi.board_id, bi.title
         FROM board_items bi
         JOIN project_boards pb ON bi.board_id = pb.board_id
         WHERE bi.id = ? AND pb.company_id = ?
@@ -103,6 +104,22 @@ try {
 
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
+
+    // Activity log: pick the most meaningful action for this update
+    if (isset($_POST['archived'])) {
+        $action = ((int)$_POST['archived'] === 1) ? 'item_deleted' : 'item_restored';
+        $details = ['title' => $item['title']];
+    } elseif (isset($_POST['status_label'])) {
+        $action = 'status_changed';
+        $details = ['new_status' => $_POST['status_label'] ?: 'none'];
+    } else {
+        $action = 'item_updated';
+        $details = ['fields' => array_values(array_intersect(
+            ['title', 'description', 'group_id', 'position', 'assigned_to', 'priority', 'progress', 'due_date', 'start_date', 'end_date', 'tags'],
+            array_keys($_POST)
+        ))];
+    }
+    fw_audit($DB, $COMPANY_ID, $item['board_id'], $itemId, $USER_ID, $action, $details);
 
     respond_ok(['item_id' => $itemId, 'updated_fields' => count($updates) - 1]);
 

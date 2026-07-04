@@ -184,8 +184,8 @@
       // Clear input
       if (inputElement) inputElement.value = '';
 
-      // Reload subitems modal
-      document.querySelector('.fw-cell-picker-overlay')?.remove();
+      // Reload subitems modal (never remove server-rendered .fw-static-modal overlays)
+      document.querySelector('.fw-cell-picker-overlay:not(.fw-static-modal)')?.remove();
       window.BoardApp.showSubitems(itemId);
 
       // Update item row subitem count
@@ -369,8 +369,8 @@
 
       console.log('✅ Subitem assigned:', subitemId, userId);
 
-      // Close picker and reload subitems
-      document.querySelectorAll('.fw-cell-picker-overlay').forEach(el => el.remove());
+      // Close picker and reload subitems (keep server-rendered static modals)
+      document.querySelectorAll('.fw-cell-picker-overlay:not(.fw-static-modal)').forEach(el => el.remove());
 
       // Find parent item ID
       const subitemRow = document.querySelector(`[data-subitem-id="${subitemId}"]`);

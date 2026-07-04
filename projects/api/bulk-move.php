@@ -8,6 +8,7 @@ $USER_ID = $_SESSION['user_id'];
 $COMPANY_ID = $_SESSION['company_id'];
 $USER_ROLE = $_SESSION['role'] ?? 'viewer';
 require_once __DIR__ . '/_guard.php';
+require_once __DIR__ . '/_audit.php';
 
 $input = json_decode(file_get_contents('php://input'), true);
 $boardId = (int)($input['board_id'] ?? 0);
@@ -42,6 +43,8 @@ try {
     ");
     $stmt->execute($params);
     
+    fw_audit($DB, $COMPANY_ID, $boardId, null, $USER_ID, 'bulk_update', ['count' => $stmt->rowCount(), 'op' => 'move', 'group_id' => $groupId]);
+
     echo json_encode(['success' => true, 'updated' => $stmt->rowCount()]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

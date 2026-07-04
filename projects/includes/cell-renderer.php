@@ -289,7 +289,8 @@ elseif ($col['type'] === 'files'):
         $files = $attachmentsMap[$item['id']];
         $names = [];
         foreach ($files as $f) {
-            $names[] = isset($f['filename']) ? $f['filename'] : (isset($f['name']) ? $f['name'] : 'file');
+            // board.php builds the map with 'file_name' (older callers used other keys)
+            $names[] = $f['file_name'] ?? $f['filename'] ?? $f['name'] ?? 'file';
         }
         ?>
         <div class="fw-files-pill" title="<?= htmlspecialchars(implode("\n", $names)) ?>">

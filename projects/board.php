@@ -250,8 +250,39 @@ $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
 $stmt->execute([$COMPANY_ID]);
 $companyName = $stmt->fetchColumn() ?: 'Company';
 
-// Asset version for cache busting
-define('ASSET_VERSION', '2025-01-21-v10');
+// Asset cache busting: derive the version from the newest JS/CSS mtime so a
+// deploy invalidates caches automatically (no more hand-bumped constants).
+function fw_asset_version(): string {
+    static $ver = null;
+    if ($ver !== null) return $ver;
+    $latest = 0;
+    foreach (array_merge(
+        glob(__DIR__ . '/assets/*.css') ?: [],
+        glob(__DIR__ . '/js/*.js') ?: [],
+        glob(__DIR__ . '/js/modules/*.js') ?: [],
+        glob(__DIR__ . '/js/ui/*.js') ?: []
+    ) as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime && $mtime > $latest) $latest = $mtime;
+    }
+    return $ver = (string)($latest ?: time());
+}
+define('ASSET_VERSION', fw_asset_version());
+
+// Board CSS is split into layered files; linked individually (in cascade order)
+// instead of via @import so each gets the cache-busting version.
+$BOARD_CSS_FILES = [
+    'base.css', 'theme.css', 'layout.css', 'table.css', 'components.css',
+    'modals.css', 'views.css', 'mobile.css',
+    'board-3d.css', // 3D skin — must stay after the files it overlays
+    'board.css',    // board-specific overrides — always last
+];
+
+// Initial view: the URL param wins, then the board's stored default.
+// (The client may still override with the user's last-used view.)
+$ALLOWED_VIEWS = ['table', 'kanban', 'calendar', 'gantt'];
+$DEFAULT_VIEW = in_array($board['default_view'] ?? '', $ALLOWED_VIEWS, true) ? $board['default_view'] : 'table';
+$INITIAL_VIEW = in_array($_GET['view'] ?? '', $ALLOWED_VIEWS, true) ? $_GET['view'] : $DEFAULT_VIEW;
 
 // Theme rendered server-side from the cookie so the page paints in the right
 // theme immediately (theme.css defaults .fw-proj to dark; without this, light
@@ -267,7 +298,9 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
     <title><?= htmlspecialchars($board['title']) ?> – Flowwork</title>
     
-    <link rel="stylesheet" href="/projects/assets/board.css?v=<?= ASSET_VERSION ?>">
+<?php foreach ($BOARD_CSS_FILES as $cssFile): ?>
+    <link rel="stylesheet" href="/projects/assets/<?= $cssFile ?>?v=<?= ASSET_VERSION ?>">
+<?php endforeach; ?>
 </head>
 <body class="fw-board-body" data-board-id="<?= $boardId ?>">
 
@@ -414,7 +447,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     <!-- ===== TOOLBAR ===== -->
     <div class="fw-board-toolbar">
         <div class="fw-board-toolbar__left">
-            <button class="fw-view-btn fw-view-btn--active" data-view="table" onclick="BoardApp.switchView('table')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'table' ? ' fw-view-btn--active' : '' ?>" data-view="table" aria-label="Table view" aria-pressed="<?= $INITIAL_VIEW === 'table' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('table')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect width="16" height="3" rx="1"/>
                     <rect y="6" width="16" height="3" rx="1"/>
@@ -422,7 +455,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 </svg>
                 Table
             </button>
-            <button class="fw-view-btn" data-view="kanban" onclick="BoardApp.switchView('kanban')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'kanban' ? ' fw-view-btn--active' : '' ?>" data-view="kanban" aria-label="Kanban view" aria-pressed="<?= $INITIAL_VIEW === 'kanban' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('kanban')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect width="4" height="16" rx="1"/>
                     <rect x="6" width="4" height="16" rx="1"/>
@@ -430,14 +463,14 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 </svg>
                 Kanban
             </button>
-            <button class="fw-view-btn" data-view="calendar" onclick="BoardApp.switchView('calendar')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'calendar' ? ' fw-view-btn--active' : '' ?>" data-view="calendar" aria-label="Calendar view" aria-pressed="<?= $INITIAL_VIEW === 'calendar' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('calendar')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect x="1" y="3" width="14" height="12" rx="1" stroke="currentColor" fill="none"/>
                     <path d="M1 6h14M5 1v4M11 1v4"/>
                 </svg>
                 Calendar
             </button>
-            <button class="fw-view-btn" data-view="gantt" onclick="BoardApp.switchView('gantt')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'gantt' ? ' fw-view-btn--active' : '' ?>" data-view="gantt" aria-label="Gantt view" aria-pressed="<?= $INITIAL_VIEW === 'gantt' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('gantt')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect y="2" width="8" height="2" rx="1"/>
                     <rect x="4" y="6" width="10" height="2" rx="1"/>
@@ -453,11 +486,18 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                     <circle cx="7" cy="7" r="6"/>
                     <path d="M11 11l4 4"/>
                 </svg>
-                <input id="boardSearchInput" 
-                       type="text" 
-                       class="fw-search-input" 
-                       placeholder="Search items..." 
+                <input id="boardSearchInput"
+                       type="text"
+                       class="fw-search-input"
+                       placeholder="Search items..."
+                       aria-label="Search items"
                        oninput="BoardApp.onSearchInput(this.value)" />
+                <button id="boardSearchClear"
+                        type="button"
+                        class="fw-search-clear"
+                        aria-label="Clear search"
+                        style="display:none;"
+                        onclick="BoardApp.clearSearch()">&times;</button>
             </div>
             <button id="filterChip" class="fw-chip" onclick="BoardApp.showFilterModal()">
                 <svg width="14" height="14" fill="currentColor">
@@ -928,7 +968,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 </div>
 
 <!-- ===== GUEST ACCESS MODAL ===== -->
-<div id="modalGuests" class="fw-cell-picker-overlay" aria-hidden="true">
+<!-- fw-static-modal: server-rendered — generic overlay cleanup must never remove it -->
+<div id="modalGuests" class="fw-cell-picker-overlay fw-static-modal" aria-hidden="true">
     <div class="fw-cell-picker" style="max-width: 900px; width: 90%;">
         <div class="fw-picker-header">
             <span>👥 Guest Access</span>
@@ -1117,6 +1158,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.BOARD_DATA = {
     boardId: <?= $boardId ?>,
     projectId: <?= $board['project_id'] ?>,
+    defaultView: <?= json_encode($DEFAULT_VIEW) ?>,
     items: <?= json_encode($items) ?>,
     groups: <?= json_encode($groups) ?>,
     columns: <?= json_encode($columns) ?>,

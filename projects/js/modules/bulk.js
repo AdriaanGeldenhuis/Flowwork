@@ -9,6 +9,12 @@ window.BoardApp = window.BoardApp || {};
 
   let selectedItems = new Set();
 
+  // Expose the selection read-only so other modules (shortcuts.js) can act on it
+  Object.defineProperty(BoardApp, 'selectedItems', {
+    get: () => selectedItems,
+    configurable: true
+  });
+
   // ===== TOGGLE ITEM SELECTION =====
   BoardApp.toggleItemSelection = function(itemId, checked) {
     if (checked) {
@@ -45,6 +51,9 @@ window.BoardApp = window.BoardApp || {};
     document.querySelectorAll('.fw-checkbox').forEach(cb => cb.checked = false);
     updateBulkBar();
   };
+
+  // Alias used by shortcuts.js
+  BoardApp.clearSelection = BoardApp.clearBulkSelection;
 
   // ===== UPDATE BULK BAR =====
   function updateBulkBar() {
@@ -153,8 +162,7 @@ window.BoardApp = window.BoardApp || {};
           });
 
           if (result.success) {
-            alert(`✅ Updated ${selectedItems.size} items`);
-            location.reload();
+            notifyThenReload(`Updated ${selectedItems.size} items`);
           } else {
             alert('❌ Error: ' + (result.error || 'Unknown error'));
           }
@@ -168,6 +176,17 @@ window.BoardApp = window.BoardApp || {};
       if (e.target === overlay) overlay.remove();
     });
   };
+
+  // Show a success toast, then reload to reflect the change everywhere.
+  // (Full no-reload updates land with the optimistic-DOM work.)
+  function notifyThenReload(message) {
+    if (typeof BoardApp.showToast === 'function') {
+      BoardApp.showToast(message, 'success');
+      setTimeout(() => location.reload(), 600);
+    } else {
+      location.reload();
+    }
+  }
 
   // ===== BULK ASSIGN =====
   BoardApp.bulkAssign = function() {
@@ -231,8 +250,7 @@ window.BoardApp = window.BoardApp || {};
           });
 
           if (result.success) {
-            alert(`✅ Assigned ${selectedItems.size} items`);
-            location.reload();
+            notifyThenReload(`Assigned ${selectedItems.size} items`);
           } else {
             alert('❌ Error: ' + (result.error || 'Unknown error'));
           }
@@ -306,8 +324,7 @@ window.BoardApp = window.BoardApp || {};
           });
 
           if (result.success) {
-            alert(`✅ Moved ${selectedItems.size} items`);
-            location.reload();
+            notifyThenReload(`Moved ${selectedItems.size} items`);
           } else {
             alert('❌ Error: ' + (result.error || 'Unknown error'));
           }
@@ -322,16 +339,14 @@ window.BoardApp = window.BoardApp || {};
     });
   };
 
-  // ===== BULK DELETE =====
+  // ===== BULK DELETE (soft-archive with Undo) =====
   BoardApp.bulkDelete = async function() {
     if (selectedItems.size === 0) {
-      alert('❌ No items selected');
+      if (typeof BoardApp.showToast === 'function') BoardApp.showToast('No items selected', 'warning');
       return;
     }
 
-    if (!confirm(`⚠️ Delete ${selectedItems.size} items? This cannot be undone.`)) {
-      return;
-    }
+    const ids = Array.from(selectedItems);
 
     try {
       const result = await safeFetch('/projects/api/bulk-delete.php', {
@@ -342,16 +357,52 @@ window.BoardApp = window.BoardApp || {};
         },
         body: JSON.stringify({
           board_id: window.BOARD_DATA.boardId,
-          item_ids: Array.from(selectedItems)
+          item_ids: ids
         })
       });
 
-      if (result.success) {
-        alert(`✅ Deleted ${selectedItems.size} items`);
-        location.reload();
-      } else {
+      if (!result.success) {
         alert('❌ Error: ' + (result.error || 'Unknown error'));
+        return;
       }
+
+      // The server soft-archives, so deletion is reversible: hide the rows now,
+      // finalize (or restore) when the Undo toast resolves.
+      ids.forEach(id => {
+        const row = document.querySelector(`tr.fw-item-row[data-item-id="${id}"]`);
+        if (row) row.style.display = 'none';
+      });
+      BoardApp.clearBulkSelection();
+
+      if (typeof BoardApp.showToast !== 'function') {
+        location.reload();
+        return;
+      }
+
+      BoardApp.showToast(`Deleted ${ids.length} item${ids.length > 1 ? 's' : ''}`, 'info', {
+        duration: 8000,
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            await Promise.all(ids.map(id => window.BoardApp.apiCall('/projects/api/item.update.php', {
+              item_id: id,
+              archived: 0
+            })));
+            ids.forEach(id => {
+              const row = document.querySelector(`tr.fw-item-row[data-item-id="${id}"]`);
+              if (row) row.style.display = '';
+            });
+            BoardApp.showToast('Items restored', 'success');
+          } catch (err) {
+            alert('Failed to restore items: ' + err.message);
+          }
+        },
+        onExpire: () => {
+          ids.forEach(id => {
+            if (window.BoardApp.removeItemFromDOM) window.BoardApp.removeItemFromDOM(id);
+          });
+        }
+      });
     } catch (error) {
       alert('❌ Failed: ' + error.message);
     }

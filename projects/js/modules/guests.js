@@ -19,14 +19,17 @@
       modal.setAttribute('aria-hidden', 'false');
       modal.style.display = 'flex';
       document.body.style.overflow = 'hidden';
-      
+
       console.log('✅ Guest modal opened');
-      
+
       // Load guests immediately
       this.loadGuests();
-      
+
       // Setup close handlers
       this.setupCloseHandlers();
+
+      // Keyboard users land in the invite form
+      setTimeout(() => document.getElementById('guestEmail')?.focus(), 50);
     },
     
     // ===== CLOSE MODAL =====
@@ -94,7 +97,10 @@
       try {
         const res = await fetch('/projects/api/guests.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': window.BOARD_DATA.csrfToken
+          },
           body: new URLSearchParams({
             action: 'invite_guest',
             board_id: window.BOARD_DATA.boardId,
@@ -246,7 +252,10 @@
       try {
         const res = await fetch('/projects/api/guests.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': window.BOARD_DATA.csrfToken
+          },
           body: new URLSearchParams({
             action: 'resend_invite',
             board_id: window.BOARD_DATA.boardId,
@@ -276,7 +285,10 @@
       try {
         const res = await fetch('/projects/api/guests.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': window.BOARD_DATA.csrfToken
+          },
           body: new URLSearchParams({
             action: 'revoke_guest',
             board_id: window.BOARD_DATA.boardId,

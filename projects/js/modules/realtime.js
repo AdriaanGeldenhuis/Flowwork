@@ -9,210 +9,38 @@
   window.BoardApp = window.BoardApp || {};
 
   // ===== UPDATE CELL IN DOM =====
+  // Rendering is delegated to the single canonical renderer in cells.js
+  // (BoardApp.renderCellFull) so every column type gets its rich display.
+  // This wrapper adds the change flash, cache update, and aggregation refresh.
   window.BoardApp.updateCellDOM = function(itemId, columnId, value, columnType) {
     const cell = document.querySelector(
       `.fw-cell[data-item-id="${itemId}"][data-column-id="${columnId}"]`
     );
-    
+
     if (!cell) {
       console.warn('Cell not found in DOM:', itemId, columnId);
       return;
     }
-    
-    console.log('🔄 Updating cell DOM:', { itemId, columnId, value, columnType });
-    
-    // Store old value for comparison
+
     const oldValue = cell.dataset.value;
-    cell.dataset.value = value || '';
-    
-    // Clear existing content
-    cell.innerHTML = '';
-    
-    switch (columnType) {
-      case 'text':
-        cell.textContent = value || '';
-        break;
-        
-      case 'number': {
-        if (value !== null && value !== '') {
-          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-          const cfg = col && col.config ? JSON.parse(col.config) : {};
-          const affix = cfg.affix || '';
-          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
-          const num = parseFloat(value);
-          let formatted = value;
-          if (!isNaN(num)) {
-            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
-            if (cfg.format === 'percentage') formatted += '%';
-          }
-          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
-          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
-          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
-          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-      }
-        
-      case 'status':
-        if (value) {
-          const config = window.BOARD_DATA.statusConfig[value];
-          if (config) {
-            const badge = document.createElement('span');
-            badge.className = 'fw-status-badge';
-            badge.style.background = config.color;
-            badge.textContent = config.label;
-            cell.appendChild(badge);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'people':
-        if (value) {
-          const user = window.BOARD_DATA.users.find(u => u.id == value);
-          if (user) {
-            const div = document.createElement('div');
-            div.className = 'fw-user-pill';
-            div.innerHTML = `
-              <div class="fw-avatar-sm">${user.first_name.charAt(0)}${user.last_name.charAt(0)}</div>
-              <span class="fw-user-name">${user.first_name} ${user.last_name}</span>
-            `;
-            cell.appendChild(div);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'date':
-        if (value) {
-          const div = document.createElement('div');
-          div.className = 'fw-date-pill';
-          const date = new Date(value);
-          const formatted = date.toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-          });
-          div.innerHTML = `
-            <svg width="14" height="14" fill="currentColor">
-              <rect x="2" y="3" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
-              <path d="M2 5h10M5 1v3M9 1v3"/>
-            </svg>
-            <span>${formatted}</span>
-          `;
-          cell.appendChild(div);
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'priority':
-        if (value) {
-          const priorities = {
-            low: { label: 'Low', color: '#10b981' },
-            medium: { label: 'Medium', color: '#fdab3d' },
-            high: { label: 'High', color: '#f97316' },
-            critical: { label: 'Critical', color: '#ef4444' }
-          };
-          const p = priorities[value];
-          if (p) {
-            const btn = document.createElement('button');
-            btn.className = 'fw-priority-pill';
-            btn.dataset.value = value;
-            btn.innerHTML = `
-              <span class="fw-priority-dot" style="background:${p.color}"></span>
-              <span class="fw-priority-label">${p.label}</span>
-            `;
-            cell.appendChild(btn);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'supplier':
-        if (value) {
-          const supplier = window.BOARD_DATA.suppliers.find(s => s.id == value);
-          if (supplier) {
-            const div = document.createElement('div');
-            div.className = 'fw-supplier-pill';
-            div.innerHTML = `
-              <span class="fw-supplier-icon">🏢</span>
-              <span class="fw-supplier-name">${supplier.name}</span>
-              ${supplier.preferred ? '<span class="fw-supplier-badge">⭐</span>' : ''}
-            `;
-            cell.appendChild(div);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'dropdown':
-        if (value) {
-          cell.textContent = value;
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'timeline':
-        if (value) {
-          try {
-            const timeline = JSON.parse(value);
-            const start = new Date(timeline.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const end = new Date(timeline.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            cell.textContent = `${start} → ${end}`;
-          } catch (e) {
-            cell.textContent = value;
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'formula': {
-        if (value !== null && value !== '') {
-          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-          const cfg = col && col.config ? JSON.parse(col.config) : {};
-          const affix = cfg.affix || '';
-          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
-          const num = parseFloat(value);
-          let formatted = value;
-          if (!isNaN(num)) {
-            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
-          }
-          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
-          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
-          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
-          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
-        } else {
-          cell.textContent = '—';
-        }
-        break;
-      }
-        
-      default:
-        cell.textContent = value || '';
+
+    if (typeof window.BoardApp.renderCellFull === 'function') {
+      window.BoardApp.renderCellFull(itemId, columnId, value, columnType);
+    } else {
+      // Minimal safe fallback if cells.js failed to load
+      cell.dataset.value = value || '';
+      cell.textContent = value || '';
     }
-    
+
     // Add flash animation only if value changed
     if (oldValue !== (value || '')) {
       cell.classList.add('fw-cell-updated');
       setTimeout(() => cell.classList.remove('fw-cell-updated'), 600);
-      
-      console.log('✨ Cell updated with animation');
     }
-    
+
     // Update local data cache
     updateLocalDataCache(itemId, columnId, value);
-    
+
     // ✅ TRIGGER AGGREGATION UPDATE
     const row = cell.closest('.fw-item-row');
     if (row) {

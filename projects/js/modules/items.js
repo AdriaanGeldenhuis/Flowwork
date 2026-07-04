@@ -110,25 +110,43 @@ window.BoardApp.quickAddItem = function(input, groupId) {
     });
   };
 
-  // ===== DELETE ITEM =====
+  // ===== DELETE ITEM (soft-archive with Undo) =====
   window.BoardApp.deleteItem = function(itemId) {
-    if (!confirm('Delete this item permanently?')) return;
-    
-    console.log('🗑️ Deleting item:', itemId);
-    
-    window.BoardApp.apiCall('/projects/api/item.delete.php', {
-      item_id: itemId
+    // Archive instead of hard-deleting so the action is reversible from the toast
+    window.BoardApp.apiCall('/projects/api/item.update.php', {
+      item_id: itemId,
+      archived: 1
     }).then(() => {
-      console.log('✅ Item deleted');
-      
-      const row = document.querySelector(`[data-item-id="${itemId}"]`);
-      if (row) {
-        row.style.transition = 'opacity 0.3s, transform 0.3s';
-        row.style.opacity = '0';
-        row.style.transform = 'translateX(-20px)';
-        setTimeout(() => row.remove(), 300);
+      const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+      if (row) row.style.display = 'none';
+
+      if (typeof window.BoardApp.showToast !== 'function') {
+        if (row) row.remove();
+        return;
       }
-      
+
+      window.BoardApp.showToast('Item deleted', 'info', {
+        duration: 8000,
+        actionLabel: 'Undo',
+        onAction: () => {
+          window.BoardApp.apiCall('/projects/api/item.update.php', {
+            item_id: itemId,
+            archived: 0
+          }).then(() => {
+            if (row) row.style.display = '';
+            window.BoardApp.showToast('Item restored', 'success');
+          }).catch(err => {
+            alert('Failed to restore item: ' + err.message);
+          });
+        },
+        onExpire: () => {
+          if (window.BoardApp.removeItemFromDOM) {
+            window.BoardApp.removeItemFromDOM(itemId);
+          } else if (row) {
+            row.remove();
+          }
+        }
+      });
     }).catch(err => {
       console.error('❌ Delete error:', err);
       alert('Failed to delete: ' + err.message);
@@ -151,7 +169,7 @@ window.BoardApp.showItemMenu = function(itemId, event) {
       Subitems
     </button>
     <hr style="margin: 8px 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
-    <button class="fw-dropdown-item" onclick="BoardApp.showItemComments(${itemId})">
+    <button class="fw-dropdown-item" onclick="BoardApp.showComments(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
         <path d="M3 3h8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3 2V4a1 1 0 0 1 1-1z"/>
       </svg>

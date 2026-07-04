@@ -1105,7 +1105,7 @@ Option 3</textarea>
   window.BoardApp.hideColumn = function(columnId) {
     console.log('👁️ Hiding column:', columnId);
     
-    window.BoardApp.apiCall('/projects/api/column/visibility.php', {
+    window.BoardApp.apiCall('/projects/api/column.visibility.php', {
       column_id: columnId,
       visible: 0
     })

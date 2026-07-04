@@ -16,6 +16,17 @@
     const items = window.BOARD_DATA.items;
     const statusConfig = window.BOARD_DATA.statusConfig;
 
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="fw-empty-state" style="margin: 80px auto; max-width: 420px; text-align: center;">
+          <div class="fw-empty-icon">📋</div>
+          <div class="fw-empty-title">No items yet</div>
+          <div class="fw-empty-text">Switch to Table view and add your first item — it will show up here as a card.</div>
+        </div>
+      `;
+      return;
+    }
+
     // Group items by status
     const columns = {};
     Object.keys(statusConfig).forEach(key => {
@@ -158,21 +169,29 @@
 
         const itemId = parseInt(card.dataset.itemId);
         const newStatus = col.dataset.status;
+        const sourceStatus = card.dataset.status;
+        if (newStatus === sourceStatus) return;
 
-        // Move card visually
+        // Move card visually (optimistic); revert if the API call fails
+        const sourceCol = card.parentElement;
         col.appendChild(card);
+        card.dataset.status = newStatus;
 
-        // Update in backend
-        BoardApp.updateItemStatus(itemId, newStatus);
+        BoardApp.updateItemStatus(itemId, newStatus, () => {
+          card.dataset.status = sourceStatus;
+          if (sourceCol) sourceCol.appendChild(card);
+        });
       });
     });
   }
 
   // ===== UPDATE ITEM STATUS =====
-  window.BoardApp.updateItemStatus = function(itemId, newStatus) {
+  // The API field is `status_label` (item.update.php ignores `status`); sending
+  // '' clears the status for cards dropped on the "No Status" column.
+  window.BoardApp.updateItemStatus = function(itemId, newStatus, onError) {
     const form = new FormData();
     form.append('item_id', itemId);
-    form.append('status', newStatus);
+    form.append('status_label', newStatus === 'none' ? '' : newStatus);
 
     fetch('/projects/api/item.update.php', {
       method: 'POST',
@@ -182,15 +201,18 @@
     .then(r => r.json())
     .then(data => {
       if (!data.ok) throw new Error(data.error);
-      console.log('✅ Item status updated');
-      
-      // Update local data
-      const item = window.BOARD_DATA.items.find(i => i.id === itemId);
-      if (item) item.status_label = newStatus;
+
+      // Update local data (ids may be strings from PHP)
+      const item = window.BOARD_DATA.items.find(i => String(i.id) === String(itemId));
+      if (item) item.status_label = newStatus === 'none' ? null : newStatus;
+
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Status updated', 'success');
     })
     .catch(err => {
       console.error('❌ Update status error:', err);
-      alert('Failed to update status: ' + err.message);
+      if (typeof onError === 'function') onError(err);
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Failed to update status: ' + err.message, 'error');
+      else alert('Failed to update status: ' + err.message);
     });
   };
 
@@ -199,20 +221,43 @@
     const title = prompt('Card title:');
     if (!title || !title.trim()) return;
 
-    const form = new FormData();
-    form.append('board_id', window.BOARD_DATA.boardId);
-    form.append('title', title.trim());
-    form.append('status', status);
+    const groups = window.BOARD_DATA.groups || [];
+    if (groups.length === 0) {
+      alert('Create a group first (Table view → Add Group)');
+      return;
+    }
 
-    fetch('/projects/api/item.create.php', {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
-      body: form
+    // Items always belong to a group; new kanban cards land in the first group
+    window.BoardApp.apiCall('/projects/api/create_item.php', {
+      board_id: window.BOARD_DATA.boardId,
+      group_id: groups[0].id,
+      title: title.trim()
     })
-    .then(r => r.json())
     .then(data => {
-      if (!data.ok) throw new Error(data.error);
-      window.location.reload();
+      const item = data.item;
+      if (!item) throw new Error('Server did not return the new item');
+
+      if (status && status !== 'none') {
+        // Set the card's column status, then reflect it locally
+        return window.BoardApp.apiCall('/projects/api/item.update.php', {
+          item_id: item.id,
+          status_label: status
+        }).then(() => {
+          item.status_label = status;
+          return item;
+        });
+      }
+      return item;
+    })
+    .then(item => {
+      // addItemToDOM inserts the table row AND pushes into BOARD_DATA.items
+      if (window.BoardApp.addItemToDOM) {
+        window.BoardApp.addItemToDOM(item, groups[0].id);
+      } else {
+        window.BOARD_DATA.items.push(item);
+      }
+      window.BoardApp.renderKanban();
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Card added', 'success');
     })
     .catch(err => {
       console.error('❌ Add card error:', err);
