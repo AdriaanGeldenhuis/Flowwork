@@ -12,6 +12,25 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
+// Styled error page instead of a bare die() — keeps users inside the app
+function fw_board_error_page(string $title, string $message): void {
+    $t = htmlspecialchars($title);
+    $m = htmlspecialchars($message);
+    echo "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        . "<title>{$t} – Flowwork</title></head>"
+        . "<body style=\"margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;"
+        . "background:#12121a;color:#e2e8f0;font-family:system-ui,sans-serif;\">"
+        . "<div style=\"text-align:center;max-width:420px;padding:24px;\">"
+        . "<div style=\"font-size:48px;margin-bottom:16px;\">🔒</div>"
+        . "<h1 style=\"font-size:20px;margin:0 0 8px;\">{$t}</h1>"
+        . "<p style=\"color:#94a3b8;margin:0 0 24px;\">{$m}</p>"
+        . "<a href=\"/projects/index.php\" style=\"display:inline-block;padding:10px 24px;background:#8b5cf6;"
+        . "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;\">Back to Projects</a>"
+        . "</div></body></html>";
+    exit;
+}
+
 // Get board ID
 $boardId = (int)($_GET['board_id'] ?? 0);
 if (!$boardId) {
@@ -35,7 +54,8 @@ $stmt->execute([$boardId, $COMPANY_ID]);
 $board = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$board) {
-    die('Board not found');
+    http_response_code(404);
+    fw_board_error_page('Board not found', 'This board does not exist or may have been deleted.');
 }
 
 // ===== CHECK PERMISSIONS =====
@@ -47,7 +67,8 @@ $stmt->execute([$board['project_id'], $USER_ID, $COMPANY_ID]);
 $memberRole = $stmt->fetchColumn();
 
 if (!$memberRole && $USER_ROLE !== 'admin') {
-    die('Access denied');
+    http_response_code(403);
+    fw_board_error_page('Access denied', 'You are not a member of this project. Ask a project manager to add you.');
 }
 
 // ===== LOAD COLUMNS =====
@@ -354,7 +375,7 @@ $BOARD_CSS_FILES = [
 
 // Initial view: the URL param wins, then the board's stored default.
 // (The client may still override with the user's last-used view.)
-$ALLOWED_VIEWS = ['table', 'kanban', 'calendar', 'gantt'];
+$ALLOWED_VIEWS = ['table', 'kanban', 'calendar', 'gantt', 'workload'];
 $DEFAULT_VIEW = in_array($board['default_view'] ?? '', $ALLOWED_VIEWS, true) ? $board['default_view'] : 'table';
 $INITIAL_VIEW = in_array($_GET['view'] ?? '', $ALLOWED_VIEWS, true) ? $_GET['view'] : $DEFAULT_VIEW;
 
@@ -556,6 +577,17 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                     <rect x="2" y="10" width="6" height="2" rx="1"/>
                 </svg>
                 Gantt
+            </button>
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'workload' ? ' fw-view-btn--active' : '' ?>" data-view="workload" aria-label="Workload view" aria-pressed="<?= $INITIAL_VIEW === 'workload' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('workload')">
+                <svg width="16" height="16" fill="currentColor">
+                    <circle cx="5" cy="4" r="2.5"/>
+                    <circle cx="11" cy="4" r="2.5"/>
+                    <rect x="1" y="9" width="8" height="2" rx="1"/>
+                    <rect x="1" y="13" width="5" height="2" rx="1"/>
+                    <rect x="10" y="9" width="5" height="2" rx="1"/>
+                    <rect x="10" y="13" width="3" height="2" rx="1"/>
+                </svg>
+                Workload
             </button>
         </div>
 
@@ -930,8 +962,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 <div class="fw-table-wrapper">
                     <table class="fw-board-table">
                         <colgroup>
-                            <col style="width: 50px;">
-                            <col style="min-width: 200px; max-width: 25vw;">
+                            <col style="width: 40px;">
+                            <col style="width: min(25vw, 300px); min-width: 120px;">
                             <?php foreach ($columns as $col): ?>
                                 <col data-column-id="<?= (int)$col['column_id'] ?>" style="width: <?= (int)$col['width'] ?>px;">
                             <?php endforeach; ?>
@@ -1067,6 +1099,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     <div id="fw-kanban-view" class="fw-kanban-view" style="display:none;"></div>
     <div id="fw-calendar-view" class="fw-calendar-view" style="display:none;"></div>
     <div id="fw-gantt-view" class="fw-gantt-view" style="display:none;"></div>
+    <div id="fw-workload-view" class="fw-kanban-view" style="display:none;"></div>
 
     <!-- ✅ GLOBAL SCROLL BAR (FIXED BOTTOM) -->
     <div class="fw-scroll-sync-bar">
@@ -1159,100 +1192,6 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 })();
 </script>
 
-<!-- ✅ CRITICAL: Initialize 3-dot menu BEFORE module loader -->
-<script>
-(function() {
-    'use strict';
-    
-    let menuInitialized = false;
-    
-    function initBoardMenuImmediate() {
-        if (menuInitialized) {
-            console.log('⚠️ Menu already initialized, skipping');
-            return true;
-        }
-        
-        const menuToggle = document.getElementById('boardMenuToggle');
-        const menu = document.getElementById('boardMenu');
-        
-        if (!menuToggle || !menu) {
-            console.warn('⚠️ Menu elements not found, retrying...');
-            return false;
-        }
-        
-        // ✅ FORCE menu to start closed
-        menu.style.display = 'none';
-        menu.setAttribute('aria-hidden', 'true');
-        menuToggle.setAttribute('aria-expanded', 'false');
-        
-        console.log('✅ Menu forced to closed state');
-        
-        // Toggle menu
-        menuToggle.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const isHidden = menu.getAttribute('aria-hidden') === 'true';
-            
-            if (isHidden) {
-                // Open menu
-                menu.style.display = 'block';
-                menu.setAttribute('aria-hidden', 'false');
-                menuToggle.setAttribute('aria-expanded', 'true');
-                console.log('🎛️ Menu opened');
-            } else {
-                // Close menu
-                menu.style.display = 'none';
-                menu.setAttribute('aria-hidden', 'true');
-                menuToggle.setAttribute('aria-expanded', 'false');
-                console.log('🎛️ Menu closed');
-            }
-        });
-        
-        // Close on outside click
-        document.addEventListener('click', function(e) {
-            const isOpen = menu.getAttribute('aria-hidden') === 'false';
-            if (isOpen && !menu.contains(e.target) && !menuToggle.contains(e.target)) {
-                menu.style.display = 'none';
-                menu.setAttribute('aria-hidden', 'true');
-                menuToggle.setAttribute('aria-expanded', 'false');
-                console.log('🎛️ Menu closed (outside click)');
-            }
-        });
-        
-        // Close on Escape
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && menu.getAttribute('aria-hidden') === 'false') {
-                menu.style.display = 'none';
-                menu.setAttribute('aria-hidden', 'true');
-                menuToggle.setAttribute('aria-expanded', 'false');
-                menuToggle.focus();
-                console.log('🎛️ Menu closed (Escape key)');
-            }
-        });
-        
-        menuToggle.dataset.menuInitialized = 'true';
-        menuInitialized = true;
-        console.log('✅ 3-dot menu initialized immediately');
-        return true;
-    }
-    
-    // Try multiple times to ensure it works
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initBoardMenuImmediate);
-    } else {
-        initBoardMenuImmediate();
-    }
-    
-    // Fallback
-    setTimeout(function() {
-        if (!menuInitialized) {
-            console.log('⏰ Delayed menu initialization attempt');
-            initBoardMenuImmediate();
-        }
-    }, 500);
-})();
-</script>
 
 <!-- ✅ Ensure modals start closed -->
 <script>
@@ -1299,6 +1238,7 @@ $jsFiles = [
     "modules/kanban.js",
     "modules/calendar.js",
     "modules/gantt-full.js",
+    "modules/workload.js",
     "modules/realtime.js",
     "modules/bulk.js",
     "modules/shortcuts.js",

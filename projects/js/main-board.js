@@ -11,7 +11,7 @@ window.BoardApp = window.BoardApp || {};
 window.BoardApp.currentView = 'table';
 window.BoardApp.searchQuery = '';
 
-const FW_VIEWS = ['table', 'kanban', 'calendar', 'gantt'];
+const FW_VIEWS = ['table', 'kanban', 'calendar', 'gantt', 'workload'];
 
 // ===== FALLBACK: ADD COLUMN (overridden by modules/columns.js) =====
 window.BoardApp.showAddColumnModal = window.BoardApp.showAddColumnModal || function() {
@@ -80,7 +80,8 @@ window.BoardApp.switchView = function(viewName) {
     table: document.querySelector('.fw-board-container'),
     kanban: document.getElementById('fw-kanban-view'),
     calendar: document.getElementById('fw-calendar-view'),
-    gantt: document.getElementById('fw-gantt-view')
+    gantt: document.getElementById('fw-gantt-view'),
+    workload: document.getElementById('fw-workload-view')
   };
 
   Object.values(containers).forEach(el => {
@@ -102,6 +103,9 @@ window.BoardApp.switchView = function(viewName) {
     } else if (viewName === 'gantt') {
       if (typeof BoardApp.renderGantt === 'function') BoardApp.renderGantt();
       else showViewError(selected, 'Gantt module not loaded');
+    } else if (viewName === 'workload') {
+      if (typeof BoardApp.renderWorkload === 'function') BoardApp.renderWorkload();
+      else showViewError(selected, 'Workload module not loaded');
     }
   } catch (err) {
     console.error('View render error:', err);
@@ -189,6 +193,42 @@ if (window.__fwModulesReady) {
 } else {
   window.addEventListener('fw:modules-ready', fwInitBoard, { once: true });
 }
+
+// ===== "NEW SINCE YOUR LAST VISIT" ROW DOTS =====
+// Compares each item's updated_at (already in BOARD_DATA) against the last
+// visit timestamp stored per board in localStorage. Opening/editing a row
+// clears its dot.
+(function initUnreadDots() {
+  const KEY = 'fw-board-last-visit-' + window.BOARD_DATA.boardId;
+  let lastVisit = 0;
+  try { lastVisit = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) { return; }
+
+  const stamp = () => {
+    try { localStorage.setItem(KEY, String(Date.now())); } catch (e) { /* ignore */ }
+  };
+  window.addEventListener('pagehide', stamp);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stamp(); });
+
+  if (!lastVisit) { stamp(); return; }
+
+  const mark = () => {
+    (window.BOARD_DATA.items || []).forEach(item => {
+      if (!item.updated_at) return;
+      const updated = new Date(String(item.updated_at).replace(' ', 'T')).getTime();
+      if (!isNaN(updated) && updated > lastVisit) {
+        document.querySelector(`tr.fw-item-row[data-item-id="${item.id}"] td.fw-col-item`)
+          ?.classList.add('fw-row-unread');
+      }
+    });
+  };
+
+  if (window.__fwModulesReady) mark();
+  else window.addEventListener('fw:modules-ready', mark, { once: true });
+
+  document.addEventListener('click', (e) => {
+    e.target.closest('tr.fw-item-row')?.querySelector('td.fw-col-item')?.classList.remove('fw-row-unread');
+  });
+})();
 
 // ===== BOARD TITLE =====
 window.BoardApp.updateBoardTitle = function(newTitle) {
@@ -405,9 +445,75 @@ window.BoardApp.showImportModal = window.BoardApp.showImportModal || function() 
   else alert('Import modal coming soon!');
 };
 
-window.BoardApp.showBoardSettings = window.BoardApp.showBoardSettings || function() {
-  if (window.BoardApp.showToast) window.BoardApp.showToast('Board settings are coming soon', 'info');
-  else alert('Board settings coming soon!');
+// ===== BOARD SETTINGS =====
+window.BoardApp.showBoardSettings = function() {
+  const esc = window.BoardApp.escapeHtml || (s => s);
+  const currentTitle = document.querySelector('.fw-board-title-display')?.textContent.trim() || '';
+  const currentDefault = FW_VIEWS.includes(window.BOARD_DATA.defaultView) ? window.BOARD_DATA.defaultView : 'table';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fw-modal-overlay';
+  overlay.innerHTML = `
+    <div class="fw-modal-content fw-slide-up" style="max-width: 440px;">
+      <div class="fw-modal-header">
+        <h3 style="margin:0;font-size:17px;font-weight:700;">Board Settings</h3>
+        <button type="button" class="fw-modal-close" onclick="this.closest('.fw-modal-overlay').remove()" style="background:none;border:none;color:inherit;cursor:pointer;font-size:22px;">×</button>
+      </div>
+      <div class="fw-modal-body">
+        <div class="fw-form-group">
+          <label for="boardSettingsTitle">Board Name</label>
+          <input type="text" id="boardSettingsTitle" class="fw-input" value="${esc(currentTitle)}" maxlength="150" />
+        </div>
+        <div class="fw-form-group">
+          <label for="boardSettingsDefaultView">Default View (for everyone opening this board)</label>
+          <select id="boardSettingsDefaultView" class="fw-select">
+            ${FW_VIEWS.map(v => `<option value="${v}" ${v === currentDefault ? 'selected' : ''}>${v.charAt(0).toUpperCase() + v.slice(1)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fw-modal-footer">
+          <button type="button" class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
+          <button type="button" class="fw-btn fw-btn--primary" id="boardSettingsSave">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#boardSettingsSave').addEventListener('click', () => {
+    const title = overlay.querySelector('#boardSettingsTitle').value.trim();
+    const defaultView = overlay.querySelector('#boardSettingsDefaultView').value;
+    if (!title) return;
+
+    const form = new FormData();
+    form.append('board_id', window.BOARD_DATA.boardId);
+    form.append('title', title);
+    form.append('default_view', defaultView);
+
+    fetch('/projects/api/board.update.php', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
+      body: form
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) throw new Error(data.error);
+      overlay.remove();
+
+      const titleEl = document.querySelector('.fw-board-title-display');
+      if (titleEl) titleEl.textContent = title;
+      document.title = title + ' – Flowwork';
+      window.BOARD_DATA.defaultView = defaultView;
+
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Board settings saved', 'success');
+    })
+    .catch(err => {
+      alert('Failed to save settings: ' + err.message);
+    });
+  });
+
+  const container = document.querySelector('.fw-proj') || document.body;
+  container.appendChild(overlay);
+  setTimeout(() => overlay.querySelector('#boardSettingsTitle')?.focus(), 50);
 };
 
 // ===== UTILITY: DROPDOWNS (canonical versions live in modules/ui.js) =====

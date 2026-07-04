@@ -155,7 +155,7 @@
       document.querySelector('.fw-modal-overlay')?.remove();
 
       // 1) View type
-      const type = ['table', 'kanban', 'calendar', 'gantt'].includes(view.view_type)
+      const type = ['table', 'kanban', 'calendar', 'gantt', 'workload'].includes(view.view_type)
         ? view.view_type : 'table';
       window.BoardApp.switchView(type);
 

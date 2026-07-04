@@ -878,3 +878,17 @@ textarea.fw-cell-inline-input {
 .fw-col-item .fw-item-title {
   padding-right: 52px;
 }
+
+/* ========== "NEW SINCE LAST VISIT" INDICATOR ========== */
+td.fw-col-item.fw-row-unread::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-primary, #8b5cf6);
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.8);
+}
