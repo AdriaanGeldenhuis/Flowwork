@@ -194,34 +194,24 @@ window.BoardApp.saveAggregationSettings = function() {
   console.log('💾 Saving aggregation settings:', updates);
   
   // Update all columns
-  Promise.all(updates.map(update => 
+  Promise.all(updates.map(update =>
     window.BoardApp.apiCall('/projects/api/column/update.php', update)
   ))
   .then(() => {
-    console.log('✅ Aggregation settings saved');
-    
     document.querySelector('.fw-modal-overlay')?.remove();
-    
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 16px 24px;
-      background: rgba(0, 200, 117, 0.9);
-      color: white;
-      border-radius: 8px;
-      font-weight: 600;
-      z-index: 10001;
-    `;
-    toast.textContent = '✅ Aggregation settings saved!';
-    const container = document.querySelector('.fw-proj') || document.body;
-    container.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.remove();
-      window.location.reload();
-    }, 1000);
+
+    // Apply new aggregation configs in place and recompute — no reload
+    updates.forEach(update => {
+      const col = window.BOARD_DATA.columns.find(c => c.column_id == update.column_id);
+      if (col) col.config = update.config;
+    });
+
+    (window.BOARD_DATA.groups || []).forEach(g => {
+      if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(g.id);
+    });
+    if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+
+    if (window.BoardApp.showToast) window.BoardApp.showToast('Aggregation settings saved', 'success');
   })
   .catch(err => {
     console.error('❌ Save aggregation settings error:', err);
@@ -462,54 +452,37 @@ Option 3</textarea>
     
     window.BoardApp.apiCall('/projects/api/column.create.php', data)
       .then(response => {
-        console.log('✅ Column created:', response);
-        
         document.querySelector('.fw-column-modal-overlay')?.remove();
         loadingToast.remove();
-        
-        const successToast = document.createElement('div');
-        successToast.style.cssText = `
-          position: fixed;
-          top: 80px;
-          right: 20px;
-          padding: 16px 24px;
-          background: rgba(0, 200, 117, 0.9);
-          color: white;
-          border-radius: 8px;
-          font-weight: 600;
-          z-index: 10001;
-          animation: slideInRight 0.3s ease;
-        `;
-        
-        if (type === 'formula') {
-          successToast.textContent = `✅ ${name} formula created! Calculating...`;
-        } else {
-          successToast.textContent = `✅ ${name} column created!`;
+
+        const newColumnId = response.column_id;
+        if (!newColumnId) {
+          window.location.reload();
+          return;
         }
-        
-        container.appendChild(successToast);
-        
-        setTimeout(() => {
-          successToast.remove();
-          
-          // If formula, trigger calculation before reload
-          if (type === 'formula' && response.column_id) {
-            window.BoardApp.apiCall('/projects/api/formula/calculate.php', {
-              board_id: window.BOARD_DATA.boardId,
-              column_id: response.column_id
-            })
-            .then(() => {
-              console.log('✅ Formula calculated');
-              window.location.reload();
-            })
-            .catch(err => {
-              console.error('Formula calculation error:', err);
-              window.location.reload(); // Reload anyway
-            });
-          } else {
-            window.location.reload();
-          }
-        }, 1500);
+
+        // Render the new column in place — no reload
+        const column = {
+          column_id: newColumnId,
+          board_id: window.BOARD_DATA.boardId,
+          name: name,
+          type: type,
+          width: 150,
+          visible: 1,
+          position: (window.BOARD_DATA.columns || []).length,
+          config: data.config || null
+        };
+        window.BOARD_DATA.columns.push(column);
+        window.BoardApp.insertColumnIntoDOM(column);
+
+        if (window.BoardApp.showToast) {
+          window.BoardApp.showToast(`Column "${name}" created`, 'success');
+        }
+
+        // Formula columns need their values computed, then patched in
+        if (type === 'formula') {
+          window.BoardApp.recalculateColumn(newColumnId);
+        }
       })
       .catch(err => {
         console.error('❌ Create column error:', err);
@@ -534,6 +507,102 @@ Option 3</textarea>
         
         alert('Failed to create column:\n\n' + err.message);
       });
+  };
+
+  // ===== DOM HELPERS: add/remove a column across every board table =====
+  // board.php renders one table per group plus the totals table; a column
+  // change must touch the colgroup, thead, every row, and the colspan rows.
+
+  window.BoardApp.insertColumnIntoDOM = function(column) {
+    const colId = parseInt(column.column_id, 10);
+    const esc = window.BoardApp.escapeHtml || (s => String(s));
+
+    document.querySelectorAll('.fw-board-table').forEach(table => {
+      const isTotals = !!table.closest('.fw-board-totals-group');
+
+      // <col> before the trailing 50px menu col
+      const colgroup = table.querySelector('colgroup');
+      if (colgroup) {
+        const colEl = document.createElement('col');
+        colEl.dataset.columnId = String(colId);
+        colEl.style.width = (parseInt(column.width, 10) || 150) + 'px';
+        colgroup.insertBefore(colEl, colgroup.lastElementChild);
+      }
+
+      // Header cell
+      const headerRow = table.querySelector('thead tr');
+      if (headerRow) {
+        const th = document.createElement('th');
+        th.dataset.columnId = String(colId);
+        th.dataset.type = column.type;
+        th.innerHTML = isTotals ? `
+          <div class="fw-col-header">
+            <input type="text" class="fw-col-name-input" value="${esc(column.name)}" readonly />
+          </div>
+        ` : `
+          <div class="fw-col-header">
+            <input type="text" class="fw-col-name-input" value="${esc(column.name)}"
+                   onblur="BoardApp.updateColumnName(${colId}, this.value)" />
+            <button type="button" class="fw-icon-btn fw-col-menu-btn" aria-label="Column options" onclick="BoardApp.showColumnMenu(${colId}, event)">
+              <svg width="14" height="14" fill="currentColor">
+                <circle cx="7" cy="3" r="1.2"/><circle cx="7" cy="7" r="1.2"/><circle cx="7" cy="11" r="1.2"/>
+              </svg>
+            </button>
+          </div>
+          <div class="fw-col-resize" data-column-id="${colId}"></div>
+        `;
+        const addTh = headerRow.querySelector('.fw-col-add');
+        headerRow.insertBefore(th, addTh || null);
+      }
+
+      // Body rows
+      table.querySelectorAll('tbody tr').forEach(row => {
+        const menuTd = row.querySelector('.fw-col-menu');
+
+        if (row.classList.contains('fw-item-row')) {
+          const itemId = parseInt(row.dataset.itemId, 10);
+          const td = document.createElement('td');
+          td.className = 'fw-cell';
+          td.dataset.type = column.type;
+          td.dataset.itemId = String(itemId);
+          td.dataset.columnId = String(colId);
+          td.dataset.value = '';
+          td.setAttribute('onclick', `BoardApp.editCell(${itemId}, ${colId}, '${column.type}', event)`);
+          td.innerHTML = '<button class="fw-cell-empty">+</button>';
+          row.insertBefore(td, menuTd || null);
+        } else if (row.classList.contains('fw-agg-row')) {
+          const td = document.createElement('td');
+          td.className = 'fw-agg-cell' + (isTotals ? ' fw-board-agg-cell' : '');
+          td.dataset.type = column.type;
+          td.dataset.columnId = String(colId);
+          if (row.dataset.groupId) td.dataset.groupId = row.dataset.groupId;
+          td.innerHTML = '<span class="fw-agg-empty">—</span>';
+          row.insertBefore(td, menuTd || null);
+        }
+      });
+
+      // colspan rows (quick-add + empty states)
+      table.querySelectorAll('tbody tr:not(.fw-item-row):not(.fw-agg-row)').forEach(row => {
+        row.querySelectorAll('td[colspan]').forEach(td => {
+          const span = parseInt(td.getAttribute('colspan'), 10);
+          if (span && span < 100) td.setAttribute('colspan', span + 1);
+        });
+      });
+    });
+  };
+
+  window.BoardApp.removeColumnFromDOM = function(columnId) {
+    document.querySelectorAll('.fw-board-table').forEach(table => {
+      table.querySelectorAll(`col[data-column-id="${columnId}"], th[data-column-id="${columnId}"], td[data-column-id="${columnId}"]`)
+        .forEach(el => el.remove());
+
+      table.querySelectorAll('tbody tr:not(.fw-item-row):not(.fw-agg-row)').forEach(row => {
+        row.querySelectorAll('td[colspan]').forEach(td => {
+          const span = parseInt(td.getAttribute('colspan'), 10);
+          if (span && span < 100) td.setAttribute('colspan', span - 1);
+        });
+      });
+    });
   };
 
   // ===== UPDATE COLUMN NAME =====
@@ -715,31 +784,13 @@ Option 3</textarea>
       config: config
     })
     .then(() => {
-      console.log('✅ Formula saved');
-      
       document.querySelector('.fw-modal-overlay')?.remove();
-      
-      const toast = document.createElement('div');
-      toast.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        padding: 16px 24px;
-        background: rgba(0, 200, 117, 0.9);
-        color: white;
-        border-radius: 8px;
-        font-weight: 600;
-        z-index: 10001;
-        animation: slideInRight 0.3s ease;
-      `;
-      toast.textContent = '✅ Formula updated! Recalculating...';
-      const container = document.querySelector('.fw-proj') || document.body;
-      container.appendChild(toast);
-      
-      setTimeout(() => {
-        toast.remove();
-        window.BoardApp.recalculateColumn(columnId);
-      }, 1500);
+
+      const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+      if (col) col.config = config;
+
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Formula updated — recalculating…', 'info');
+      window.BoardApp.recalculateColumn(columnId);
     })
     .catch(err => {
       console.error('❌ Save formula error:', err);
@@ -748,36 +799,32 @@ Option 3</textarea>
   };
 
   // ===== RECALCULATE COLUMN =====
+  // Patches the freshly computed formula values straight into the table
+  // (formula/calculate.php returns them) — no reload.
   window.BoardApp.recalculateColumn = function(columnId) {
-    console.log('🔄 Recalculating column:', columnId);
-    
     window.BoardApp.apiCall('/projects/api/formula/calculate.php', {
       board_id: window.BOARD_DATA.boardId,
       column_id: columnId
     })
-    .then(() => {
-      console.log('✅ Column recalculated');
-      
-      const toast = document.createElement('div');
-      toast.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        padding: 16px 24px;
-        background: rgba(0, 200, 117, 0.9);
-        color: white;
-        border-radius: 8px;
-        font-weight: 600;
-        z-index: 10001;
-      `;
-      toast.textContent = '✅ Recalculated!';
-      const container = document.querySelector('.fw-proj') || document.body;
-      container.appendChild(toast);
-      
-      setTimeout(() => {
-        toast.remove();
-        window.location.reload();
-      }, 1000);
+    .then(data => {
+      const computed = data.computed || {};
+      Object.entries(computed).forEach(([itemId, cols]) => {
+        Object.entries(cols).forEach(([colId, value]) => {
+          if (!window.BOARD_DATA.valuesMap[itemId]) window.BOARD_DATA.valuesMap[itemId] = {};
+          window.BOARD_DATA.valuesMap[itemId][colId] = value;
+          if (window.BoardApp.renderCellFull) {
+            window.BoardApp.renderCellFull(itemId, colId, value, 'formula');
+          }
+        });
+      });
+
+      // Refresh aggregations everywhere
+      (window.BOARD_DATA.groups || []).forEach(g => {
+        if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(g.id);
+      });
+      if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Formulas recalculated', 'success');
     })
     .catch(err => {
       console.error('❌ Recalculate error:', err);
@@ -994,30 +1041,41 @@ Option 3</textarea>
     
     window.BoardApp.apiCall('/projects/api/column/update.php', data)
       .then(() => {
-        console.log('✅ Settings saved');
-        
         document.querySelector('.fw-modal-overlay')?.remove();
-        
-        const toast = document.createElement('div');
-        toast.style.cssText = `
-          position: fixed;
-          top: 80px;
-          right: 20px;
-          padding: 16px 24px;
-          background: rgba(0, 200, 117, 0.9);
-          color: white;
-          border-radius: 8px;
-          font-weight: 600;
-          z-index: 10001;
-        `;
-        toast.textContent = '✅ Settings saved!';
-        const container = document.querySelector('.fw-proj') || document.body;
-        container.appendChild(toast);
-        
-        setTimeout(() => {
-          toast.remove();
-          window.location.reload();
-        }, 1000);
+
+        // Apply the change in place — no reload
+        const column = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+        if (column) {
+          column.name = name;
+          column.width = width;
+          if (data.config) column.config = data.config;
+        }
+
+        // Header labels + column widths across every table
+        document.querySelectorAll(`th[data-column-id="${columnId}"] .fw-col-name-input`)
+          .forEach(input => { input.value = name; });
+        document.querySelectorAll(`col[data-column-id="${columnId}"]`)
+          .forEach(colEl => { colEl.style.width = width + 'px'; });
+
+        if (columnType === 'formula') {
+          // Formula/precision changes require a server recompute; the fresh
+          // values are patched into the table by recalculateColumn
+          window.BoardApp.recalculateColumn(columnId);
+        } else if (column && window.BoardApp.renderCellFull) {
+          // Re-render this column's cells with the new config (format/affix/options)
+          (window.BOARD_DATA.items || []).forEach(item => {
+            const value = (window.BOARD_DATA.valuesMap[item.id] || {})[columnId];
+            if (value !== undefined) {
+              window.BoardApp.renderCellFull(item.id, columnId, value, columnType);
+            }
+          });
+          (window.BOARD_DATA.groups || []).forEach(g => {
+            if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(g.id);
+          });
+          if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+        }
+
+        if (window.BoardApp.showToast) window.BoardApp.showToast('Column settings saved', 'success');
       })
       .catch(err => {
         console.error('❌ Save settings error:', err);
@@ -1028,95 +1086,47 @@ Option 3</textarea>
   // ===== DELETE COLUMN =====
   window.BoardApp.deleteColumn = function(columnId) {
     window.BoardApp.closeAllDropdowns();
-    
-    if (!confirm('⚠️ Delete this column?\n\nAll column data will be permanently lost.\n\nThis cannot be undone.')) {
-      return;
-    }
-    
-    console.log('🗑️ Deleting column:', columnId);
-    
-    const loadingToast = document.createElement('div');
-    loadingToast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 16px 24px;
-      background: rgba(139, 92, 246, 0.9);
-      color: white;
-      border-radius: 8px;
-      font-weight: 600;
-      z-index: 10001;
-    `;
-    loadingToast.textContent = '🗑️ Deleting column...';
-    const container = document.querySelector('.fw-proj') || document.body;
-    container.appendChild(loadingToast);
-    
-    window.BoardApp.apiCall('/projects/api/column/delete.php', {
-      column_id: columnId
-    })
-      .then(() => {
-        console.log('✅ Column deleted');
-        loadingToast.remove();
-        
-        const successToast = document.createElement('div');
-        successToast.style.cssText = `
-          position: fixed;
-          top: 80px;
-          right: 20px;
-          padding: 16px 24px;
-          background: rgba(0, 200, 117, 0.9);
-          color: white;
-          border-radius: 8px;
-          font-weight: 600;
-          z-index: 10001;
-        `;
-        successToast.textContent = '✅ Column deleted!';
-        container.appendChild(successToast);
-        
-        setTimeout(() => {
-          successToast.remove();
-          window.location.reload();
-        }, 1000);
+
+    const column = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+    const colName = column ? column.name : 'this column';
+
+    const doDelete = () => {
+      window.BoardApp.apiCall('/projects/api/column/delete.php', {
+        column_id: columnId
       })
-      .catch(err => {
-        console.error('❌ Delete column error:', err);
-        loadingToast.remove();
-        
-        const errorToast = document.createElement('div');
-        errorToast.style.cssText = `
-          position: fixed;
-          top: 80px;
-          right: 20px;
-          padding: 16px 24px;
-          background: rgba(239, 68, 68, 0.9);
-          color: white;
-          border-radius: 8px;
-          font-weight: 600;
-          z-index: 10001;
-        `;
-        errorToast.textContent = '❌ Failed to delete column';
-        container.appendChild(errorToast);
-        
-        setTimeout(() => errorToast.remove(), 3000);
-      });
+        .then(() => {
+          // Remove the column in place — no reload
+          window.BoardApp.removeColumnFromDOM(columnId);
+          window.BOARD_DATA.columns = window.BOARD_DATA.columns.filter(c => c.column_id != columnId);
+          Object.values(window.BOARD_DATA.valuesMap || {}).forEach(vals => { delete vals[columnId]; });
+
+          if (window.BoardApp.showToast) window.BoardApp.showToast(`Column "${colName}" deleted`, 'success');
+        })
+        .catch(err => {
+          console.error('❌ Delete column error:', err);
+          if (window.BoardApp.showToast) window.BoardApp.showToast('Failed to delete column: ' + err.message, 'error');
+          else alert('Failed to delete column: ' + err.message);
+        });
+    };
+
+    if (window.BoardApp.dialog) {
+      window.BoardApp.dialog.confirm(
+        `Delete "${colName}"? All of its data will be permanently lost.`,
+        { title: 'Delete column', confirmLabel: 'Delete', danger: true }
+      ).then(ok => { if (ok) doDelete(); });
+    } else if (confirm('⚠️ Delete this column?\n\nAll column data will be permanently lost.\n\nThis cannot be undone.')) {
+      doDelete();
+    }
   };
 
   // ===== HIDE COLUMN =====
+  // Delegates to the single visibility system (column-visibility.js): server
+  // flag + stylesheet toggle, no reload.
   window.BoardApp.hideColumn = function(columnId) {
-    console.log('👁️ Hiding column:', columnId);
-    
-    window.BoardApp.apiCall('/projects/api/column.visibility.php', {
-      column_id: columnId,
-      visible: 0
-    })
-      .then(() => {
-        console.log('✅ Column hidden');
-        window.location.reload();
-      })
-      .catch(err => {
-        console.error('❌ Hide column error:', err);
-        alert('Failed to hide column');
-      });
+    window.BoardApp.closeAllDropdowns();
+    if (window.BoardApp.setColumnVisibility) {
+      window.BoardApp.setColumnVisibility(columnId, false);
+    }
   };
 
   // ===== CREATE COLUMN MODAL =====

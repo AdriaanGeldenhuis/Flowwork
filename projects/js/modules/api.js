@@ -15,7 +15,12 @@
     
     const form = new FormData();
     for (const [key, value] of Object.entries(data)) {
-      form.append(key, value);
+      if (Array.isArray(value)) {
+        // PHP array convention: ordered_item_ids[]=1&ordered_item_ids[]=2 ...
+        value.forEach(v => form.append(key + '[]', v));
+      } else {
+        form.append(key, value);
+      }
     }
 
     return fetch(url, {

@@ -306,9 +306,19 @@
 
   // ===== ADD CARD =====
   window.BoardApp.addKanbanCard = function(colKey) {
-    const title = prompt('Card title:');
-    if (!title || !title.trim()) return;
+    if (window.BoardApp.dialog) {
+      window.BoardApp.dialog.prompt('Card title', {
+        title: 'Add card',
+        placeholder: 'What needs doing?',
+        confirmLabel: 'Add'
+      }).then(title => { if (title) createKanbanCard(colKey, title); });
+    } else {
+      const title = prompt('Card title:');
+      if (title && title.trim()) createKanbanCard(colKey, title.trim());
+    }
+  };
 
+  function createKanbanCard(colKey, title) {
     const mode = getGroupBy();
     const groups = window.BOARD_DATA.groups || [];
     if (groups.length === 0) {

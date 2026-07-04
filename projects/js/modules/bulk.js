@@ -162,7 +162,17 @@ window.BoardApp = window.BoardApp || {};
           });
 
           if (result.success) {
-            notifyThenReload(`Updated ${selectedItems.size} items`);
+            // Patch each row's status cell in place — no reload
+            const ids = Array.from(selectedItems);
+            const col = (window.BOARD_DATA.columns || []).find(c => c.type === 'status');
+            ids.forEach(id => {
+              const item = window.BOARD_DATA.items.find(i => String(i.id) === String(id));
+              if (item) item.status_label = status;
+              if (col && window.BoardApp.updateCellDOM) {
+                window.BoardApp.updateCellDOM(id, col.column_id, status, 'status');
+              }
+            });
+            finishBulk(`Updated ${ids.length} item${ids.length > 1 ? 's' : ''}`);
           } else {
             alert('❌ Error: ' + (result.error || 'Unknown error'));
           }
@@ -177,14 +187,11 @@ window.BoardApp = window.BoardApp || {};
     });
   };
 
-  // Show a success toast, then reload to reflect the change everywhere.
-  // (Full no-reload updates land with the optimistic-DOM work.)
-  function notifyThenReload(message) {
+  // Common tail for optimistic bulk mutations
+  function finishBulk(message) {
+    BoardApp.clearBulkSelection();
     if (typeof BoardApp.showToast === 'function') {
       BoardApp.showToast(message, 'success');
-      setTimeout(() => location.reload(), 600);
-    } else {
-      location.reload();
     }
   }
 
@@ -250,7 +257,22 @@ window.BoardApp = window.BoardApp || {};
           });
 
           if (result.success) {
-            notifyThenReload(`Assigned ${selectedItems.size} items`);
+            // Patch each row's people cell in place — no reload
+            const ids = Array.from(selectedItems);
+            const col = (window.BOARD_DATA.columns || []).find(c => c.type === 'people');
+            const user = (window.BOARD_DATA.users || []).find(u => String(u.id) === String(userId));
+            ids.forEach(id => {
+              const item = window.BOARD_DATA.items.find(i => String(i.id) === String(id));
+              if (item) {
+                item.assigned_to = userId;
+                item.first_name = user ? user.first_name : null;
+                item.last_name = user ? user.last_name : null;
+              }
+              if (col && window.BoardApp.updateCellDOM) {
+                window.BoardApp.updateCellDOM(id, col.column_id, userId, 'people');
+              }
+            });
+            finishBulk(`Assigned ${ids.length} item${ids.length > 1 ? 's' : ''}`);
           } else {
             alert('❌ Error: ' + (result.error || 'Unknown error'));
           }
@@ -324,7 +346,36 @@ window.BoardApp = window.BoardApp || {};
           });
 
           if (result.success) {
-            notifyThenReload(`Moved ${selectedItems.size} items`);
+            // Move each row into the target group's tbody — no reload
+            const ids = Array.from(selectedItems);
+            const tbody = document.querySelector(`.fw-group[data-group-id="${groupId}"] tbody`);
+            const sourceGroups = new Set();
+
+            ids.forEach(id => {
+              const item = window.BOARD_DATA.items.find(i => String(i.id) === String(id));
+              if (item) {
+                sourceGroups.add(String(item.group_id));
+                item.group_id = groupId;
+              }
+              const row = document.querySelector(`tr.fw-item-row[data-item-id="${id}"]`);
+              if (row && tbody) {
+                tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+                tbody.insertBefore(row, tbody.querySelector('.fw-agg-row') || tbody.querySelector('.fw-add-row') || null);
+                row.dataset.groupId = String(groupId);
+              }
+            });
+
+            // Refresh counts + aggregations on every affected group
+            sourceGroups.add(String(groupId));
+            sourceGroups.forEach(gid => {
+              const group = document.querySelector(`.fw-group[data-group-id="${gid}"]`);
+              const countEl = group?.querySelector('.fw-group-count');
+              if (countEl) countEl.textContent = group.querySelectorAll('tr.fw-item-row').length;
+              if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(gid);
+            });
+            if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+
+            finishBulk(`Moved ${ids.length} item${ids.length > 1 ? 's' : ''}`);
           } else {
             alert('❌ Error: ' + (result.error || 'Unknown error'));
           }

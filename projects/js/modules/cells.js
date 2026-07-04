@@ -20,9 +20,14 @@
       return;
     }
 
-    event.stopPropagation();
-    
-    const cellElement = event.currentTarget || event.target.closest('.fw-cell');
+    // Already editing this cell inline — let the input keep focus
+    if (event.target.closest && event.target.closest('.fw-cell-inline-input')) {
+      return;
+    }
+
+    if (event.stopPropagation) event.stopPropagation();
+
+    const cellElement = event.currentTarget || (event.target.closest && event.target.closest('.fw-cell'));
     if (!cellElement) return;
     
     console.log('📝 Edit cell:', { itemId, columnId, columnType });
@@ -33,10 +38,13 @@
     
     switch (columnType) {
       case 'text':
-        editText(itemId, columnId, cellElement);
+        inlineEdit(itemId, columnId, cellElement, 'text');
+        break;
+      case 'longtext':
+        inlineEdit(itemId, columnId, cellElement, 'longtext');
         break;
       case 'number':
-        editNumber(itemId, columnId, cellElement);
+        inlineEdit(itemId, columnId, cellElement, 'number');
         break;
       case 'status':
         editStatus(itemId, columnId, cellElement);
@@ -45,7 +53,7 @@
         editPeople(itemId, columnId, cellElement);
         break;
       case 'date':
-        editDate(itemId, columnId, cellElement);
+        inlineEdit(itemId, columnId, cellElement, 'date');
         break;
       case 'priority':
         editPriority(itemId, columnId, cellElement);
@@ -89,42 +97,101 @@
     }
   };
   
-  // ===== TEXT EDITOR =====
-  function editText(itemId, columnId, cellElement) {
-    const currentValue = cellElement.textContent.trim().replace('+', '');
-    
-    createModal('Edit Text', `
-      <textarea id="cellTextInput" class="fw-textarea" rows="4" placeholder="Enter text..." style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;resize:vertical;min-height:100px;">${currentValue}</textarea>
-      <div class="fw-modal-footer">
-        <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
-        <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellTextInput').value)">Save</button>
-      </div>
-    `);
-    
-    setTimeout(() => {
-      const input = document.getElementById('cellTextInput');
-      input?.focus();
-      input?.setSelectionRange(input.value.length, input.value.length);
-    }, 100);
+  // ===== INLINE EDITOR (text / longtext / number / date) =====
+  // Swaps an input directly into the cell — no modal. Seeded from the raw
+  // value in valuesMap (never from the formatted textContent, which used to
+  // feed "R 1,234.56" into number inputs). Enter commits, Escape restores,
+  // Tab commits and moves to the next editable cell in the row.
+  const INLINE_TYPES = ['text', 'longtext', 'number', 'date'];
+
+  function rawCellValue(itemId, columnId, cellElement) {
+    const fromMap = (window.BOARD_DATA.valuesMap[itemId] || {})[columnId];
+    if (fromMap !== undefined && fromMap !== null) return String(fromMap);
+    // Item-field-backed cells (e.g. Due Date fallback) carry their resolved
+    // value in data-value, rendered by board.php
+    return cellElement.dataset.value || '';
   }
 
-  // ===== NUMBER EDITOR =====
-  function editNumber(itemId, columnId, cellElement) {
-    const currentValue = cellElement.textContent.trim().replace('+', '');
-    
-    createModal('Edit Number', `
-      <input type="number" id="cellNumberInput" class="fw-input" value="${currentValue}" step="any" placeholder="0" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:16px;" />
-      <div class="fw-modal-footer">
-        <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
-        <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellNumberInput').value)">Save</button>
-      </div>
-    `);
-    
-    setTimeout(() => {
-      const input = document.getElementById('cellNumberInput');
-      input?.focus();
-      input?.select();
-    }, 100);
+  function inlineEdit(itemId, columnId, cellElement, kind) {
+    if (cellElement.querySelector('.fw-cell-inline-input')) return;
+
+    let currentValue = rawCellValue(itemId, columnId, cellElement);
+    if (kind === 'date') currentValue = currentValue.split(' ')[0];
+
+    const originalHtml = cellElement.innerHTML;
+
+    const input = document.createElement(kind === 'longtext' ? 'textarea' : 'input');
+    if (kind !== 'longtext') input.type = kind; // text | number | date
+    if (kind === 'number') input.step = 'any';
+    if (kind === 'longtext') input.rows = 3;
+    input.className = 'fw-cell-inline-input';
+    input.value = currentValue;
+
+    cellElement.innerHTML = '';
+    cellElement.appendChild(input);
+    input.focus();
+    if (kind === 'text' || kind === 'number') input.select();
+
+    let settled = false;
+
+    const restore = () => {
+      settled = true;
+      cellElement.innerHTML = originalHtml;
+    };
+
+    const commit = (openNextCell) => {
+      if (settled) return;
+      const value = kind === 'longtext' || kind === 'text' ? input.value.trim() : input.value;
+      restore();
+      if (value !== currentValue) {
+        window.BoardApp.saveCellValue(itemId, columnId, value);
+      }
+      if (openNextCell) focusNextEditableCell(cellElement, itemId);
+    };
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // keep global shortcuts (Escape/Delete/…) out of the edit
+      if (e.key === 'Enter' && !(kind === 'longtext' && e.shiftKey)) {
+        e.preventDefault();
+        commit(false);
+      } else if (e.key === 'Escape') {
+        restore();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        commit(true);
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      // Give keydown commits a tick to settle first
+      setTimeout(() => { if (!settled) commit(false); }, 0);
+    });
+
+    input.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  function focusNextEditableCell(cellElement, itemId) {
+    let next = cellElement.nextElementSibling;
+    while (next) {
+      if (next.classList.contains('fw-cell')) {
+        const type = next.dataset.type;
+        const colId = parseInt(next.dataset.columnId, 10);
+        if (INLINE_TYPES.includes(type)) {
+          inlineEdit(itemId, colId, next, type);
+          return;
+        }
+        if (type && type !== 'formula') {
+          // Picker types open their modal editor
+          window.BoardApp.editCell(itemId, colId, type, {
+            currentTarget: next,
+            target: next,
+            stopPropagation() {}
+          });
+          return;
+        }
+      }
+      next = next.nextElementSibling;
+    }
   }
 
   // ===== STATUS EDITOR =====
@@ -136,8 +203,9 @@
       'done': { label: 'Done', color: '#00c875' }
     };
     
-    const currentValue = cellElement.textContent.trim().toLowerCase();
-    
+    // Compare against the raw stored key, not the rendered label text
+    const currentValue = (cellElement.dataset.value || cellElement.textContent.trim().toLowerCase());
+
     const options = Object.keys(statuses).map(key => {
       const status = statuses[key];
       return `
@@ -185,29 +253,6 @@
     `);
     
     setTimeout(() => document.getElementById('peopleSearchInput')?.focus(), 100);
-  }
-
-  // ===== DATE EDITOR =====
-  function editDate(itemId, columnId, cellElement) {
-    const currentText = cellElement.querySelector('span')?.textContent || '';
-    let dateValue = '';
-    
-    if (currentText) {
-      const parsed = new Date(currentText);
-      if (!isNaN(parsed.getTime())) {
-        dateValue = parsed.toISOString().split('T')[0];
-      }
-    }
-    
-    createModal('Set Date', `
-      <input type="date" id="cellDateInput" class="fw-input" value="${dateValue}" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:16px;" />
-      <div class="fw-modal-footer">
-        <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
-        <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellDateInput').value)">Save</button>
-      </div>
-    `);
-    
-    setTimeout(() => document.getElementById('cellDateInput')?.focus(), 100);
   }
 
   // ===== PRIORITY EDITOR =====

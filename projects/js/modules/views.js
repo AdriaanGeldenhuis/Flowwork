@@ -119,11 +119,12 @@
       return;
     }
 
-    // Visible columns: everything not hidden by the visibility module
-    const hidden = window.BoardApp.hiddenColumns || new Set();
+    // Visible columns: server-visible minus any active view overlay
+    const overlayHidden = window.BoardApp.viewHiddenColumns || new Set();
     const visibleColumns = (window.BOARD_DATA.columns || [])
+      .filter(c => Number(c.visible) === 1)
       .map(c => parseInt(c.column_id, 10))
-      .filter(id => !hidden.has(id));
+      .filter(id => !overlayHidden.has(id));
 
     window.BoardApp.apiCall('/projects/api/view/save.php', {
       board_id: window.BOARD_DATA.boardId,
@@ -163,13 +164,17 @@
         window.BoardApp.applyFilterSet(view.filters || []);
       }
 
-      // 3) Column visibility
-      if (Array.isArray(view.visible_columns) && view.visible_columns.length > 0
-          && typeof window.BoardApp.toggleColumnVisibility === 'function') {
+      // 3) Column visibility — session overlay only. Saved views must not
+      // rewrite the board-wide visible flag for everyone.
+      if (Array.isArray(view.visible_columns) && view.visible_columns.length > 0) {
         const visibleSet = new Set(view.visible_columns.map(Number));
-        (window.BOARD_DATA.columns || []).forEach(col => {
-          window.BoardApp.toggleColumnVisibility(parseInt(col.column_id, 10), visibleSet.has(parseInt(col.column_id, 10)));
-        });
+        const hiddenIds = (window.BOARD_DATA.columns || [])
+          .filter(c => Number(c.visible) === 1)
+          .map(c => parseInt(c.column_id, 10))
+          .filter(id => !visibleSet.has(id));
+        applyViewColumnOverlay(hiddenIds);
+      } else {
+        applyViewColumnOverlay([]);
       }
 
       // 4) Reflect the loaded view in the URL + Views button
@@ -191,6 +196,22 @@
         .catch(err => alert('Failed to load view: ' + err.message));
     }
   };
+
+  // Session-only column overlay for loaded views (separate from the shared
+  // server visibility flag managed by column-visibility.js)
+  function applyViewColumnOverlay(hiddenIds) {
+    window.BoardApp.viewHiddenColumns = new Set(hiddenIds.map(Number));
+
+    let styleEl = document.getElementById('fw-view-col-overlay');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'fw-view-col-overlay';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = hiddenIds
+      .map(id => `.fw-board-table [data-column-id="${parseInt(id, 10)}"] { display: none; }`)
+      .join('\n');
+  }
 
   function markActiveView(name) {
     const btn = document.querySelector('button[onclick="BoardApp.showViewsModal()"]');

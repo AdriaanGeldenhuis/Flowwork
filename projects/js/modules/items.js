@@ -95,15 +95,46 @@ window.BoardApp.quickAddItem = function(input, groupId) {
   });
 };
 
-  // ===== DUPLICATE ITEM =====
+  // ===== DUPLICATE ITEM (renders the copy in place — no reload) =====
   window.BoardApp.duplicateItem = function(itemId) {
-    console.log('📋 Duplicating item:', itemId);
-    
     window.BoardApp.apiCall('/projects/api/item.duplicate.php', {
       item_id: itemId
     }).then(data => {
-      console.log('✅ Item duplicated:', data.item_id);
-      window.location.reload();
+      const item = data.item;
+      if (!item || !window.BoardApp.addItemToDOM) {
+        window.location.reload();
+        return;
+      }
+
+      // addItemToDOM inserts the table row AND pushes into BOARD_DATA.items
+      window.BoardApp.addItemToDOM(item, item.group_id);
+
+      // Render the copied cell values
+      const values = data.values || {};
+      window.BOARD_DATA.valuesMap[item.id] = Object.assign({}, values);
+      Object.entries(values).forEach(([colId, value]) => {
+        const col = (window.BOARD_DATA.columns || []).find(c => String(c.column_id) === String(colId));
+        if (col && window.BoardApp.renderCellFull) {
+          window.BoardApp.renderCellFull(item.id, colId, value, col.type);
+        }
+      });
+
+      // Item-field-backed cells (status/people/date/priority fallbacks)
+      const fieldCells = [
+        ['status', item.status_label], ['people', item.assigned_to],
+        ['date', item.due_date ? String(item.due_date).split(' ')[0] : null], ['priority', item.priority]
+      ];
+      fieldCells.forEach(([type, value]) => {
+        if (!value) return;
+        const col = (window.BOARD_DATA.columns || []).find(c => c.type === type);
+        if (col && !(values && values[col.column_id]) && window.BoardApp.renderCellFull) {
+          window.BoardApp.renderCellFull(item.id, col.column_id, value, type);
+        }
+      });
+
+      if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(item.group_id);
+      if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Item duplicated', 'success');
     }).catch(err => {
       console.error('❌ Duplicate error:', err);
       alert('Failed to duplicate: ' + err.message);
@@ -162,6 +193,13 @@ window.BoardApp.showItemMenu = function(itemId, event) {
   window.BoardApp.closeAllDropdowns();
   
   const html = `
+    <button class="fw-dropdown-item" onclick="BoardApp.openItemPanel(${itemId})">
+      <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
+        <rect x="2" y="2" width="10" height="10" rx="1" stroke="currentColor" fill="none"/>
+        <path d="M8 2v10" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      Open Item
+    </button>
     <button class="fw-dropdown-item" onclick="BoardApp.showSubitems(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
         <path d="M4 6h8M4 9h8M4 12h8" stroke="currentColor" stroke-width="1.5"/>

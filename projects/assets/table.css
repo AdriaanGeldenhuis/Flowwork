@@ -796,3 +796,53 @@ thead tr > th:last-child {
   font-size: var(--font-lg);
   color: var(--accent-primary);
 }
+/* ========== DRAG INDICATORS (groups, columns, empty-group drops) ========== */
+.fw-dragging-group {
+  opacity: 0.5;
+}
+
+.fw-group-drag-over-top {
+  box-shadow: 0 -3px 0 0 var(--accent-primary, #8b5cf6);
+}
+
+.fw-group-drag-over-bottom {
+  box-shadow: 0 3px 0 0 var(--accent-primary, #8b5cf6);
+}
+
+.fw-dragging-column {
+  opacity: 0.5;
+}
+
+th.fw-col-drag-over-left {
+  box-shadow: inset 3px 0 0 0 var(--accent-primary, #8b5cf6);
+}
+
+th.fw-col-drag-over-right {
+  box-shadow: inset -3px 0 0 0 var(--accent-primary, #8b5cf6);
+}
+
+.fw-group-drop-target .fw-table-wrapper {
+  outline: 2px dashed var(--accent-primary, #8b5cf6);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* ========== INLINE CELL EDITOR ========== */
+.fw-cell-inline-input {
+  width: 100%;
+  min-width: 60px;
+  padding: 4px 8px;
+  border: 2px solid var(--accent-primary, #8b5cf6);
+  border-radius: 6px;
+  background: var(--input-bg, rgba(0, 0, 0, 0.2));
+  color: var(--input-text, inherit);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+textarea.fw-cell-inline-input {
+  resize: vertical;
+  min-height: 60px;
+}

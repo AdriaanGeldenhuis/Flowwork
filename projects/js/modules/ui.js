@@ -119,6 +119,107 @@
     return toast;
   };
 
+  // ===== DIALOG SERVICE (styled replacements for confirm()/prompt()) =====
+  function buildDialog({ title, bodyHtml, buttons }) {
+    const overlay = document.createElement('div');
+    overlay.className = 'fw-modal-overlay';
+    overlay.innerHTML = `
+      <div class="fw-modal-content fw-slide-up" role="dialog" aria-modal="true" style="max-width: 420px;">
+        <div class="fw-modal-header">
+          <h3 style="margin:0;font-size:17px;font-weight:700;">${window.BoardApp.escapeHtml(title)}</h3>
+        </div>
+        <div class="fw-modal-body">
+          ${bodyHtml}
+          <div class="fw-modal-footer">${buttons}</div>
+        </div>
+      </div>
+    `;
+    const container = document.querySelector('.fw-proj') || document.body;
+    container.appendChild(overlay);
+    return overlay;
+  }
+
+  window.BoardApp.dialog = {
+    /**
+     * @returns {Promise<boolean>}
+     */
+    confirm(message, { title = 'Are you sure?', confirmLabel = 'Confirm', danger = false } = {}) {
+      return new Promise(resolve => {
+        const overlay = buildDialog({
+          title,
+          bodyHtml: `<p style="margin:0 0 8px;">${window.BoardApp.escapeHtml(message)}</p>`,
+          buttons: `
+            <button type="button" class="fw-btn fw-btn--secondary" data-act="cancel">Cancel</button>
+            <button type="button" class="fw-btn ${danger ? 'fw-btn--danger' : 'fw-btn--primary'}" data-act="ok">${window.BoardApp.escapeHtml(confirmLabel)}</button>
+          `
+        });
+
+        const previouslyFocused = document.activeElement;
+        const finish = (result) => {
+          overlay.remove();
+          document.removeEventListener('keydown', onKey);
+          if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+          resolve(result);
+        };
+        const onKey = (e) => {
+          if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+          if (e.key === 'Enter') { e.stopPropagation(); finish(true); }
+        };
+
+        overlay.querySelector('[data-act="ok"]').addEventListener('click', () => finish(true));
+        overlay.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(false));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+        document.addEventListener('keydown', onKey);
+        overlay.querySelector('[data-act="ok"]').focus();
+      });
+    },
+
+    /**
+     * @returns {Promise<string|null>} trimmed value, or null on cancel
+     */
+    prompt(message, { title = 'Enter a value', placeholder = '', value = '', confirmLabel = 'Save', maxLength = 0 } = {}) {
+      return new Promise(resolve => {
+        const overlay = buildDialog({
+          title,
+          bodyHtml: `
+            <label style="display:block;margin-bottom:8px;font-size:13px;color:var(--text-secondary,inherit);">${window.BoardApp.escapeHtml(message)}</label>
+            <input type="text" class="fw-input" id="fwDialogPromptInput" style="width:100%;"
+                   placeholder="${window.BoardApp.escapeHtml(placeholder)}"
+                   value="${window.BoardApp.escapeHtml(value)}"
+                   ${maxLength > 0 ? `maxlength="${maxLength}"` : ''} />
+          `,
+          buttons: `
+            <button type="button" class="fw-btn fw-btn--secondary" data-act="cancel">Cancel</button>
+            <button type="button" class="fw-btn fw-btn--primary" data-act="ok">${window.BoardApp.escapeHtml(confirmLabel)}</button>
+          `
+        });
+
+        const input = overlay.querySelector('#fwDialogPromptInput');
+        const previouslyFocused = document.activeElement;
+        const finish = (result) => {
+          overlay.remove();
+          if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+          resolve(result);
+        };
+        const submit = () => {
+          const v = input.value.trim();
+          if (!v) { input.focus(); return; }
+          finish(v);
+        };
+
+        overlay.querySelector('[data-act="ok"]').addEventListener('click', submit);
+        overlay.querySelector('[data-act="cancel"]').addEventListener('click', () => finish(null));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.stopPropagation(); submit(); }
+          if (e.key === 'Escape') { e.stopPropagation(); finish(null); }
+        });
+
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+      });
+    }
+  };
+
   console.log('✅ UI module loaded');
 
 })();

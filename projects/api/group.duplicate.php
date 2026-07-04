@@ -82,7 +82,40 @@ try {
         'items' => count($items),
     ]);
 
-    respond_ok(['group_id' => $newGroupId, 'items' => count($items)]);
+    // Return the new group fully hydrated so the client can render it
+    // without a page reload.
+    $stmt = $DB->prepare("SELECT * FROM board_groups WHERE id = ?");
+    $stmt->execute([$newGroupId]);
+    $newGroup = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $stmt = $DB->prepare("
+        SELECT bi.*, bg.name AS group_name, u.first_name, u.last_name
+        FROM board_items bi
+        LEFT JOIN board_groups bg ON bi.group_id = bg.id
+        LEFT JOIN users u ON bi.assigned_to = u.id
+        WHERE bi.group_id = ?
+        ORDER BY bi.position
+    ");
+    $stmt->execute([$newGroupId]);
+    $newItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $valuesMap = [];
+    if ($newItems) {
+        $ids = array_column($newItems, 'id');
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $DB->prepare("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN ($ph)");
+        $stmt->execute($ids);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $valuesMap[$row['item_id']][$row['column_id']] = $row['value'];
+        }
+    }
+
+    respond_ok([
+        'group_id' => $newGroupId,
+        'group' => $newGroup,
+        'items' => $newItems,
+        'values' => $valuesMap,
+    ]);
 
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();

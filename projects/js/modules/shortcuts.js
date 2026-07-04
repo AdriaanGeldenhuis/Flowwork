@@ -141,24 +141,25 @@
 
   // ===== DUPLICATE SELECTED =====
   function duplicateSelected() {
-    if (window.BoardApp.selectedItems.size === 0) return;
-    
-    if (!confirm(`Duplicate ${window.BoardApp.selectedItems.size} items?`)) return;
-    
-    const promises = Array.from(window.BoardApp.selectedItems).map(itemId => {
-      return window.BoardApp.apiCall('/projects/api/item.duplicate.php', {
-        item_id: itemId
+    const count = window.BoardApp.selectedItems.size;
+    if (count === 0) return;
+
+    const run = () => {
+      // duplicateItem renders each copy in place — no reload needed
+      Array.from(window.BoardApp.selectedItems).forEach(itemId => {
+        window.BoardApp.duplicateItem(itemId);
       });
-    });
-    
-    Promise.all(promises)
-      .then(() => {
-        showToast('✅ Items duplicated', 'success');
-        setTimeout(() => window.location.reload(), 1000);
-      })
-      .catch(err => {
-        alert('Failed to duplicate: ' + err.message);
-      });
+      window.BoardApp.clearSelection();
+    };
+
+    if (window.BoardApp.dialog) {
+      window.BoardApp.dialog.confirm(`Duplicate ${count} item${count > 1 ? 's' : ''}?`, {
+        title: 'Duplicate items',
+        confirmLabel: 'Duplicate'
+      }).then(ok => { if (ok) run(); });
+    } else if (confirm(`Duplicate ${count} items?`)) {
+      run();
+    }
   }
 
   // ===== SHOW SHORTCUTS MODAL =====

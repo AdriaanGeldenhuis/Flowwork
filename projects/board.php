@@ -51,9 +51,12 @@ if (!$memberRole && $USER_ROLE !== 'admin') {
 }
 
 // ===== LOAD COLUMNS =====
+// All columns are loaded and rendered; hidden ones (visible = 0) are collapsed
+// via the #fw-col-visibility stylesheet below so the client can show/hide
+// columns without a reload (see js/modules/column-visibility.js).
 $stmt = $DB->prepare("
     SELECT * FROM board_columns
-    WHERE board_id = ? AND company_id = ? AND visible = 1
+    WHERE board_id = ? AND company_id = ?
     ORDER BY position
 ");
 $stmt->execute([$boardId, $COMPANY_ID]);
@@ -85,12 +88,18 @@ if (empty($columns)) {
     // Reload columns
     $stmt = $DB->prepare("
         SELECT * FROM board_columns
-        WHERE board_id = ? AND company_id = ? AND visible = 1
+        WHERE board_id = ? AND company_id = ?
         ORDER BY position
     ");
     $stmt->execute([$boardId, $COMPANY_ID]);
     $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+// Hidden-column ids for the visibility stylesheet
+$HIDDEN_COLUMN_IDS = array_values(array_map(
+    fn($c) => (int)$c['column_id'],
+    array_filter($columns, fn($c) => !(int)$c['visible'])
+));
 
 // ===== LOAD GROUPS =====
 $stmt = $DB->prepare("
@@ -301,6 +310,11 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 <?php foreach ($BOARD_CSS_FILES as $cssFile): ?>
     <link rel="stylesheet" href="/projects/assets/<?= $cssFile ?>?v=<?= ASSET_VERSION ?>">
 <?php endforeach; ?>
+    <style id="fw-col-visibility">
+<?php foreach ($HIDDEN_COLUMN_IDS as $hiddenId): ?>
+        .fw-board-table [data-column-id="<?= $hiddenId ?>"] { display: none; }
+<?php endforeach; ?>
+    </style>
 </head>
 <body class="fw-board-body" data-board-id="<?= $boardId ?>">
 
@@ -1200,6 +1214,7 @@ $jsFiles = [
     "modules/guests.js",
     "ui/header.js",
     "modules/subitems.js",
+    "modules/item-panel.js",
     "ui/scroll-sync.js"
 ];
 $filesJson = json_encode($jsFiles, JSON_UNESCAPED_SLASHES);
