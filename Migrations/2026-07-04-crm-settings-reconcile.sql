@@ -9,10 +9,10 @@
 -- company_settings has a unique key on (company_id, setting_key), so
 -- INSERT IGNORE keeps any value already present under the canonical key.
 
-INSERT IGNORE INTO company_settings (company_id, setting_key, setting_value, updated_at)
-SELECT company_id, 'crm_require_vat_number', setting_value, NOW()
-FROM company_settings
-WHERE setting_key = 'crm_require_vat';
+-- Note: the old crm_require_vat flag is intentionally NOT copied to
+-- crm_require_vat_number. The old checkbox was never enforced anywhere, so
+-- carrying it over would suddenly block account creation for tenants who
+-- ticked it years ago. VAT enforcement is a fresh opt-in on the settings page.
 
 INSERT IGNORE INTO company_settings (company_id, setting_key, setting_value, updated_at)
 SELECT company_id, 'crm_default_supplier_status', setting_value, NOW()

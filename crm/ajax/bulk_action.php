@@ -9,12 +9,7 @@ header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
-$role = $_SESSION['role'] ?? 'viewer';
-
-if (!in_array($role, ['admin', 'owner', 'member'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
-    exit;
-}
+crm_require_min_role('member');
 
 $action = $_POST['action'] ?? '';
 $ids = $_POST['ids'] ?? [];

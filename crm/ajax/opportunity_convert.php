@@ -13,7 +13,6 @@ header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
-$role      = $_SESSION['role'] ?? 'viewer';
 
 // Members and up can convert opportunities
 crm_require_min_role('member');

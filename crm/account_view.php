@@ -2,6 +2,7 @@
 // /crm/account_view.php - FINAL WORKING VERSION
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 require_once __DIR__ . '/../qi/lib/Currencies.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
@@ -141,8 +142,11 @@ try {
     }
 } catch (Exception $e) {}
 
-// Tagging toggle
-$tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
+// Viewer-role users get a read-only page (matches the endpoints' gates)
+$canWrite = crm_role_rank($_SESSION['role'] ?? 'viewer') >= crm_role_rank('member');
+
+// Tagging toggle (write UI additionally needs member role)
+$tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1' && $canWrite;
 
 // Mail accounts + signatures for the "Send Email" modal (same queries as /mail/compose.php)
 $stmt = $DB->prepare("SELECT account_id, account_name, email_address FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
@@ -316,6 +320,7 @@ if ($account['type'] === 'customer') {
                     </div>
                 </div>
                 <div class="fw-crm__account-header-actions">
+                    <?php if ($canWrite): ?>
                     <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.openModal('followupModal')">
                         ⏰ Follow-up
                     </button>
@@ -327,6 +332,7 @@ if ($account['type'] === 'customer') {
                     <a href="/mail/settings.php" class="fw-crm__btn fw-crm__btn--secondary" title="Connect a mail account to send email from the CRM">
                         ✉️ Send Email
                     </a>
+                    <?php endif; ?>
                     <?php endif; ?>
                     <a href="/crm/account_edit.php?id=<?= $accountId ?>" class="fw-crm__btn fw-crm__btn--secondary">
                         Edit

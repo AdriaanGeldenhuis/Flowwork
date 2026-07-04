@@ -14,7 +14,6 @@ header('Content-Type: application/json');
 // Capture session variables
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
-$role      = $_SESSION['role'] ?? 'viewer';
 
 // Members and up may create opportunities
 crm_require_min_role('member');

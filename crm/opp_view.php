@@ -4,6 +4,7 @@
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
@@ -32,14 +33,14 @@ if (!$opp) {
 }
 
 // Authorization: viewer can view but not edit; owner can edit; admin can edit
-$canEdit = ($role === 'admin' || (int)$opp['owner_user_id'] === (int)$userId);
+$canEdit = (crm_role_rank($role) >= crm_role_rank('admin') || (int)$opp['owner_user_id'] === (int)$userId);
 
 // Fetch supporting lists for editing if allowed
 $accounts = [];
 $owners   = [];
 if ($canEdit) {
     // Accounts (customers)
-    $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' ORDER BY name ASC");
+    $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' AND deleted_at IS NULL ORDER BY name ASC");
     $stmt->execute([$companyId]);
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     // Owners (users)
@@ -212,7 +213,7 @@ $companyName = $company['name'] ?? 'Company';
                 </div>
                 <div class="fw-crm__form-group">
                     <label for="owner_id" class="fw-crm__label">Owner</label>
-                    <?php if ($canEdit && $role === 'admin'): ?>
+                    <?php if ($canEdit && crm_role_rank($role) >= crm_role_rank('admin')): ?>
                         <select name="owner_id" id="owner_id" class="fw-crm__input" required>
                             <?php foreach ($owners as $o): ?>
                                 <option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === (int)$opp['owner_user_id'] ? 'selected' : '' ?>><?= htmlspecialchars(trim($o['first_name'] . ' ' . $o['last_name'])) ?></option>
@@ -234,6 +235,7 @@ $companyName = $company['name'] ?? 'Company';
             <div id="oppEditMessage" class="fw-crm__alert" style="display:none"></div>
 
             <!-- Follow-up reminder (rides the calendar + notifications stack) -->
+            <?php if (crm_role_rank($role) >= crm_role_rank('member')): ?>
             <div class="fw-crm__form-card" style="margin-top:24px;">
                 <h2 class="fw-crm__form-card-title">⏰ Schedule Follow-up</h2>
                 <form id="oppFollowupForm" class="fw-crm__form">
@@ -267,6 +269,7 @@ $companyName = $company['name'] ?? 'Company';
                 </form>
                 <div id="oppFollowupMessage" class="fw-crm__alert" style="display:none"></div>
             </div>
+            <?php endif; ?>
         </main>
     </div>
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>

@@ -54,9 +54,10 @@ window.CRM = window.CRM || {};
 
   function escapeHtml(str) {
     const div = document.createElement('div');
-    div.textContent = str || '';
+    div.textContent = str == null ? '' : String(str);
     return div.innerHTML;
   }
+  window.CRM.escapeHtml = escapeHtml;
 
   function getCsrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -393,10 +394,14 @@ window.CRM = window.CRM || {};
   }
 
   // ========== MODAL SYSTEM ==========
+  // The stylesheet only displays overlays via [aria-hidden="false"]
+  // (display:none !important otherwise), so open/close MUST drive that
+  // attribute — the --active class alone never showed anything.
   window.CRMModal = {open: function(modalId) {
       const modal = document.getElementById(modalId);
       if (modal) {
         modal.classList.add('fw-crm__modal-overlay--active');
+        modal.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
       }
     },
@@ -404,6 +409,7 @@ window.CRM = window.CRM || {};
       const modal = document.getElementById(modalId);
       if (modal) {
         modal.classList.remove('fw-crm__modal-overlay--active');
+        modal.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
       }
     }
@@ -413,6 +419,7 @@ window.CRM = window.CRM || {};
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('fw-crm__modal-overlay')) {
       e.target.classList.remove('fw-crm__modal-overlay--active');
+      e.target.setAttribute('aria-hidden', 'true');
       document.body.style.overflow = '';
     }
   });
@@ -422,6 +429,7 @@ window.CRM = window.CRM || {};
     if (e.key === 'Escape') {
       document.querySelectorAll('.fw-crm__modal-overlay--active').forEach(modal => {
         modal.classList.remove('fw-crm__modal-overlay--active');
+        modal.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
       });
     }

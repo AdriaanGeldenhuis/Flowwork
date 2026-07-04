@@ -2,6 +2,7 @@
 // /crm/account_new.php - COMPLETE WITH BACK BUTTON
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 require_once __DIR__ . '/../qi/lib/Currencies.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
@@ -13,6 +14,12 @@ $userId = $_SESSION['user_id'];
 $type = $_GET['type'] ?? 'supplier';
 if (!in_array($type, ['supplier', 'customer'])) {
     $type = 'supplier';
+}
+
+// Preselect the company's configured default status for this account type
+$defaultStatus = getCRMSetting('crm_default_' . $type . '_status', 'active');
+if (!in_array($defaultStatus, CRM_ACCOUNT_STATUSES)) {
+    $defaultStatus = 'active';
 }
 
 // Fetch user info
@@ -210,10 +217,10 @@ $regions = $DB->query("SELECT * FROM crm_regions ORDER BY name ASC")->fetchAll()
                         <div class="fw-crm__form-group">
                             <label class="fw-crm__label">Status</label>
                             <select name="status" class="fw-crm__input">
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                                <option value="prospect">Prospect</option>
-                                <option value="banned">Banned</option>
+                                <option value="active" <?= $defaultStatus === 'active' ? 'selected' : '' ?>>Active</option>
+                                <option value="inactive" <?= $defaultStatus === 'inactive' ? 'selected' : '' ?>>Inactive</option>
+                                <option value="prospect" <?= $defaultStatus === 'prospect' ? 'selected' : '' ?>>Prospect</option>
+                                <option value="banned" <?= $defaultStatus === 'banned' ? 'selected' : '' ?>>Banned</option>
                             </select>
                         </div>
                     </div>

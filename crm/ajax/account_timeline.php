@@ -44,10 +44,14 @@ try {
         ];
     }
 
-    // Fetch emails linked to this account (ignore those without sent_at)
-    $emailStmt = $DB->prepare("SELECT email_id, subject, sent_at, sender
-        FROM emails
-        WHERE company_id = ? AND account_id = ? AND sent_at IS NOT NULL");
+    // Fetch emails linked to this account. Association lives in the
+    // polymorphic email_links table — emails.account_id is the MAIL account
+    // (email_accounts.account_id), not the CRM account.
+    $emailStmt = $DB->prepare("SELECT DISTINCT e.email_id, e.subject, e.sent_at, e.sender
+        FROM email_links l
+        JOIN emails e ON e.email_id = l.email_id AND e.company_id = l.company_id
+        WHERE l.company_id = ? AND l.linked_type IN ('supplier', 'customer')
+          AND l.linked_id = ? AND e.sent_at IS NOT NULL");
     $emailStmt->execute([$companyId, $accountId]);
     while ($row = $emailStmt->fetch(PDO::FETCH_ASSOC)) {
         $title = $row['subject'] ?: 'Email';

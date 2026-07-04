@@ -74,12 +74,12 @@ document.addEventListener('DOMContentLoaded', function () {
         // Overlay-click / Escape close the modal without going through our
         // buttons (crm.js handles those) — treat that as a cancel
         new MutationObserver(() => {
-            if (lossResolver && !lossModal.classList.contains('fw-crm__modal-overlay--active')) {
+            if (lossResolver && lossModal.getAttribute('aria-hidden') !== 'false') {
                 const resolve = lossResolver;
                 lossResolver = null;
                 resolve({ proceed: false, reason: '' });
             }
-        }).observe(lossModal, { attributes: true, attributeFilter: ['class'] });
+        }).observe(lossModal, { attributes: true, attributeFilter: ['class', 'aria-hidden'] });
 
         document.getElementById('lossReasonSave').addEventListener('click', () => {
             settleLossModal({ proceed: true, reason: lossInput.value.trim() });
@@ -229,21 +229,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const originalContainer = card.parentElement;
         const originalNextSibling = card.nextElementSibling;
+        const focusStage = (stage) => {
+            const select = document.getElementById('mobileStageSelect');
+            if (select) select.value = stage;
+            document.querySelectorAll('.fw-opps__column').forEach(col => {
+                col.classList.toggle('fw-opps__column--active', col.getAttribute('data-stage') === stage);
+            });
+        };
         const revert = () => {
             if (originalNextSibling) {
                 originalContainer.insertBefore(card, originalNextSibling);
             } else {
                 originalContainer.appendChild(card);
             }
+            // Bring the board back to the column the card returned to
+            focusStage(currentStage);
         };
         targetCol.appendChild(card);
 
         // Follow the moved card on mobile
-        const select = document.getElementById('mobileStageSelect');
-        if (select) select.value = newStage;
-        document.querySelectorAll('.fw-opps__column').forEach(col => {
-            col.classList.toggle('fw-opps__column--active', col.getAttribute('data-stage') === newStage);
-        });
+        focusStage(newStage);
         recalcStageTotals();
 
         if (newStage === 'lost') {

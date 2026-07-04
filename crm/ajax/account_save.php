@@ -28,12 +28,16 @@ try {
         throw new Exception('Invalid account type');
     }
 
-    // Company policy: required identifiers (settings on /crm/settings.php)
-    if (isVATRequired() && trim($_POST['vat_no'] ?? '') === '') {
-        throw new Exception('VAT number is required');
-    }
-    if (isRegNumberRequired() && trim($_POST['reg_no'] ?? '') === '') {
-        throw new Exception('Registration number is required');
+    // Company policy: required identifiers (settings on /crm/settings.php).
+    // Enforced on create only, so legacy accounts saved before the policy
+    // was switched on stay editable.
+    if (!$isEdit) {
+        if (isVATRequired() && trim($_POST['vat_no'] ?? '') === '') {
+            throw new Exception('VAT number is required');
+        }
+        if (isRegNumberRequired() && trim($_POST['reg_no'] ?? '') === '') {
+            throw new Exception('Registration number is required');
+        }
     }
 
     // Status: validate when provided, default from settings on create
@@ -60,8 +64,8 @@ try {
     if ($isEdit) {
         // Check for duplicate name (exclude self)
         $dupStmt = $DB->prepare("
-            SELECT id FROM crm_accounts 
-            WHERE company_id = ? AND type = ? AND name = ? AND id != ?
+            SELECT id FROM crm_accounts
+            WHERE company_id = ? AND type = ? AND name = ? AND id != ? AND deleted_at IS NULL
         ");
         $dupStmt->execute([$companyId, $type, $name, $accountId]);
         if ($dupStmt->fetch()) {
@@ -149,8 +153,8 @@ try {
     } else {
         // Check for duplicate name
         $dupStmt = $DB->prepare("
-            SELECT id FROM crm_accounts 
-            WHERE company_id = ? AND type = ? AND name = ?
+            SELECT id FROM crm_accounts
+            WHERE company_id = ? AND type = ? AND name = ? AND deleted_at IS NULL
         ");
         $dupStmt->execute([$companyId, $type, $name]);
         if ($dupStmt->fetch()) {

@@ -29,42 +29,31 @@ try {
 
     $DB->beginTransaction();
 
-    // Verify both accounts exist and belong to company
-    $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE id = ? AND company_id = ?");
-    
+    // Verify both accounts exist and belong to company (fetch the mergeable
+    // columns up front — the old code re-queried once per field)
+    $fields = [
+        'name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone',
+        'website', 'industry_id', 'region_id', 'status', 'notes'
+    ];
+    $stmt = $DB->prepare("SELECT id, " . implode(', ', $fields) . " FROM crm_accounts WHERE id = ? AND company_id = ?");
+
     $stmt->execute([$leftId, $companyId]);
-    $leftAccount = $stmt->fetch();
+    $leftAccount = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$leftAccount) {
         throw new Exception('Left account not found');
     }
 
     $stmt->execute([$rightId, $companyId]);
-    $rightAccount = $stmt->fetch();
+    $rightAccount = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$rightAccount) {
         throw new Exception('Right account not found');
     }
 
     // Build merged account data based on selected fields
     $mergedData = [];
-    $fields = [
-        'name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone', 
-        'website', 'industry_id', 'region_id', 'status', 'notes'
-    ];
-
     foreach ($fields as $field) {
         $selectedSide = $selectedFields[$field] ?? 'left';
-        
-        if ($selectedSide === 'left') {
-            // Get value from left account
-            $stmt = $DB->prepare("SELECT {$field} FROM crm_accounts WHERE id = ?");
-            $stmt->execute([$leftId]);
-            $mergedData[$field] = $stmt->fetchColumn();
-        } else {
-            // Get value from right account
-            $stmt = $DB->prepare("SELECT {$field} FROM crm_accounts WHERE id = ?");
-            $stmt->execute([$rightId]);
-            $mergedData[$field] = $stmt->fetchColumn();
-        }
+        $mergedData[$field] = $selectedSide === 'left' ? $leftAccount[$field] : $rightAccount[$field];
     }
 
     // Update left account with merged data
@@ -151,6 +140,14 @@ try {
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
 
+    // 4d. Projects carry the CRM customer in client_id (opportunity_convert)
+    $stmt = $DB->prepare("
+        UPDATE projects
+        SET client_id = ?
+        WHERE client_id = ? AND company_id = ?
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+
     // 5. Quotes: repoint customer_id
     $stmt = $DB->prepare("
         UPDATE quotes 
@@ -167,13 +164,10 @@ try {
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
 
-    // 7. Emails: repoint account_id
-    $stmt = $DB->prepare("
-        UPDATE emails
-        SET account_id = ?, folder = folder
-        WHERE account_id = ? AND company_id = ?
-    ");
-    $stmt->execute([$leftId, $rightId, $companyId]);
+    // 7. Emails are associated to CRM accounts via email_links only —
+    //    emails.account_id is the MAIL account id (email_accounts), so the
+    //    old "repoint emails.account_id" step here silently moved a whole
+    //    mailbox between mail accounts and was removed.
 
     // 7b. Polymorphic email links (linked_type is the account's type string).
     //     UPDATE IGNORE skips rows that would duplicate an existing link to

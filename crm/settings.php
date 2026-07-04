@@ -189,7 +189,7 @@ $types = $complianceTypes->fetchAll();
                             <input type="checkbox" name="crm_require_vat_number" value="1" class="fw-crm__checkbox" <?= $settings['crm_require_vat_number'] === '1' ? 'checked' : '' ?>>
                             <span>Require VAT Number</span>
                         </label>
-                        <small class="fw-crm__help-text">Make VAT number mandatory when creating or editing accounts</small>
+                        <small class="fw-crm__help-text">Make VAT number mandatory when creating new accounts</small>
                     </div>
 
                     <div class="fw-crm__form-group">
@@ -198,7 +198,7 @@ $types = $complianceTypes->fetchAll();
                             <input type="checkbox" name="crm_require_reg_number" value="1" class="fw-crm__checkbox" <?= $settings['crm_require_reg_number'] === '1' ? 'checked' : '' ?>>
                             <span>Require Registration Number</span>
                         </label>
-                        <small class="fw-crm__help-text">Make company registration number mandatory when creating or editing accounts</small>
+                        <small class="fw-crm__help-text">Make company registration number mandatory when creating new accounts</small>
                     </div>
 
                     <div class="fw-crm__form-group">

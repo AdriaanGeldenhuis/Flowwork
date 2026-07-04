@@ -257,7 +257,7 @@ $totalPipeline = array_sum($stageTotals);
         </main>
     </div>
     <!-- Loss reason modal (shown when a deal is dropped into Lost) -->
-    <div class="fw-crm__modal-overlay" id="lossReasonModal">
+    <div class="fw-crm__modal-overlay" id="lossReasonModal" aria-hidden="true">
         <div class="fw-crm__modal">
             <div class="fw-crm__modal-header">
                 <h2 class="fw-crm__modal-title">Why was this deal lost?</h2>

@@ -153,11 +153,8 @@ window.CRM = window.CRM || {};
       });
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
-  }
+  // Shared implementation lives in crm.js (loaded first on this page)
+  const escapeHtml = CRM.escapeHtml;
 
   // ========== TAG EDITOR ==========
   (function initTagEditor() {

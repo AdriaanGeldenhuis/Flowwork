@@ -121,7 +121,11 @@ try {
             $successful++;
         } catch (Throwable $e) {
             $failed++;
-            $errors[] = "Row {$totalRows}: " . crm_public_error($e);
+            // Import is admin-gated and row diagnostics are the product here:
+            // pass through Exception (incl. PDOException) messages, keep the
+            // generic wrapper only for engine errors (TypeError etc.)
+            $errors[] = "Row {$totalRows}: "
+                . ($e instanceof Exception ? $e->getMessage() : crm_public_error($e));
         }
     }
 
@@ -188,9 +192,9 @@ function importAccount($data, $companyId, $userId, $skipDuplicates, $dryRun) {
     // Check for duplicates
     if ($skipDuplicates) {
         $stmt = $DB->prepare("
-            SELECT id FROM crm_accounts 
-            WHERE company_id = ? AND (
-                name = ? 
+            SELECT id FROM crm_accounts
+            WHERE company_id = ? AND deleted_at IS NULL AND (
+                name = ?
                 OR (email IS NOT NULL AND email = ?)
                 OR (vat_no IS NOT NULL AND vat_no = ?)
             )

@@ -17,11 +17,11 @@ try {
 
     if ($type === 'accounts' || $type === 'suppliers' || $type === 'customers') {
         $sql = "
-            SELECT 
-                name, legal_name, reg_no, vat_no, email, phone, website, 
+            SELECT
+                name, legal_name, reg_no, vat_no, email, phone, website,
                 status, type, notes, created_at
             FROM crm_accounts
-            WHERE company_id = ?
+            WHERE company_id = ? AND deleted_at IS NULL
         ";
         
         if ($type === 'suppliers') {

@@ -12,14 +12,13 @@ require_once __DIR__ . '/ajax/_helpers.php';
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
-$role      = $_SESSION['role'] ?? 'viewer';
 
 // Members and up can create opportunities
 crm_require_min_role('member', 'html');
 
 // Fetch lists for dropdowns
 // Accounts (customers)
-$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' ORDER BY name ASC");
+$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' AND deleted_at IS NULL ORDER BY name ASC");
 $stmt->execute([$companyId]);
 $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

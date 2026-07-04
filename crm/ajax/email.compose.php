@@ -70,6 +70,13 @@ try {
         throw new Exception('Mail account not found or inactive');
     }
 
+    // The compose modal sends plain text; convert it to safe HTML so line
+    // breaks survive in recipients' clients and a typed '<' isn't parsed as
+    // markup. Bodies that already contain HTML pass through untouched.
+    if ($body !== '' && $body === strip_tags($body)) {
+        $body = nl2br(htmlspecialchars($body, ENT_QUOTES));
+    }
+
     // Append signature if provided
     if ($signatureId > 0) {
         $sigStmt = $DB->prepare("SELECT html FROM email_signatures WHERE signature_id = ? AND company_id = ? AND (user_id = ? OR user_id IS NULL)");

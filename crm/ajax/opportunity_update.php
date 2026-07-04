@@ -40,6 +40,21 @@ try {
     // Build update data
     $fields = [];
     $params = [];
+    // Account reassignment (the opp_view form posts this; it was silently
+    // ignored before — saves reported ok without changing the account)
+    if (isset($_POST['account_id'])) {
+        $newAccountId = (int)$_POST['account_id'];
+        $accStmt = $DB->prepare("
+            SELECT id FROM crm_accounts
+            WHERE id = ? AND company_id = ? AND type = 'customer' AND deleted_at IS NULL
+        ");
+        $accStmt->execute([$newAccountId, $companyId]);
+        if (!$accStmt->fetch()) {
+            throw new Exception('Account not found');
+        }
+        $fields[] = 'account_id = ?';
+        $params[] = $newAccountId;
+    }
     // Title
     if (isset($_POST['title'])) {
         $title = trim($_POST['title']);
