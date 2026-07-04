@@ -227,6 +227,12 @@ window.BoardApp.showItemMenu = function(itemId, event) {
       </svg>
       Activity Log
     </button>
+    <button class="fw-dropdown-item" onclick="BoardApp.copyItemLink(${itemId})">
+      <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
+        <path d="M6 8a3 3 0 0 1 0-4l2-2a3 3 0 0 1 4 4l-1 1M8 6a3 3 0 0 1 0 4l-2 2a3 3 0 0 1-4-4l1-1" stroke="currentColor" fill="none" stroke-width="1.5"/>
+      </svg>
+      Copy Item Link
+    </button>
     <hr style="margin: 8px 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
     <button class="fw-dropdown-item fw-dropdown-item--danger" onclick="BoardApp.deleteItem(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
@@ -238,6 +244,19 @@ window.BoardApp.showItemMenu = function(itemId, event) {
   
   window.BoardApp.showDropdown(event.target, html);
 };
+
+  // ===== COPY ITEM LINK =====
+  window.BoardApp.copyItemLink = function(itemId) {
+    const url = `${window.location.origin}/projects/board.php?board_id=${window.BOARD_DATA.boardId}&item=${itemId}`;
+    const done = () => {
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Item link copied', 'success');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done).catch(() => prompt('Copy this link:', url));
+    } else {
+      prompt('Copy this link:', url);
+    }
+  };
 
   console.log('✅ Items module loaded');
 

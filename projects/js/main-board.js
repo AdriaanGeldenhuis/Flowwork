@@ -163,6 +163,23 @@ function fwInitBoard() {
   }
 
   window.BoardApp.switchView(view);
+
+  // Item deep link: ?item=<id>[&open=comments] scrolls to the row, flashes it,
+  // and optionally opens its comments — used by @mention notifications.
+  const itemId = parseInt(params.get('item') || '', 10);
+  if (itemId) {
+    const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+    if (row) {
+      row.scrollIntoView({ block: 'center' });
+      row.classList.add('fw-item-added');
+      setTimeout(() => row.classList.remove('fw-item-added'), 1200);
+    }
+    if (params.get('open') === 'comments' && typeof window.BoardApp.showComments === 'function') {
+      setTimeout(() => window.BoardApp.showComments(itemId), 300);
+    } else if (row && typeof window.BoardApp.openItemPanel === 'function') {
+      setTimeout(() => window.BoardApp.openItemPanel(itemId), 300);
+    }
+  }
 }
 
 // Wait until every module has loaded (kanban/calendar/gantt renderers live in

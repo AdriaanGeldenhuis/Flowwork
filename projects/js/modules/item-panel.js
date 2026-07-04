@@ -128,7 +128,11 @@
       pane.style.display = pane.dataset.pane === tab ? '' : 'none';
     });
 
-    if (tab === 'comments') loadComments();
+    if (tab === 'comments') {
+      loadComments();
+      const box = document.getElementById('fwPanelCommentInput');
+      if (box && window.BoardApp.attachMentionTypeahead) window.BoardApp.attachMentionTypeahead(box);
+    }
     if (tab === 'activity') loadActivity();
   };
 
@@ -188,6 +192,7 @@
       input.value = '';
       input.disabled = false;
       loadComments();
+      if (window.BoardApp.bumpCommentBadge) window.BoardApp.bumpCommentBadge(itemId);
       if (window.BoardApp.showToast) window.BoardApp.showToast('Comment posted', 'success');
     }).catch(err => {
       input.disabled = false;

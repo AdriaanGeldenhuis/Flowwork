@@ -402,5 +402,133 @@
     return div.innerHTML;
   }
 
+  // ===== NEAR-REAL-TIME POLLING =====
+  // Every ~20s pull board_audit_log events past our cursor and patch the DOM.
+  // Paused while the tab is hidden or an editor/modal is open; own edits are
+  // skipped (they were already applied optimistically).
+  const POLL_INTERVAL_MS = 20000;
+  let pollCursor = parseInt(window.BOARD_DATA.lastAuditId, 10) || 0;
+  let pollTimer = null;
+  let structuralBannerShown = false;
+
+  function editorOpen() {
+    return !!document.querySelector('.fw-modal-overlay, .fw-cell-picker-overlay[aria-hidden="false"], .fw-cell-inline-input');
+  }
+
+  function showUpdateBanner(text) {
+    if (structuralBannerShown) return;
+    structuralBannerShown = true;
+
+    const banner = document.createElement('div');
+    banner.setAttribute('role', 'status');
+    banner.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
+      'background:var(--modal-bg, #1e1e28);border:1px solid var(--modal-border, rgba(255,255,255,0.15));' +
+      'color:var(--modal-text, #fff);padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;' +
+      'z-index:10001;box-shadow:0 8px 24px rgba(0,0,0,0.35);display:flex;gap:12px;align-items:center;';
+    banner.appendChild(Object.assign(document.createElement('span'), { textContent: text }));
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Refresh';
+    btn.className = 'fw-btn fw-btn--primary';
+    btn.style.padding = '4px 12px';
+    btn.addEventListener('click', () => location.reload());
+    banner.appendChild(btn);
+
+    (document.querySelector('.fw-proj') || document.body).appendChild(banner);
+  }
+
+  function applyEvent(event) {
+    if (String(event.user_id) === String(window.BOARD_DATA.currentUserId)) return;
+
+    const who = (event.first_name || event.last_name)
+      ? `${event.first_name || ''} ${event.last_name || ''}`.trim()
+      : 'A teammate';
+    const d = event.details || {};
+
+    switch (event.action) {
+      case 'item_updated':
+        if (event.item_id && d.column_id !== undefined) {
+          const col = (window.BOARD_DATA.columns || []).find(c => String(c.column_id) === String(d.column_id));
+          if (col) {
+            window.BoardApp.updateCellDOM(event.item_id, d.column_id, d.value ?? '', col.type);
+          }
+        }
+        break;
+
+      case 'status_changed': {
+        const col = (window.BOARD_DATA.columns || []).find(c => c.type === 'status');
+        const value = d.new_status && d.new_status !== 'none' ? d.new_status : '';
+        const item = (window.BOARD_DATA.items || []).find(i => String(i.id) === String(event.item_id));
+        if (item) item.status_label = value || null;
+        if (col) window.BoardApp.updateCellDOM(event.item_id, col.column_id, value, 'status');
+        break;
+      }
+
+      case 'item_moved': {
+        const row = document.querySelector(`tr.fw-item-row[data-item-id="${event.item_id}"]`);
+        const tbody = d.group_id ? document.querySelector(`.fw-group[data-group-id="${d.group_id}"] tbody`) : null;
+        if (row && tbody) {
+          tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+          tbody.insertBefore(row, tbody.querySelector('.fw-agg-row') || tbody.querySelector('.fw-add-row') || null);
+          row.dataset.groupId = String(d.group_id);
+          const item = (window.BOARD_DATA.items || []).find(i => String(i.id) === String(event.item_id));
+          if (item) item.group_id = d.group_id;
+        }
+        break;
+      }
+
+      case 'item_deleted':
+        if (event.item_id && document.querySelector(`tr.fw-item-row[data-item-id="${event.item_id}"]`)) {
+          window.BoardApp.removeItemFromDOM(event.item_id);
+        }
+        break;
+
+      case 'comment_added':
+        if (event.item_id && window.BoardApp.bumpCommentBadge) {
+          window.BoardApp.bumpCommentBadge(event.item_id);
+        }
+        break;
+
+      case 'item_created':
+      case 'item_restored':
+      case 'column_added':
+      case 'group_added':
+      case 'bulk_update':
+        // Structural changes need fresh server-rendered markup
+        showUpdateBanner(`${who} updated the board`);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  function pollChanges() {
+    if (document.hidden || editorOpen()) return;
+
+    fetch(`/projects/api/board.changes.php?board_id=${window.BOARD_DATA.boardId}&since=${pollCursor}`, {
+      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
+      credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      const payload = data.data || {};
+      (payload.events || []).forEach(applyEvent);
+      pollCursor = payload.last_id || pollCursor;
+    })
+    .catch(() => { /* transient network error — try again next tick */ });
+  }
+
+  function initPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollChanges, POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) pollChanges();
+    });
+  }
+
+  initPolling();
+
   console.log('✅ Real-time updates module loaded');
 })();

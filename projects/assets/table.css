@@ -846,3 +846,35 @@ textarea.fw-cell-inline-input {
   resize: vertical;
   min-height: 60px;
 }
+
+/* ========== ROW COMMENT BADGE ========== */
+.fw-col-item {
+  position: relative;
+}
+
+.fw-item-comments-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-primary, #8b5cf6);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.fw-item-comments-btn:hover {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+.fw-col-item .fw-item-title {
+  padding-right: 52px;
+}

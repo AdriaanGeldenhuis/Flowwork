@@ -50,13 +50,14 @@
         </div>
       `);
       
-      // Auto-resize textarea
+      // Auto-resize textarea + @mention typeahead
       const textarea = document.getElementById('commentTextarea');
       if (textarea) {
         textarea.addEventListener('input', function() {
           this.style.height = 'auto';
           this.style.height = this.scrollHeight + 'px';
         });
+        window.BoardApp.attachMentionTypeahead(textarea);
         textarea.focus();
       }
     })
@@ -102,14 +103,15 @@
     .then(data => {
       textarea.value = '';
       textarea.disabled = false;
-      
-      // Reload comments
+
+      // Reload comments + bump the row badge
       window.BoardApp.showComments(itemId);
-      
+      window.BoardApp.bumpCommentBadge(itemId);
+
       if (data.mentioned_users && data.mentioned_users.length > 0) {
-        showToast(`✅ Comment posted • ${data.mentioned_users.length} user(s) mentioned`, 'success');
+        showToast(`Comment posted • ${data.mentioned_users.length} user(s) notified`, 'success');
       } else {
-        showToast('✅ Comment posted', 'success');
+        showToast('Comment posted', 'success');
       }
     })
     .catch(err => {
@@ -140,6 +142,80 @@
     container.appendChild(modal);
     return modal;
   }
+
+  // ===== @MENTION TYPEAHEAD =====
+  // Typing "@par" pops a picker of board users; picking one inserts the
+  // FirstLast token that comment/add.php resolves server-side.
+  window.BoardApp.attachMentionTypeahead = function(textarea) {
+    if (!textarea || textarea.dataset.mentionsAttached) return;
+    textarea.dataset.mentionsAttached = '1';
+
+    let menu = null;
+
+    const closeMenu = () => { menu?.remove(); menu = null; };
+
+    const insertMention = (user) => {
+      const caret = textarea.selectionStart;
+      const before = textarea.value.slice(0, caret);
+      const after = textarea.value.slice(caret);
+      const token = '@' + (user.first_name + user.last_name).replace(/\s+/g, '');
+      textarea.value = before.replace(/@(\w*)$/, token + ' ') + after;
+      closeMenu();
+      textarea.focus();
+    };
+
+    textarea.addEventListener('input', () => {
+      const caret = textarea.selectionStart;
+      const before = textarea.value.slice(0, caret);
+      const match = before.match(/@(\w*)$/);
+
+      if (!match) { closeMenu(); return; }
+
+      const q = match[1].toLowerCase();
+      const users = (window.BOARD_DATA.users || []).filter(u =>
+        (u.first_name + u.last_name).toLowerCase().includes(q) || !q
+      ).slice(0, 6);
+
+      if (users.length === 0) { closeMenu(); return; }
+
+      closeMenu();
+      menu = document.createElement('div');
+      menu.className = 'fw-dropdown fw-mention-menu';
+      const rect = textarea.getBoundingClientRect();
+      menu.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top - Math.min(users.length * 38 + 8, 200)}px;z-index:10002;max-height:200px;overflow-y:auto;`;
+
+      users.forEach(u => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'fw-dropdown-item';
+        btn.textContent = `${u.first_name} ${u.last_name}`;
+        btn.addEventListener('mousedown', (e) => { e.preventDefault(); insertMention(u); });
+        menu.appendChild(btn);
+      });
+
+      (document.querySelector('.fw-proj') || document.body).appendChild(menu);
+    });
+
+    textarea.addEventListener('blur', () => setTimeout(closeMenu, 150));
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menu) { e.stopPropagation(); closeMenu(); }
+    });
+  };
+
+  // ===== ROW COMMENT BADGE =====
+  // Increment (or set) the 💬 count bubble on the item's table row
+  window.BoardApp.bumpCommentBadge = function(itemId, absoluteCount) {
+    const counts = window.BOARD_DATA.commentCounts = window.BOARD_DATA.commentCounts || {};
+    counts[itemId] = absoluteCount !== undefined ? absoluteCount : (parseInt(counts[itemId], 10) || 0) + 1;
+
+    const btn = document.querySelector(`.fw-item-comments-btn[data-item-id="${itemId}"]`);
+    if (btn) {
+      btn.style.display = counts[itemId] > 0 ? '' : 'none';
+      const countEl = btn.querySelector('.fw-item-comments-count');
+      if (countEl) countEl.textContent = counts[itemId];
+      btn.setAttribute('aria-label', `Comments (${counts[itemId]})`);
+    }
+  };
 
   // ===== HELPER: TOAST (delegates to the canonical toast in ui.js) =====
   function showToast(message, type = 'info') {

@@ -226,6 +226,27 @@ if (!empty($itemIds)) {
     }
 }
 
+// ===== LOAD COMMENT COUNTS =====
+$commentCountsMap = [];
+if (!empty($itemIds)) {
+    $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+    $stmt = $DB->prepare("
+        SELECT item_id, COUNT(*) AS n
+        FROM board_item_comments
+        WHERE item_id IN ($placeholders)
+        GROUP BY item_id
+    ");
+    $stmt->execute($itemIds);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $commentCountsMap[(int)$row['item_id']] = (int)$row['n'];
+    }
+}
+
+// ===== LAST AUDIT ID (cursor for near-real-time polling) =====
+$stmt = $DB->prepare("SELECT COALESCE(MAX(id), 0) FROM board_audit_log WHERE board_id = ?");
+$stmt->execute([$boardId]);
+$LAST_AUDIT_ID = (int)$stmt->fetchColumn();
+
 // ===== LOAD USERS =====
 $stmt = $DB->prepare("
     SELECT id, first_name, last_name, email
@@ -677,10 +698,17 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                             </td>
                                             
                                             <td class="fw-col-item">
-                                                <input type="text" 
-                                                       class="fw-item-title" 
-                                                       value="<?= htmlspecialchars($item['title']) ?>" 
+                                                <input type="text"
+                                                       class="fw-item-title"
+                                                       value="<?= htmlspecialchars($item['title']) ?>"
                                                        onblur="BoardApp.updateItemTitle(<?= $item['id'] ?>, this.value)" />
+                                                <?php $cCount = $commentCountsMap[(int)$item['id']] ?? 0; ?>
+                                                <button type="button"
+                                                        class="fw-item-comments-btn"
+                                                        data-item-id="<?= $item['id'] ?>"
+                                                        aria-label="Comments (<?= $cCount ?>)"
+                                                        <?= $cCount === 0 ? 'style="display:none;"' : '' ?>
+                                                        onclick="BoardApp.showComments(<?= $item['id'] ?>)">💬 <span class="fw-item-comments-count"><?= $cCount ?></span></button>
                                             </td>
 
                                             <?php foreach ($columns as $col): ?>
@@ -1181,6 +1209,8 @@ window.BOARD_DATA = {
     suppliers: <?= json_encode($suppliers) ?>,
     valuesMap: <?= json_encode($valuesMap) ?>,
     attachments: <?= json_encode($attachmentsMap) ?>,
+    commentCounts: <?= json_encode($commentCountsMap ?: new stdClass()) ?>,
+    lastAuditId: <?= $LAST_AUDIT_ID ?>,
     csrfToken: '<?= $_SESSION['csrf_token'] ?>',
     currentUserId: <?= (int)$USER_ID ?>
 };
