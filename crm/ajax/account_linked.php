@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -125,12 +126,25 @@ try {
         }
     }
 
+    // Projects linked to this account (column added by the
+    // 2026-07-04-projects-crm-account migration; probe like the others)
+    $projects = [];
+    try {
+        $pStmt = $DB->prepare("SELECT project_id AS id, name, status, created_at FROM projects WHERE company_id = ? AND crm_account_id = ? ORDER BY created_at DESC LIMIT 50");
+        $pStmt->execute([$companyId, $accountId]);
+        $projects = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $projects = [];
+    }
+
     echo json_encode([
+        'ok' => true,
         'quotes' => $quotes,
         'invoices' => $invoices,
-        'rfqs' => $rfqs
+        'rfqs' => $rfqs,
+        'projects' => $projects
     ]);
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('CRM account_linked error: ' . $e->getMessage());
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

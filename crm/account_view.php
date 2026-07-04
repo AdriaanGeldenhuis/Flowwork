@@ -140,6 +140,9 @@ try {
         $complianceBadgeEnabled = ($badgeVal == '1');
     }
 } catch (Exception $e) {}
+
+// Tagging toggle
+$tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -252,12 +255,27 @@ try {
                                 <span class="fw-crm__badge fw-crm__badge--preferred">⭐ Preferred</span>
                             <?php endif; ?>
                         </div>
-                        <div class="fw-crm__account-header-tags">
+                        <div class="fw-crm__account-header-tags" id="accountTags" style="position:relative;">
                             <?php foreach ($tags as $tag): ?>
-                                <span class="fw-crm__tag" style="background:<?= htmlspecialchars($tag['color']) ?>">
+                                <span class="fw-crm__tag" data-tag-id="<?= (int)$tag['id'] ?>" style="background:<?= htmlspecialchars($tag['color']) ?>">
                                     <?= htmlspecialchars($tag['name']) ?>
+                                    <?php if ($tagsEnabled): ?>
+                                    <button type="button" class="fw-crm__tag-remove" data-tag-id="<?= (int)$tag['id'] ?>" aria-label="Remove tag <?= htmlspecialchars($tag['name']) ?>">&times;</button>
+                                    <?php endif; ?>
                                 </span>
                             <?php endforeach; ?>
+                            <?php if ($tagsEnabled): ?>
+                            <button type="button" class="fw-crm__tag-add" id="tagAddBtn">+ Tag</button>
+                            <div class="fw-crm__tag-popover" id="tagPopover">
+                                <input type="text" id="tagNameInput" class="fw-crm__input" placeholder="Tag name" maxlength="50">
+                                <div class="fw-crm__tag-suggests" id="tagSuggests"></div>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <input type="color" id="tagColorInput" value="#06b6d4" style="width:36px; height:32px; border:none; background:none; cursor:pointer;">
+                                    <button type="button" class="fw-crm__btn fw-crm__btn--primary" id="tagSaveBtn" style="height:32px; font-size:12px; padding:0 12px;">Add</button>
+                                    <button type="button" class="fw-crm__btn fw-crm__btn--secondary" id="tagCancelBtn" style="height:32px; font-size:12px; padding:0 12px;">Cancel</button>
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -287,6 +305,32 @@ try {
                 
                 <!-- OVERVIEW TAB -->
                 <div class="fw-crm__tab-panel fw-crm__tab-panel--active" data-panel="overview">
+                    <?php if ($account['type'] === 'supplier'): ?>
+                    <div class="fw-crm__kpi-tiles">
+                        <div class="fw-crm__kpi-tile">
+                            <div class="fw-crm__kpi-tile-label">On-time delivery</div>
+                            <div class="fw-crm__kpi-tile-value">
+                                <?= ($account['on_time_percent'] ?? null) !== null ? round((float)$account['on_time_percent']) . '%' : '—' ?>
+                            </div>
+                            <div class="fw-crm__kpi-tile-hint">GRN vs PO ratio, from nightly aggregation</div>
+                        </div>
+                        <div class="fw-crm__kpi-tile">
+                            <div class="fw-crm__kpi-tile-label">Avg response time</div>
+                            <div class="fw-crm__kpi-tile-value">
+                                <?= ($account['avg_response_hours'] ?? null) !== null ? round((float)$account['avg_response_hours'], 1) . ' h' : '—' ?>
+                            </div>
+                            <div class="fw-crm__kpi-tile-hint">PO to GRN, from nightly aggregation</div>
+                        </div>
+                        <div class="fw-crm__kpi-tile">
+                            <div class="fw-crm__kpi-tile-label">Defect rate</div>
+                            <div class="fw-crm__kpi-tile-value">
+                                <?= ($account['defect_rate_percent'] ?? null) !== null ? round((float)$account['defect_rate_percent'], 1) . '%' : '—' ?>
+                            </div>
+                            <div class="fw-crm__kpi-tile-hint">Cancelled GRNs, from nightly aggregation</div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
                     <div class="crm-playground">
                         <div class="crm-playground-header">
                             <h2>📊 Account Analytics</h2>
@@ -590,19 +634,17 @@ try {
                     <?php endif; ?>
                 </div>
 
-                <!-- LINKED ITEMS TAB -->
+                <!-- LINKED ITEMS TAB (loaded on first open from ajax/account_linked.php) -->
                 <div class="fw-crm__tab-panel" data-panel="linked">
-                    <div class="fw-crm__empty-state">
-                        Linked projects, quotes, invoices will appear here.<br>
-                        <small>Feature coming soon</small>
+                    <div id="linkedItemsContainer">
+                        <div class="fw-crm__loading">Loading linked items...</div>
                     </div>
                 </div>
 
-                <!-- TIMELINE TAB -->
+                <!-- TIMELINE TAB (loaded on first open from ajax/account_timeline.php) -->
                 <div class="fw-crm__tab-panel" data-panel="timeline">
-                    <div class="fw-crm__empty-state">
-                        Complete timeline of all account activity.<br>
-                        <small>Feature coming soon</small>
+                    <div id="timelineContainer">
+                        <div class="fw-crm__loading">Loading timeline...</div>
                     </div>
                 </div>
 
@@ -834,17 +876,6 @@ try {
             </div>
         </div>
     </div>
-
-    <!-- DATA FOR JS -->
-    <script>
-        window.CRM_DATA = {
-            accountId: <?= $accountId ?>,
-            contactsCount: <?= $contactsCount ?>,
-            addressesCount: <?= $addressesCount ?>,
-            complianceCount: <?= $complianceCount ?>,
-            interactionsCount: <?= $interactionsCount ?>
-        };
-    </script>
 
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script src="/crm/assets/account_view.js?v=<?= CRM_ASSET_VERSION ?>"></script>

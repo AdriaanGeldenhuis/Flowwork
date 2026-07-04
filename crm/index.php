@@ -21,6 +21,14 @@ $companyName = $company['name'] ?? 'Company';
 // Get active tab from URL
 $activeTab = $_GET['tab'] ?? 'overview';
 
+// Lookup lists for the list-tab filters (global tables)
+$filterIndustries = [];
+$filterRegions = [];
+if ($activeTab === 'suppliers' || $activeTab === 'customers') {
+    $filterIndustries = $DB->query("SELECT id, name FROM crm_industries ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $filterRegions = $DB->query("SELECT id, name FROM crm_regions ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // Always fetch tab counts (used in tab headers on every tab) - exclude soft-deleted
 $suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND deleted_at IS NULL");
 $suppliersCount->execute([$companyId]);
@@ -378,9 +386,15 @@ if ($activeTab === 'overview') {
                         </select>
                         <select id="filterIndustry" class="fw-crm__select">
                             <option value="">All Industries</option>
+                            <?php foreach ($filterIndustries as $ind): ?>
+                                <option value="<?= (int)$ind['id'] ?>"><?= htmlspecialchars($ind['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterRegion" class="fw-crm__select">
                             <option value="">All Regions</option>
+                            <?php foreach ($filterRegions as $reg): ?>
+                                <option value="<?= (int)$reg['id'] ?>"><?= htmlspecialchars($reg['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterDeleted" class="fw-crm__select" title="Deleted accounts">
                             <option value="0">Active (not deleted)</option>
@@ -413,9 +427,15 @@ if ($activeTab === 'overview') {
                         </select>
                         <select id="filterIndustry" class="fw-crm__select">
                             <option value="">All Industries</option>
+                            <?php foreach ($filterIndustries as $ind): ?>
+                                <option value="<?= (int)$ind['id'] ?>"><?= htmlspecialchars($ind['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterRegion" class="fw-crm__select">
                             <option value="">All Regions</option>
+                            <?php foreach ($filterRegions as $reg): ?>
+                                <option value="<?= (int)$reg['id'] ?>"><?= htmlspecialchars($reg['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterDeleted" class="fw-crm__select" title="Deleted accounts">
                             <option value="0">Active (not deleted)</option>
