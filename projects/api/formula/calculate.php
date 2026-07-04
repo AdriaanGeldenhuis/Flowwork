@@ -145,7 +145,8 @@ try {
     
     $DB->beginTransaction();
     $updated = 0;
-    
+    $computed = [];
+
     try {
         foreach ($formulaColumns as $formulaCol) {
             $colId = (int)$formulaCol['column_id'];
@@ -205,7 +206,11 @@ try {
                 
                 // Update in-memory map for cascading formulas
                 $valuesMap[$iid][$colId] = (float)$formattedResult;
-                
+
+                // Collect for the response so the client can patch cells
+                if (!isset($computed[$iid])) $computed[$iid] = [];
+                $computed[$iid][$colId] = $formattedResult;
+
                 $updated++;
             }
         }
@@ -220,6 +225,7 @@ try {
             'updated' => $updated,
             'items' => count($itemIds),
             'columns' => count($formulaColumns),
+            'computed' => $computed ?: new stdClass(),
             'message' => 'Formulas calculated successfully'
         ]);
         

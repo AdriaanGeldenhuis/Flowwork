@@ -115,57 +115,70 @@ try {
 
     // Start transaction
     $DB->beginTransaction();
-    
+
     try {
-        // Check if value exists
+        // Select-then-write: correct with or without the UNIQUE(item_id,
+        // column_id) key, so it stays safe if the code deploys before
+        // Migrations/2026-07-04-board-performance.sql has been applied.
         $stmt = $DB->prepare("
-            SELECT id 
-            FROM board_item_values 
+            SELECT id
+            FROM board_item_values
             WHERE item_id = ? AND column_id = ?
         ");
         $stmt->execute([$itemId, $columnId]);
         $existingId = $stmt->fetchColumn();
-        
-        if ($existingId) {
-            // Update or delete
-            if ($value === null || $value === '') {
-                // Delete empty value
-                $stmt = $DB->prepare("
-                    DELETE FROM board_item_values 
-                    WHERE item_id = ? AND column_id = ?
-                ");
+
+        if ($value === null || $value === '') {
+            // Clearing a cell removes the row
+            if ($existingId) {
+                $stmt = $DB->prepare("DELETE FROM board_item_values WHERE item_id = ? AND column_id = ?");
                 $stmt->execute([$itemId, $columnId]);
-            } else {
-                // Update existing
-                $stmt = $DB->prepare("
-                    UPDATE board_item_values 
-                    SET value = ? 
-                    WHERE item_id = ? AND column_id = ?
-                ");
-                $stmt->execute([$value, $itemId, $columnId]);
             }
+        } elseif ($existingId) {
+            $stmt = $DB->prepare("UPDATE board_item_values SET value = ? WHERE item_id = ? AND column_id = ?");
+            $stmt->execute([$value, $itemId, $columnId]);
         } else {
-            // Insert new (only if not empty)
-            if ($value !== null && $value !== '') {
-                $stmt = $DB->prepare("
-                    INSERT INTO board_item_values (item_id, column_id, value) 
-                    VALUES (?, ?, ?)
-                ");
-                $stmt->execute([$itemId, $columnId, $value]);
-            }
+            $stmt = $DB->prepare("INSERT INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?)");
+            $stmt->execute([$itemId, $columnId, $value]);
         }
-        
+
         // Update item timestamp
         $stmt = $DB->prepare("
-            UPDATE board_items 
-            SET updated_at = NOW() 
+            UPDATE board_items
+            SET updated_at = NOW()
             WHERE id = ?
         ");
         $stmt->execute([$itemId]);
-        
+
         // Commit transaction
         $DB->commit();
-        
+
+        // Recompute + persist this item's formula cells so page loads read
+        // cached values instead of re-evaluating formulas per request.
+        // Skipped entirely on boards without formula columns.
+        $formulas = [];
+        try {
+            $stmt = $DB->prepare("
+                SELECT COUNT(*) FROM board_columns
+                WHERE board_id = ? AND company_id = ? AND type = 'formula'
+            ");
+            $stmt->execute([$boardId, $COMPANY_ID]);
+            if ((int)$stmt->fetchColumn() > 0) {
+                require_once __DIR__ . '/../_formula.php';
+                $formulas = _fw_update_formula_columns($DB, $boardId, (int)$COMPANY_ID, $itemId);
+            }
+        } catch (Exception $e) {
+            error_log('Formula persist error: ' . $e->getMessage());
+        }
+
+        // Feed the activity log (failures are swallowed inside fw_audit)
+        require_once __DIR__ . '/../_audit.php';
+        fw_audit($DB, $COMPANY_ID, $boardId, $itemId, $USER_ID, 'item_updated', [
+            'column_id' => $columnId,
+            'column_name' => $row['name'],
+            'value' => is_string($value) ? mb_substr($value, 0, 200) : $value,
+        ]);
+
         // Success!
         http_response_code(200);
         echo json_encode([
@@ -175,10 +188,11 @@ try {
                 'item_id' => $itemId,
                 'column_id' => $columnId,
                 'value' => $value,
-                'column_type' => $columnType
+                'column_type' => $columnType,
+                'formulas' => $formulas ?: new stdClass()
             ]
         ]);
-        
+
     } catch (Exception $e) {
         $DB->rollBack();
         throw $e;

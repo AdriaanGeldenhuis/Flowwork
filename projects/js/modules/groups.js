@@ -17,11 +17,24 @@
   window.BoardApp.toggleGroup = function(groupId) {
     const group = document.querySelector(`[data-group-id="${groupId}"]`);
     if (!group) return;
-    
+
     const isCollapsed = group.dataset.collapsed === 'true';
     const newState = !isCollapsed;
-    
+
     group.dataset.collapsed = String(newState);
+
+    // Server-collapsed groups render without rows (data-lazy) — build them
+    // from BOARD_DATA on first expand.
+    if (!newState) {
+      const tbody = group.querySelector('tbody[data-lazy="1"]');
+      if (tbody && window.BoardApp.hydrateItemRow) {
+        tbody.removeAttribute('data-lazy');
+        (window.BOARD_DATA.items || [])
+          .filter(i => String(i.group_id) === String(groupId))
+          .forEach(item => window.BoardApp.hydrateItemRow(item));
+        if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(groupId);
+      }
+    }
     
     // Save state to server
     const form = new FormData();
@@ -219,79 +232,168 @@
 };
 
   /**
+   * Build a new group section in the DOM by cloning an existing one and
+   * rewiring its ids/handlers. Returns the new element, or null when there is
+   * no group to clone from (caller should fall back to a reload).
+   */
+  function insertGroupIntoDOM(group) {
+    const template = document.querySelector('.fw-group:not(.fw-board-totals-group)');
+    const boardContainer = document.querySelector('.fw-board-container');
+    if (!template || !boardContainer) return null;
+
+    const gid = parseInt(group.id, 10);
+    const color = group.color || '#8b5cf6';
+    const clone = template.cloneNode(true);
+
+    clone.id = 'group-' + gid;
+    clone.dataset.groupId = String(gid);
+    clone.dataset.collapsed = 'false';
+    clone.style.display = '';
+    clone.classList.remove('fw-dragging-group', 'fw-group-drag-over-top', 'fw-group-drag-over-bottom', 'fw-group-drop-target');
+
+    // Header
+    const header = clone.querySelector('.fw-group-header');
+    header.style.borderLeftColor = color;
+    header.style.background = '';
+    header.querySelector('.fw-group-toggle')?.setAttribute('onclick', `BoardApp.toggleGroup(${gid})`);
+    const nameInput = header.querySelector('.fw-group-name');
+    nameInput.value = group.name;
+    nameInput.style.color = color;
+    nameInput.setAttribute('onblur', `BoardApp.updateGroupName(${gid}, this.value)`);
+    header.querySelector('.fw-group-count').textContent = '0';
+    header.querySelector('[onclick*="showGroupMenu"]')?.setAttribute('onclick', `BoardApp.showGroupMenu(${gid}, event)`);
+
+    // Table head: select-all checkbox targets the new group
+    const selectAll = clone.querySelector('thead .fw-col-checkbox input');
+    if (selectAll) {
+      selectAll.checked = false;
+      selectAll.setAttribute('onchange', `BoardApp.toggleGroupSelection(${gid}, this.checked)`);
+    }
+
+    // Table body: strip cloned rows, insert an empty state. The template may
+    // be a collapsed lazy group — the clone must not inherit its lazy flag.
+    const tbody = clone.querySelector('tbody');
+    tbody.removeAttribute('data-lazy');
+    tbody.querySelectorAll('tr.fw-item-row').forEach(tr => tr.remove());
+    tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+
+    const colCount = 3 + (window.BOARD_DATA.columns || []).length;
+    const emptyRow = document.createElement('tr');
+    emptyRow.innerHTML = `
+      <td colspan="${colCount}" class="fw-empty-state">
+        <div class="fw-empty-icon">📋</div>
+        <div class="fw-empty-title">No items yet</div>
+        <div class="fw-empty-text">Click "+ Add item" below to get started</div>
+      </td>
+    `;
+    tbody.insertBefore(emptyRow, tbody.firstChild);
+
+    // Aggregation row
+    const aggRow = tbody.querySelector('.fw-group-agg-row');
+    if (aggRow) {
+      aggRow.dataset.groupId = String(gid);
+      aggRow.querySelectorAll('.fw-agg-cell').forEach(cell => { cell.dataset.groupId = String(gid); });
+    }
+
+    // Quick-add row
+    const addInput = tbody.querySelector('.fw-quick-add-input');
+    if (addInput) {
+      addInput.value = '';
+      addInput.disabled = false;
+      addInput.dataset.groupId = String(gid);
+      addInput.setAttribute('onkeydown', `if(event.key==='Enter') BoardApp.quickAddItem(this, ${gid})`);
+    }
+
+    const totals = boardContainer.querySelector('.fw-board-totals-group');
+    boardContainer.insertBefore(clone, totals || null);
+
+    if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(gid);
+    return clone;
+  }
+
+  /**
    * Delete group and all its items
    */
   window.BoardApp.deleteGroup = function(groupId) {
-    const groupEl = document.querySelector(`[data-group-id="${groupId}"]`);
+    const groupEl = document.querySelector(`.fw-group[data-group-id="${groupId}"]`);
     const groupName = groupEl?.querySelector('.fw-group-name')?.value || 'this group';
-    
-    if (!confirm(`Delete "${groupName}" and all its items?\n\nThis action cannot be undone.`)) {
-      return;
+
+    const doDelete = () => {
+      const form = new FormData();
+      form.append('group_id', groupId);
+
+      fetch('/projects/api/group.delete.php', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
+        body: form
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) throw new Error(data.error);
+
+        // Remove the section and its items from local state — no reload
+        groupEl?.remove();
+        window.BOARD_DATA.groups = (window.BOARD_DATA.groups || []).filter(g => String(g.id) !== String(groupId));
+        window.BOARD_DATA.items = (window.BOARD_DATA.items || []).filter(i => String(i.group_id) !== String(groupId));
+        if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+
+        if (typeof window.BoardApp.showToast === 'function') {
+          window.BoardApp.showToast(`Group "${groupName}" deleted`, 'success');
+        }
+      })
+      .catch(err => {
+        console.error('❌ Delete error:', err);
+        alert('Failed to delete group: ' + err.message);
+      });
+    };
+
+    if (window.BoardApp.dialog) {
+      window.BoardApp.dialog.confirm(
+        `Delete "${groupName}" and all its items? This cannot be undone.`,
+        { title: 'Delete group', confirmLabel: 'Delete', danger: true }
+      ).then(ok => { if (ok) doDelete(); });
+    } else if (confirm(`Delete "${groupName}" and all its items?\n\nThis action cannot be undone.`)) {
+      doDelete();
     }
-    
-    console.log('🗑️ Deleting group:', groupId);
-    
-    const form = new FormData();
-    form.append('group_id', groupId);
-    
-    fetch('/projects/api/group.delete.php', {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
-      body: form
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.ok) throw new Error(data.error);
-      
-      console.log('✅ Group deleted');
-      
-      // Show success message before reload
-      if (typeof window.BoardApp.showToast === 'function') {
-        window.BoardApp.showToast('Group deleted', 'success');
-        setTimeout(() => window.location.reload(), 500);
-      } else {
-        window.location.reload();
-      }
-    })
-    .catch(err => {
-      console.error('❌ Delete error:', err);
-      alert('Failed to delete group: ' + err.message);
-    });
   };
 
   /**
-   * Duplicate group
+   * Duplicate group (renders the copy in place — no reload)
    */
   window.BoardApp.duplicateGroup = function(groupId) {
-    const groupEl = document.querySelector(`[data-group-id="${groupId}"]`);
-    const groupName = groupEl?.querySelector('.fw-group-name')?.value || 'Group';
-    
-    if (!confirm(`Duplicate "${groupName}" and all its items?`)) {
-      return;
-    }
-    
-    console.log('📋 Duplicating group:', groupId);
-    
-    const form = new FormData();
-    form.append('group_id', groupId);
-    form.append('board_id', window.BOARD_DATA.boardId);
-    
-    fetch('/projects/api/group.duplicate.php', {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
-      body: form
+    window.BoardApp.apiCall('/projects/api/group.duplicate.php', {
+      group_id: groupId,
+      board_id: window.BOARD_DATA.boardId
     })
-    .then(r => r.json())
     .then(data => {
-      if (!data.ok) throw new Error(data.error);
-      
-      console.log('✅ Group duplicated');
-      
+      const group = data.group;
+      if (!group || !insertGroupIntoDOM(group)) {
+        window.location.reload();
+        return;
+      }
+
+      window.BOARD_DATA.groups.push(group);
+
+      // Render the copied items with their cell values
+      (data.items || []).forEach(item => {
+        if (window.BoardApp.addItemToDOM) window.BoardApp.addItemToDOM(item, group.id);
+        else window.BOARD_DATA.items.push(item);
+
+        const values = (data.values || {})[item.id] || {};
+        window.BOARD_DATA.valuesMap[item.id] = Object.assign({}, values);
+        Object.entries(values).forEach(([colId, value]) => {
+          const col = (window.BOARD_DATA.columns || []).find(c => String(c.column_id) === String(colId));
+          if (col && window.BoardApp.renderCellFull) {
+            window.BoardApp.renderCellFull(item.id, colId, value, col.type);
+          }
+        });
+      });
+
+      if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(group.id);
+      if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+
       if (typeof window.BoardApp.showToast === 'function') {
         window.BoardApp.showToast('Group duplicated', 'success');
-        setTimeout(() => window.location.reload(), 500);
-      } else {
-        window.location.reload();
       }
     })
     .catch(err => {
@@ -301,54 +403,58 @@
   };
 
   /**
-   * Show add group modal
+   * Show add group modal (styled prompt; renders the group in place)
    */
   window.BoardApp.showAddGroupModal = function() {
-    const name = prompt('Enter group name:');
-    
-    if (!name) return;
-    
-    const trimmedName = name.trim();
-    
-    if (!trimmedName) {
-      alert('Group name cannot be empty');
-      return;
+    const create = (trimmedName) => {
+      const form = new FormData();
+      form.append('board_id', window.BOARD_DATA.boardId);
+      form.append('name', trimmedName);
+      form.append('color', '#8b5cf6'); // Default purple color
+
+      fetch('/projects/api/group.create.php', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
+        body: form
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) throw new Error(data.error);
+
+        const newId = data.data?.group_id || data.data?.id || data.group_id || data.id;
+        const group = { id: newId, name: trimmedName, color: '#8b5cf6', collapsed: 0 };
+
+        if (!newId || !insertGroupIntoDOM(group)) {
+          window.location.reload();
+          return;
+        }
+
+        window.BOARD_DATA.groups.push(group);
+
+        if (typeof window.BoardApp.showToast === 'function') {
+          window.BoardApp.showToast('Group created', 'success');
+        }
+
+        // Put the cursor in the new group's quick-add input
+        document.querySelector(`.fw-group[data-group-id="${newId}"] .fw-quick-add-input`)?.focus();
+      })
+      .catch(err => {
+        console.error('❌ Create error:', err);
+        alert('Failed to create group: ' + err.message);
+      });
+    };
+
+    if (window.BoardApp.dialog) {
+      window.BoardApp.dialog.prompt('Group name', {
+        title: 'Add group',
+        placeholder: 'e.g. Sprint 2, Snags, Electrical…',
+        confirmLabel: 'Create',
+        maxLength: 100
+      }).then(name => { if (name) create(name); });
+    } else {
+      const name = prompt('Enter group name:');
+      if (name && name.trim()) create(name.trim().substring(0, 100));
     }
-    
-    if (trimmedName.length > 100) {
-      alert('Group name is too long (max 100 characters)');
-      return;
-    }
-    
-    console.log('➕ Creating group:', trimmedName);
-    
-    const form = new FormData();
-    form.append('board_id', window.BOARD_DATA.boardId);
-    form.append('name', trimmedName);
-    form.append('color', '#8b5cf6'); // Default purple color
-    
-    fetch('/projects/api/group.create.php', {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
-      body: form
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.ok) throw new Error(data.error);
-      
-      console.log('✅ Group created');
-      
-      if (typeof window.BoardApp.showToast === 'function') {
-        window.BoardApp.showToast('Group created', 'success');
-        setTimeout(() => window.location.reload(), 500);
-      } else {
-        window.location.reload();
-      }
-    })
-    .catch(err => {
-      console.error('❌ Create error:', err);
-      alert('Failed to create group: ' + err.message);
-    });
   };
 
   /**

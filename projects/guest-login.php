@@ -65,7 +65,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guest Login – Flowwork</title>
-    <link rel="stylesheet" href="/projects/assets/board.css">
+    <link rel="stylesheet" href="/projects/assets/base.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/theme.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/layout.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/table.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/components.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/modals.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/views.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/mobile.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/board-3d.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/board.css?v=<?= time() ?>">
     <style>
         body {
             margin: 0;

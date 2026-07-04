@@ -2,6 +2,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/_guard.php';
 require_once __DIR__ . '/_respond.php';
+require_once __DIR__ . '/_audit.php';
 
 $itemId = (int)($_POST['item_id'] ?? 0);
 $newGroupId = (int)($_POST['group_id'] ?? 0);
@@ -65,6 +66,11 @@ try {
     $stmt->execute([$newGroupId, $newPosition, $itemId, $COMPANY_ID]);
 
     $DB->commit();
+
+    fw_audit($DB, $COMPANY_ID, $item['board_id'], $itemId, $USER_ID, 'item_moved', [
+        'group_id' => $newGroupId,
+        'position' => $newPosition,
+    ]);
 
     respond_ok(['moved' => true, 'position' => $newPosition]);
 

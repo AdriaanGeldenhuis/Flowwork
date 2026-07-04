@@ -2,6 +2,7 @@
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/_guard.php';
 require_once __DIR__ . '/_respond.php';
+require_once __DIR__ . '/_audit.php';
 
 $boardId = (int)($_POST['board_id'] ?? 0);
 $groupId = (int)($_POST['group_id'] ?? 0);
@@ -48,6 +49,8 @@ try {
     ");
     $stmt->execute([$itemId]);
     $item = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    fw_audit($DB, $COMPANY_ID, $boardId, $itemId, $USER_ID, 'item_created', ['title' => $title]);
 
     respond_ok(['item_id' => $itemId, 'item' => $item]);
 

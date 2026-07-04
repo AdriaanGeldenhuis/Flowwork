@@ -9,210 +9,38 @@
   window.BoardApp = window.BoardApp || {};
 
   // ===== UPDATE CELL IN DOM =====
+  // Rendering is delegated to the single canonical renderer in cells.js
+  // (BoardApp.renderCellFull) so every column type gets its rich display.
+  // This wrapper adds the change flash, cache update, and aggregation refresh.
   window.BoardApp.updateCellDOM = function(itemId, columnId, value, columnType) {
     const cell = document.querySelector(
       `.fw-cell[data-item-id="${itemId}"][data-column-id="${columnId}"]`
     );
-    
+
     if (!cell) {
       console.warn('Cell not found in DOM:', itemId, columnId);
       return;
     }
-    
-    console.log('🔄 Updating cell DOM:', { itemId, columnId, value, columnType });
-    
-    // Store old value for comparison
+
     const oldValue = cell.dataset.value;
-    cell.dataset.value = value || '';
-    
-    // Clear existing content
-    cell.innerHTML = '';
-    
-    switch (columnType) {
-      case 'text':
-        cell.textContent = value || '';
-        break;
-        
-      case 'number': {
-        if (value !== null && value !== '') {
-          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-          const cfg = col && col.config ? JSON.parse(col.config) : {};
-          const affix = cfg.affix || '';
-          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
-          const num = parseFloat(value);
-          let formatted = value;
-          if (!isNaN(num)) {
-            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
-            if (cfg.format === 'percentage') formatted += '%';
-          }
-          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
-          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
-          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
-          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-      }
-        
-      case 'status':
-        if (value) {
-          const config = window.BOARD_DATA.statusConfig[value];
-          if (config) {
-            const badge = document.createElement('span');
-            badge.className = 'fw-status-badge';
-            badge.style.background = config.color;
-            badge.textContent = config.label;
-            cell.appendChild(badge);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'people':
-        if (value) {
-          const user = window.BOARD_DATA.users.find(u => u.id == value);
-          if (user) {
-            const div = document.createElement('div');
-            div.className = 'fw-user-pill';
-            div.innerHTML = `
-              <div class="fw-avatar-sm">${user.first_name.charAt(0)}${user.last_name.charAt(0)}</div>
-              <span class="fw-user-name">${user.first_name} ${user.last_name}</span>
-            `;
-            cell.appendChild(div);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'date':
-        if (value) {
-          const div = document.createElement('div');
-          div.className = 'fw-date-pill';
-          const date = new Date(value);
-          const formatted = date.toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-          });
-          div.innerHTML = `
-            <svg width="14" height="14" fill="currentColor">
-              <rect x="2" y="3" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
-              <path d="M2 5h10M5 1v3M9 1v3"/>
-            </svg>
-            <span>${formatted}</span>
-          `;
-          cell.appendChild(div);
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'priority':
-        if (value) {
-          const priorities = {
-            low: { label: 'Low', color: '#10b981' },
-            medium: { label: 'Medium', color: '#fdab3d' },
-            high: { label: 'High', color: '#f97316' },
-            critical: { label: 'Critical', color: '#ef4444' }
-          };
-          const p = priorities[value];
-          if (p) {
-            const btn = document.createElement('button');
-            btn.className = 'fw-priority-pill';
-            btn.dataset.value = value;
-            btn.innerHTML = `
-              <span class="fw-priority-dot" style="background:${p.color}"></span>
-              <span class="fw-priority-label">${p.label}</span>
-            `;
-            cell.appendChild(btn);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'supplier':
-        if (value) {
-          const supplier = window.BOARD_DATA.suppliers.find(s => s.id == value);
-          if (supplier) {
-            const div = document.createElement('div');
-            div.className = 'fw-supplier-pill';
-            div.innerHTML = `
-              <span class="fw-supplier-icon">🏢</span>
-              <span class="fw-supplier-name">${supplier.name}</span>
-              ${supplier.preferred ? '<span class="fw-supplier-badge">⭐</span>' : ''}
-            `;
-            cell.appendChild(div);
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'dropdown':
-        if (value) {
-          cell.textContent = value;
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'timeline':
-        if (value) {
-          try {
-            const timeline = JSON.parse(value);
-            const start = new Date(timeline.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            const end = new Date(timeline.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            cell.textContent = `${start} → ${end}`;
-          } catch (e) {
-            cell.textContent = value;
-          }
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
-        break;
-        
-      case 'formula': {
-        if (value !== null && value !== '') {
-          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-          const cfg = col && col.config ? JSON.parse(col.config) : {};
-          const affix = cfg.affix || '';
-          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
-          const num = parseFloat(value);
-          let formatted = value;
-          if (!isNaN(num)) {
-            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
-          }
-          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
-          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
-          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
-          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
-        } else {
-          cell.textContent = '—';
-        }
-        break;
-      }
-        
-      default:
-        cell.textContent = value || '';
+
+    if (typeof window.BoardApp.renderCellFull === 'function') {
+      window.BoardApp.renderCellFull(itemId, columnId, value, columnType);
+    } else {
+      // Minimal safe fallback if cells.js failed to load
+      cell.dataset.value = value || '';
+      cell.textContent = value || '';
     }
-    
+
     // Add flash animation only if value changed
     if (oldValue !== (value || '')) {
       cell.classList.add('fw-cell-updated');
       setTimeout(() => cell.classList.remove('fw-cell-updated'), 600);
-      
-      console.log('✨ Cell updated with animation');
     }
-    
+
     // Update local data cache
     updateLocalDataCache(itemId, columnId, value);
-    
+
     // ✅ TRIGGER AGGREGATION UPDATE
     const row = cell.closest('.fw-item-row');
     if (row) {
@@ -263,24 +91,31 @@
     // Build row HTML
     let html = `
       <td class="fw-col-checkbox">
-        <input type="checkbox" class="fw-checkbox fw-item-checkbox" 
+        <input type="checkbox" class="fw-checkbox fw-item-checkbox"
                data-item-id="${item.id}"
+               aria-label="Select ${escapeHtml(item.title)}"
                onchange="BoardApp.toggleItemSelection(${item.id}, this.checked)" />
       </td>
       <td class="fw-col-item">
-        <input type="text" class="fw-item-title" value="${escapeHtml(item.title)}" 
+        <input type="text" class="fw-item-title" value="${escapeHtml(item.title)}"
+          aria-label="Item title"
           onblur="BoardApp.updateItemTitle(${item.id}, this.value)" />
+        <button type="button" class="fw-item-comments-btn" data-item-id="${item.id}"
+                aria-label="Comments (0)" style="display:none;"
+                onclick="BoardApp.showComments(${item.id})">💬 <span class="fw-item-comments-count">0</span></button>
       </td>
     `;
-    
+
     // Add cells for each column
     window.BOARD_DATA.columns.forEach(col => {
       html += `
-        <td class="fw-cell" 
-          data-type="${col.type}" 
-          data-item-id="${item.id}" 
+        <td class="fw-cell"
+          data-type="${col.type}"
+          data-item-id="${item.id}"
           data-column-id="${col.column_id}"
           data-value=""
+          data-label="${escapeHtml(col.name)}"
+          tabindex="0"
           onclick="BoardApp.editCell(${item.id}, ${col.column_id}, '${col.type}', event)">
           <button class="fw-cell-empty">+</button>
         </td>
@@ -314,8 +149,10 @@
       tbody.appendChild(tr);
     }
     
-    // Add to local data cache
-    window.BOARD_DATA.items.push(item);
+    // Add to local data cache (skip if already tracked — e.g. lazy-group hydration)
+    if (!window.BOARD_DATA.items.some(i => String(i.id) === String(item.id))) {
+      window.BOARD_DATA.items.push(item);
+    }
     
     // Add flash animation
     tr.classList.add('fw-item-added');
@@ -573,6 +410,155 @@
     div.textContent = text;
     return div.innerHTML;
   }
+
+  // ===== HYDRATE A FULL ITEM ROW =====
+  // addItemToDOM + render every stored/field-backed cell value. Used by
+  // lazy-group expansion and load-more pagination.
+  window.BoardApp.hydrateItemRow = function(item) {
+    window.BoardApp.addItemToDOM(item, item.group_id);
+
+    const vals = (window.BOARD_DATA.valuesMap || {})[item.id] || {};
+    (window.BOARD_DATA.columns || []).forEach(col => {
+      let value = vals[col.column_id];
+      if (value === undefined || value === null || value === '') {
+        if (col.type === 'people' && item.assigned_to) value = item.assigned_to;
+        else if (col.type === 'date' && item.due_date) value = String(item.due_date).split(' ')[0];
+        else if (col.type === 'priority' && item.priority) value = item.priority;
+        else if (col.type === 'status' && item.status_label) value = item.status_label;
+      }
+      if (value !== undefined && value !== null && value !== '' && window.BoardApp.renderCellFull) {
+        window.BoardApp.renderCellFull(item.id, col.column_id, value, col.type);
+      }
+    });
+  };
+
+  // ===== NEAR-REAL-TIME POLLING =====
+  // Every ~20s pull board_audit_log events past our cursor and patch the DOM.
+  // Paused while the tab is hidden or an editor/modal is open; own edits are
+  // skipped (they were already applied optimistically).
+  const POLL_INTERVAL_MS = 20000;
+  let pollCursor = parseInt(window.BOARD_DATA.lastAuditId, 10) || 0;
+  let pollTimer = null;
+  let structuralBannerShown = false;
+
+  function editorOpen() {
+    return !!document.querySelector('.fw-modal-overlay, .fw-cell-picker-overlay[aria-hidden="false"], .fw-cell-inline-input');
+  }
+
+  function showUpdateBanner(text) {
+    if (structuralBannerShown) return;
+    structuralBannerShown = true;
+
+    const banner = document.createElement('div');
+    banner.setAttribute('role', 'status');
+    banner.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
+      'background:var(--modal-bg, #1e1e28);border:1px solid var(--modal-border, rgba(255,255,255,0.15));' +
+      'color:var(--modal-text, #fff);padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;' +
+      'z-index:10001;box-shadow:0 8px 24px rgba(0,0,0,0.35);display:flex;gap:12px;align-items:center;';
+    banner.appendChild(Object.assign(document.createElement('span'), { textContent: text }));
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Refresh';
+    btn.className = 'fw-btn fw-btn--primary';
+    btn.style.padding = '4px 12px';
+    btn.addEventListener('click', () => location.reload());
+    banner.appendChild(btn);
+
+    (document.querySelector('.fw-proj') || document.body).appendChild(banner);
+  }
+
+  function applyEvent(event) {
+    if (String(event.user_id) === String(window.BOARD_DATA.currentUserId)) return;
+
+    const who = (event.first_name || event.last_name)
+      ? `${event.first_name || ''} ${event.last_name || ''}`.trim()
+      : 'A teammate';
+    const d = event.details || {};
+
+    switch (event.action) {
+      case 'item_updated':
+        if (event.item_id && d.column_id !== undefined) {
+          const col = (window.BOARD_DATA.columns || []).find(c => String(c.column_id) === String(d.column_id));
+          if (col) {
+            window.BoardApp.updateCellDOM(event.item_id, d.column_id, d.value ?? '', col.type);
+          }
+        }
+        break;
+
+      case 'status_changed': {
+        const col = (window.BOARD_DATA.columns || []).find(c => c.type === 'status');
+        const value = d.new_status && d.new_status !== 'none' ? d.new_status : '';
+        const item = (window.BOARD_DATA.items || []).find(i => String(i.id) === String(event.item_id));
+        if (item) item.status_label = value || null;
+        if (col) window.BoardApp.updateCellDOM(event.item_id, col.column_id, value, 'status');
+        break;
+      }
+
+      case 'item_moved': {
+        const row = document.querySelector(`tr.fw-item-row[data-item-id="${event.item_id}"]`);
+        const tbody = d.group_id ? document.querySelector(`.fw-group[data-group-id="${d.group_id}"] tbody`) : null;
+        if (row && tbody) {
+          tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+          tbody.insertBefore(row, tbody.querySelector('.fw-agg-row') || tbody.querySelector('.fw-add-row') || null);
+          row.dataset.groupId = String(d.group_id);
+          const item = (window.BOARD_DATA.items || []).find(i => String(i.id) === String(event.item_id));
+          if (item) item.group_id = d.group_id;
+        }
+        break;
+      }
+
+      case 'item_deleted':
+        if (event.item_id && document.querySelector(`tr.fw-item-row[data-item-id="${event.item_id}"]`)) {
+          window.BoardApp.removeItemFromDOM(event.item_id);
+        }
+        break;
+
+      case 'comment_added':
+        if (event.item_id && window.BoardApp.bumpCommentBadge) {
+          window.BoardApp.bumpCommentBadge(event.item_id);
+        }
+        break;
+
+      case 'item_created':
+      case 'item_restored':
+      case 'column_added':
+      case 'group_added':
+      case 'bulk_update':
+        // Structural changes need fresh server-rendered markup
+        showUpdateBanner(`${who} updated the board`);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  function pollChanges() {
+    if (document.hidden || editorOpen()) return;
+
+    fetch(`/projects/api/board.changes.php?board_id=${window.BOARD_DATA.boardId}&since=${pollCursor}`, {
+      headers: { 'X-CSRF-Token': window.BOARD_DATA.csrfToken },
+      credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      const payload = data.data || {};
+      (payload.events || []).forEach(applyEvent);
+      pollCursor = payload.last_id || pollCursor;
+    })
+    .catch(() => { /* transient network error — try again next tick */ });
+  }
+
+  function initPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollChanges, POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) pollChanges();
+    });
+  }
+
+  initPolling();
 
   console.log('✅ Real-time updates module loaded');
 })();

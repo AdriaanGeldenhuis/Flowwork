@@ -70,7 +70,32 @@ try {
 
     $DB->commit();
 
-    respond_ok(['item_id' => $newItemId]);
+    require_once __DIR__ . '/_audit.php';
+    fw_audit($DB, $COMPANY_ID, $item['board_id'], $newItemId, $USER_ID, 'item_created', [
+        'title' => $item['title'] . ' (Copy)',
+        'duplicated_from' => $itemId,
+    ]);
+
+    // Return the new item hydrated (same shape as create_item.php) plus its
+    // copied cell values so the client can render it without a reload.
+    $stmt = $DB->prepare("
+        SELECT bi.*, bg.name AS group_name, u.first_name, u.last_name
+        FROM board_items bi
+        LEFT JOIN board_groups bg ON bi.group_id = bg.id
+        LEFT JOIN users u ON bi.assigned_to = u.id
+        WHERE bi.id = ?
+    ");
+    $stmt->execute([$newItemId]);
+    $newItem = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $stmt = $DB->prepare("SELECT column_id, value FROM board_item_values WHERE item_id = ?");
+    $stmt->execute([$newItemId]);
+    $values = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $values[$row['column_id']] = $row['value'];
+    }
+
+    respond_ok(['item_id' => $newItemId, 'item' => $newItem, 'values' => $values]);
 
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();

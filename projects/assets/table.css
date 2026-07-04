@@ -658,7 +658,7 @@ thead tr > th:last-child {
 }
 
 .fw-agg-type {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -795,4 +795,100 @@ thead tr > th:last-child {
 .fw-board-totals-group .fw-board-agg-value {
   font-size: var(--font-lg);
   color: var(--accent-primary);
+}
+/* ========== DRAG INDICATORS (groups, columns, empty-group drops) ========== */
+.fw-dragging-group {
+  opacity: 0.5;
+}
+
+.fw-group-drag-over-top {
+  box-shadow: 0 -3px 0 0 var(--accent-primary, #8b5cf6);
+}
+
+.fw-group-drag-over-bottom {
+  box-shadow: 0 3px 0 0 var(--accent-primary, #8b5cf6);
+}
+
+.fw-dragging-column {
+  opacity: 0.5;
+}
+
+th.fw-col-drag-over-left {
+  box-shadow: inset 3px 0 0 0 var(--accent-primary, #8b5cf6);
+}
+
+th.fw-col-drag-over-right {
+  box-shadow: inset -3px 0 0 0 var(--accent-primary, #8b5cf6);
+}
+
+.fw-group-drop-target .fw-table-wrapper {
+  outline: 2px dashed var(--accent-primary, #8b5cf6);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* ========== INLINE CELL EDITOR ========== */
+.fw-cell-inline-input {
+  width: 100%;
+  min-width: 60px;
+  padding: 4px 8px;
+  border: 2px solid var(--accent-primary, #8b5cf6);
+  border-radius: 6px;
+  background: var(--input-bg, rgba(0, 0, 0, 0.2));
+  color: var(--input-text, inherit);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+textarea.fw-cell-inline-input {
+  resize: vertical;
+  min-height: 60px;
+}
+
+/* ========== ROW COMMENT BADGE ========== */
+.fw-col-item {
+  position: relative;
+}
+
+.fw-item-comments-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-primary, #8b5cf6);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.fw-item-comments-btn:hover {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+.fw-col-item .fw-item-title {
+  padding-right: 52px;
+}
+
+/* ========== "NEW SINCE LAST VISIT" INDICATOR ========== */
+td.fw-col-item.fw-row-unread::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-primary, #8b5cf6);
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.8);
 }

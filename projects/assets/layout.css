@@ -408,6 +408,28 @@
   width: 280px;
 }
 
+.fw-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fw-search-clear:hover {
+  background: var(--interactive-default);
+  color: var(--text-primary);
+}
+
 .fw-chip {
   display: inline-flex;
   align-items: center;
@@ -464,10 +486,12 @@
 /* ========== BULK ACTION BAR ========== */
 .fw-bulk-action-bar {
   position: fixed;
-  top: 104px;
+  /* Measured chrome height (header + toolbar) written by ui/header.js;
+     the old hardcoded 104px hid the bar behind a wrapped toolbar */
+  top: calc(var(--fw-chrome-h, 104px) + 8px);
   left: 50%;
   transform: translateX(-50%) translateY(-100%);
-  z-index: calc(var(--z-sticky) - 2);
+  z-index: calc(var(--z-sticky) + 1);
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
@@ -562,10 +586,10 @@
 
 /* ========== BOARD CONTAINER ========== */
 .fw-board-container {
-  margin-top: 104px;
+  margin-top: calc(var(--fw-chrome-h, 104px) + 8px);
   padding: var(--spacing-lg);
   padding-bottom: 80px;
-  min-height: calc(100vh - 104px - 48px);
+  min-height: calc(100dvh - var(--fw-chrome-h, 104px) - 48px);
 }
 
 /* ========== SCROLL SYNC BAR (FIXED TO BOTTOM) ========== */
@@ -585,6 +609,7 @@
   padding: 0 var(--spacing-lg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .fw-scroll-sync-bar__label {

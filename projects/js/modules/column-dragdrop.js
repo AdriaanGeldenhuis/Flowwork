@@ -152,11 +152,22 @@
     tables.forEach(table => {
       const headerRow = table.querySelector('thead tr');
       const bodyRows = table.querySelectorAll('tbody tr');
-      
+
+      // Move the <col> too — column widths are positional, so leaving the
+      // colgroup untouched shifts every width one column over after a drag
+      const colgroup = table.querySelector('colgroup');
+      if (colgroup) {
+        const draggedCol = colgroup.querySelector(`col[data-column-id="${draggedColumnId}"]`);
+        const targetCol = colgroup.querySelector(`col[data-column-id="${targetTh.dataset.columnId}"]`);
+        if (draggedCol && targetCol) {
+          colgroup.insertBefore(draggedCol, insertBefore ? targetCol : targetCol.nextSibling);
+        }
+      }
+
       // Move header
       const draggedHeader = headerRow.querySelector(`th[data-column-id="${draggedColumnId}"]`);
       const targetHeader = headerRow.querySelector(`th[data-column-id="${targetTh.dataset.columnId}"]`);
-      
+
       if (draggedHeader && targetHeader) {
         if (insertBefore) {
           headerRow.insertBefore(draggedHeader, targetHeader);
@@ -192,7 +203,7 @@
     window.BoardApp.apiCall('/projects/api/column/reorder.php', data)
       .then(response => {
         console.log('✅ Column order saved:', response);
-        showToast('✅ Column reordered', 'success');
+        showToast('Column reordered', 'success');
         
         // Update in memory
         const columns = window.BOARD_DATA.columns;
@@ -207,32 +218,16 @@
       })
       .catch(err => {
         console.error('❌ Save column order failed:', err);
-        showToast('❌ Failed to reorder column', 'error');
+        showToast('Failed to reorder column', 'error');
         setTimeout(() => window.location.reload(), 1500);
       });
   }
 
   // ===== SHOW TOAST =====
   function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `fw-toast fw-toast--${type}`;
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 12px 20px;
-      background: rgba(33, 38, 45, 0.98);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 8px;
-      color: white;
-      font-size: 14px;
-      font-weight: 600;
-      z-index: 10000;
-      backdrop-filter: blur(10px);
-    `;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2500);
+    if (typeof window.BoardApp.showToast === 'function') {
+      window.BoardApp.showToast(message, type);
+    }
   }
 
   // ===== EXPOSE FUNCTIONS =====

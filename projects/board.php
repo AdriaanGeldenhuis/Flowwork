@@ -12,6 +12,25 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
+// Styled error page instead of a bare die() — keeps users inside the app
+function fw_board_error_page(string $title, string $message): void {
+    $t = htmlspecialchars($title);
+    $m = htmlspecialchars($message);
+    echo "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        . "<title>{$t} – Flowwork</title></head>"
+        . "<body style=\"margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;"
+        . "background:#12121a;color:#e2e8f0;font-family:system-ui,sans-serif;\">"
+        . "<div style=\"text-align:center;max-width:420px;padding:24px;\">"
+        . "<div style=\"font-size:48px;margin-bottom:16px;\">🔒</div>"
+        . "<h1 style=\"font-size:20px;margin:0 0 8px;\">{$t}</h1>"
+        . "<p style=\"color:#94a3b8;margin:0 0 24px;\">{$m}</p>"
+        . "<a href=\"/projects/index.php\" style=\"display:inline-block;padding:10px 24px;background:#8b5cf6;"
+        . "color:#fff;border-radius:8px;text-decoration:none;font-weight:600;\">Back to Projects</a>"
+        . "</div></body></html>";
+    exit;
+}
+
 // Get board ID
 $boardId = (int)($_GET['board_id'] ?? 0);
 if (!$boardId) {
@@ -35,7 +54,8 @@ $stmt->execute([$boardId, $COMPANY_ID]);
 $board = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$board) {
-    die('Board not found');
+    http_response_code(404);
+    fw_board_error_page('Board not found', 'This board does not exist or may have been deleted.');
 }
 
 // ===== CHECK PERMISSIONS =====
@@ -47,13 +67,17 @@ $stmt->execute([$board['project_id'], $USER_ID, $COMPANY_ID]);
 $memberRole = $stmt->fetchColumn();
 
 if (!$memberRole && $USER_ROLE !== 'admin') {
-    die('Access denied');
+    http_response_code(403);
+    fw_board_error_page('Access denied', 'You are not a member of this project. Ask a project manager to add you.');
 }
 
 // ===== LOAD COLUMNS =====
+// All columns are loaded and rendered; hidden ones (visible = 0) are collapsed
+// via the #fw-col-visibility stylesheet below so the client can show/hide
+// columns without a reload (see js/modules/column-visibility.js).
 $stmt = $DB->prepare("
     SELECT * FROM board_columns
-    WHERE board_id = ? AND company_id = ? AND visible = 1
+    WHERE board_id = ? AND company_id = ?
     ORDER BY position
 ");
 $stmt->execute([$boardId, $COMPANY_ID]);
@@ -85,12 +109,18 @@ if (empty($columns)) {
     // Reload columns
     $stmt = $DB->prepare("
         SELECT * FROM board_columns
-        WHERE board_id = ? AND company_id = ? AND visible = 1
+        WHERE board_id = ? AND company_id = ?
         ORDER BY position
     ");
     $stmt->execute([$boardId, $COMPANY_ID]);
     $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+// Hidden-column ids for the visibility stylesheet
+$HIDDEN_COLUMN_IDS = array_values(array_map(
+    fn($c) => (int)$c['column_id'],
+    array_filter($columns, fn($c) => !(int)$c['visible'])
+));
 
 // ===== LOAD GROUPS =====
 $stmt = $DB->prepare("
@@ -119,17 +149,30 @@ if (empty($groups)) {
 }
 
 // ===== LOAD ITEMS =====
+// Server-render up to ITEM_RENDER_CAP rows; larger boards page the rest in
+// through api/board.load.php (BoardApp.loadMoreItems). The cap must be a
+// multiple of the load-more page size (100).
+define('ITEM_RENDER_CAP', 500);
+
+$stmt = $DB->prepare("
+    SELECT COUNT(*) FROM board_items
+    WHERE board_id = ? AND company_id = ? AND archived = 0
+");
+$stmt->execute([$boardId, $COMPANY_ID]);
+$TOTAL_ITEMS = (int)$stmt->fetchColumn();
+
 $stmt = $DB->prepare("
     SELECT bi.*, u.first_name, u.last_name, bg.name AS group_name
     FROM board_items bi
     LEFT JOIN users u ON bi.assigned_to = u.id
     LEFT JOIN board_groups bg ON bi.group_id = bg.id
     WHERE bi.board_id = ? AND bi.company_id = ? AND bi.archived = 0
-    ORDER BY bg.position, bi.position
-    LIMIT 500
+    ORDER BY bi.group_id, bi.position, bi.id
+    LIMIT " . ITEM_RENDER_CAP . "
 ");
 $stmt->execute([$boardId, $COMPANY_ID]);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$ITEMS_TRUNCATED = $TOTAL_ITEMS > count($items);
 
 // ===== LOAD ITEM VALUES =====
 $itemIds = array_column($items, 'id');
@@ -149,7 +192,14 @@ if (!empty($itemIds)) {
     }
 }
 
-// ===== CALCULATE FORMULAS =====
+// ===== FORMULA VALUES =====
+// Formula results are persisted to board_item_values on every cell write
+// (api/cell/update.php) and by formula/calculate.php, so page loads normally
+// just read them out of $valuesMap. Values not yet persisted (legacy data)
+// are computed here through the sandboxed engine in api/_formula.php —
+// the old inline @eval loop is gone.
+require_once __DIR__ . '/api/_formula.php';
+
 $colNameMap = [];
 foreach ($columns as $c) {
     $colNameMap[$c['name']] = $c['column_id'];
@@ -164,39 +214,31 @@ foreach ($columns as $c) {
 
     foreach ($items as $it) {
         $iid = $it['id'];
+
+        // Persisted result available — nothing to compute
+        if (isset($valuesMap[$iid][$c['column_id']]) && $valuesMap[$iid][$c['column_id']] !== '') {
+            continue;
+        }
+
         $ctx = [];
-        
         if (isset($valuesMap[$iid])) {
             foreach ($valuesMap[$iid] as $cid => $val) {
                 $ctx[$cid] = is_numeric($val) ? (float)$val : 0.0;
             }
         }
 
-        $expr = $formulaStr;
-        foreach ($colNameMap as $name => $cid) {
-            $val = isset($ctx[$cid]) ? $ctx[$cid] : 0.0;
-            $expr = str_replace('{' . $name . '}', $val, $expr);
-        }
-
-        $result = 0;
-        try {
-            if ($expr !== '' && preg_match('/^[0-9\.\+\-\*\/\(\)\s]+$/', $expr)) {
-                $tmp = @eval('return ' . $expr . ';');
-                $result = is_numeric($tmp) ? $tmp : 0;
-            }
-        } catch (Throwable $e) {
-            $result = 0;
-        }
-
         if (!isset($valuesMap[$iid])) $valuesMap[$iid] = [];
-        $valuesMap[$iid][$c['column_id']] = number_format($result, $precision, '.', '');
+        $valuesMap[$iid][$c['column_id']] = _fw_compute_formula($formulaStr, $ctx, $colNameMap, $precision);
     }
 }
 
-// ===== LOAD ATTACHMENTS =====
+// Column types drive which auxiliary datasets are worth loading at all
+$COLUMN_TYPES = array_column($columns, 'type');
+
+// ===== LOAD ATTACHMENTS (only when a files column exists) =====
 $attachmentsMap = [];
 
-if (!empty($itemIds)) {
+if (!empty($itemIds) && in_array('files', $COLUMN_TYPES, true)) {
     $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
     $stmt = $DB->prepare("
         SELECT item_id, id, file_name, file_path, file_size
@@ -217,9 +259,59 @@ if (!empty($itemIds)) {
     }
 }
 
-// ===== LOAD USERS =====
+// ===== LOAD COMMENT COUNTS =====
+$commentCountsMap = [];
+if (!empty($itemIds)) {
+    $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+    $stmt = $DB->prepare("
+        SELECT item_id, COUNT(*) AS n
+        FROM board_item_comments
+        WHERE item_id IN ($placeholders)
+        GROUP BY item_id
+    ");
+    $stmt->execute($itemIds);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $commentCountsMap[(int)$row['item_id']] = (int)$row['n'];
+    }
+}
+
+// ===== BOARD TOTALS OVERRIDE (SQL over ALL items when the render is capped) =====
+// The in-PHP totals loop only sees the rendered subset; on truncated boards
+// compute number/formula aggregates in SQL so BOARD TOTALS stays correct.
+$boardTotalsOverride = [];
+if ($ITEMS_TRUNCATED) {
+    $aggCols = array_values(array_filter($columns, fn($c) => in_array($c['type'], ['number', 'formula'], true)));
+    if ($aggCols) {
+        $colIds = array_map(fn($c) => (int)$c['column_id'], $aggCols);
+        $ph = implode(',', array_fill(0, count($colIds), '?'));
+        $stmt = $DB->prepare("
+            SELECT v.column_id,
+                   SUM(v.value + 0) AS agg_sum,
+                   AVG(v.value + 0) AS agg_avg,
+                   MIN(v.value + 0) AS agg_min,
+                   MAX(v.value + 0) AS agg_max,
+                   COUNT(*) AS agg_count
+            FROM board_item_values v
+            JOIN board_items bi ON v.item_id = bi.id
+            WHERE bi.board_id = ? AND bi.company_id = ? AND bi.archived = 0
+              AND v.column_id IN ($ph)
+            GROUP BY v.column_id
+        ");
+        $stmt->execute(array_merge([$boardId, $COMPANY_ID], $colIds));
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $aggRow) {
+            $boardTotalsOverride[(int)$aggRow['column_id']] = $aggRow;
+        }
+    }
+}
+
+// ===== LAST AUDIT ID (cursor for near-real-time polling) =====
+$stmt = $DB->prepare("SELECT COALESCE(MAX(id), 0) FROM board_audit_log WHERE board_id = ?");
+$stmt->execute([$boardId]);
+$LAST_AUDIT_ID = (int)$stmt->fetchColumn();
+
+// ===== LOAD USERS (email is not needed by any board renderer) =====
 $stmt = $DB->prepare("
-    SELECT id, first_name, last_name, email
+    SELECT id, first_name, last_name
     FROM users
     WHERE company_id = ? AND status = 'active'
     ORDER BY first_name
@@ -227,15 +319,18 @@ $stmt = $DB->prepare("
 $stmt->execute([$COMPANY_ID]);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// ===== LOAD SUPPLIERS =====
-$stmt = $DB->prepare("
-    SELECT id, name, phone, email, preferred
-    FROM crm_accounts
-    WHERE company_id = ? AND type = 'supplier' AND status = 'active'
-    ORDER BY preferred DESC, name ASC
-");
-$stmt->execute([$COMPANY_ID]);
-$suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// ===== LOAD SUPPLIERS (only when a supplier column exists) =====
+$suppliers = [];
+if (in_array('supplier', $COLUMN_TYPES, true)) {
+    $stmt = $DB->prepare("
+        SELECT id, name, phone, email, preferred
+        FROM crm_accounts
+        WHERE company_id = ? AND type = 'supplier' AND status = 'active'
+        ORDER BY preferred DESC, name ASC
+    ");
+    $stmt->execute([$COMPANY_ID]);
+    $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // ===== STATUS CONFIG =====
 $statusConfig = [
@@ -250,8 +345,51 @@ $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
 $stmt->execute([$COMPANY_ID]);
 $companyName = $stmt->fetchColumn() ?: 'Company';
 
-// Asset version for cache busting
-define('ASSET_VERSION', '2025-01-21-v10');
+// Asset cache busting: derive the version from the newest JS/CSS mtime so a
+// deploy invalidates caches automatically (no more hand-bumped constants).
+// The directory scan (~70 stat calls) is cached in APCu for 60s when available
+// so steady-state page views do zero filesystem walking.
+function fw_asset_version(): string {
+    static $ver = null;
+    if ($ver !== null) return $ver;
+
+    $useApcu = function_exists('apcu_fetch') && function_exists('apcu_store');
+    if ($useApcu) {
+        $cached = apcu_fetch('fw_board_asset_version');
+        if (is_string($cached) && $cached !== '') return $ver = $cached;
+    }
+
+    $latest = 0;
+    foreach (array_merge(
+        glob(__DIR__ . '/assets/*.css') ?: [],
+        glob(__DIR__ . '/js/*.js') ?: [],
+        glob(__DIR__ . '/js/modules/*.js') ?: [],
+        glob(__DIR__ . '/js/ui/*.js') ?: []
+    ) as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime && $mtime > $latest) $latest = $mtime;
+    }
+    $ver = (string)($latest ?: time());
+
+    if ($useApcu) apcu_store('fw_board_asset_version', $ver, 60);
+    return $ver;
+}
+define('ASSET_VERSION', fw_asset_version());
+
+// Board CSS is split into layered files; linked individually (in cascade order)
+// instead of via @import so each gets the cache-busting version.
+$BOARD_CSS_FILES = [
+    'base.css', 'theme.css', 'layout.css', 'table.css', 'components.css',
+    'modals.css', 'views.css', 'mobile.css',
+    'board-3d.css', // 3D skin — must stay after the files it overlays
+    'board.css',    // board-specific overrides — always last
+];
+
+// Initial view: the URL param wins, then the board's stored default.
+// (The client may still override with the user's last-used view.)
+$ALLOWED_VIEWS = ['table', 'kanban', 'calendar', 'gantt', 'workload'];
+$DEFAULT_VIEW = in_array($board['default_view'] ?? '', $ALLOWED_VIEWS, true) ? $board['default_view'] : 'table';
+$INITIAL_VIEW = in_array($_GET['view'] ?? '', $ALLOWED_VIEWS, true) ? $_GET['view'] : $DEFAULT_VIEW;
 
 // Theme rendered server-side from the cookie so the page paints in the right
 // theme immediately (theme.css defaults .fw-proj to dark; without this, light
@@ -267,7 +405,14 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
     <title><?= htmlspecialchars($board['title']) ?> – Flowwork</title>
     
-    <link rel="stylesheet" href="/projects/assets/board.css?v=<?= ASSET_VERSION ?>">
+<?php foreach ($BOARD_CSS_FILES as $cssFile): ?>
+    <link rel="stylesheet" href="/projects/assets/<?= $cssFile ?>?v=<?= ASSET_VERSION ?>">
+<?php endforeach; ?>
+    <style id="fw-col-visibility">
+<?php foreach ($HIDDEN_COLUMN_IDS as $hiddenId): ?>
+        .fw-board-table [data-column-id="<?= $hiddenId ?>"] { display: none; }
+<?php endforeach; ?>
+    </style>
 </head>
 <body class="fw-board-body" data-board-id="<?= $boardId ?>">
 
@@ -291,9 +436,9 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
         </div>
 
         <div class="fw-board-header__center">
-            <div class="fw-board-title-display">
+            <h1 class="fw-board-title-display" style="margin:0;">
                 <?= htmlspecialchars($board['title']) ?>
-            </div>
+            </h1>
         </div>
 
         <div class="fw-board-header__controls">
@@ -414,7 +559,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     <!-- ===== TOOLBAR ===== -->
     <div class="fw-board-toolbar">
         <div class="fw-board-toolbar__left">
-            <button class="fw-view-btn fw-view-btn--active" data-view="table" onclick="BoardApp.switchView('table')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'table' ? ' fw-view-btn--active' : '' ?>" data-view="table" aria-label="Table view" aria-pressed="<?= $INITIAL_VIEW === 'table' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('table')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect width="16" height="3" rx="1"/>
                     <rect y="6" width="16" height="3" rx="1"/>
@@ -422,7 +567,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 </svg>
                 Table
             </button>
-            <button class="fw-view-btn" data-view="kanban" onclick="BoardApp.switchView('kanban')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'kanban' ? ' fw-view-btn--active' : '' ?>" data-view="kanban" aria-label="Kanban view" aria-pressed="<?= $INITIAL_VIEW === 'kanban' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('kanban')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect width="4" height="16" rx="1"/>
                     <rect x="6" width="4" height="16" rx="1"/>
@@ -430,20 +575,31 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 </svg>
                 Kanban
             </button>
-            <button class="fw-view-btn" data-view="calendar" onclick="BoardApp.switchView('calendar')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'calendar' ? ' fw-view-btn--active' : '' ?>" data-view="calendar" aria-label="Calendar view" aria-pressed="<?= $INITIAL_VIEW === 'calendar' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('calendar')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect x="1" y="3" width="14" height="12" rx="1" stroke="currentColor" fill="none"/>
                     <path d="M1 6h14M5 1v4M11 1v4"/>
                 </svg>
                 Calendar
             </button>
-            <button class="fw-view-btn" data-view="gantt" onclick="BoardApp.switchView('gantt')">
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'gantt' ? ' fw-view-btn--active' : '' ?>" data-view="gantt" aria-label="Gantt view" aria-pressed="<?= $INITIAL_VIEW === 'gantt' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('gantt')">
                 <svg width="16" height="16" fill="currentColor">
                     <rect y="2" width="8" height="2" rx="1"/>
                     <rect x="4" y="6" width="10" height="2" rx="1"/>
                     <rect x="2" y="10" width="6" height="2" rx="1"/>
                 </svg>
                 Gantt
+            </button>
+            <button class="fw-view-btn<?= $INITIAL_VIEW === 'workload' ? ' fw-view-btn--active' : '' ?>" data-view="workload" aria-label="Workload view" aria-pressed="<?= $INITIAL_VIEW === 'workload' ? 'true' : 'false' ?>" onclick="BoardApp.switchView('workload')">
+                <svg width="16" height="16" fill="currentColor">
+                    <circle cx="5" cy="4" r="2.5"/>
+                    <circle cx="11" cy="4" r="2.5"/>
+                    <rect x="1" y="9" width="8" height="2" rx="1"/>
+                    <rect x="1" y="13" width="5" height="2" rx="1"/>
+                    <rect x="10" y="9" width="5" height="2" rx="1"/>
+                    <rect x="10" y="13" width="3" height="2" rx="1"/>
+                </svg>
+                Workload
             </button>
         </div>
 
@@ -453,11 +609,18 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                     <circle cx="7" cy="7" r="6"/>
                     <path d="M11 11l4 4"/>
                 </svg>
-                <input id="boardSearchInput" 
-                       type="text" 
-                       class="fw-search-input" 
-                       placeholder="Search items..." 
+                <input id="boardSearchInput"
+                       type="text"
+                       class="fw-search-input"
+                       placeholder="Search items..."
+                       aria-label="Search items"
                        oninput="BoardApp.onSearchInput(this.value)" />
+                <button id="boardSearchClear"
+                        type="button"
+                        class="fw-search-clear"
+                        aria-label="Clear search"
+                        style="display:none;"
+                        onclick="BoardApp.clearSearch()">&times;</button>
             </div>
             <button id="filterChip" class="fw-chip" onclick="BoardApp.showFilterModal()">
                 <svg width="14" height="14" fill="currentColor">
@@ -473,6 +636,15 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
             </button>
         </div>
     </div>
+
+    <?php if ($ITEMS_TRUNCATED): ?>
+    <!-- ===== TRUNCATION BANNER ===== -->
+    <div class="fw-truncation-banner" id="truncationBanner" role="status"
+         style="display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 16px;background:rgba(245,158,11,0.12);border-bottom:1px solid rgba(245,158,11,0.3);font-size:13px;font-weight:600;">
+        <span>Showing <span id="loadedItemCount"><?= count($items) ?></span> of <?= $TOTAL_ITEMS ?> items.</span>
+        <button type="button" class="fw-btn fw-btn--secondary" id="loadMoreItemsBtn" onclick="BoardApp.loadMoreItems()" style="padding:4px 14px;">Load more</button>
+    </div>
+    <?php endif; ?>
 
     <!-- ===== BULK ACTION BAR ===== -->
     <div class="fw-bulk-action-bar" id="bulkActionBar">
@@ -515,7 +687,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     </div>
 
     <!-- ===== BOARD CONTAINER ===== -->
-    <div class="fw-board-container" id="boardContainer">
+    <main class="fw-board-container" id="boardContainer" aria-label="Board items">
         <?php foreach ($groups as $group): ?>
             <?php $groupItems = array_filter($items, fn($item) => $item['group_id'] == $group['id']); ?>
             
@@ -563,8 +735,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 				</colgroup>
                             <thead>
                                 <tr>
-                                    <th class="fw-col-checkbox">
-                                        <input type="checkbox" class="fw-checkbox" onchange="BoardApp.toggleGroupSelection(<?= $group['id'] ?>, this.checked)" />
+                                    <th class="fw-col-checkbox" scope="col">
+                                        <input type="checkbox" class="fw-checkbox" aria-label="Select all in <?= htmlspecialchars($group['name']) ?>" onchange="BoardApp.toggleGroupSelection(<?= $group['id'] ?>, this.checked)" />
                                     </th>
                                     
                                     <th class="fw-col-item">
@@ -599,7 +771,12 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                 </tr>
                             </thead>
 
-                            <tbody>
+                            <?php
+                            // Collapsed groups skip row rendering entirely (data-lazy);
+                            // groups.js hydrates them from BOARD_DATA on first expand.
+                            $isLazy = !empty($group['collapsed']) && !empty($groupItems);
+                            ?>
+                            <tbody<?= $isLazy ? ' data-lazy="1"' : '' ?>>
                                 <?php if (empty($groupItems)): ?>
                                     <tr>
                                         <td colspan="<?= 3 + count($columns) ?>" class="fw-empty-state">
@@ -608,7 +785,7 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                             <div class="fw-empty-text">Click "+ Add item" below to get started</div>
                                         </td>
                                     </tr>
-                                <?php else: ?>
+                                <?php elseif (!$isLazy): ?>
                                     <?php foreach ($groupItems as $item): ?>
                                         <tr class="fw-item-row" 
                                             data-item-id="<?= $item['id'] ?>" 
@@ -616,17 +793,26 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                             draggable="true">
                                             
                                             <td class="fw-col-checkbox">
-                                                <input type="checkbox" 
-                                                       class="fw-checkbox fw-item-checkbox" 
+                                                <input type="checkbox"
+                                                       class="fw-checkbox fw-item-checkbox"
                                                        data-item-id="<?= $item['id'] ?>"
+                                                       aria-label="Select <?= htmlspecialchars($item['title']) ?>"
                                                        onchange="BoardApp.toggleItemSelection(<?= $item['id'] ?>, this.checked)" />
                                             </td>
                                             
                                             <td class="fw-col-item">
-                                                <input type="text" 
-                                                       class="fw-item-title" 
-                                                       value="<?= htmlspecialchars($item['title']) ?>" 
+                                                <input type="text"
+                                                       class="fw-item-title"
+                                                       value="<?= htmlspecialchars($item['title']) ?>"
+                                                       aria-label="Item title"
                                                        onblur="BoardApp.updateItemTitle(<?= $item['id'] ?>, this.value)" />
+                                                <?php $cCount = $commentCountsMap[(int)$item['id']] ?? 0; ?>
+                                                <button type="button"
+                                                        class="fw-item-comments-btn"
+                                                        data-item-id="<?= $item['id'] ?>"
+                                                        aria-label="Comments (<?= $cCount ?>)"
+                                                        <?= $cCount === 0 ? 'style="display:none;"' : '' ?>
+                                                        onclick="BoardApp.showComments(<?= $item['id'] ?>)">💬 <span class="fw-item-comments-count"><?= $cCount ?></span></button>
                                             </td>
 
                                             <?php foreach ($columns as $col): ?>
@@ -645,11 +831,13 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                     $value = $item['status_label'];
                                                 ?>
 
-                                                <td class="fw-cell" 
-                                                    data-type="<?= $col['type'] ?>" 
-                                                    data-item-id="<?= $item['id'] ?>" 
-                                                    data-column-id="<?= $col['column_id'] ?>" 
+                                                <td class="fw-cell"
+                                                    data-type="<?= $col['type'] ?>"
+                                                    data-item-id="<?= $item['id'] ?>"
+                                                    data-column-id="<?= $col['column_id'] ?>"
                                                     data-value="<?= htmlspecialchars($value ?? '') ?>"
+                                                    data-label="<?= htmlspecialchars($col['name']) ?>"
+                                                    tabindex="0"
                                                     onclick="BoardApp.editCell(<?= $item['id'] ?>, <?= $col['column_id'] ?>, '<?= $col['type'] ?>', event)">
 
                                                     <?php include __DIR__ . '/includes/cell-renderer.php'; ?>
@@ -740,10 +928,11 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                 <!-- QUICK ADD ROW -->
                                 <tr class="fw-add-row">
                                     <td colspan="<?= 3 + count($columns) ?>">
-                                        <input type="text" 
-                                               class="fw-quick-add-input" 
-                                               placeholder="+ Add item" 
-                                               data-group-id="<?= $group['id'] ?>" 
+                                        <input type="text"
+                                               class="fw-quick-add-input"
+                                               placeholder="+ Add item"
+                                               aria-label="Add item to <?= htmlspecialchars($group['name']) ?>"
+                                               data-group-id="<?= $group['id'] ?>"
                                                onkeydown="if(event.key==='Enter') BoardApp.quickAddItem(this, <?= $group['id'] ?>)" />
                                     </td>
                                 </tr>
@@ -785,8 +974,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 <div class="fw-table-wrapper">
                     <table class="fw-board-table">
                         <colgroup>
-                            <col style="width: 50px;">
-                            <col style="min-width: 200px; max-width: 25vw;">
+                            <col style="width: 40px;">
+                            <col style="width: min(25vw, 300px); min-width: 120px;">
                             <?php foreach ($columns as $col): ?>
                                 <col data-column-id="<?= (int)$col['column_id'] ?>" style="width: <?= (int)$col['width'] ?>px;">
                             <?php endforeach; ?>
@@ -849,28 +1038,34 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                         if (in_array($col['type'], ['number', 'formula'])) {
                                             $config = $col['config'] ? json_decode($col['config'], true) : [];
                                             $aggType = $config['agg'] ?? 'sum';
-                                            
-                                            $values = [];
-                                            foreach ($items as $item) {
-                                                if (isset($valuesMap[$item['id']][$col['column_id']])) {
-                                                    $val = $valuesMap[$item['id']][$col['column_id']];
-                                                    if (is_numeric($val)) {
-                                                        $values[] = (float)$val;
+
+                                            if (isset($boardTotalsOverride[(int)$col['column_id']])) {
+                                                // Truncated board: totals were computed in SQL over ALL items
+                                                $aggRow = $boardTotalsOverride[(int)$col['column_id']];
+                                                $result = (float)($aggRow['agg_' . $aggType] ?? $aggRow['agg_sum']);
+                                            } else {
+                                                $values = [];
+                                                foreach ($items as $item) {
+                                                    if (isset($valuesMap[$item['id']][$col['column_id']])) {
+                                                        $val = $valuesMap[$item['id']][$col['column_id']];
+                                                        if (is_numeric($val)) {
+                                                            $values[] = (float)$val;
+                                                        }
+                                                    }
+                                                }
+
+                                                $result = 0;
+                                                if (!empty($values)) {
+                                                    switch ($aggType) {
+                                                        case 'sum': $result = array_sum($values); break;
+                                                        case 'avg': $result = array_sum($values) / count($values); break;
+                                                        case 'min': $result = min($values); break;
+                                                        case 'max': $result = max($values); break;
+                                                        case 'count': $result = count($values); break;
                                                     }
                                                 }
                                             }
-                                            
-                                            $result = 0;
-                                            if (!empty($values)) {
-                                                switch ($aggType) {
-                                                    case 'sum': $result = array_sum($values); break;
-                                                    case 'avg': $result = array_sum($values) / count($values); break;
-                                                    case 'min': $result = min($values); break;
-                                                    case 'max': $result = max($values); break;
-                                                    case 'count': $result = count($values); break;
-                                                }
-                                            }
-                                            
+
                                             $precision = $config['precision'] ?? 2;
                                             $formatted = number_format($result, $precision, '.', ',');
 
@@ -910,12 +1105,13 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                 Add Group
             </button>
         </div>
-    </div>
+    </main>
 
     <!-- VIEWS -->
     <div id="fw-kanban-view" class="fw-kanban-view" style="display:none;"></div>
     <div id="fw-calendar-view" class="fw-calendar-view" style="display:none;"></div>
     <div id="fw-gantt-view" class="fw-gantt-view" style="display:none;"></div>
+    <div id="fw-workload-view" class="fw-kanban-view" style="display:none;"></div>
 
     <!-- ✅ GLOBAL SCROLL BAR (FIXED BOTTOM) -->
     <div class="fw-scroll-sync-bar">
@@ -928,7 +1124,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 </div>
 
 <!-- ===== GUEST ACCESS MODAL ===== -->
-<div id="modalGuests" class="fw-cell-picker-overlay" aria-hidden="true">
+<!-- fw-static-modal: server-rendered — generic overlay cleanup must never remove it -->
+<div id="modalGuests" class="fw-cell-picker-overlay fw-static-modal" aria-hidden="true">
     <div class="fw-cell-picker" style="max-width: 900px; width: 90%;">
         <div class="fw-picker-header">
             <span>👥 Guest Access</span>
@@ -1007,100 +1204,6 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
 })();
 </script>
 
-<!-- ✅ CRITICAL: Initialize 3-dot menu BEFORE module loader -->
-<script>
-(function() {
-    'use strict';
-    
-    let menuInitialized = false;
-    
-    function initBoardMenuImmediate() {
-        if (menuInitialized) {
-            console.log('⚠️ Menu already initialized, skipping');
-            return true;
-        }
-        
-        const menuToggle = document.getElementById('boardMenuToggle');
-        const menu = document.getElementById('boardMenu');
-        
-        if (!menuToggle || !menu) {
-            console.warn('⚠️ Menu elements not found, retrying...');
-            return false;
-        }
-        
-        // ✅ FORCE menu to start closed
-        menu.style.display = 'none';
-        menu.setAttribute('aria-hidden', 'true');
-        menuToggle.setAttribute('aria-expanded', 'false');
-        
-        console.log('✅ Menu forced to closed state');
-        
-        // Toggle menu
-        menuToggle.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const isHidden = menu.getAttribute('aria-hidden') === 'true';
-            
-            if (isHidden) {
-                // Open menu
-                menu.style.display = 'block';
-                menu.setAttribute('aria-hidden', 'false');
-                menuToggle.setAttribute('aria-expanded', 'true');
-                console.log('🎛️ Menu opened');
-            } else {
-                // Close menu
-                menu.style.display = 'none';
-                menu.setAttribute('aria-hidden', 'true');
-                menuToggle.setAttribute('aria-expanded', 'false');
-                console.log('🎛️ Menu closed');
-            }
-        });
-        
-        // Close on outside click
-        document.addEventListener('click', function(e) {
-            const isOpen = menu.getAttribute('aria-hidden') === 'false';
-            if (isOpen && !menu.contains(e.target) && !menuToggle.contains(e.target)) {
-                menu.style.display = 'none';
-                menu.setAttribute('aria-hidden', 'true');
-                menuToggle.setAttribute('aria-expanded', 'false');
-                console.log('🎛️ Menu closed (outside click)');
-            }
-        });
-        
-        // Close on Escape
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && menu.getAttribute('aria-hidden') === 'false') {
-                menu.style.display = 'none';
-                menu.setAttribute('aria-hidden', 'true');
-                menuToggle.setAttribute('aria-expanded', 'false');
-                menuToggle.focus();
-                console.log('🎛️ Menu closed (Escape key)');
-            }
-        });
-        
-        menuToggle.dataset.menuInitialized = 'true';
-        menuInitialized = true;
-        console.log('✅ 3-dot menu initialized immediately');
-        return true;
-    }
-    
-    // Try multiple times to ensure it works
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initBoardMenuImmediate);
-    } else {
-        initBoardMenuImmediate();
-    }
-    
-    // Fallback
-    setTimeout(function() {
-        if (!menuInitialized) {
-            console.log('⏰ Delayed menu initialization attempt');
-            initBoardMenuImmediate();
-        }
-    }, 500);
-})();
-</script>
 
 <!-- ✅ Ensure modals start closed -->
 <script>
@@ -1117,6 +1220,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.BOARD_DATA = {
     boardId: <?= $boardId ?>,
     projectId: <?= $board['project_id'] ?>,
+    defaultView: <?= json_encode($DEFAULT_VIEW) ?>,
     items: <?= json_encode($items) ?>,
     groups: <?= json_encode($groups) ?>,
     columns: <?= json_encode($columns) ?>,
@@ -1125,6 +1229,9 @@ window.BOARD_DATA = {
     suppliers: <?= json_encode($suppliers) ?>,
     valuesMap: <?= json_encode($valuesMap) ?>,
     attachments: <?= json_encode($attachmentsMap) ?>,
+    commentCounts: <?= json_encode($commentCountsMap ?: new stdClass()) ?>,
+    lastAuditId: <?= $LAST_AUDIT_ID ?>,
+    totalItems: <?= $TOTAL_ITEMS ?>,
     csrfToken: '<?= $_SESSION['csrf_token'] ?>',
     currentUserId: <?= (int)$USER_ID ?>
 };
@@ -1143,6 +1250,7 @@ $jsFiles = [
     "modules/kanban.js",
     "modules/calendar.js",
     "modules/gantt-full.js",
+    "modules/workload.js",
     "modules/realtime.js",
     "modules/bulk.js",
     "modules/shortcuts.js",
@@ -1152,12 +1260,14 @@ $jsFiles = [
     "modules/comments.js",
     "modules/export.js",
     "modules/dragdrop.js",
+    "modules/touch-dnd.js",
     "modules/column-dragdrop.js",
     "modules/group-dragdrop.js",
     "modules/column-visibility.js",
     "modules/guests.js",
     "ui/header.js",
     "modules/subitems.js",
+    "modules/item-panel.js",
     "ui/scroll-sync.js"
 ];
 $filesJson = json_encode($jsFiles, JSON_UNESCAPED_SLASHES);

@@ -20,22 +20,31 @@
       return;
     }
 
-    event.stopPropagation();
-    
-    const cellElement = event.currentTarget || event.target.closest('.fw-cell');
+    // Already editing this cell inline — let the input keep focus
+    if (event.target.closest && event.target.closest('.fw-cell-inline-input')) {
+      return;
+    }
+
+    if (event.stopPropagation) event.stopPropagation();
+
+    const cellElement = event.currentTarget || (event.target.closest && event.target.closest('.fw-cell'));
     if (!cellElement) return;
     
     console.log('📝 Edit cell:', { itemId, columnId, columnType });
-    
-    // Close any existing modals
-    document.querySelectorAll('.fw-modal-overlay, .fw-cell-picker-overlay').forEach(el => el.remove());
+
+    // Close any existing modals (never remove server-rendered .fw-static-modal
+    // overlays like #modalGuests — they must survive for their open button)
+    document.querySelectorAll('.fw-modal-overlay, .fw-cell-picker-overlay:not(.fw-static-modal)').forEach(el => el.remove());
     
     switch (columnType) {
       case 'text':
-        editText(itemId, columnId, cellElement);
+        inlineEdit(itemId, columnId, cellElement, 'text');
+        break;
+      case 'longtext':
+        inlineEdit(itemId, columnId, cellElement, 'longtext');
         break;
       case 'number':
-        editNumber(itemId, columnId, cellElement);
+        inlineEdit(itemId, columnId, cellElement, 'number');
         break;
       case 'status':
         editStatus(itemId, columnId, cellElement);
@@ -44,7 +53,7 @@
         editPeople(itemId, columnId, cellElement);
         break;
       case 'date':
-        editDate(itemId, columnId, cellElement);
+        inlineEdit(itemId, columnId, cellElement, 'date');
         break;
       case 'priority':
         editPriority(itemId, columnId, cellElement);
@@ -88,42 +97,101 @@
     }
   };
   
-  // ===== TEXT EDITOR =====
-  function editText(itemId, columnId, cellElement) {
-    const currentValue = cellElement.textContent.trim().replace('+', '');
-    
-    createModal('Edit Text', `
-      <textarea id="cellTextInput" class="fw-textarea" rows="4" placeholder="Enter text..." style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;resize:vertical;min-height:100px;">${currentValue}</textarea>
-      <div class="fw-modal-footer">
-        <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
-        <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellTextInput').value)">Save</button>
-      </div>
-    `);
-    
-    setTimeout(() => {
-      const input = document.getElementById('cellTextInput');
-      input?.focus();
-      input?.setSelectionRange(input.value.length, input.value.length);
-    }, 100);
+  // ===== INLINE EDITOR (text / longtext / number / date) =====
+  // Swaps an input directly into the cell — no modal. Seeded from the raw
+  // value in valuesMap (never from the formatted textContent, which used to
+  // feed "R 1,234.56" into number inputs). Enter commits, Escape restores,
+  // Tab commits and moves to the next editable cell in the row.
+  const INLINE_TYPES = ['text', 'longtext', 'number', 'date'];
+
+  function rawCellValue(itemId, columnId, cellElement) {
+    const fromMap = (window.BOARD_DATA.valuesMap[itemId] || {})[columnId];
+    if (fromMap !== undefined && fromMap !== null) return String(fromMap);
+    // Item-field-backed cells (e.g. Due Date fallback) carry their resolved
+    // value in data-value, rendered by board.php
+    return cellElement.dataset.value || '';
   }
 
-  // ===== NUMBER EDITOR =====
-  function editNumber(itemId, columnId, cellElement) {
-    const currentValue = cellElement.textContent.trim().replace('+', '');
-    
-    createModal('Edit Number', `
-      <input type="number" id="cellNumberInput" class="fw-input" value="${currentValue}" step="any" placeholder="0" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:16px;" />
-      <div class="fw-modal-footer">
-        <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
-        <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellNumberInput').value)">Save</button>
-      </div>
-    `);
-    
-    setTimeout(() => {
-      const input = document.getElementById('cellNumberInput');
-      input?.focus();
-      input?.select();
-    }, 100);
+  function inlineEdit(itemId, columnId, cellElement, kind) {
+    if (cellElement.querySelector('.fw-cell-inline-input')) return;
+
+    let currentValue = rawCellValue(itemId, columnId, cellElement);
+    if (kind === 'date') currentValue = currentValue.split(' ')[0];
+
+    const originalHtml = cellElement.innerHTML;
+
+    const input = document.createElement(kind === 'longtext' ? 'textarea' : 'input');
+    if (kind !== 'longtext') input.type = kind; // text | number | date
+    if (kind === 'number') input.step = 'any';
+    if (kind === 'longtext') input.rows = 3;
+    input.className = 'fw-cell-inline-input';
+    input.value = currentValue;
+
+    cellElement.innerHTML = '';
+    cellElement.appendChild(input);
+    input.focus();
+    if (kind === 'text' || kind === 'number') input.select();
+
+    let settled = false;
+
+    const restore = () => {
+      settled = true;
+      cellElement.innerHTML = originalHtml;
+    };
+
+    const commit = (openNextCell) => {
+      if (settled) return;
+      const value = kind === 'longtext' || kind === 'text' ? input.value.trim() : input.value;
+      restore();
+      if (value !== currentValue) {
+        window.BoardApp.saveCellValue(itemId, columnId, value);
+      }
+      if (openNextCell) focusNextEditableCell(cellElement, itemId);
+    };
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // keep global shortcuts (Escape/Delete/…) out of the edit
+      if (e.key === 'Enter' && !(kind === 'longtext' && e.shiftKey)) {
+        e.preventDefault();
+        commit(false);
+      } else if (e.key === 'Escape') {
+        restore();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        commit(true);
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      // Give keydown commits a tick to settle first
+      setTimeout(() => { if (!settled) commit(false); }, 0);
+    });
+
+    input.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  function focusNextEditableCell(cellElement, itemId) {
+    let next = cellElement.nextElementSibling;
+    while (next) {
+      if (next.classList.contains('fw-cell')) {
+        const type = next.dataset.type;
+        const colId = parseInt(next.dataset.columnId, 10);
+        if (INLINE_TYPES.includes(type)) {
+          inlineEdit(itemId, colId, next, type);
+          return;
+        }
+        if (type && type !== 'formula') {
+          // Picker types open their modal editor
+          window.BoardApp.editCell(itemId, colId, type, {
+            currentTarget: next,
+            target: next,
+            stopPropagation() {}
+          });
+          return;
+        }
+      }
+      next = next.nextElementSibling;
+    }
   }
 
   // ===== STATUS EDITOR =====
@@ -135,8 +203,9 @@
       'done': { label: 'Done', color: '#00c875' }
     };
     
-    const currentValue = cellElement.textContent.trim().toLowerCase();
-    
+    // Compare against the raw stored key, not the rendered label text
+    const currentValue = (cellElement.dataset.value || cellElement.textContent.trim().toLowerCase());
+
     const options = Object.keys(statuses).map(key => {
       const status = statuses[key];
       return `
@@ -184,29 +253,6 @@
     `);
     
     setTimeout(() => document.getElementById('peopleSearchInput')?.focus(), 100);
-  }
-
-  // ===== DATE EDITOR =====
-  function editDate(itemId, columnId, cellElement) {
-    const currentText = cellElement.querySelector('span')?.textContent || '';
-    let dateValue = '';
-    
-    if (currentText) {
-      const parsed = new Date(currentText);
-      if (!isNaN(parsed.getTime())) {
-        dateValue = parsed.toISOString().split('T')[0];
-      }
-    }
-    
-    createModal('Set Date', `
-      <input type="date" id="cellDateInput" class="fw-input" value="${dateValue}" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:16px;" />
-      <div class="fw-modal-footer">
-        <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
-        <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellDateInput').value)">Save</button>
-      </div>
-    `);
-    
-    setTimeout(() => document.getElementById('cellDateInput')?.focus(), 100);
   }
 
   // ===== PRIORITY EDITOR =====
@@ -485,8 +531,8 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
   .then(data => {
     console.log('✅ Cell saved:', data);
     
-    // Close modal
-    document.querySelectorAll('.fw-modal-overlay, .fw-cell-picker-overlay').forEach(el => el.remove());
+    // Close modal (keep server-rendered static modals in the DOM)
+    document.querySelectorAll('.fw-modal-overlay, .fw-cell-picker-overlay:not(.fw-static-modal)').forEach(el => el.remove());
     
     // Update in memory
     if (!window.BOARD_DATA.valuesMap[itemId]) {
@@ -500,33 +546,32 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
     } else {
       updateCellDisplay(itemId, columnId, value, column.type);
     }
-    
-    // ✅ NUUT: Recalculate formulas if this is a number column
-    if (column.type === 'number' && window.BoardApp.recalculateFormulas) {
-      setTimeout(() => {
-        window.BoardApp.recalculateFormulas(itemId);
-      }, 150);
+
+    // Apply server-computed formula values (persisted on write) — this
+    // replaces the old client-side recalculation guesswork
+    const formulas = data && data.formulas ? data.formulas : null;
+    if (formulas && Object.keys(formulas).length > 0) {
+      Object.entries(formulas).forEach(([fColId, fValue]) => {
+        window.BOARD_DATA.valuesMap[itemId][fColId] = fValue;
+        updateCellDisplay(itemId, fColId, fValue, 'formula');
+      });
+    } else if (column.type === 'number' && window.BoardApp.recalculateFormulas) {
+      // Fallback for older API responses
+      window.BoardApp.recalculateFormulas(itemId);
     }
-    
-    // ✅ NUUT: Update aggregations
-    const row = document.querySelector(`[data-item-id="${itemId}"]`);
-    if (row) {
-      const groupId = row.dataset.groupId;
-      if (groupId && window.BoardApp.updateAggregations) {
-        setTimeout(() => {
-          window.BoardApp.updateAggregations(groupId);
-        }, 200);
-      }
+
+    // Aggregations + totals — direct sequential calls (the old setTimeout
+    // chain existed only to dodge ordering that is now guaranteed)
+    const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+    const groupId = row ? row.dataset.groupId : null;
+    if (groupId && window.BoardApp.updateAggregations) {
+      window.BoardApp.updateAggregations(groupId);
     }
-    
-    // ✅ NUUT: Update board totals
     if (window.BoardApp.updateBoardTotals) {
-      setTimeout(() => {
-        window.BoardApp.updateBoardTotals();
-      }, 250);
+      window.BoardApp.updateBoardTotals();
     }
-    
-    // ✅ NUUT: Dispatch event for formula dependencies
+
+    // Dispatch event for dependents (item panel, etc.)
     document.dispatchEvent(new CustomEvent('cellUpdated', {
       detail: { itemId, columnId, value, columnType: column.type }
     }));
@@ -538,47 +583,82 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
 };
 
   // ===== UPDATE CELL DISPLAY =====
+  // Local escape helper (ui.js may not be loaded if the loader partially failed)
+  function esc(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  // Legible text color for a solid pill background (mirrors PHP fw_readable_text)
+  function readableText(color) {
+    const h = String(color || '#8b5cf6').replace('#', '');
+    const hh = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+    if (hh.length < 6) return '#ffffff';
+    const lum = (0.2126 * parseInt(hh.slice(0, 2), 16) + 0.7152 * parseInt(hh.slice(2, 4), 16) + 0.0722 * parseInt(hh.slice(4, 6), 16)) / 255;
+    return lum > 0.6 ? '#1a1a1a' : '#ffffff';
+  }
+
+  function renderNumberLike(cell, columnId, value, isFormula) {
+    if (value !== '' && value !== null && value !== undefined) {
+      const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+      const cfg = col && col.config ? JSON.parse(col.config) : {};
+      const affix = cfg.affix || '';
+      const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
+      const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
+      const num = parseFloat(value);
+      let formatted = esc(value);
+      if (!isNaN(num)) {
+        formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
+        if (!isFormula && cfg.format === 'percentage') formatted += '%';
+      }
+      const sep = '<span style="display:inline-block;width:0.25em;"></span>';
+      const display = affix ? (pos === 'prefix' ? esc(affix) + sep + formatted : formatted + sep + esc(affix)) : formatted;
+      const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
+      cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
+    } else {
+      cell.innerHTML = isFormula ? '—' : '<button class="fw-cell-empty">+</button>';
+    }
+  }
+
   function updateCellDisplay(itemId, columnId, value, columnType) {
     const cell = document.querySelector(`td[data-item-id="${itemId}"][data-column-id="${columnId}"]`);
     if (!cell) {
       console.warn('Cell not found for update:', itemId, columnId);
       return;
     }
-    
+
     cell.dataset.value = value;
-    
+
     switch (columnType) {
       case 'text':
-        cell.innerHTML = value ? value : '<button class="fw-cell-empty">+</button>';
+        cell.innerHTML = value ? esc(value) : '<button class="fw-cell-empty">+</button>';
         break;
-        
+
+      case 'longtext':
+        cell.innerHTML = value
+          ? `<div class="fw-cell-longtext" title="${esc(value)}">${esc(value).replace(/\n/g, '<br>')}</div>`
+          : '<button class="fw-cell-empty">+</button>';
+        break;
+
       case 'number': {
-        if (value !== '' && value !== null && value !== undefined) {
-          const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-          const cfg = col && col.config ? JSON.parse(col.config) : {};
-          const affix = cfg.affix || '';
-          const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
-          const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
-          const num = parseFloat(value);
-          let formatted = value;
-          if (!isNaN(num)) {
-            formatted = num.toLocaleString('en-US', { minimumFractionDigits: precision, maximumFractionDigits: precision });
-            if (cfg.format === 'percentage') formatted += '%';
-          }
-          const sep = '<span style="display:inline-block;width:0.25em;"></span>';
-          const display = affix ? (pos === 'prefix' ? affix + sep + formatted : formatted + sep + affix) : formatted;
-          const negClass = (!isNaN(num) && num < 0) ? ' fw-cell-number--negative' : '';
-          cell.innerHTML = `<span class="fw-cell-number${negClass}">${display}</span>`;
-        } else {
-          cell.innerHTML = '<button class="fw-cell-empty">+</button>';
-        }
+        renderNumberLike(cell, columnId, value, false);
+        break;
+      }
+
+      case 'formula': {
+        renderNumberLike(cell, columnId, value, true);
         break;
       }
         
       case 'status':
         if (value) {
           const statusConfig = window.BOARD_DATA.statusConfig[value] || { label: value, color: '#8b5cf6' };
-          cell.innerHTML = `<span class="fw-status-badge" style="background: ${statusConfig.color};">${value.toUpperCase()}</span>`;
+          cell.innerHTML = `<span class="fw-status-badge" style="background: ${esc(statusConfig.color)};">${esc(value.toUpperCase())}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
@@ -610,8 +690,8 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
             const initials = (user.first_name[0] + user.last_name[0]).toUpperCase();
             cell.innerHTML = `
               <div class="fw-user-pill">
-                <div class="fw-avatar-sm">${initials}</div>
-                <span class="fw-user-name">${user.first_name} ${user.last_name}</span>
+                <div class="fw-avatar-sm">${esc(initials)}</div>
+                <span class="fw-user-name">${esc(user.first_name + ' ' + user.last_name)}</span>
               </div>
             `;
             cell.dataset.userId = user.id;
@@ -628,7 +708,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
             cell.innerHTML = `
               <div class="fw-supplier-pill">
                 <span class="fw-supplier-icon">🏢</span>
-                <span class="fw-supplier-name">${supplier.name}</span>
+                <span class="fw-supplier-name">${esc(supplier.name)}</span>
                 ${supplier.preferred ? '<span class="fw-supplier-badge">⭐</span>' : ''}
               </div>
             `;
@@ -697,7 +777,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           const display = value.replace(/^https?:\/\//, '');
           cell.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
-              <a href="${value}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 ${display}</a>
+              <a href="${esc(value)}" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 ${esc(display)}</a>
               <button type="button" class="fw-cell-edit-btn" title="Edit link" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
             </div>
           `;
@@ -710,7 +790,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
         if (value) {
           cell.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:0;">
-              <a href="mailto:${value}" title="${value}" style="color:var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">✉️ ${value}</a>
+              <a href="mailto:${esc(value)}" title="${esc(value)}" style="color:var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">✉️ ${esc(value)}</a>
               <button type="button" class="fw-cell-edit-btn" title="Edit email" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;flex-shrink:0;">✏️</button>
             </div>
           `;
@@ -731,8 +811,8 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           cell.innerHTML = `
             <div style="display:flex;align-items:center;gap:6px;justify-content:space-between;min-width:0;">
               <div style="display:flex;align-items:center;gap:6px;min-width:0;">
-                <a href="tel:${value}" style="color:var(--primary);white-space:nowrap;">📞 ${formatted}</a>
-                <a href="https://wa.me/${digits}" target="_blank" rel="noopener" title="WhatsApp" style="text-decoration:none;font-size:14px;">💬</a>
+                <a href="tel:${esc(value)}" style="color:var(--primary);white-space:nowrap;">📞 ${esc(formatted)}</a>
+                <a href="https://wa.me/${esc(digits)}" target="_blank" rel="noopener" title="WhatsApp" style="text-decoration:none;font-size:14px;">💬</a>
               </div>
               <button type="button" class="fw-cell-edit-btn" title="Edit phone" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;flex-shrink:0;">✏️</button>
             </div>
@@ -749,7 +829,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           const tags = value.split(',').map(t => t.trim()).filter(t => t);
           cell.innerHTML = '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + tags.map(tag => {
             const color = palette[hash(tag) % palette.length];
-            return `<span class="fw-tag" style="background:${color}22;color:${color};border:1px solid ${color}55;">${tag}</span>`;
+            return `<span class="fw-tag" style="background:${color};color:${readableText(color)};border:1px solid ${color};">${esc(tag)}</span>`;
           }).join('') + '</div>';
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
@@ -796,7 +876,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
           const palette = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6','#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899'];
           const hash = (s) => { let h=0; for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; };
           const color = optionColors[value] || palette[hash(value) % palette.length];
-          cell.innerHTML = `<span class="fw-dropdown-pill" style="background:${color}22;color:${color};border:1px solid ${color}55;">${value}</span>`;
+          cell.innerHTML = `<span class="fw-dropdown-pill" style="background:${color};color:${readableText(color)};border:1px solid ${color};">${esc(value)}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
@@ -804,11 +884,57 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
       }
         
       default:
-        cell.innerHTML = value ? value : '<button class="fw-cell-empty">+</button>';
+        cell.innerHTML = value ? esc(value) : '<button class="fw-cell-empty">+</button>';
     }
   }
 
-  // Expose updateCellDisplay
+  // ===== KEYBOARD OPERABILITY =====
+  // Cells carry tabindex="0"; Enter/Space opens the editor, arrows rove focus
+  // between cells (left/right within the row, up/down across rows).
+  document.addEventListener('keydown', (e) => {
+    const cell = e.target.closest && e.target.closest('td.fw-cell');
+    if (!cell || e.target !== cell) return;
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const itemId = parseInt(cell.dataset.itemId, 10);
+      const colId = parseInt(cell.dataset.columnId, 10);
+      window.BoardApp.editCell(itemId, colId, cell.dataset.type, {
+        currentTarget: cell,
+        target: cell,
+        stopPropagation() {}
+      });
+      return;
+    }
+
+    let target = null;
+    if (e.key === 'ArrowRight') {
+      target = cell.nextElementSibling;
+      while (target && !target.classList.contains('fw-cell')) target = target.nextElementSibling;
+    } else if (e.key === 'ArrowLeft') {
+      target = cell.previousElementSibling;
+      while (target && !target.classList.contains('fw-cell')) target = target.previousElementSibling;
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const row = cell.closest('tr.fw-item-row');
+      if (row) {
+        let sibling = e.key === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling;
+        while (sibling && !sibling.classList.contains('fw-item-row')) {
+          sibling = e.key === 'ArrowDown' ? sibling.nextElementSibling : sibling.previousElementSibling;
+        }
+        if (sibling) target = sibling.querySelector(`td.fw-cell[data-column-id="${cell.dataset.columnId}"]`);
+      }
+    }
+
+    if (target) {
+      e.preventDefault();
+      target.focus();
+    }
+  });
+
+  // Expose the full renderer. realtime.js wraps this as BoardApp.updateCellDOM
+  // (adding flash animation, cache + aggregation updates); the direct assignment
+  // below is only the fallback for when realtime.js fails to load.
+  window.BoardApp.renderCellFull = updateCellDisplay;
   window.BoardApp.updateCellDOM = updateCellDisplay;
 
   // ===== HELPER: FILTER PICKER OPTIONS =====

@@ -496,3 +496,23 @@
     transform: none;
   }
 }
+
+/* ========== FORCED COLORS (Windows High Contrast) ========== */
+@media (forced-colors: active) {
+  .fw-agg-value,
+  .fw-board-agg-value {
+    background: none !important;
+    -webkit-text-fill-color: CanvasText !important;
+    color: CanvasText !important;
+  }
+
+  .fw-status-badge,
+  .fw-priority-pill,
+  .fw-tag,
+  .fw-dropdown-pill,
+  .fw-user-pill,
+  .fw-date-pill {
+    border: 1px solid CanvasText !important;
+    forced-color-adjust: auto;
+  }
+}

@@ -74,39 +74,55 @@
 
   console.log('🔗 Full URLs:', urls);
 
-  // Load files sequentially
-  let loadedCount = 0;
-
-  function loadNext(index) {
-    if (index >= urls.length) {
-      console.log('✅ All modules loaded successfully:', loadedCount);
-      dispatchEvent('fw:modules-ready', { count: loadedCount });
-      return;
-    }
-
-    const url = urls[index];
-    console.log(`📥 Loading [${index + 1}/${urls.length}]:`, url);
-
+  // Inject all scripts at once. script.async = false preserves execution order,
+  // so this is equivalent to the old sequential chain but loads in parallel —
+  // and one failed/timed-out file no longer kills every module after it.
+  const results = urls.map((url, index) =>
     loadScript(url, timeout)
       .then(() => {
-        loadedCount++;
-        console.log(`✅ Loaded [${index + 1}/${urls.length}]:`, url);
         dispatchEvent('fw:module-loaded', { src: url, index: index });
-        
-        // Load next file
-        loadNext(index + 1);
+        return { url, ok: true };
       })
       .catch(err => {
         console.error(`❌ Failed [${index + 1}/${urls.length}]:`, url, err.message);
         dispatchEvent('fw:modules-error', { src: url, error: err.message, index: index });
-        
-        // Stop loading on error
-        console.error('❌ Stopping module loading due to error');
-      });
-  }
+        return { url, ok: false, error: err.message };
+      })
+  );
 
-  // Start loading
-  loadNext(0);
+  Promise.all(results).then(outcomes => {
+    const failed = outcomes.filter(o => !o.ok);
+    const loadedCount = outcomes.length - failed.length;
+
+    console.log(`✅ Modules loaded: ${loadedCount}/${outcomes.length}`);
+    window.__fwModulesReady = true;
+    dispatchEvent('fw:modules-ready', { count: loadedCount, failed: failed.map(f => f.url) });
+
+    if (failed.length > 0) {
+      showLoadWarning(failed.length);
+    }
+  });
+
+  function showLoadWarning(failedCount) {
+    const show = () => {
+      const banner = document.createElement('div');
+      banner.setAttribute('role', 'alert');
+      banner.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
+        'background:#b45309;color:#fff;padding:10px 18px;border-radius:8px;font:600 13px/1.4 sans-serif;' +
+        'z-index:10001;box-shadow:0 8px 24px rgba(0,0,0,0.35);display:flex;gap:12px;align-items:center;';
+      banner.innerHTML = '<span>⚠️ Some board features failed to load (' + failedCount + ' module' +
+        (failedCount > 1 ? 's' : '') + ').</span>';
+      const btn = document.createElement('button');
+      btn.textContent = 'Refresh';
+      btn.style.cssText = 'background:rgba(255,255,255,0.2);border:none;color:#fff;padding:4px 12px;' +
+        'border-radius:6px;font-weight:700;cursor:pointer;';
+      btn.addEventListener('click', () => location.reload());
+      banner.appendChild(btn);
+      document.body.appendChild(banner);
+    };
+    if (document.body) show();
+    else document.addEventListener('DOMContentLoaded', show);
+  }
 
   // ========== HELPER FUNCTIONS ==========
 

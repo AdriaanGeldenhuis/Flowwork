@@ -160,12 +160,39 @@
     return true;
   }
 
+  // ===== CHROME HEIGHT MEASUREMENT =====
+  // Writes the real bottom edge of the fixed header+toolbar chrome to
+  // --fw-chrome-h so CSS offsets (board container, bulk bar) track the actual
+  // height instead of a hardcoded 104/140px that breaks when the toolbar wraps.
+  function initChromeHeight() {
+    const toolbar = document.querySelector('.fw-board-toolbar');
+    const header = document.querySelector('.fw-board-header');
+    if (!toolbar && !header) return;
+
+    const measure = () => {
+      const el = toolbar || header;
+      const rect = el.getBoundingClientRect();
+      const bottom = Math.max(0, Math.round(rect.bottom));
+      document.documentElement.style.setProperty('--fw-chrome-h', bottom + 'px');
+    };
+
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      if (toolbar) ro.observe(toolbar);
+      if (header) ro.observe(header);
+    }
+    window.addEventListener('resize', measure);
+  }
+
   // ===== INITIALIZE =====
   function init() {
     if (initialized) {
       console.log('⚠️ Header already initialized, skipping');
       return;
     }
+
+    initChromeHeight();
 
     const themeOk = initThemeToggle();
     const menuOk = initBoardMenu();

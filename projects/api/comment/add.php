@@ -26,7 +26,7 @@ try {
     
     // Verify item access
     $stmt = $DB->prepare("
-        SELECT bi.id, bi.board_id 
+        SELECT bi.id, bi.board_id, bi.title
         FROM board_items bi
         JOIN project_boards pb ON bi.board_id = pb.board_id
         WHERE bi.id = ? AND pb.company_id = ?
@@ -90,8 +90,37 @@ try {
         error_log("Audit log error: " . $e->getMessage());
     }
     
-    // TODO: Send notifications to mentioned users
-    
+    // Notify mentioned users through the app-wide notifications table
+    if (!empty($mentionedUsers)) {
+        try {
+            $stmt = $DB->prepare("SELECT first_name, last_name FROM users WHERE id = ?");
+            $stmt->execute([$USER_ID]);
+            $author = $stmt->fetch(PDO::FETCH_ASSOC);
+            $authorName = $author ? trim($author['first_name'] . ' ' . $author['last_name']) : 'Someone';
+
+            $excerpt = mb_substr($comment, 0, 120) . (mb_strlen($comment) > 120 ? '…' : '');
+            $url = '/projects/board.php?board_id=' . (int)$item['board_id']
+                 . '&item=' . (int)$itemId . '&open=comments';
+
+            $insert = $DB->prepare("
+                INSERT INTO notifications (company_id, user_id, type, title, message, url, created_at, is_read)
+                VALUES (?, ?, 'mention', ?, ?, ?, NOW(), 0)
+            ");
+            foreach ($mentionedUsers as $mu) {
+                if ((int)$mu['id'] === (int)$USER_ID) continue; // don't notify yourself
+                $insert->execute([
+                    $COMPANY_ID,
+                    (int)$mu['id'],
+                    $authorName . ' mentioned you',
+                    '"' . $item['title'] . '": ' . $excerpt,
+                    $url,
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log('Mention notification error: ' . $e->getMessage());
+        }
+    }
+
     api_success([
         'comment_id' => $commentId,
         'mentioned_users' => array_column($mentionedUsers, 'id')

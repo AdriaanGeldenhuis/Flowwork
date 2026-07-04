@@ -11,8 +11,7 @@
   let dragState = {
     draggedItem: null,
     draggedElement: null,
-    sourceGroupId: null,
-    placeholder: null
+    sourceGroupId: null
   };
 
   // ===== INIT DRAG & DROP =====
@@ -78,14 +77,9 @@
     row.classList.add('fw-dragging');
     row.style.opacity = '0.5';
     row.style.cursor = 'grabbing';
-    
-    // Create placeholder
-    dragState.placeholder = createPlaceholder();
-    
+
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/html', row.innerHTML);
-    
-    console.log('🎯 Drag started:', dragState.draggedItem);
+    e.dataTransfer.setData('text/plain', String(dragState.draggedItem.id));
   }
 
   // ===== DRAG OVER =====
@@ -116,12 +110,13 @@
       }
     }
     
-    // Allow drop on group header
-    if (targetGroup && !targetRow) {
+    // Allow drop on group header OR anywhere in a group's body (incl. empty groups)
+    if (targetGroup && !targetRow && !targetGroup.classList.contains('fw-board-totals-group')) {
       const groupHeader = e.target.closest('.fw-group-header');
       if (groupHeader) {
-        e.preventDefault();
         groupHeader.style.background = 'rgba(139, 92, 246, 0.2)';
+      } else if (e.target.closest('.fw-group-content')) {
+        targetGroup.classList.add('fw-group-drop-target');
       }
     }
   }
@@ -142,10 +137,15 @@
     if (groupHeader) {
       groupHeader.style.background = '';
     }
-    
+
     const row = e.target.closest('.fw-item-row');
     if (row) {
       row.classList.remove('fw-drag-over-top', 'fw-drag-over-bottom');
+    }
+
+    const group = e.target.closest('.fw-group');
+    if (group && !group.contains(e.relatedTarget)) {
+      group.classList.remove('fw-group-drop-target');
     }
   }
 
@@ -166,50 +166,43 @@
       groupHeader.style.background = '';
     }
     
+    document.querySelectorAll('.fw-group-drop-target').forEach(el => el.classList.remove('fw-group-drop-target'));
+
     const targetRow = e.target.closest('.fw-item-row');
     const targetGroup = e.target.closest('.fw-group');
-    
+
     if (targetRow && targetRow !== dragState.draggedElement) {
-      // Drop on row
+      // Drop on row (above or below its midpoint)
       const rect = targetRow.getBoundingClientRect();
       const isAbove = e.clientY < (rect.top + rect.height / 2);
-      
+
       const tbody = targetRow.closest('tbody');
       if (isAbove) {
         tbody.insertBefore(dragState.draggedElement, targetRow);
       } else {
         tbody.insertBefore(dragState.draggedElement, targetRow.nextSibling);
       }
-      
+
       const targetGroupId = parseInt(targetRow.dataset.groupId);
-      const targetItemId = parseInt(targetRow.dataset.itemId);
-      
-      // Update dataset
       dragState.draggedElement.dataset.groupId = targetGroupId;
-      
-      // Save to server
-      saveItemPosition(
-        dragState.draggedItem.id,
-        targetGroupId,
-        isAbove ? targetItemId : null
-      );
-      
-    } else if (targetGroup && groupHeader) {
-      // Drop on group header - move to end of group
+      saveItemPosition(dragState.draggedItem.id, targetGroupId, dragState.sourceGroupId);
+
+    } else if (targetGroup && !targetGroup.classList.contains('fw-board-totals-group')
+               && (groupHeader || e.target.closest('.fw-group-content'))) {
+      // Drop on the group header or anywhere in the group body — append to the
+      // end of that group. This is also how empty groups accept their first item.
       const targetGroupId = parseInt(targetGroup.dataset.groupId);
       const tbody = targetGroup.querySelector('tbody');
-      const addRow = tbody.querySelector('.fw-add-row');
-      
-      tbody.insertBefore(dragState.draggedElement, addRow);
-      
-      // Update dataset
+
+      // An empty group shows a placeholder row — clear it before inserting
+      tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+
+      const insertBeforeEl = tbody.querySelector('.fw-agg-row') || tbody.querySelector('.fw-add-row');
+      tbody.insertBefore(dragState.draggedElement, insertBeforeEl || null);
+
       dragState.draggedElement.dataset.groupId = targetGroupId;
-      
-      // Save to server
-      saveItemPosition(dragState.draggedItem.id, targetGroupId, null);
+      saveItemPosition(dragState.draggedItem.id, targetGroupId, dragState.sourceGroupId);
     }
-    
-    console.log('✅ Drop completed');
   }
 
   // ===== DRAG END =====
@@ -229,63 +222,58 @@
       header.style.background = '';
     });
     
-    if (dragState.placeholder && dragState.placeholder.parentNode) {
-      dragState.placeholder.remove();
-    }
-    
+    document.querySelectorAll('.fw-group-drop-target').forEach(el => el.classList.remove('fw-group-drop-target'));
+
     // Reset state
     dragState = {
       draggedItem: null,
       draggedElement: null,
-      sourceGroupId: null,
-      placeholder: null
+      sourceGroupId: null
     };
-    
-    console.log('🎯 Drag ended');
-  }
-
-  // ===== CREATE PLACEHOLDER =====
-  function createPlaceholder() {
-    const placeholder = document.createElement('tr');
-    placeholder.className = 'fw-drag-placeholder';
-    placeholder.innerHTML = '<td colspan="100" style="height: 50px; background: rgba(139, 92, 246, 0.1); border: 2px dashed var(--primary);"></td>';
-    return placeholder;
   }
 
   // ===== SAVE ITEM POSITION =====
-  function saveItemPosition(itemId, newGroupId, beforeItemId) {
-    console.log('💾 Saving position:', { itemId, newGroupId, beforeItemId });
-    
-    const data = {
-      item_id: itemId,
-      group_id: newGroupId
-    };
-    
-    if (beforeItemId) {
-      data.before_item_id = beforeItemId;
-    }
-    
-    window.BoardApp.apiCall('/projects/api/item.move.php', data)
-      .then(response => {
-        console.log('✅ Item position saved:', response);
-        
+  // Persist what the DOM now shows: move the item to its (possibly new) group,
+  // then send the destination group's full row order to item.reorder.php.
+  // The old before_item_id approach silently appended on drop-below, letting
+  // the DOM and DB diverge until the next reload.
+  function saveItemPosition(itemId, newGroupId, sourceGroupId) {
+    const tbody = document.querySelector(`.fw-group[data-group-id="${newGroupId}"] tbody`);
+    const orderedIds = tbody
+      ? Array.from(tbody.querySelectorAll('tr.fw-item-row')).map(r => r.dataset.itemId)
+      : [];
+
+    const reorder = () => window.BoardApp.apiCall('/projects/api/item.reorder.php', {
+      board_id: window.BOARD_DATA.boardId,
+      group_id: newGroupId,
+      ordered_item_ids: orderedIds
+    });
+
+    const changedGroup = String(newGroupId) !== String(sourceGroupId);
+    const chain = changedGroup
+      ? window.BoardApp.apiCall('/projects/api/item.move.php', { item_id: itemId, group_id: newGroupId }).then(reorder)
+      : reorder();
+
+    chain
+      .then(() => {
         // Update in memory
-        const item = window.BOARD_DATA.items.find(i => i.id == itemId);
-        if (item) {
-          item.group_id = newGroupId;
-        }
-        
-        // Update group counts
+        const item = window.BOARD_DATA.items.find(i => String(i.id) === String(itemId));
+        if (item) item.group_id = newGroupId;
+
         updateAllGroupCounts();
-        
-        // Show success feedback
-        showToast('✅ Item moved', 'success');
+
+        if (changedGroup && window.BoardApp.updateAggregations) {
+          window.BoardApp.updateAggregations(sourceGroupId);
+          window.BoardApp.updateAggregations(newGroupId);
+        }
+
+        showToast('Item moved', 'success');
       })
       .catch(err => {
         console.error('❌ Save position failed:', err);
-        showToast('❌ Failed to move item: ' + err.message, 'error');
-        
-        // Reload on error
+        showToast('Failed to move item: ' + err.message, 'error');
+
+        // Reload on error — the DOM may no longer match the server
         setTimeout(() => {
           window.location.reload();
         }, 1500);
@@ -312,40 +300,18 @@
     });
   }
 
-  // ===== SHOW TOAST =====
+  // ===== SHOW TOAST (delegates to the canonical toast in ui.js) =====
   function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `fw-toast fw-toast--${type}`;
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 12px 20px;
-      background: rgba(33, 38, 45, 0.98);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 8px;
-      color: white;
-      font-size: 14px;
-      font-weight: 600;
-      z-index: 10000;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      animation: slideInRight 0.3s ease;
-    `;
-    
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.style.animation = 'slideOutRight 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 2500);
+    if (typeof window.BoardApp.showToast === 'function') {
+      window.BoardApp.showToast(message, type);
+    }
   }
 
   // ===== EXPOSE FUNCTIONS =====
   window.BoardApp.dragDrop = {
     reinit: makeItemsDraggable,
-    updateCounts: updateAllGroupCounts
+    updateCounts: updateAllGroupCounts,
+    persistDrop: saveItemPosition // (itemId, newGroupId, sourceGroupId) — used by touch-dnd.js
   };
 
   // ===== INITIALIZE ON LOAD =====

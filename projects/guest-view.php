@@ -99,6 +99,29 @@ if (!empty($itemIds)) {
     }
 }
 
+// ===== LOAD COMMENTS (read-only context for guests) =====
+$commentsMap = [];
+if (!empty($itemIds)) {
+    $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+    $stmt = $DB->prepare("
+        SELECT c.item_id, c.comment, c.created_at, u.first_name, u.last_name
+        FROM board_item_comments c
+        LEFT JOIN users u ON c.user_id = u.id
+        WHERE c.item_id IN ($placeholders)
+        ORDER BY c.created_at ASC
+        LIMIT 1000
+    ");
+    $stmt->execute($itemIds);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $commentsMap[(int)$row['item_id']][] = $row;
+    }
+}
+
+// ===== FRESHNESS PROBE CURSOR =====
+$stmt = $DB->prepare("SELECT COALESCE(MAX(id), 0) FROM board_audit_log WHERE board_id = ?");
+$stmt->execute([$boardId]);
+$GUEST_LAST_AUDIT_ID = (int)$stmt->fetchColumn();
+
 // ===== STATUS CONFIG =====
 $statusConfig = [
     'todo' => ['label' => 'To Do', 'color' => '#64748b'],
@@ -113,6 +136,15 @@ $statusConfig = [
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($guest['title']) ?> – Guest View</title>
+    <link rel="stylesheet" href="/projects/assets/base.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/theme.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/layout.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/table.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/components.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/modals.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/views.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/mobile.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="/projects/assets/board-3d.css?v=<?= time() ?>">
     <link rel="stylesheet" href="/projects/assets/board.css?v=<?= time() ?>">
     <style>
         /* Make everything read-only */
@@ -195,6 +227,9 @@ $statusConfig = [
         </div>
 
         <div class="fw-board-header__controls">
+            <span id="guestDataStamp" style="padding: 8px 12px; font-size: 12px; color: rgba(255,255,255,0.6);">
+                Data as of <?= date('H:i') ?>
+            </span>
             <span style="padding: 8px 16px; background: rgba(255,255,255,0.1); border-radius: 6px; font-size: 12px; font-weight: 600;">
                 👁️ Read-Only Access
             </span>
@@ -281,10 +316,17 @@ $statusConfig = [
                                         <tr class="fw-item-row" data-item-id="<?= $item['id'] ?>">
                                             
                                             <td class="fw-col-item">
-                                                <input type="text" 
-                                                       class="fw-item-title" 
-                                                       value="<?= htmlspecialchars($item['title']) ?>" 
+                                                <input type="text"
+                                                       class="fw-item-title"
+                                                       value="<?= htmlspecialchars($item['title']) ?>"
                                                        readonly />
+                                                <?php $itemComments = $commentsMap[(int)$item['id']] ?? []; ?>
+                                                <?php if (!empty($itemComments)): ?>
+                                                    <button type="button"
+                                                            class="fw-item-comments-btn"
+                                                            aria-label="Show comments (<?= count($itemComments) ?>)"
+                                                            onclick="toggleGuestComments(<?= $item['id'] ?>)">💬 <?= count($itemComments) ?></button>
+                                                <?php endif; ?>
                                             </td>
 
                                             <?php foreach ($columns as $col): ?>
@@ -314,6 +356,19 @@ $statusConfig = [
                                                 </td>
                                             <?php endforeach; ?>
                                         </tr>
+                                        <?php if (!empty($itemComments)): ?>
+                                            <tr class="fw-guest-comments-row" id="guestComments-<?= $item['id'] ?>" style="display:none;">
+                                                <td colspan="<?= 1 + count($columns) ?>" style="padding: 8px 16px 12px; background: rgba(139,92,246,0.05);">
+                                                    <?php foreach ($itemComments as $gc): ?>
+                                                        <div style="padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
+                                                            <strong><?= htmlspecialchars(trim(($gc['first_name'] ?? '') . ' ' . ($gc['last_name'] ?? '')) ?: 'Someone') ?></strong>
+                                                            <span style="opacity:0.5; font-size: 11px; margin-left: 6px;"><?= htmlspecialchars(date('M j, Y H:i', strtotime($gc['created_at']))) ?></span>
+                                                            <div><?= nl2br(htmlspecialchars($gc['comment'])) ?></div>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endif; ?>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
                             </tbody>
@@ -344,6 +399,56 @@ window.BOARD_DATA = {
     columns: <?= json_encode($columns ?? []) ?>,
     statusConfig: <?= json_encode($statusConfig) ?>
 };
+
+// ===== READ-ONLY COMMENTS TOGGLE =====
+function toggleGuestComments(itemId) {
+    const row = document.getElementById('guestComments-' + itemId);
+    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+// ===== FRESHNESS PROBE =====
+// Polls a token-validated endpoint for the board's latest audit id; when the
+// board moves on, show a "board updated" banner instead of silently going stale.
+(function() {
+    'use strict';
+
+    const token = new URLSearchParams(window.location.search).get('token');
+    let cursor = <?= $GUEST_LAST_AUDIT_ID ?>;
+    let bannerShown = false;
+
+    if (!token) return;
+
+    function showBanner() {
+        if (bannerShown) return;
+        bannerShown = true;
+
+        const banner = document.createElement('div');
+        banner.setAttribute('role', 'status');
+        banner.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);' +
+            'background:#1e1e28;border:1px solid rgba(255,255,255,0.15);color:#fff;padding:10px 18px;' +
+            'border-radius:8px;font-size:13px;font-weight:600;z-index:10001;display:flex;gap:12px;align-items:center;' +
+            'box-shadow:0 8px 24px rgba(0,0,0,0.35);';
+        banner.innerHTML = '<span>This board has been updated.</span>';
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Refresh';
+        btn.style.cssText = 'background:#8b5cf6;border:none;color:#fff;padding:4px 12px;border-radius:6px;font-weight:700;cursor:pointer;';
+        btn.addEventListener('click', () => location.reload());
+        banner.appendChild(btn);
+
+        document.body.appendChild(banner);
+    }
+
+    setInterval(() => {
+        if (document.hidden || bannerShown) return;
+        fetch('/projects/guest-changes.php?token=' + encodeURIComponent(token))
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok && data.last_id > cursor) showBanner();
+            })
+            .catch(() => { /* transient — retry next tick */ });
+    }, 60000);
+})();
 
 // ===== PERFECT 1:1 SCROLL SYNC =====
 (function() {

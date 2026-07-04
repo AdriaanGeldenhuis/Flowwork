@@ -212,7 +212,7 @@
           <option value="low">Low</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
-          <option value="extreme">Extreme</option>
+          <option value="critical">Critical</option>
         </select>
       `;
     } else if (valueType === 'group') {
@@ -233,65 +233,76 @@
     }
   }
 
-  // ===== APPLY FILTERS =====
+  // ===== APPLY FILTERS (from the builder modal) =====
   window.BoardApp.applyFilters = function() {
     const rows = document.querySelectorAll('.fw-filter-row');
     const filters = [];
-    
+
     rows.forEach(row => {
       const field = row.querySelector('.fw-filter-field').value;
       const operator = row.querySelector('.fw-filter-operator').value;
       const value = row.querySelector('.fw-filter-value').value;
-      
+
       if (field && operator) {
         filters.push({ field, operator, value });
       }
     });
-    
-    window.BoardApp.activeFilters = filters;
-    
-    // Update filter chip
-    const chip = document.getElementById('filterChip');
-    if (chip) {
-      if (filters.length > 0) {
-        chip.innerHTML = `
-          <svg width="14" height="14" fill="currentColor"><path d="M0 1h14M2 5h10M4 9h6"/></svg>
-          Filters (${filters.length})
-        `;
-        chip.classList.add('fw-chip--active');
-      } else {
-        chip.innerHTML = `
-          <svg width="14" height="14" fill="currentColor"><path d="M0 1h14M2 5h10M4 9h6"/></svg>
-          Filters
-        `;
-        chip.classList.remove('fw-chip--active');
-      }
-    }
-    
+
     document.querySelector('.fw-modal-overlay')?.remove();
-    
-    if (filters.length > 0) {
-      // Apply filters via API
-      window.BoardApp.apiCall('/projects/api/filter/apply.php', {
-        board_id: window.BOARD_DATA.boardId,
-        filters: JSON.stringify(filters)
-      }).then(data => {
-        console.log('✅ Filters applied:', data);
-        // Update UI with filtered items
-        renderFilteredItems(data.items);
-      }).catch(err => {
-        alert('Failed to apply filters: ' + err.message);
-      });
-    } else {
-      // Show all items
-      window.location.reload();
-    }
+    window.BoardApp.applyFilterSet(filters);
   };
+
+  // ===== APPLY A FILTER SET (programmatic — also used by saved views) =====
+  window.BoardApp.applyFilterSet = function(filters) {
+    filters = Array.isArray(filters) ? filters : [];
+    window.BoardApp.activeFilters = filters;
+    updateFilterChip(filters.length);
+
+    if (filters.length === 0) {
+      window.BoardApp.clearFilters();
+      return Promise.resolve();
+    }
+
+    // Apply via API, then feed the shared visibility engine so the table AND
+    // kanban/calendar/gantt all narrow to the same items.
+    return window.BoardApp.apiCall('/projects/api/filter/apply.php', {
+      board_id: window.BOARD_DATA.boardId,
+      filters: JSON.stringify(filters)
+    }).then(data => {
+      const items = data.items || [];
+      window.BoardApp.filteredItemIds = new Set(items.map(i => String(i.id)));
+      window.BoardApp.refreshTableVisibility();
+      if (window.BoardApp.showToast) {
+        window.BoardApp.showToast(`Filter matches ${items.length} item${items.length === 1 ? '' : 's'}`, 'info');
+      }
+    }).catch(err => {
+      alert('Failed to apply filters: ' + err.message);
+    });
+  };
+
+  function updateFilterChip(count) {
+    const chip = document.getElementById('filterChip');
+    if (!chip) return;
+    if (count > 0) {
+      chip.innerHTML = `
+        <svg width="14" height="14" fill="currentColor"><path d="M0 1h14M2 5h10M4 9h6"/></svg>
+        Filters (${count})
+      `;
+      chip.classList.add('fw-chip--active');
+    } else {
+      chip.innerHTML = `
+        <svg width="14" height="14" fill="currentColor"><path d="M0 1h14M2 5h10M4 9h6"/></svg>
+        Filters
+      `;
+      chip.classList.remove('fw-chip--active');
+    }
+  }
 
   // ===== CLEAR FILTERS =====
   window.BoardApp.clearFilters = function() {
     window.BoardApp.activeFilters = [];
-    
+    window.BoardApp.filteredItemIds = null;
+
     const chip = document.getElementById('filterChip');
     if (chip) {
       chip.innerHTML = `
@@ -300,51 +311,10 @@
       `;
       chip.classList.remove('fw-chip--active');
     }
-    
-    document.querySelector('.fw-modal-overlay')?.remove();
-    window.location.reload();
-  };
 
-  // ===== RENDER FILTERED ITEMS =====
-  function renderFilteredItems(items) {
-    // Hide all items first
-    document.querySelectorAll('.fw-item-row').forEach(row => {
-      row.style.display = 'none';
-    });
-    
-    // Show filtered items
-    const itemIds = items.map(i => i.id);
-    itemIds.forEach(id => {
-      const row = document.querySelector(`[data-item-id="${id}"]`);
-      if (row) row.style.display = '';
-    });
-    
-    // Show empty state if no results
-    if (items.length === 0) {
-      const firstGroup = document.querySelector('.fw-group tbody');
-      if (firstGroup) {
-        const emptyRow = document.createElement('tr');
-        emptyRow.className = 'fw-filter-empty';
-        emptyRow.innerHTML = `
-          <td colspan="100" class="fw-empty-state">
-            <div class="fw-empty-icon">🔍</div>
-            <div class="fw-empty-title">No items match your filters</div>
-            <div class="fw-empty-text">Try adjusting your filter criteria</div>
-            <button class="fw-btn fw-btn--primary" onclick="BoardApp.clearFilters()">Clear Filters</button>
-          </td>
-        `;
-        firstGroup.insertBefore(emptyRow, firstGroup.firstChild);
-      }
-    }
-    
-    // Update group counts
-    document.querySelectorAll('.fw-group').forEach(group => {
-      const groupId = group.dataset.groupId;
-      const visibleItems = group.querySelectorAll('.fw-item-row[style=""]').length;
-      const countEl = group.querySelector('.fw-group-count');
-      if (countEl) countEl.textContent = visibleItems;
-    });
-  }
+    document.querySelector('.fw-modal-overlay')?.remove();
+    window.BoardApp.refreshTableVisibility();
+  };
 
   // ===== HELPER: CREATE MODAL =====
   function createModal(title, content) {

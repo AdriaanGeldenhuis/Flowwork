@@ -95,40 +95,89 @@ window.BoardApp.quickAddItem = function(input, groupId) {
   });
 };
 
-  // ===== DUPLICATE ITEM =====
+  // ===== DUPLICATE ITEM (renders the copy in place — no reload) =====
   window.BoardApp.duplicateItem = function(itemId) {
-    console.log('📋 Duplicating item:', itemId);
-    
     window.BoardApp.apiCall('/projects/api/item.duplicate.php', {
       item_id: itemId
     }).then(data => {
-      console.log('✅ Item duplicated:', data.item_id);
-      window.location.reload();
+      const item = data.item;
+      if (!item || !window.BoardApp.addItemToDOM) {
+        window.location.reload();
+        return;
+      }
+
+      // addItemToDOM inserts the table row AND pushes into BOARD_DATA.items
+      window.BoardApp.addItemToDOM(item, item.group_id);
+
+      // Render the copied cell values
+      const values = data.values || {};
+      window.BOARD_DATA.valuesMap[item.id] = Object.assign({}, values);
+      Object.entries(values).forEach(([colId, value]) => {
+        const col = (window.BOARD_DATA.columns || []).find(c => String(c.column_id) === String(colId));
+        if (col && window.BoardApp.renderCellFull) {
+          window.BoardApp.renderCellFull(item.id, colId, value, col.type);
+        }
+      });
+
+      // Item-field-backed cells (status/people/date/priority fallbacks)
+      const fieldCells = [
+        ['status', item.status_label], ['people', item.assigned_to],
+        ['date', item.due_date ? String(item.due_date).split(' ')[0] : null], ['priority', item.priority]
+      ];
+      fieldCells.forEach(([type, value]) => {
+        if (!value) return;
+        const col = (window.BOARD_DATA.columns || []).find(c => c.type === type);
+        if (col && !(values && values[col.column_id]) && window.BoardApp.renderCellFull) {
+          window.BoardApp.renderCellFull(item.id, col.column_id, value, type);
+        }
+      });
+
+      if (window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(item.group_id);
+      if (window.BoardApp.updateBoardTotals) window.BoardApp.updateBoardTotals();
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Item duplicated', 'success');
     }).catch(err => {
       console.error('❌ Duplicate error:', err);
       alert('Failed to duplicate: ' + err.message);
     });
   };
 
-  // ===== DELETE ITEM =====
+  // ===== DELETE ITEM (soft-archive with Undo) =====
   window.BoardApp.deleteItem = function(itemId) {
-    if (!confirm('Delete this item permanently?')) return;
-    
-    console.log('🗑️ Deleting item:', itemId);
-    
-    window.BoardApp.apiCall('/projects/api/item.delete.php', {
-      item_id: itemId
+    // Archive instead of hard-deleting so the action is reversible from the toast
+    window.BoardApp.apiCall('/projects/api/item.update.php', {
+      item_id: itemId,
+      archived: 1
     }).then(() => {
-      console.log('✅ Item deleted');
-      
-      const row = document.querySelector(`[data-item-id="${itemId}"]`);
-      if (row) {
-        row.style.transition = 'opacity 0.3s, transform 0.3s';
-        row.style.opacity = '0';
-        row.style.transform = 'translateX(-20px)';
-        setTimeout(() => row.remove(), 300);
+      const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+      if (row) row.style.display = 'none';
+
+      if (typeof window.BoardApp.showToast !== 'function') {
+        if (row) row.remove();
+        return;
       }
-      
+
+      window.BoardApp.showToast('Item deleted', 'info', {
+        duration: 8000,
+        actionLabel: 'Undo',
+        onAction: () => {
+          window.BoardApp.apiCall('/projects/api/item.update.php', {
+            item_id: itemId,
+            archived: 0
+          }).then(() => {
+            if (row) row.style.display = '';
+            window.BoardApp.showToast('Item restored', 'success');
+          }).catch(err => {
+            alert('Failed to restore item: ' + err.message);
+          });
+        },
+        onExpire: () => {
+          if (window.BoardApp.removeItemFromDOM) {
+            window.BoardApp.removeItemFromDOM(itemId);
+          } else if (row) {
+            row.remove();
+          }
+        }
+      });
     }).catch(err => {
       console.error('❌ Delete error:', err);
       alert('Failed to delete: ' + err.message);
@@ -144,6 +193,13 @@ window.BoardApp.showItemMenu = function(itemId, event) {
   window.BoardApp.closeAllDropdowns();
   
   const html = `
+    <button class="fw-dropdown-item" onclick="BoardApp.openItemPanel(${itemId})">
+      <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
+        <rect x="2" y="2" width="10" height="10" rx="1" stroke="currentColor" fill="none"/>
+        <path d="M8 2v10" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      Open Item
+    </button>
     <button class="fw-dropdown-item" onclick="BoardApp.showSubitems(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
         <path d="M4 6h8M4 9h8M4 12h8" stroke="currentColor" stroke-width="1.5"/>
@@ -151,7 +207,7 @@ window.BoardApp.showItemMenu = function(itemId, event) {
       Subitems
     </button>
     <hr style="margin: 8px 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
-    <button class="fw-dropdown-item" onclick="BoardApp.showItemComments(${itemId})">
+    <button class="fw-dropdown-item" onclick="BoardApp.showComments(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
         <path d="M3 3h8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3 2V4a1 1 0 0 1 1-1z"/>
       </svg>
@@ -171,6 +227,18 @@ window.BoardApp.showItemMenu = function(itemId, event) {
       </svg>
       Activity Log
     </button>
+    <button class="fw-dropdown-item" onclick="BoardApp.showMoveToGroup(${itemId})">
+      <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
+        <path d="M7 2v10M3 8l4 4 4-4" stroke="currentColor" fill="none" stroke-width="1.5"/>
+      </svg>
+      Move to Group
+    </button>
+    <button class="fw-dropdown-item" onclick="BoardApp.copyItemLink(${itemId})">
+      <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
+        <path d="M6 8a3 3 0 0 1 0-4l2-2a3 3 0 0 1 4 4l-1 1M8 6a3 3 0 0 1 0 4l-2 2a3 3 0 0 1-4-4l1-1" stroke="currentColor" fill="none" stroke-width="1.5"/>
+      </svg>
+      Copy Item Link
+    </button>
     <hr style="margin: 8px 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
     <button class="fw-dropdown-item fw-dropdown-item--danger" onclick="BoardApp.deleteItem(${itemId})">
       <svg width="14" height="14" fill="currentColor" style="margin-right: 8px;">
@@ -182,6 +250,84 @@ window.BoardApp.showItemMenu = function(itemId, event) {
   
   window.BoardApp.showDropdown(event.target, html);
 };
+
+  // ===== MOVE TO GROUP (keyboard/touch-friendly alternative to dragging) =====
+  window.BoardApp.showMoveToGroup = function(itemId) {
+    window.BoardApp.closeAllDropdowns();
+
+    const item = (window.BOARD_DATA.items || []).find(i => String(i.id) === String(itemId));
+    const groups = (window.BOARD_DATA.groups || []).filter(g => !item || String(g.id) !== String(item.group_id));
+    if (groups.length === 0) {
+      if (window.BoardApp.showToast) window.BoardApp.showToast('No other group to move to', 'info');
+      return;
+    }
+
+    const esc = window.BoardApp.escapeHtml || (s => s);
+    const overlay = document.createElement('div');
+    overlay.className = 'fw-modal-overlay';
+    overlay.innerHTML = `
+      <div class="fw-modal-content fw-slide-up" style="max-width: 380px;">
+        <div class="fw-modal-header"><h3 style="margin:0;font-size:17px;font-weight:700;">Move to group</h3></div>
+        <div class="fw-modal-body">
+          <div class="fw-picker-options" style="display:flex;flex-direction:column;gap:8px;">
+            ${groups.map(g => `
+              <button type="button" class="fw-picker-option" data-group-id="${parseInt(g.id, 10)}" style="text-align:left;">
+                <span style="color:${esc(g.color || '#8b5cf6')};font-weight:700;">${esc(g.name)}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelectorAll('.fw-picker-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const groupId = btn.dataset.groupId;
+        overlay.remove();
+
+        window.BoardApp.apiCall('/projects/api/item.move.php', {
+          item_id: itemId,
+          group_id: groupId
+        }).then(() => {
+          const row = document.querySelector(`tr.fw-item-row[data-item-id="${itemId}"]`);
+          const tbody = document.querySelector(`.fw-group[data-group-id="${groupId}"] tbody`);
+          const sourceGroupId = row ? row.dataset.groupId : null;
+          if (row && tbody) {
+            tbody.querySelectorAll('.fw-empty-state').forEach(td => td.closest('tr')?.remove());
+            tbody.insertBefore(row, tbody.querySelector('.fw-agg-row') || tbody.querySelector('.fw-add-row') || null);
+            row.dataset.groupId = String(groupId);
+          }
+          if (item) item.group_id = groupId;
+          [sourceGroupId, groupId].forEach(gid => {
+            if (gid && window.BoardApp.updateAggregations) window.BoardApp.updateAggregations(gid);
+            const group = document.querySelector(`.fw-group[data-group-id="${gid}"]`);
+            const countEl = group?.querySelector('.fw-group-count');
+            if (countEl) countEl.textContent = group.querySelectorAll('tr.fw-item-row').length;
+          });
+          if (window.BoardApp.showToast) window.BoardApp.showToast('Item moved', 'success');
+        }).catch(err => {
+          alert('Failed to move item: ' + err.message);
+        });
+      });
+    });
+
+    (document.querySelector('.fw-proj') || document.body).appendChild(overlay);
+    setTimeout(() => overlay.querySelector('.fw-picker-option')?.focus(), 50);
+  };
+
+  // ===== COPY ITEM LINK =====
+  window.BoardApp.copyItemLink = function(itemId) {
+    const url = `${window.location.origin}/projects/board.php?board_id=${window.BOARD_DATA.boardId}&item=${itemId}`;
+    const done = () => {
+      if (window.BoardApp.showToast) window.BoardApp.showToast('Item link copied', 'success');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done).catch(() => prompt('Copy this link:', url));
+    } else {
+      prompt('Copy this link:', url);
+    }
+  };
 
   console.log('✅ Items module loaded');
 

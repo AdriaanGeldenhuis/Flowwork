@@ -24,6 +24,15 @@ function _fw_compute_formula(string $formula, array $context, array $colNameMap,
         return number_format(0, $precision, '.', '');
     }
     $expr = $formula;
+    // Normalize {Name} brace references (the board UI's formula syntax) to
+    // bracket syntax so both notations work with one engine.
+    $expr = preg_replace('/\{([^{}]*)\}/', '[$1]', $expr);
+    // Resolve name references to [#id] BEFORE whitespace normalization so
+    // column names containing spaces still resolve.
+    $expr = preg_replace_callback('/\[([^\[\]#][^\[\]]*)\]/', function ($m) use ($colNameMap) {
+        $name = trim($m[1]);
+        return isset($colNameMap[$name]) ? '[#' . (int)$colNameMap[$name] . ']' : '[#0]';
+    }, $expr);
     // Normalize whitespace
     $expr = preg_replace('/\s+/', '', $expr);
     // Evaluate supported functions first.  Recognized functions include SUM, AVG, MIN,
@@ -136,15 +145,16 @@ function _fw_compute_formula(string $formula, array $context, array $colNameMap,
  * @param int $boardId    Board ID that the item belongs to.
  * @param int $companyId  Company ID for multi‑tenant isolation.
  * @param int $itemId     The specific item ID to update formulas for.
+ * @return array          Map of formula column_id => computed value string.
  */
-function _fw_update_formula_columns(PDO $DB, int $boardId, int $companyId, int $itemId): void
+function _fw_update_formula_columns(PDO $DB, int $boardId, int $companyId, int $itemId): array
 {
     // Fetch all formula columns for this board
     $stmt = $DB->prepare("SELECT column_id, name, config FROM board_columns WHERE board_id = ? AND company_id = ? AND type = 'formula'");
     $stmt->execute([$boardId, $companyId]);
     $formulaCols = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$formulaCols) {
-        return;
+        return [];
     }
     // Load all current values for the item across columns
     $stmt = $DB->prepare(
@@ -178,6 +188,7 @@ function _fw_update_formula_columns(PDO $DB, int $boardId, int $companyId, int $
          VALUES (?, ?, ?)
          ON DUPLICATE KEY UPDATE value = VALUES(value)"
     );
+    $computed = [];
     foreach ($formulaCols as $fcol) {
         $cfg = [];
         if (!empty($fcol['config'])) {
@@ -190,5 +201,7 @@ function _fw_update_formula_columns(PDO $DB, int $boardId, int $companyId, int $
         $upsert->execute([$itemId, (int)$fcol['column_id'], $res]);
         // Update context for subsequent formulas referencing this formula column
         $context[(int)$fcol['column_id']] = (float)$res;
+        $computed[(int)$fcol['column_id']] = $res;
     }
+    return $computed;
 }

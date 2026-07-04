@@ -59,9 +59,11 @@
     },
     
     // Escape - Close modals/clear selection
+    // (.fw-static-modal overlays like #modalGuests are server-rendered and must
+    // be hidden by their own controller, never removed from the DOM)
     'Escape': (e) => {
       document.querySelector('.fw-modal-overlay')?.remove();
-      document.querySelector('.fw-cell-picker-overlay')?.remove();
+      document.querySelector('.fw-cell-picker-overlay:not(.fw-static-modal)')?.remove();
       window.BoardApp.closeAllDropdowns();
       
       if (window.BoardApp.selectedItems.size > 0) {
@@ -139,24 +141,25 @@
 
   // ===== DUPLICATE SELECTED =====
   function duplicateSelected() {
-    if (window.BoardApp.selectedItems.size === 0) return;
-    
-    if (!confirm(`Duplicate ${window.BoardApp.selectedItems.size} items?`)) return;
-    
-    const promises = Array.from(window.BoardApp.selectedItems).map(itemId => {
-      return window.BoardApp.apiCall('/projects/api/item.duplicate.php', {
-        item_id: itemId
+    const count = window.BoardApp.selectedItems.size;
+    if (count === 0) return;
+
+    const run = () => {
+      // duplicateItem renders each copy in place — no reload needed
+      Array.from(window.BoardApp.selectedItems).forEach(itemId => {
+        window.BoardApp.duplicateItem(itemId);
       });
-    });
-    
-    Promise.all(promises)
-      .then(() => {
-        showToast('✅ Items duplicated', 'success');
-        setTimeout(() => window.location.reload(), 1000);
-      })
-      .catch(err => {
-        alert('Failed to duplicate: ' + err.message);
-      });
+      window.BoardApp.clearSelection();
+    };
+
+    if (window.BoardApp.dialog) {
+      window.BoardApp.dialog.confirm(`Duplicate ${count} item${count > 1 ? 's' : ''}?`, {
+        title: 'Duplicate items',
+        confirmLabel: 'Duplicate'
+      }).then(ok => { if (ok) run(); });
+    } else if (confirm(`Duplicate ${count} items?`)) {
+      run();
+    }
   }
 
   // ===== SHOW SHORTCUTS MODAL =====
@@ -217,36 +220,13 @@
     container.appendChild(modal);
   }
 
-  // ===== TOAST NOTIFICATION =====
+  // ===== TOAST NOTIFICATION (delegates to the canonical toast in ui.js) =====
   function showToast(message, type = 'info') {
-    if (window.fwAnnounce) window.fwAnnounce(message);
-    const toast = document.createElement('div');
-    toast.className = `fw-toast fw-toast--${type}`;
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 12px 20px;
-      background: var(--modal-bg);
-      border: 1px solid var(--modal-border);
-      border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      color: var(--modal-text);
-      font-size: 14px;
-      z-index: 10000;
-      backdrop-filter: blur(10px);
-      animation: slideInRight 0.3s ease;
-    `;
-    
-    toast.textContent = message;
-    // ✅ FIX: Append to .fw-proj
-    const container = document.querySelector('.fw-proj') || document.body;
-    container.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.style.animation = 'slideOutRight 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 2500);
+    if (typeof window.BoardApp.showToast === 'function') {
+      window.BoardApp.showToast(message, type);
+    } else if (window.fwAnnounce) {
+      window.fwAnnounce(message);
+    }
   }
 
   console.log('✅ Keyboard shortcuts module loaded');

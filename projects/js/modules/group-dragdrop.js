@@ -156,7 +156,7 @@
     window.BoardApp.apiCall('/projects/api/group/reorder.php', data)
       .then(response => {
         console.log('✅ Group order saved:', response);
-        showToast('✅ Group reordered', 'success');
+        showToast('Group reordered', 'success');
         
         // Update in memory
         const groups = window.BOARD_DATA.groups;
@@ -171,32 +171,16 @@
       })
       .catch(err => {
         console.error('❌ Save group order failed:', err);
-        showToast('❌ Failed to reorder group', 'error');
+        showToast('Failed to reorder group', 'error');
         setTimeout(() => window.location.reload(), 1500);
       });
   }
 
   // ===== SHOW TOAST =====
   function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `fw-toast fw-toast--${type}`;
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 12px 20px;
-      background: rgba(33, 38, 45, 0.98);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 8px;
-      color: white;
-      font-size: 14px;
-      font-weight: 600;
-      z-index: 10000;
-      backdrop-filter: blur(10px);
-    `;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2500);
+    if (typeof window.BoardApp.showToast === 'function') {
+      window.BoardApp.showToast(message, type);
+    }
   }
 
   // ===== EXPOSE FUNCTIONS =====
