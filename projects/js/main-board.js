@@ -90,7 +90,7 @@ window.BoardApp.switchView = function(viewName) {
   const selected = containers[viewName];
   if (!selected) return;
 
-  selected.style.display = viewName === 'kanban' ? 'flex' : 'block';
+  selected.style.display = 'block';
 
   try {
     if (viewName === 'kanban') {
@@ -165,10 +165,12 @@ function fwInitBoard() {
   window.BoardApp.switchView(view);
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', fwInitBoard);
-} else {
+// Wait until every module has loaded (kanban/calendar/gantt renderers live in
+// later files) — main.js dispatches fw:modules-ready even when some files fail.
+if (window.__fwModulesReady) {
   fwInitBoard();
+} else {
+  window.addEventListener('fw:modules-ready', fwInitBoard, { once: true });
 }
 
 // ===== BOARD TITLE =====
@@ -194,40 +196,55 @@ window.BoardApp.updateBoardTitle = function(newTitle) {
   });
 };
 
-// ===== SEARCH =====
-let fwSearchTimer = null;
+// ===== SHARED ITEM VISIBILITY (search + filters, consumed by ALL views) =====
+// filters.js sets filteredItemIds (Set of string ids) after filter/apply.php;
+// search sets searchQuery. Every view renders from getVisibleItems() so the
+// table, kanban, calendar and gantt always agree on what is visible.
+window.BoardApp.filteredItemIds = null;
 
-window.BoardApp.onSearchInput = function(value) {
-  clearTimeout(fwSearchTimer);
-  fwSearchTimer = setTimeout(() => fwApplySearch(value), 150);
+window.BoardApp.getVisibleItems = function() {
+  let items = window.BOARD_DATA.items || [];
+
+  const ids = window.BoardApp.filteredItemIds;
+  if (ids) items = items.filter(i => ids.has(String(i.id)));
+
+  const q = window.BoardApp.searchQuery;
+  if (q) items = items.filter(i => (i.title || '').toLowerCase().includes(q));
+
+  return items;
 };
 
-function fwApplySearch(value) {
-  const query = (value || '').toLowerCase().trim();
-  window.BoardApp.searchQuery = query;
+window.BoardApp.refreshTableVisibility = function() {
+  const hasQuery = !!window.BoardApp.searchQuery;
+  const hasFilters = !!window.BoardApp.filteredItemIds;
+  const narrowing = hasQuery || hasFilters;
 
-  const clearBtn = document.getElementById('boardSearchClear');
-  if (clearBtn) clearBtn.style.display = query ? '' : 'none';
-
+  const visibleIds = new Set(window.BoardApp.getVisibleItems().map(i => String(i.id)));
   let visibleCount = 0;
 
-  document.querySelectorAll('.fw-item-row').forEach(row => {
-    const title = row.querySelector('.fw-item-title')?.value.toLowerCase() || '';
-    const isMatch = !query || title.includes(query);
-    row.style.display = isMatch ? '' : 'none';
-    if (isMatch) visibleCount++;
+  document.querySelectorAll('tr.fw-item-row').forEach(row => {
+    const show = !narrowing || visibleIds.has(String(row.dataset.itemId));
+    row.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
   });
 
-  // Hide groups whose rows are all hidden (skip the totals block)
+  // Hide groups whose rows are all hidden (skip the totals block); update counts
   document.querySelectorAll('.fw-group').forEach(group => {
     if (group.classList.contains('fw-board-totals-group')) return;
-    const hasVisible = !query || !!group.querySelector('.fw-item-row:not([style*="display: none"])');
-    group.style.display = hasVisible ? '' : 'none';
+    const visibleRows = Array.from(group.querySelectorAll('tr.fw-item-row'))
+      .filter(r => r.style.display !== 'none').length;
+    group.style.display = (narrowing && visibleRows === 0) ? 'none' : '';
+    const countEl = group.querySelector('.fw-group-count');
+    if (countEl) countEl.textContent = visibleRows;
   });
+
+  // Clear-search button
+  const clearBtn = document.getElementById('boardSearchClear');
+  if (clearBtn) clearBtn.style.display = hasQuery ? '' : 'none';
 
   // No-results state
   let empty = document.getElementById('fwSearchEmpty');
-  if (query && visibleCount === 0) {
+  if (narrowing && visibleCount === 0) {
     if (!empty) {
       empty = document.createElement('div');
       empty.id = 'fwSearchEmpty';
@@ -237,29 +254,47 @@ function fwApplySearch(value) {
       if (boardContainer) boardContainer.prepend(empty);
     }
     const esc = window.BoardApp.escapeHtml || (s => s);
+    const parts = [];
+    if (hasQuery) parts.push(`search "${esc(window.BoardApp.searchQuery)}"`);
+    if (hasFilters) parts.push('the active filters');
     empty.innerHTML = `
       <div class="fw-empty-icon">🔍</div>
-      <div class="fw-empty-title">No items match "${esc(value.trim())}"</div>
-      <div class="fw-empty-text">Try a different search term</div>
-      <button class="fw-btn fw-btn--secondary" style="margin-top:12px;" onclick="BoardApp.clearSearch()">Clear search</button>
+      <div class="fw-empty-title">No items match ${parts.join(' and ')}</div>
+      <div class="fw-empty-text">Try adjusting your search or filters</div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
+        ${hasQuery ? '<button class="fw-btn fw-btn--secondary" onclick="BoardApp.clearSearch()">Clear search</button>' : ''}
+        ${hasFilters ? '<button class="fw-btn fw-btn--secondary" onclick="BoardApp.clearFilters()">Clear filters</button>' : ''}
+      </div>
     `;
   } else if (empty) {
     empty.remove();
   }
 
-  // Other views re-render from the shared filtered item set
+  // Non-table views re-render from the same visible set
   if (window.BoardApp.currentView !== 'table') {
     window.BoardApp.switchView(window.BoardApp.currentView);
   }
 
-  if (window.fwAnnounce && query) window.fwAnnounce(`${visibleCount} items match`);
-}
+  if (window.fwAnnounce && narrowing) window.fwAnnounce(`${visibleCount} items match`);
+};
+
+// ===== SEARCH =====
+let fwSearchTimer = null;
+
+window.BoardApp.onSearchInput = function(value) {
+  clearTimeout(fwSearchTimer);
+  fwSearchTimer = setTimeout(() => {
+    window.BoardApp.searchQuery = (value || '').toLowerCase().trim();
+    window.BoardApp.refreshTableVisibility();
+  }, 150);
+};
 
 window.BoardApp.clearSearch = function() {
   const input = document.getElementById('boardSearchInput');
   if (input) input.value = '';
   clearTimeout(fwSearchTimer);
-  fwApplySearch('');
+  window.BoardApp.searchQuery = '';
+  window.BoardApp.refreshTableVisibility();
   input?.focus();
 };
 

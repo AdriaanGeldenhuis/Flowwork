@@ -95,6 +95,7 @@
     const loadedCount = outcomes.length - failed.length;
 
     console.log(`✅ Modules loaded: ${loadedCount}/${outcomes.length}`);
+    window.__fwModulesReady = true;
     dispatchEvent('fw:modules-ready', { count: loadedCount, failed: failed.map(f => f.url) });
 
     if (failed.length > 0) {

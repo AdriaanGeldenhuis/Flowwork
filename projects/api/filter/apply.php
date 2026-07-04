@@ -64,21 +64,133 @@ try {
     ";
     
     $params = [$boardId, $COMPANY_ID];
-    
-    // Apply filters (simplified for now)
+
+    // Escape LIKE metacharacters in user input
+    $likeEscape = function ($s) {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], (string)$s);
+    };
+
+    // Apply every filter combination the builder UI offers (filters.js)
     foreach ($filters as $filter) {
         $field = $filter['field'] ?? '';
         $operator = $filter['operator'] ?? 'equals';
         $value = $filter['value'] ?? '';
-        
+
         if (empty($field)) continue;
-        
-        if ($field === 'title' && $operator === 'contains') {
-            $sql .= " AND bi.title LIKE ?";
-            $params[] = '%' . $value . '%';
+
+        if ($field === 'title') {
+            switch ($operator) {
+                case 'contains':
+                    $sql .= " AND bi.title LIKE ?";
+                    $params[] = '%' . $likeEscape($value) . '%';
+                    break;
+                case 'not_contains':
+                    $sql .= " AND bi.title NOT LIKE ?";
+                    $params[] = '%' . $likeEscape($value) . '%';
+                    break;
+                case 'equals':
+                    $sql .= " AND bi.title = ?";
+                    $params[] = $value;
+                    break;
+                case 'is_empty':
+                    $sql .= " AND (bi.title IS NULL OR bi.title = '')";
+                    break;
+                case 'is_not_empty':
+                    $sql .= " AND bi.title IS NOT NULL AND bi.title <> ''";
+                    break;
+            }
         } elseif ($field === 'status_label' && $operator === 'equals') {
             $sql .= " AND bi.status_label = ?";
             $params[] = $value;
+        } elseif ($field === 'assigned_to') {
+            switch ($operator) {
+                case 'equals':
+                    $sql .= " AND bi.assigned_to = ?";
+                    $params[] = (int)$value;
+                    break;
+                case 'is_empty':
+                    $sql .= " AND bi.assigned_to IS NULL";
+                    break;
+                case 'is_not_empty':
+                    $sql .= " AND bi.assigned_to IS NOT NULL";
+                    break;
+            }
+        } elseif ($field === 'priority' && $operator === 'equals') {
+            $sql .= " AND bi.priority = ?";
+            $params[] = $value;
+        } elseif ($field === 'group_id' && $operator === 'equals') {
+            $sql .= " AND bi.group_id = ?";
+            $params[] = (int)$value;
+        } elseif ($field === 'due_date') {
+            switch ($operator) {
+                case 'equals':
+                    $sql .= " AND DATE(bi.due_date) = ?";
+                    $params[] = $value;
+                    break;
+                case 'before':
+                    $sql .= " AND DATE(bi.due_date) < ?";
+                    $params[] = $value;
+                    break;
+                case 'after':
+                    $sql .= " AND DATE(bi.due_date) > ?";
+                    $params[] = $value;
+                    break;
+                case 'is_empty':
+                    $sql .= " AND bi.due_date IS NULL";
+                    break;
+                case 'is_not_empty':
+                    $sql .= " AND bi.due_date IS NOT NULL";
+                    break;
+                case 'is_overdue':
+                    $sql .= " AND bi.due_date IS NOT NULL AND DATE(bi.due_date) < CURDATE()"
+                          . " AND (bi.status_label IS NULL OR bi.status_label <> 'done')";
+                    break;
+            }
+        } elseif (preg_match('/^column_(\d+)$/', $field, $m)) {
+            // Custom column filters live in board_item_values
+            $columnId = (int)$m[1];
+            $existsPrefix = "EXISTS (SELECT 1 FROM board_item_values biv WHERE biv.item_id = bi.id AND biv.column_id = ?";
+
+            switch ($operator) {
+                case 'contains':
+                    $sql .= " AND $existsPrefix AND biv.value LIKE ?)";
+                    $params[] = $columnId;
+                    $params[] = '%' . $likeEscape($value) . '%';
+                    break;
+                case 'equals':
+                    $sql .= " AND $existsPrefix AND biv.value = ?)";
+                    $params[] = $columnId;
+                    $params[] = $value;
+                    break;
+                case 'greater_than':
+                    $sql .= " AND $existsPrefix AND CAST(biv.value AS DECIMAL(20,6)) > ?)";
+                    $params[] = $columnId;
+                    $params[] = (float)$value;
+                    break;
+                case 'less_than':
+                    $sql .= " AND $existsPrefix AND CAST(biv.value AS DECIMAL(20,6)) < ?)";
+                    $params[] = $columnId;
+                    $params[] = (float)$value;
+                    break;
+                case 'before':
+                    $sql .= " AND $existsPrefix AND biv.value <> '' AND biv.value < ?)";
+                    $params[] = $columnId;
+                    $params[] = $value;
+                    break;
+                case 'after':
+                    $sql .= " AND $existsPrefix AND biv.value <> '' AND biv.value > ?)";
+                    $params[] = $columnId;
+                    $params[] = $value;
+                    break;
+                case 'is_empty':
+                    $sql .= " AND NOT $existsPrefix AND biv.value <> '')";
+                    $params[] = $columnId;
+                    break;
+                case 'is_not_empty':
+                    $sql .= " AND $existsPrefix AND biv.value <> '')";
+                    $params[] = $columnId;
+                    break;
+            }
         }
     }
     
