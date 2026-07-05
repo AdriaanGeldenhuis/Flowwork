@@ -38,129 +38,296 @@ $customersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_
 $customersCount->execute([$companyId]);
 $totalCustomers = $customersCount->fetchColumn();
 
-// Fetch additional statistics for overview
+// Fetch statistics for the overview command deck.
+// Column caveats respected throughout: only crm_accounts has deleted_at;
+// 'converted' only ever follows 'won' so it counts as a win; compliance
+// health is computed live from expiry_date (stored status goes stale);
+// stage_changed_at is NULL for opps never moved since the 2026-07-04
+// migration, so close-time KPIs COALESCE it with created_at.
 if ($activeTab === 'overview') {
+    // --- Account KPIs (one pass) ---
+    $acctKpi = $DB->prepare("
+        SELECT
+            SUM(type = 'supplier') AS suppliers,
+            SUM(type = 'customer') AS customers,
+            SUM(status = 'prospect') AS prospects,
+            SUM(status = 'active') AS active_accounts,
+            SUM(preferred = 1) AS preferred_accounts,
+            SUM(created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')) AS new_this_month,
+            SUM(created_at >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')
+                AND created_at < DATE_FORMAT(CURDATE(), '%Y-%m-01')) AS new_last_month
+        FROM crm_accounts
+        WHERE company_id = ? AND deleted_at IS NULL
+    ");
+    $acctKpi->execute([$companyId]);
+    $acct = $acctKpi->fetch(PDO::FETCH_ASSOC) ?: [];
+    $totalAccounts = (int)($totalSuppliers ?? 0) + (int)($totalCustomers ?? 0);
+
     $contactsCount = $DB->prepare("SELECT COUNT(*) FROM crm_contacts WHERE company_id = ?");
     $contactsCount->execute([$companyId]);
-    $totalContacts = $contactsCount->fetchColumn();
+    $totalContacts = (int)$contactsCount->fetchColumn();
 
-    $interactionsCount = $DB->prepare("SELECT COUNT(*) FROM crm_interactions WHERE company_id = ?");
-    $interactionsCount->execute([$companyId]);
-    $totalInteractions = $interactionsCount->fetchColumn();
-
-    // Recent activity
-    $recentAccounts = $DB->prepare("
-        SELECT id, name, type, status, created_at 
-        FROM crm_accounts 
-        WHERE company_id = ? 
-        ORDER BY created_at DESC 
-        LIMIT 10
+    $interactions30 = $DB->prepare("
+        SELECT COUNT(*) FROM crm_interactions
+        WHERE company_id = ? AND created_at >= CURDATE() - INTERVAL 30 DAY
     ");
-    $recentAccounts->execute([$companyId]);
-    $recentActivity = $recentAccounts->fetchAll();
+    $interactions30->execute([$companyId]);
+    $totalInteractions30 = (int)$interactions30->fetchColumn();
 
-    // Top suppliers by preferred
-    $topSuppliers = $DB->prepare("
-        SELECT id, name, phone, email, preferred
-        FROM crm_accounts 
-        WHERE company_id = ? AND type = 'supplier' AND status = 'active'
-        ORDER BY preferred DESC, name ASC
-        LIMIT 5
+    // --- Open pipeline by stage (funnel) ---
+    $pipelineStmt = $DB->prepare("
+        SELECT stage, COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
+        FROM crm_opportunities
+        WHERE company_id = ? AND stage NOT IN ('won', 'lost', 'converted')
+        GROUP BY stage
+        ORDER BY FIELD(stage, 'prospect', 'qualification', 'proposal', 'negotiation')
     ");
-    $topSuppliers->execute([$companyId]);
-    $preferredSuppliers = $topSuppliers->fetchAll();
+    $pipelineStmt->execute([$companyId]);
+    $pipelineByStage = $pipelineStmt->fetchAll(PDO::FETCH_ASSOC);
+    $totalPipelineValue = array_sum(array_map('floatval', array_column($pipelineByStage, 'total')));
+    $totalOpenDeals = array_sum(array_map('intval', array_column($pipelineByStage, 'cnt')));
 
-    // Top customers
-    $topCustomers = $DB->prepare("
-        SELECT id, name, phone, email, preferred
-        FROM crm_accounts 
-        WHERE company_id = ? AND type = 'customer' AND status = 'active'
-        ORDER BY preferred DESC, name ASC
-        LIMIT 5
-    ");
-    $topCustomers->execute([$companyId]);
-    $topCustomerList = $topCustomers->fetchAll();
-
-    // Expiring compliance docs (next 30 days)
-    $expiringDocs = $DB->prepare("
-        SELECT 
-            cd.id,
-            cd.expiry_date,
-            ct.name as doc_type,
-            a.id as account_id,
-            a.name as account_name,
-            a.type as account_type
-        FROM crm_compliance_docs cd
-        JOIN crm_compliance_types ct ON ct.id = cd.type_id
-        JOIN crm_accounts a ON a.id = cd.account_id
-        WHERE cd.company_id = ? 
-          AND cd.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-          AND cd.status IN ('valid', 'expiring')
-        ORDER BY cd.expiry_date ASC
-        LIMIT 10
-    ");
-    $expiringDocs->execute([$companyId]);
-    $expiringCompliance = $expiringDocs->fetchAll();
-
-    // Status breakdown
-    $statusBreakdown = $DB->prepare("
+    // --- Win/loss, weighted pipeline, deal economics (one pass) ---
+    $oppKpi = $DB->prepare("
         SELECT
-            status,
-            COUNT(*) as count
-        FROM crm_accounts
+            SUM(stage IN ('won', 'converted')) AS won_cnt,
+            SUM(stage = 'lost') AS lost_cnt,
+            COALESCE(SUM(CASE WHEN stage IN ('won', 'converted') THEN amount END), 0) AS won_value,
+            COALESCE(SUM(CASE WHEN stage = 'lost' THEN amount END), 0) AS lost_value,
+            ROUND(AVG(CASE WHEN stage IN ('won', 'converted') THEN amount END), 2) AS avg_won_deal,
+            COALESCE(SUM(CASE WHEN stage NOT IN ('won', 'lost', 'converted')
+                              THEN amount * COALESCE(probability, 0) / 100 END), 0) AS weighted_pipeline,
+            COALESCE(SUM(CASE WHEN COALESCE(stage_changed_at, created_at) >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+                               AND stage IN ('won', 'converted') THEN amount END), 0) AS won_this_month,
+            COALESCE(SUM(CASE WHEN COALESCE(stage_changed_at, created_at) >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')
+                               AND COALESCE(stage_changed_at, created_at) < DATE_FORMAT(CURDATE(), '%Y-%m-01')
+                               AND stage IN ('won', 'converted') THEN amount END), 0) AS won_last_month
+        FROM crm_opportunities
         WHERE company_id = ?
+    ");
+    $oppKpi->execute([$companyId]);
+    $opp = $oppKpi->fetch(PDO::FETCH_ASSOC) ?: [];
+    $wonCnt = (int)($opp['won_cnt'] ?? 0);
+    $lostCnt = (int)($opp['lost_cnt'] ?? 0);
+    $winRate = ($wonCnt + $lostCnt) > 0 ? round(100 * $wonCnt / ($wonCnt + $lostCnt), 1) : null;
+    $totalWonValue = (float)($opp['won_value'] ?? 0);
+
+    // --- Deals closing this month + overdue close dates (open only) ---
+    $closingStmt = $DB->prepare("
+        SELECT
+            SUM(close_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE())) AS closing_cnt,
+            COALESCE(SUM(CASE WHEN close_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE())
+                              THEN amount END), 0) AS closing_value,
+            SUM(close_date < CURDATE()) AS overdue_deals
+        FROM crm_opportunities
+        WHERE company_id = ? AND stage NOT IN ('won', 'lost', 'converted') AND close_date IS NOT NULL
+    ");
+    $closingStmt->execute([$companyId]);
+    $closing = $closingStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    // --- 6-month scaffold for charts + sparklines ---
+    $monthKeys = [];
+    $monthLabels = [];
+    for ($i = 5; $i >= 0; $i--) {
+        $ts = strtotime("first day of -{$i} months");
+        $monthKeys[date('Y-m', $ts)] = count($monthKeys);
+        $monthLabels[] = date('M', $ts);
+    }
+    $rangeStart = array_key_first($monthKeys) . '-01';
+    $zeroSeries = array_fill(0, count($monthKeys), 0);
+
+    $growthSuppliers = $zeroSeries;
+    $growthCustomers = $zeroSeries;
+    $monthlyGrowth = $DB->prepare("
+        SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym,
+               SUM(type = 'supplier') AS suppliers,
+               SUM(type = 'customer') AS customers
+        FROM crm_accounts
+        WHERE company_id = ? AND deleted_at IS NULL AND created_at >= ?
+        GROUP BY ym
+    ");
+    $monthlyGrowth->execute([$companyId, $rangeStart]);
+    foreach ($monthlyGrowth->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (isset($monthKeys[$row['ym']])) {
+            $growthSuppliers[$monthKeys[$row['ym']]] = (int)$row['suppliers'];
+            $growthCustomers[$monthKeys[$row['ym']]] = (int)$row['customers'];
+        }
+    }
+
+    $interactionSeries = $zeroSeries;
+    $monthlyInteractions = $DB->prepare("
+        SELECT DATE_FORMAT(created_at, '%Y-%m') AS ym, COUNT(*) AS cnt
+        FROM crm_interactions
+        WHERE company_id = ? AND created_at >= ?
+        GROUP BY ym
+    ");
+    $monthlyInteractions->execute([$companyId, $rangeStart]);
+    foreach ($monthlyInteractions->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (isset($monthKeys[$row['ym']])) {
+            $interactionSeries[$monthKeys[$row['ym']]] = (int)$row['cnt'];
+        }
+    }
+
+    $newOppSeries = $zeroSeries;
+    $wonSeries = $zeroSeries;
+    $monthlyOpps = $DB->prepare("
+        SELECT DATE_FORMAT(created_at, '%Y-%m') AS created_ym,
+               DATE_FORMAT(COALESCE(stage_changed_at, created_at), '%Y-%m') AS closed_ym,
+               stage, amount
+        FROM crm_opportunities
+        WHERE company_id = ?
+          AND (created_at >= ? OR COALESCE(stage_changed_at, created_at) >= ?)
+    ");
+    $monthlyOpps->execute([$companyId, $rangeStart, $rangeStart]);
+    foreach ($monthlyOpps->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (isset($monthKeys[$row['created_ym']])) {
+            $newOppSeries[$monthKeys[$row['created_ym']]] += (float)$row['amount'];
+        }
+        if (in_array($row['stage'], ['won', 'converted'], true) && isset($monthKeys[$row['closed_ym']])) {
+            $wonSeries[$monthKeys[$row['closed_ym']]] += (float)$row['amount'];
+        }
+    }
+
+    // --- Interaction mix (last 30 days) ---
+    $mixStmt = $DB->prepare("
+        SELECT type, COUNT(*) AS cnt
+        FROM crm_interactions
+        WHERE company_id = ? AND created_at >= CURDATE() - INTERVAL 30 DAY
+        GROUP BY type
+    ");
+    $mixStmt->execute([$companyId]);
+    $interactionMix = $mixStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    $mixTotal = array_sum($interactionMix);
+
+    // --- Status breakdown (live accounts only) ---
+    $statusBreakdown = $DB->prepare("
+        SELECT status, COUNT(*) AS count
+        FROM crm_accounts
+        WHERE company_id = ? AND deleted_at IS NULL
         GROUP BY status
     ");
     $statusBreakdown->execute([$companyId]);
     $statuses = $statusBreakdown->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    // Pipeline stats (opportunities)
-    $pipelineStmt = $DB->prepare("
-        SELECT stage, COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total
-        FROM crm_opportunities
-        WHERE company_id = ? AND stage NOT IN ('won', 'lost')
-        GROUP BY stage
+    // --- Follow-ups from interactions (overdue + next 7 days) ---
+    $followupsStmt = $DB->prepare("
+        SELECT i.id, i.subject, i.type, i.next_action_at,
+               a.id AS account_id, a.name AS account_name
+        FROM crm_interactions i
+        JOIN crm_accounts a ON a.id = i.account_id
+        WHERE i.company_id = ? AND a.deleted_at IS NULL
+          AND i.next_action_at IS NOT NULL
+          AND i.next_action_at < NOW() + INTERVAL 7 DAY
+        ORDER BY i.next_action_at ASC
+        LIMIT 9
     ");
-    $pipelineStmt->execute([$companyId]);
-    $pipelineByStage = $pipelineStmt->fetchAll(PDO::FETCH_ASSOC);
-    $totalPipelineValue = array_sum(array_column($pipelineByStage, 'total'));
+    $followupsStmt->execute([$companyId]);
+    $followups = $followupsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $overdueFollowups = 0;
+    foreach ($followups as $f) {
+        if (strtotime($f['next_action_at']) < time()) $overdueFollowups++;
+    }
 
-    // Won deals value
-    $wonStmt = $DB->prepare("
-        SELECT COALESCE(SUM(amount), 0) FROM crm_opportunities
-        WHERE company_id = ? AND stage = 'won'
+    // --- Compliance health (live from expiry_date) ---
+    $compStmt = $DB->prepare("
+        SELECT
+            COUNT(*) AS total_docs,
+            SUM(expiry_date IS NOT NULL AND expiry_date >= CURDATE()
+                AND expiry_date <= CURDATE() + INTERVAL 30 DAY) AS expiring_docs,
+            SUM(expiry_date IS NOT NULL AND expiry_date < CURDATE()) AS expired_docs
+        FROM crm_compliance_docs
+        WHERE company_id = ?
     ");
-    $wonStmt->execute([$companyId]);
-    $totalWonValue = $wonStmt->fetchColumn();
+    $compStmt->execute([$companyId]);
+    $comp = $compStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $totalDocs = (int)($comp['total_docs'] ?? 0);
+    $expiredDocs = (int)($comp['expired_docs'] ?? 0);
+    $expiringDocsCnt = (int)($comp['expiring_docs'] ?? 0);
+    $complianceHealth = $totalDocs > 0 ? round(100 * ($totalDocs - $expiredDocs) / $totalDocs) : null;
 
-    // Monthly account growth (last 6 months)
-    $monthlyGrowth = $DB->prepare("
-        SELECT DATE_FORMAT(created_at, '%Y-%m') as month,
-               SUM(CASE WHEN type='supplier' THEN 1 ELSE 0 END) as suppliers,
-               SUM(CASE WHEN type='customer' THEN 1 ELSE 0 END) as customers
+    // --- Expiring compliance docs (next 30 days, expiry-driven) ---
+    $expiringDocs = $DB->prepare("
+        SELECT cd.id, cd.expiry_date, ct.name AS doc_type,
+               a.id AS account_id, a.name AS account_name, a.type AS account_type
+        FROM crm_compliance_docs cd
+        JOIN crm_compliance_types ct ON ct.id = cd.type_id
+        JOIN crm_accounts a ON a.id = cd.account_id
+        WHERE cd.company_id = ? AND a.deleted_at IS NULL
+          AND cd.expiry_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 30 DAY
+        ORDER BY cd.expiry_date ASC
+        LIMIT 8
+    ");
+    $expiringDocs->execute([$companyId]);
+    $expiringCompliance = $expiringDocs->fetchAll(PDO::FETCH_ASSOC);
+
+    // --- Top suppliers / customers (preferred first) ---
+    $topSuppliers = $DB->prepare("
+        SELECT id, name, phone, email, preferred
         FROM crm_accounts
-        WHERE company_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
-        ORDER BY month ASC
+        WHERE company_id = ? AND type = 'supplier' AND status = 'active' AND deleted_at IS NULL
+        ORDER BY preferred DESC, name ASC
+        LIMIT 5
     ");
-    $monthlyGrowth->execute([$companyId]);
-    $growthData = $monthlyGrowth->fetchAll(PDO::FETCH_ASSOC);
+    $topSuppliers->execute([$companyId]);
+    $preferredSuppliers = $topSuppliers->fetchAll(PDO::FETCH_ASSOC);
 
-    // Monthly interactions (last 6 months)
-    $monthlyInteractions = $DB->prepare("
-        SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as cnt
-        FROM crm_interactions
-        WHERE company_id = ? AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-        GROUP BY DATE_FORMAT(created_at, '%Y-%m')
-        ORDER BY month ASC
+    $topCustomers = $DB->prepare("
+        SELECT id, name, phone, email, preferred
+        FROM crm_accounts
+        WHERE company_id = ? AND type = 'customer' AND status = 'active' AND deleted_at IS NULL
+        ORDER BY preferred DESC, name ASC
+        LIMIT 5
     ");
-    $monthlyInteractions->execute([$companyId]);
-    $interactionData = $monthlyInteractions->fetchAll(PDO::FETCH_ASSOC);
+    $topCustomers->execute([$companyId]);
+    $topCustomerList = $topCustomers->fetchAll(PDO::FETCH_ASSOC);
 
-    // Recent interactions for activity table
+    // --- Top accounts by open opportunity value ---
+    $topOpenStmt = $DB->prepare("
+        SELECT a.id, a.name, a.type, COUNT(o.id) AS open_opps, COALESCE(SUM(o.amount), 0) AS open_value
+        FROM crm_accounts a
+        JOIN crm_opportunities o ON o.account_id = a.id AND o.company_id = a.company_id
+             AND o.stage NOT IN ('won', 'lost', 'converted')
+        WHERE a.company_id = ? AND a.deleted_at IS NULL
+        GROUP BY a.id, a.name, a.type
+        ORDER BY open_value DESC
+        LIMIT 5
+    ");
+    $topOpenStmt->execute([$companyId]);
+    $topOpenAccounts = $topOpenStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // --- Deals needing attention (longest stuck in stage) ---
+    $staleStmt = $DB->prepare("
+        SELECT o.id, o.title, o.stage, o.amount, a.id AS account_id, a.name AS account_name,
+               DATEDIFF(CURDATE(), COALESCE(o.stage_changed_at, o.created_at)) AS days_in_stage
+        FROM crm_opportunities o
+        JOIN crm_accounts a ON a.id = o.account_id
+        WHERE o.company_id = ? AND o.stage NOT IN ('won', 'lost', 'converted')
+        ORDER BY days_in_stage DESC
+        LIMIT 6
+    ");
+    $staleStmt->execute([$companyId]);
+    $staleDeals = $staleStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // --- Pipeline by owner (leaderboard) ---
+    $ownerStmt = $DB->prepare("
+        SELECT u.first_name, u.last_name,
+               SUM(o.stage NOT IN ('won', 'lost', 'converted')) AS open_cnt,
+               COALESCE(SUM(CASE WHEN o.stage NOT IN ('won', 'lost', 'converted') THEN o.amount END), 0) AS open_value,
+               SUM(o.stage IN ('won', 'converted')) AS won_cnt
+        FROM crm_opportunities o
+        JOIN users u ON u.id = o.owner_id
+        WHERE o.company_id = ?
+        GROUP BY o.owner_id, u.first_name, u.last_name
+        ORDER BY open_value DESC
+        LIMIT 5
+    ");
+    $ownerStmt->execute([$companyId]);
+    $ownerBoard = $ownerStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // --- Recent interactions (activity feed) ---
     $recentInteractions = $DB->prepare("
         SELECT i.type, i.subject, i.created_at,
-               a.name as account_name, a.id as account_id
+               a.name AS account_name, a.id AS account_id
         FROM crm_interactions i
         JOIN crm_accounts a ON a.id = i.account_id
         WHERE i.company_id = ?
@@ -281,65 +448,308 @@ if ($activeTab === 'overview') {
             <div class="fw-crm__view-content">
                 
                 <?php if ($activeTab === 'overview'): ?>
-                <!-- OVERVIEW TAB — Real Data -->
+                <!-- OVERVIEW — COMMAND DECK (all real data) -->
                 <?php
-                    // Format currency
-                    function fmtRand($val) {
-                        if ($val >= 1000000) return 'R' . number_format($val / 1000000, 1) . 'M';
-                        if ($val >= 1000) return 'R' . number_format($val / 1000, 1) . 'k';
-                        return 'R' . number_format($val, 0);
+                    if (!function_exists('fmtRand')) {
+                        function fmtRand($val) {
+                            $val = (float)$val;
+                            if ($val >= 1000000) return 'R' . number_format($val / 1000000, 1) . 'M';
+                            if ($val >= 1000) return 'R' . number_format($val / 1000, 1) . 'k';
+                            return 'R' . number_format($val, 0);
+                        }
                     }
+                    if (!function_exists('fwInitials')) {
+                        // Multibyte-safe: byte-level substr() can split a UTF-8
+                        // sequence, and htmlspecialchars() then returns '' for it
+                        function fwInitials($name) {
+                            if (preg_match('/^.{1,2}/us', (string)$name, $m)) {
+                                return strtoupper($m[0]);
+                            }
+                            return strtoupper(substr((string)$name, 0, 1)) ?: '?';
+                        }
+                    }
+                    $hour = (int)date('G');
+                    $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');
+                    $newThisMonth = (int)($acct['new_this_month'] ?? 0);
+                    $newLastMonth = (int)($acct['new_last_month'] ?? 0);
+                    $acctDelta = $newThisMonth - $newLastMonth;
+                    $wonThisMonth = (float)($opp['won_this_month'] ?? 0);
+                    $wonLastMonth = (float)($opp['won_last_month'] ?? 0);
+                    $maxStageTotal = max(1, max(array_map('floatval', array_column($pipelineByStage, 'total')) ?: [1]));
+                    $stageMeta = [
+                        'prospect'      => ['label' => 'Prospect'],
+                        'qualification' => ['label' => 'Qualifying'],
+                        'proposal'      => ['label' => 'Proposal'],
+                        'negotiation'   => ['label' => 'Negotiation'],
+                    ];
+                    $mixMeta = [
+                        'email' => '📧', 'call' => '📞', 'visit' => '🏭', 'note' => '📝', 'issue' => '⚠️',
+                    ];
                 ?>
-                <!-- KPI Cards -->
+
+                <!-- Hero: greeting + alert chips -->
+                <div class="fw-crm__dash-hero">
+                    <div>
+                        <div class="fw-crm__dash-hello"><?= $dayGreeting ?>, <?= htmlspecialchars($firstName) ?> 👋</div>
+                        <div class="fw-crm__dash-date"><?= date('l, j F Y') ?> · <?= $totalAccounts ?> accounts · <?= $totalContacts ?> contacts</div>
+                    </div>
+                    <div class="fw-crm__dash-chips">
+                        <?php if ($overdueFollowups > 0): ?>
+                        <span class="fw-crm__dash-chip fw-crm__dash-chip--danger">⏰ <?= $overdueFollowups ?> overdue follow-up<?= $overdueFollowups === 1 ? '' : 's' ?></span>
+                        <?php endif; ?>
+                        <?php if ((int)($closing['overdue_deals'] ?? 0) > 0): ?>
+                        <a href="/crm/opps_list.php" class="fw-crm__dash-chip fw-crm__dash-chip--alert">📅 <?= (int)$closing['overdue_deals'] ?> deal<?= (int)$closing['overdue_deals'] === 1 ? '' : 's' ?> past close date</a>
+                        <?php endif; ?>
+                        <?php if ($expiredDocs > 0): ?>
+                        <a href="/crm/compliance.php" class="fw-crm__dash-chip fw-crm__dash-chip--danger">🛡️ <?= $expiredDocs ?> expired doc<?= $expiredDocs === 1 ? '' : 's' ?></a>
+                        <?php elseif ($expiringDocsCnt > 0): ?>
+                        <a href="/crm/compliance.php" class="fw-crm__dash-chip fw-crm__dash-chip--alert">🛡️ <?= $expiringDocsCnt ?> doc<?= $expiringDocsCnt === 1 ? '' : 's' ?> expiring soon</a>
+                        <?php endif; ?>
+                        <a href="/crm/opp_new.php" class="fw-crm__dash-chip">➕ New deal</a>
+                    </div>
+                </div>
+
+                <!-- Hero KPI slabs -->
                 <div class="fw-crm__kpi-grid">
                     <div class="fw-crm__kpi-card">
-                        <div class="fw-crm__kpi-value"><?= (int)$totalSuppliers ?></div>
+                        <div class="fw-crm__kpi-top">
+                            <div class="fw-crm__kpi-icon">🏭</div>
+                            <?php if ($acctDelta !== 0): ?>
+                            <span class="fw-crm__kpi-delta fw-crm__kpi-delta--<?= $acctDelta > 0 ? 'up' : 'down' ?>"><?= $acctDelta > 0 ? '▲' : '▼' ?> <?= abs($acctDelta) ?> vs last mo</span>
+                            <?php else: ?>
+                            <span class="fw-crm__kpi-delta fw-crm__kpi-delta--flat">— steady</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="fw-crm__kpi-value" data-countup="<?= (int)$totalSuppliers ?>"><?= (int)$totalSuppliers ?></div>
                         <div class="fw-crm__kpi-label">Suppliers</div>
+                        <canvas class="fw-crm__kpi-spark" data-spark="<?= htmlspecialchars(json_encode($growthSuppliers)) ?>" data-spark-color="#06b6d4"></canvas>
                     </div>
+
                     <div class="fw-crm__kpi-card">
-                        <div class="fw-crm__kpi-value"><?= (int)$totalCustomers ?></div>
+                        <div class="fw-crm__kpi-top">
+                            <div class="fw-crm__kpi-icon fw-crm__kpi-icon--green">🤝</div>
+                            <span class="fw-crm__kpi-delta <?= $newThisMonth > 0 ? 'fw-crm__kpi-delta--up' : 'fw-crm__kpi-delta--flat' ?>"><?= $newThisMonth > 0 ? '▲ ' . $newThisMonth . ' new this mo' : '— none this mo' ?></span>
+                        </div>
+                        <div class="fw-crm__kpi-value fw-crm__kpi-value--green" data-countup="<?= (int)$totalCustomers ?>"><?= (int)$totalCustomers ?></div>
                         <div class="fw-crm__kpi-label">Customers</div>
+                        <canvas class="fw-crm__kpi-spark" data-spark="<?= htmlspecialchars(json_encode($growthCustomers)) ?>" data-spark-color="#10b981"></canvas>
                     </div>
+
                     <div class="fw-crm__kpi-card">
-                        <div class="fw-crm__kpi-value"><?= fmtRand($totalPipelineValue) ?></div>
-                        <div class="fw-crm__kpi-label">Pipeline Value</div>
+                        <div class="fw-crm__kpi-top">
+                            <div class="fw-crm__kpi-icon fw-crm__kpi-icon--purple">🚀</div>
+                            <span class="fw-crm__kpi-delta fw-crm__kpi-delta--flat"><?= $totalOpenDeals ?> open deal<?= $totalOpenDeals === 1 ? '' : 's' ?></span>
+                        </div>
+                        <div class="fw-crm__kpi-value fw-crm__kpi-value--purple"><?= fmtRand($totalPipelineValue) ?></div>
+                        <div class="fw-crm__kpi-label">Open Pipeline</div>
+                        <div class="fw-crm__kpi-foot">⚖️ <?= fmtRand((float)($opp['weighted_pipeline'] ?? 0)) ?> weighted</div>
+                        <canvas class="fw-crm__kpi-spark" data-spark="<?= htmlspecialchars(json_encode($newOppSeries)) ?>" data-spark-color="#8b5cf6"></canvas>
                     </div>
+
                     <div class="fw-crm__kpi-card">
-                        <div class="fw-crm__kpi-value"><?= fmtRand($totalWonValue) ?></div>
+                        <div class="fw-crm__kpi-top">
+                            <div class="fw-crm__kpi-icon fw-crm__kpi-icon--orange">🏆</div>
+                            <?php if ($winRate !== null): ?>
+                            <span class="fw-crm__kpi-delta <?= $winRate >= 50 ? 'fw-crm__kpi-delta--up' : 'fw-crm__kpi-delta--down' ?>"><?= $winRate ?>% win rate</span>
+                            <?php else: ?>
+                            <span class="fw-crm__kpi-delta fw-crm__kpi-delta--flat">no closed deals yet</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="fw-crm__kpi-value fw-crm__kpi-value--orange"><?= fmtRand($totalWonValue) ?></div>
                         <div class="fw-crm__kpi-label">Won Deals</div>
+                        <div class="fw-crm__kpi-foot">
+                            <?= $wonThisMonth > 0 ? '🔥 ' . fmtRand($wonThisMonth) . ' this month' : ($opp['avg_won_deal'] ? '💎 ' . fmtRand((float)$opp['avg_won_deal']) . ' avg deal' : '💤 nothing closed yet') ?>
+                        </div>
+                        <canvas class="fw-crm__kpi-spark" data-spark="<?= htmlspecialchars(json_encode($wonSeries)) ?>" data-spark-color="#f59e0b"></canvas>
                     </div>
                 </div>
 
-                <!-- Charts Row -->
+                <!-- Secondary KPI strip -->
+                <div class="fw-crm__kpi-strip">
+                    <div class="fw-crm__kpi">
+                        <div class="fw-crm__kpi-num" data-countup="<?= (int)($acct['prospects'] ?? 0) ?>"><?= (int)($acct['prospects'] ?? 0) ?></div>
+                        <div class="fw-crm__kpi-sub">Prospects</div>
+                    </div>
+                    <div class="fw-crm__kpi">
+                        <div class="fw-crm__kpi-num" data-countup="<?= (int)($acct['preferred_accounts'] ?? 0) ?>"><?= (int)($acct['preferred_accounts'] ?? 0) ?></div>
+                        <div class="fw-crm__kpi-sub">Preferred</div>
+                    </div>
+                    <div class="fw-crm__kpi">
+                        <div class="fw-crm__kpi-num" data-countup="<?= $totalInteractions30 ?>"><?= $totalInteractions30 ?></div>
+                        <div class="fw-crm__kpi-sub">Touches · 30d</div>
+                    </div>
+                    <div class="fw-crm__kpi">
+                        <div class="fw-crm__kpi-num"><?= (int)($closing['closing_cnt'] ?? 0) ?> · <?= fmtRand((float)($closing['closing_value'] ?? 0)) ?></div>
+                        <div class="fw-crm__kpi-sub">Closing this month</div>
+                    </div>
+                    <div class="fw-crm__kpi">
+                        <div class="fw-crm__kpi-num"><?= $winRate !== null ? $winRate . '%' : '—' ?></div>
+                        <div class="fw-crm__kpi-sub">Win rate</div>
+                    </div>
+                    <div class="fw-crm__kpi">
+                        <div class="fw-crm__kpi-num"><?= $complianceHealth !== null ? $complianceHealth . '%' : '—' ?></div>
+                        <div class="fw-crm__kpi-sub">Compliance health</div>
+                    </div>
+                </div>
+
+                <!-- Charts: growth + funnel -->
                 <div class="fw-crm__charts-grid">
                     <div class="fw-crm__chart-card">
-                        <h3 class="fw-crm__chart-title">Account Growth (6 months)</h3>
-                        <canvas id="chartGrowth" height="200"></canvas>
+                        <h3 class="fw-crm__chart-title">Account Growth <small>last 6 months</small></h3>
+                        <div class="fw-crm__chart-body">
+                            <canvas id="chartGrowth" height="220"></canvas>
+                        </div>
                     </div>
                     <div class="fw-crm__chart-card">
-                        <h3 class="fw-crm__chart-title">Pipeline by Stage</h3>
-                        <canvas id="chartPipeline" height="200"></canvas>
+                        <h3 class="fw-crm__chart-title">Pipeline Funnel <small><?= fmtRand($totalPipelineValue) ?> open</small></h3>
+                        <div class="fw-crm__funnel">
+                            <?php foreach ($stageMeta as $stageKey => $metaRow):
+                                $row = null;
+                                foreach ($pipelineByStage as $p) { if ($p['stage'] === $stageKey) { $row = $p; break; } }
+                                $val = (float)($row['total'] ?? 0);
+                                $cnt = (int)($row['cnt'] ?? 0);
+                                $pct = max(4, round(100 * $val / $maxStageTotal));
+                            ?>
+                            <div class="fw-crm__funnel-row">
+                                <div class="fw-crm__funnel-label"><?= $metaRow['label'] ?></div>
+                                <div class="fw-crm__funnel-track">
+                                    <div class="fw-crm__funnel-fill fw-crm__funnel-fill--<?= $stageKey ?>" style="width:<?= $val > 0 ? $pct : 0 ?>%"><?= $cnt > 0 ? $cnt : '' ?></div>
+                                </div>
+                                <div class="fw-crm__funnel-val"><?= fmtRand($val) ?><small><?= $cnt ?> deal<?= $cnt === 1 ? '' : 's' ?></small></div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="fw-crm__chart-body" style="margin-top:12px">
+                            <canvas id="chartPipeline" height="140"></canvas>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Tables Row -->
+                <!-- Charts: engagement + status -->
+                <div class="fw-crm__charts-grid">
+                    <div class="fw-crm__chart-card">
+                        <h3 class="fw-crm__chart-title">Engagement <small>interactions · 6 months</small></h3>
+                        <div class="fw-crm__chart-body">
+                            <canvas id="chartEngagement" height="200"></canvas>
+                        </div>
+                        <?php if ($mixTotal > 0): ?>
+                        <div class="fw-crm__mix-bar">
+                            <?php foreach ($mixMeta as $mixType => $emoji):
+                                $cnt = (int)($interactionMix[$mixType] ?? 0);
+                                if ($cnt === 0) continue;
+                            ?>
+                            <div class="fw-crm__mix-seg fw-crm__mix-seg--<?= $mixType ?>" style="width:<?= round(100 * $cnt / $mixTotal, 1) ?>%" title="<?= ucfirst($mixType) ?>: <?= $cnt ?>"></div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="fw-crm__mix-legend">
+                            <?php foreach ($mixMeta as $mixType => $emoji):
+                                $cnt = (int)($interactionMix[$mixType] ?? 0);
+                                if ($cnt === 0) continue;
+                            ?>
+                            <span class="fw-crm__mix-legend-item"><span class="fw-crm__mix-dot fw-crm__mix-dot--<?= $mixType ?>"></span><?= ucfirst($mixType) ?> · <?= $cnt ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="fw-crm__chart-card">
+                        <h3 class="fw-crm__chart-title">Account Status <small><?= $totalAccounts ?> live accounts</small></h3>
+                        <div class="fw-crm__chart-body">
+                            <canvas id="chartStatus" height="200"></canvas>
+                        </div>
+                        <div style="margin-top:14px">
+                            <div class="fw-crm__meter">
+                                <div class="fw-crm__meter-head"><span class="fw-crm__meter-name">Active accounts</span><span class="fw-crm__meter-pct"><?= $totalAccounts > 0 ? round(100 * (int)($acct['active_accounts'] ?? 0) / $totalAccounts) : 0 ?>%</span></div>
+                                <div class="fw-crm__meter-track"><div class="fw-crm__meter-fill fw-crm__meter-fill--good" style="width:<?= $totalAccounts > 0 ? round(100 * (int)($acct['active_accounts'] ?? 0) / $totalAccounts) : 0 ?>%"></div></div>
+                            </div>
+                            <div class="fw-crm__meter">
+                                <div class="fw-crm__meter-head"><span class="fw-crm__meter-name">Compliance health</span><span class="fw-crm__meter-pct"><?= $complianceHealth !== null ? $complianceHealth . '%' : 'n/a' ?></span></div>
+                                <div class="fw-crm__meter-track"><div class="fw-crm__meter-fill <?= $complianceHealth === null ? '' : ($complianceHealth >= 80 ? 'fw-crm__meter-fill--good' : ($complianceHealth >= 50 ? 'fw-crm__meter-fill--warn' : 'fw-crm__meter-fill--bad')) ?>" style="width:<?= (int)($complianceHealth ?? 0) ?>%"></div></div>
+                            </div>
+                            <div class="fw-crm__meter" style="margin-bottom:0">
+                                <div class="fw-crm__meter-head"><span class="fw-crm__meter-name">Win rate</span><span class="fw-crm__meter-pct"><?= $winRate !== null ? $winRate . '%' : 'n/a' ?></span></div>
+                                <div class="fw-crm__meter-track"><div class="fw-crm__meter-fill" style="width:<?= (int)($winRate ?? 0) ?>%"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top accounts + quick actions -->
+                <div class="fw-crm__dash-grid-3">
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Top Suppliers <small>preferred first</small></h3>
+                        <div class="fw-crm__mini-list">
+                            <?php if (empty($preferredSuppliers)): ?>
+                                <div class="fw-crm__empty-state">No active suppliers yet<small>Add your first supplier to get started</small></div>
+                            <?php else: foreach ($preferredSuppliers as $s): ?>
+                            <a class="fw-crm__mini-row" href="/crm/account_view.php?id=<?= (int)$s['id'] ?>">
+                                <div class="fw-crm__mini-avatar"><?= htmlspecialchars(fwInitials($s['name'])) ?></div>
+                                <div class="fw-crm__mini-info">
+                                    <div class="fw-crm__mini-name"><?= htmlspecialchars($s['name']) ?> <?= $s['preferred'] ? '⭐' : '' ?></div>
+                                    <div class="fw-crm__mini-sub"><?= htmlspecialchars($s['email'] ?: ($s['phone'] ?: 'No contact details')) ?></div>
+                                </div>
+                            </a>
+                            <?php endforeach; endif; ?>
+                        </div>
+                    </div>
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Top Customers <small>by open deal value</small></h3>
+                        <div class="fw-crm__mini-list">
+                            <?php
+                                $customerRows = !empty($topOpenAccounts) ? $topOpenAccounts : $topCustomerList;
+                            ?>
+                            <?php if (empty($customerRows)): ?>
+                                <div class="fw-crm__empty-state">No active customers yet<small>Add customers or create opportunities</small></div>
+                            <?php else: foreach ($customerRows as $c): ?>
+                            <a class="fw-crm__mini-row" href="/crm/account_view.php?id=<?= (int)$c['id'] ?>">
+                                <div class="fw-crm__mini-avatar fw-crm__mini-avatar--customer"><?= htmlspecialchars(fwInitials($c['name'])) ?></div>
+                                <div class="fw-crm__mini-info">
+                                    <div class="fw-crm__mini-name"><?= htmlspecialchars($c['name']) ?><?= !empty($c['preferred']) ? ' ⭐' : '' ?></div>
+                                    <div class="fw-crm__mini-sub"><?= isset($c['open_opps']) ? (int)$c['open_opps'] . ' open deal' . ((int)$c['open_opps'] === 1 ? '' : 's') : htmlspecialchars($c['email'] ?: ($c['phone'] ?: 'No contact details')) ?></div>
+                                </div>
+                                <?php if (isset($c['open_value'])): ?>
+                                <div class="fw-crm__mini-val"><?= fmtRand((float)$c['open_value']) ?></div>
+                                <?php endif; ?>
+                            </a>
+                            <?php endforeach; endif; ?>
+                        </div>
+                    </div>
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Quick Actions</h3>
+                        <div class="fw-crm__quick-actions">
+                            <a href="/crm/account_new.php?type=supplier" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">🏭</span><span class="fw-crm__qa-label">New Supplier</span></a>
+                            <a href="/crm/account_new.php?type=customer" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">🤝</span><span class="fw-crm__qa-label">New Customer</span></a>
+                            <a href="/crm/opp_new.php" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">🚀</span><span class="fw-crm__qa-label">New Deal</span></a>
+                            <a href="/crm/opps_list.php" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">📊</span><span class="fw-crm__qa-label">Pipeline Board</span></a>
+                            <a href="/crm/import.php" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">📥</span><span class="fw-crm__qa-label">Import Data</span></a>
+                            <a href="/crm/compliance.php" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">🛡️</span><span class="fw-crm__qa-label">Compliance</span></a>
+                            <a href="/crm/dedupe.php" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">🧹</span><span class="fw-crm__qa-label">Dedupe</span></a>
+                            <a href="/crm/settings.php" class="fw-crm__qa-tile"><span class="fw-crm__qa-icon">⚙️</span><span class="fw-crm__qa-label">Settings</span></a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Follow-ups + compliance -->
                 <div class="fw-crm__tables-grid">
                     <div class="fw-crm__table-card">
-                        <h3 class="fw-crm__chart-title">Recent Activity</h3>
+                        <h3 class="fw-crm__chart-title">Follow-ups <small>overdue &amp; next 7 days</small></h3>
                         <div class="fw-crm__table-scroll">
                             <table class="fw-crm__data-table">
                                 <thead>
-                                    <tr><th>Type</th><th>Subject</th><th>Account</th><th>When</th></tr>
+                                    <tr><th>When</th><th>Subject</th><th>Account</th><th></th></tr>
                                 </thead>
                                 <tbody>
-                                    <?php if (empty($latestInteractions)): ?>
-                                        <tr><td colspan="4" style="text-align:center;color:var(--fw-text-secondary)">No recent activity</td></tr>
-                                    <?php else: foreach ($latestInteractions as $ia): ?>
+                                    <?php if (empty($followups)): ?>
+                                        <tr><td colspan="4" style="text-align:center;color:var(--fw-text-muted)">Nothing due — inbox zero 🎉</td></tr>
+                                    <?php else: foreach ($followups as $f):
+                                        $due = strtotime($f['next_action_at']);
+                                        $isOverdue = $due < time();
+                                        $isToday = date('Y-m-d', $due) === date('Y-m-d');
+                                    ?>
                                         <tr>
-                                            <td><span class="fw-crm__pill"><?= htmlspecialchars(ucfirst($ia['type'])) ?></span></td>
-                                            <td><?= htmlspecialchars($ia['subject'] ?: '—') ?></td>
-                                            <td><a href="/crm/account_view.php?id=<?= (int)$ia['account_id'] ?>"><?= htmlspecialchars($ia['account_name']) ?></a></td>
-                                            <td><?= date('d M H:i', strtotime($ia['created_at'])) ?></td>
+                                            <td><?= date('d M H:i', $due) ?></td>
+                                            <td><?= htmlspecialchars($f['subject'] ?: ucfirst($f['type'])) ?></td>
+                                            <td><a href="/crm/account_view.php?id=<?= (int)$f['account_id'] ?>"><?= htmlspecialchars($f['account_name']) ?></a></td>
+                                            <td><span class="fw-crm__due-pill fw-crm__due-pill--<?= $isOverdue ? 'overdue' : ($isToday ? 'soon' : 'ok') ?>"><?= $isOverdue ? 'Overdue' : ($isToday ? 'Today' : 'Upcoming') ?></span></td>
                                         </tr>
                                     <?php endforeach; endif; ?>
                                 </tbody>
@@ -347,20 +757,23 @@ if ($activeTab === 'overview') {
                         </div>
                     </div>
                     <div class="fw-crm__table-card">
-                        <h3 class="fw-crm__chart-title">Expiring Compliance (30 days)</h3>
+                        <h3 class="fw-crm__chart-title">Expiring Compliance <small>next 30 days</small></h3>
                         <div class="fw-crm__table-scroll">
                             <table class="fw-crm__data-table">
                                 <thead>
-                                    <tr><th>Document</th><th>Account</th><th>Expires</th></tr>
+                                    <tr><th>Document</th><th>Account</th><th>Expires</th><th></th></tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($expiringCompliance)): ?>
-                                        <tr><td colspan="3" style="text-align:center;color:var(--fw-text-secondary)">No expiring documents</td></tr>
-                                    <?php else: foreach ($expiringCompliance as $doc): ?>
+                                        <tr><td colspan="4" style="text-align:center;color:var(--fw-text-muted)">No documents expiring — all clear 🛡️</td></tr>
+                                    <?php else: foreach ($expiringCompliance as $doc):
+                                        $daysLeft = (int)floor((strtotime($doc['expiry_date']) - strtotime(date('Y-m-d'))) / 86400);
+                                    ?>
                                         <tr>
                                             <td><?= htmlspecialchars($doc['doc_type']) ?></td>
                                             <td><a href="/crm/account_view.php?id=<?= (int)$doc['account_id'] ?>"><?= htmlspecialchars($doc['account_name']) ?></a></td>
                                             <td><?= date('d M Y', strtotime($doc['expiry_date'])) ?></td>
+                                            <td><span class="fw-crm__due-pill fw-crm__due-pill--<?= $daysLeft <= 7 ? 'overdue' : ($daysLeft <= 14 ? 'soon' : 'ok') ?>"><?= $daysLeft ?>d left</span></td>
                                         </tr>
                                     <?php endforeach; endif; ?>
                                 </tbody>
@@ -368,6 +781,85 @@ if ($activeTab === 'overview') {
                         </div>
                     </div>
                 </div>
+
+                <!-- Activity + deals needing attention -->
+                <div class="fw-crm__tables-grid">
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Recent Activity <small>latest interactions</small></h3>
+                        <div class="fw-crm__feed">
+                            <?php if (empty($latestInteractions)): ?>
+                                <div class="fw-crm__empty-state">No activity logged yet<small>Interactions you log will show up here</small></div>
+                            <?php else: foreach ($latestInteractions as $ia): ?>
+                            <div class="fw-crm__feed-item">
+                                <div class="fw-crm__feed-icon"><?= $mixMeta[$ia['type']] ?? '📌' ?></div>
+                                <div class="fw-crm__feed-body">
+                                    <span class="fw-crm__pill fw-crm__pill--<?= htmlspecialchars($ia['type']) ?>"><?= htmlspecialchars(ucfirst($ia['type'])) ?></span>
+                                    <?= htmlspecialchars($ia['subject'] ?: 'Interaction') ?> ·
+                                    <a href="/crm/account_view.php?id=<?= (int)$ia['account_id'] ?>"><?= htmlspecialchars($ia['account_name']) ?></a>
+                                </div>
+                                <div class="fw-crm__feed-time"><?= date('d M H:i', strtotime($ia['created_at'])) ?></div>
+                            </div>
+                            <?php endforeach; endif; ?>
+                        </div>
+                    </div>
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Deals Needing Attention <small>longest in stage</small></h3>
+                        <div class="fw-crm__table-scroll">
+                            <table class="fw-crm__data-table">
+                                <thead>
+                                    <tr><th>Deal</th><th>Account</th><th>Stage</th><th>Value</th><th>In stage</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($staleDeals)): ?>
+                                        <tr><td colspan="5" style="text-align:center;color:var(--fw-text-muted)">No open deals — pipeline is clear</td></tr>
+                                    <?php else: foreach ($staleDeals as $d):
+                                        $days = (int)$d['days_in_stage'];
+                                    ?>
+                                        <tr>
+                                            <td><a href="/crm/opp_view.php?id=<?= (int)$d['id'] ?>"><?= htmlspecialchars($d['title']) ?></a></td>
+                                            <td><a href="/crm/account_view.php?id=<?= (int)$d['account_id'] ?>"><?= htmlspecialchars($d['account_name']) ?></a></td>
+                                            <td><span class="fw-crm__pill"><?= htmlspecialchars(ucfirst($d['stage'])) ?></span></td>
+                                            <td><?= fmtRand((float)$d['amount']) ?></td>
+                                            <td><span class="fw-crm__due-pill fw-crm__due-pill--<?= $days >= 14 ? 'overdue' : ($days >= 7 ? 'soon' : 'ok') ?>"><?= $days ?>d</span></td>
+                                        </tr>
+                                    <?php endforeach; endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <?php if (!empty($ownerBoard)): ?>
+                <!-- Owner leaderboard -->
+                <div class="fw-crm__tables-grid">
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Pipeline by Owner <small>leaderboard</small></h3>
+                        <div class="fw-crm__table-scroll">
+                            <table class="fw-crm__data-table">
+                                <thead>
+                                    <tr><th>Owner</th><th>Open deals</th><th>Open value</th><th>Won</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($ownerBoard as $i => $o): ?>
+                                    <tr>
+                                        <td><?= ['🥇', '🥈', '🥉'][$i] ?? '·' ?> <?= htmlspecialchars(trim($o['first_name'] . ' ' . $o['last_name'])) ?></td>
+                                        <td><?= (int)$o['open_cnt'] ?></td>
+                                        <td><?= fmtRand((float)$o['open_value']) ?></td>
+                                        <td><?= (int)$o['won_cnt'] ?> 🏆</td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="fw-crm__table-card">
+                        <h3 class="fw-crm__chart-title">Interaction Trend <small>volume by month</small></h3>
+                        <div class="fw-crm__chart-body">
+                            <canvas id="chartInteractionTrend" height="180"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
 
                 <?php if ($activeTab === 'suppliers'): ?>
@@ -467,66 +959,258 @@ if ($activeTab === 'overview') {
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <?php if ($activeTab === 'overview'): ?>
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const isDark = document.querySelector('.fw-crm').getAttribute('data-theme') === 'dark';
-      const gridColor = isDark ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.05)';
-      const tickColor = isDark ? '#9fb0c8' : '#6b7280';
+    (function() {
+      'use strict';
 
-      // Account Growth chart (real monthly data)
-      const growthCanvas = document.getElementById('chartGrowth');
-      if (growthCanvas) {
-        const growthData = <?= json_encode($growthData) ?>;
-        const labels = growthData.map(r => r.month);
-        const suppliers = growthData.map(r => parseInt(r.suppliers));
-        const customers = growthData.map(r => parseInt(r.customers));
-        new Chart(growthCanvas, {
-          type: 'bar',
-          data: {
-            labels: labels.length ? labels : ['No data'],
-            datasets: [
-              { label: 'Suppliers', data: suppliers.length ? suppliers : [0], backgroundColor: '#06b6d4', borderRadius: 6 },
-              { label: 'Customers', data: customers.length ? customers : [0], backgroundColor: '#10b981', borderRadius: 6 }
-            ]
-          },
-          options: {
-            responsive: true, maintainAspectRatio: true,
-            plugins: { legend: { position: 'bottom', labels: { color: tickColor } } },
-            scales: {
-              x: { grid: { display: false }, ticks: { color: tickColor } },
-              y: { grid: { color: gridColor }, ticks: { color: tickColor, stepSize: 1 } }
-            }
+      const MONTH_LABELS = <?= json_encode($monthLabels) ?>;
+      const GROWTH_SUPPLIERS = <?= json_encode($growthSuppliers) ?>;
+      const GROWTH_CUSTOMERS = <?= json_encode($growthCustomers) ?>;
+      const INTERACTIONS = <?= json_encode($interactionSeries) ?>;
+      const PIPELINE = <?= json_encode($pipelineByStage) ?>;
+      const STATUSES = <?= json_encode($statuses) ?>;
+
+      const STAGE_COLORS = { prospect: '#8b5cf6', qualification: '#3b82f6', proposal: '#06b6d4', negotiation: '#f59e0b' };
+      const STATUS_COLORS = { active: '#10b981', prospect: '#8b5cf6', inactive: '#64748b', banned: '#ef4444' };
+
+      window.chartInstances = window.chartInstances || {};
+
+      function themePalette() {
+        const isDark = document.querySelector('.fw-crm').getAttribute('data-theme') === 'dark';
+        return {
+          isDark: isDark,
+          grid: isDark ? 'rgba(255,255,255,.06)' : 'rgba(21,39,50,.06)',
+          tick: isDark ? '#9cb4c0' : '#64737d',
+          tooltipBg: isDark ? 'rgba(10,20,28,.95)' : 'rgba(255,255,255,.96)',
+          tooltipText: isDark ? '#e7f0f4' : '#16212b',
+          border: isDark ? 'rgba(255,255,255,.1)' : 'rgba(21,39,50,.1)'
+        };
+      }
+
+      function glossTooltip(p) {
+        return {
+          backgroundColor: p.tooltipBg,
+          titleColor: p.tooltipText,
+          bodyColor: p.tooltipText,
+          borderColor: p.border,
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 10,
+          boxPadding: 4,
+          titleFont: { family: 'Inter', weight: '700' },
+          bodyFont: { family: 'Inter' }
+        };
+      }
+
+      function vGradient(ctx, area, hex) {
+        const g = ctx.createLinearGradient(0, area.bottom, 0, area.top);
+        g.addColorStop(0, hex + '33');
+        g.addColorStop(1, hex);
+        return g;
+      }
+
+      function destroyCharts() {
+        ['growth', 'pipeline', 'engagement', 'status', 'trend'].forEach(function(k) {
+          if (window.chartInstances[k]) {
+            window.chartInstances[k].destroy();
+            delete window.chartInstances[k];
           }
         });
       }
 
-      // Pipeline by Stage chart (real data)
-      const pipelineCanvas = document.getElementById('chartPipeline');
-      if (pipelineCanvas) {
-        const pipelineData = <?= json_encode($pipelineByStage) ?>;
-        const stageColors = { prospect: '#8b5cf6', qualification: '#3b82f6', proposal: '#06b6d4', negotiation: '#f59e0b' };
-        new Chart(pipelineCanvas, {
-          type: 'doughnut',
-          data: {
-            labels: pipelineData.length ? pipelineData.map(r => r.stage.charAt(0).toUpperCase() + r.stage.slice(1)) : ['No data'],
-            datasets: [{
-              data: pipelineData.length ? pipelineData.map(r => parseFloat(r.total)) : [1],
-              backgroundColor: pipelineData.length ? pipelineData.map(r => stageColors[r.stage] || '#6b7280') : ['#374151']
-            }]
-          },
-          options: {
-            responsive: true, maintainAspectRatio: true,
-            plugins: {
-              legend: { position: 'bottom', labels: { color: tickColor } },
-              tooltip: {
-                callbacks: {
-                  label: function(ctx) { return ctx.label + ': R' + ctx.parsed.toLocaleString(); }
+      function buildCharts() {
+        if (typeof Chart === 'undefined') return;
+        destroyCharts();
+        const p = themePalette();
+        Chart.defaults.font.family = 'Inter';
+
+        // Account growth — glossy gradient bars
+        const growthCanvas = document.getElementById('chartGrowth');
+        if (growthCanvas) {
+          window.chartInstances.growth = new Chart(growthCanvas, {
+            type: 'bar',
+            data: {
+              labels: MONTH_LABELS,
+              datasets: [
+                {
+                  label: 'Suppliers',
+                  data: GROWTH_SUPPLIERS,
+                  borderRadius: 8,
+                  borderSkipped: false,
+                  maxBarThickness: 34,
+                  backgroundColor: function(c) {
+                    const area = c.chart.chartArea;
+                    return area ? vGradient(c.chart.ctx, area, '#06b6d4') : '#06b6d4';
+                  }
+                },
+                {
+                  label: 'Customers',
+                  data: GROWTH_CUSTOMERS,
+                  borderRadius: 8,
+                  borderSkipped: false,
+                  maxBarThickness: 34,
+                  backgroundColor: function(c) {
+                    const area = c.chart.chartArea;
+                    return area ? vGradient(c.chart.ctx, area, '#10b981') : '#10b981';
+                  }
                 }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: {
+                legend: { position: 'bottom', labels: { color: p.tick, usePointStyle: true, pointStyle: 'circle', padding: 16 } },
+                tooltip: glossTooltip(p)
+              },
+              scales: {
+                x: { grid: { display: false }, ticks: { color: p.tick } },
+                y: { grid: { color: p.grid }, ticks: { color: p.tick, stepSize: 1 }, border: { display: false } }
               }
             }
-          }
-        });
+          });
+        }
+
+        // Pipeline value split — glowing doughnut
+        const pipelineCanvas = document.getElementById('chartPipeline');
+        if (pipelineCanvas) {
+          const hasData = PIPELINE.length > 0;
+          window.chartInstances.pipeline = new Chart(pipelineCanvas, {
+            type: 'doughnut',
+            data: {
+              labels: hasData ? PIPELINE.map(r => r.stage.charAt(0).toUpperCase() + r.stage.slice(1)) : ['No open deals'],
+              datasets: [{
+                data: hasData ? PIPELINE.map(r => parseFloat(r.total)) : [1],
+                backgroundColor: hasData ? PIPELINE.map(r => STAGE_COLORS[r.stage] || '#64748b') : [p.isDark ? '#1e293b' : '#e2e8f0'],
+                borderWidth: 2,
+                borderColor: p.isDark ? 'rgba(11,19,30,.9)' : '#ffffff',
+                hoverOffset: 8
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              cutout: '68%',
+              plugins: {
+                legend: { position: 'right', labels: { color: p.tick, usePointStyle: true, pointStyle: 'circle', padding: 12, boxWidth: 8 } },
+                tooltip: Object.assign(glossTooltip(p), {
+                  callbacks: { label: ctx => ' ' + ctx.label + ': R' + ctx.parsed.toLocaleString() }
+                })
+              }
+            }
+          });
+        }
+
+        // Engagement — neon line with gradient fill
+        const engagementCanvas = document.getElementById('chartEngagement');
+        if (engagementCanvas) {
+          window.chartInstances.engagement = new Chart(engagementCanvas, {
+            type: 'line',
+            data: {
+              labels: MONTH_LABELS,
+              datasets: [{
+                label: 'Interactions',
+                data: INTERACTIONS,
+                borderColor: '#06b6d4',
+                borderWidth: 3,
+                pointBackgroundColor: '#06b6d4',
+                pointBorderColor: p.isDark ? '#0b131b' : '#ffffff',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                tension: 0.42,
+                fill: true,
+                backgroundColor: function(c) {
+                  const area = c.chart.chartArea;
+                  if (!area) return 'rgba(6,182,212,.15)';
+                  const g = c.chart.ctx.createLinearGradient(0, area.bottom, 0, area.top);
+                  g.addColorStop(0, 'rgba(6,182,212,0)');
+                  g.addColorStop(1, 'rgba(6,182,212,.35)');
+                  return g;
+                }
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: { legend: { display: false }, tooltip: glossTooltip(p) },
+              scales: {
+                x: { grid: { display: false }, ticks: { color: p.tick } },
+                y: { grid: { color: p.grid }, ticks: { color: p.tick, stepSize: 1 }, border: { display: false } }
+              }
+            }
+          });
+        }
+
+        // Account status — doughnut
+        const statusCanvas = document.getElementById('chartStatus');
+        if (statusCanvas) {
+          const entries = Object.entries(STATUSES);
+          const hasData = entries.length > 0;
+          window.chartInstances.status = new Chart(statusCanvas, {
+            type: 'doughnut',
+            data: {
+              labels: hasData ? entries.map(e => e[0].charAt(0).toUpperCase() + e[0].slice(1)) : ['No accounts'],
+              datasets: [{
+                data: hasData ? entries.map(e => parseInt(e[1], 10)) : [1],
+                backgroundColor: hasData ? entries.map(e => STATUS_COLORS[e[0]] || '#64748b') : [p.isDark ? '#1e293b' : '#e2e8f0'],
+                borderWidth: 2,
+                borderColor: p.isDark ? 'rgba(11,19,30,.9)' : '#ffffff',
+                hoverOffset: 8
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              cutout: '68%',
+              plugins: {
+                legend: { position: 'right', labels: { color: p.tick, usePointStyle: true, pointStyle: 'circle', padding: 12, boxWidth: 8 } },
+                tooltip: glossTooltip(p)
+              }
+            }
+          });
+        }
+
+        // Interaction trend bars (leaderboard row)
+        const trendCanvas = document.getElementById('chartInteractionTrend');
+        if (trendCanvas) {
+          window.chartInstances.trend = new Chart(trendCanvas, {
+            type: 'bar',
+            data: {
+              labels: MONTH_LABELS,
+              datasets: [{
+                label: 'Interactions',
+                data: INTERACTIONS,
+                borderRadius: 8,
+                borderSkipped: false,
+                maxBarThickness: 40,
+                backgroundColor: function(c) {
+                  const area = c.chart.chartArea;
+                  return area ? vGradient(c.chart.ctx, area, '#8b5cf6') : '#8b5cf6';
+                }
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: { legend: { display: false }, tooltip: glossTooltip(p) },
+              scales: {
+                x: { grid: { display: false }, ticks: { color: p.tick } },
+                y: { grid: { color: p.grid }, ticks: { color: p.tick, stepSize: 1 }, border: { display: false } }
+              }
+            }
+          });
+        }
       }
-    });
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', buildCharts);
+      } else {
+        buildCharts();
+      }
+
+      // Re-skin charts when the theme flips (crm.js dispatches crm:theme)
+      document.addEventListener('crm:theme', buildCharts);
+    })();
     </script>
     <?php endif; ?>
 </body>

@@ -705,10 +705,13 @@ window.CRM = window.CRM || {};
     };
   }
 
+  let lastAccountStats = null;
+
   function buildAccountCharts(stats) {
     const board = document.getElementById('accountChartsBoard');
     if (!board || typeof Chart === 'undefined') return;
 
+    lastAccountStats = stats;
     Object.values(accountChartInstances).forEach(c => c.destroy());
     for (const k in accountChartInstances) delete accountChartInstances[k];
     board.innerHTML = '';
@@ -840,6 +843,11 @@ window.CRM = window.CRM || {};
   if (refreshBtn) {
     refreshBtn.addEventListener('click', loadAccountStats);
   }
+
+  // Rebuild with the new palette when the header theme toggle fires
+  document.addEventListener('crm:theme', function() {
+    if (lastAccountStats) buildAccountCharts(lastAccountStats);
+  });
 
   if (document.getElementById('accountChartsBoard')) {
     loadAccountStats();

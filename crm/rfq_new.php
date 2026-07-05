@@ -134,5 +134,6 @@ $suppliers = $stmt->fetchAll();
         });
     });
     </script>
+    <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
 </body>
 </html>

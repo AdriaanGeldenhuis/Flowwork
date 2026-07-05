@@ -1,206 +1,341 @@
-/* Styles specific to the Sales Pipeline (opportunities) module */
+/**
+ * Sales Pipeline (opportunities) — Dimension 3D glossy kanban.
+ * Builds on the crm.css token layer (loaded first on every opps page):
+ * glass columns, carved wells for card stacks, extruded drag cards with
+ * stage-tinted neon top edges. Card move buttons stay touch-friendly.
+ */
 
 .fw-opps__toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
 }
+
 .fw-opps__title {
-    font-size: 1.5rem;
+    font-size: 1.6rem;
+    font-weight: 900;
     margin: 0;
+    background: linear-gradient(135deg, #22d3ee, var(--fw-primary) 45%, var(--neon-blue));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 12px var(--fw-primary-glow));
 }
+
+.fw-opps__actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .fw-opps__summary {
     margin-bottom: 1rem;
-    font-weight: bold;
+    font-weight: 700;
+    color: var(--fw-text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--fw-card-face);
+    border: 1px solid var(--fw-border-base);
+    border-radius: var(--fw-radius-full);
+    box-shadow: var(--fw-key-shadow);
+    font-size: 0.9rem;
 }
+
+/* ===== BOARD ===== */
 .fw-opps__board {
     display: flex;
     overflow-x: auto;
     gap: 1rem;
-    padding-bottom: 1rem;
+    padding-bottom: 1.25rem;
+    align-items: flex-start;
 }
+
+/* Columns — glass panels with a carved card-well */
 .fw-opps__column {
     flex: 1 1 0;
-    min-width: 220px;
-    background-color: #f9f9fa;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    min-width: 230px;
+    background: var(--fw-panel-bg);
+    border: 1px solid var(--fw-panel-border);
+    border-radius: var(--fw-radius-lg);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    box-shadow:
+        inset 0 1px 0 var(--fw-rim-light),
+        0 12px 28px -12px rgba(21, 39, 50, 0.3),
+        0 24px 48px -24px var(--fw-primary-glow);
     display: flex;
     flex-direction: column;
+    position: relative;
+    transition: box-shadow var(--fw-transition-base), border-color var(--fw-transition-base);
 }
+
+/* Stage-tinted neon top edge per column */
+.fw-opps__column::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--stage-neon, var(--fw-primary)), transparent);
+    box-shadow: 0 0 14px var(--stage-neon, var(--fw-primary));
+    opacity: 0.75;
+    pointer-events: none;
+}
+
+.fw-opps__column[data-stage="prospect"]      { --stage-neon: var(--neon-purple); }
+.fw-opps__column[data-stage="qualification"] { --stage-neon: var(--neon-blue); }
+.fw-opps__column[data-stage="proposal"]      { --stage-neon: var(--neon-cyan); }
+.fw-opps__column[data-stage="negotiation"]   { --stage-neon: var(--neon-orange); }
+.fw-opps__column[data-stage="won"]           { --stage-neon: var(--neon-green); }
+.fw-opps__column[data-stage="lost"]          { --stage-neon: var(--neon-red); }
+
+/* Drop-target highlight while dragging over */
+.fw-opps__column.drag-over {
+    border-color: var(--fw-primary);
+    box-shadow:
+        inset 0 1px 0 var(--fw-rim-light),
+        0 0 0 2px var(--fw-primary-light),
+        0 0 34px -6px var(--fw-primary-glow),
+        0 12px 28px -12px rgba(21, 39, 50, 0.3);
+}
+
 .fw-opps__column-header {
-    padding: 0.5rem;
-    background-color: #f1f1f2;
-    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--fw-border-base);
     display: flex;
     flex-direction: column;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--fw-text-primary);
+    background: transparent;
 }
+
 .fw-opps__column-title {
     margin-bottom: 0.2rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 0.8rem;
 }
+
 .fw-opps__column-count,
 .fw-opps__column-total {
     font-size: 0.75rem;
-    color: #666;
-}
-.fw-opps__items {
-    padding: 0.5rem;
-    flex-grow: 1;
-    min-height: 40px;
-}
-.fw-opps__card {
-    background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-    cursor: grab;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-.fw-opps__card-title a {
     font-weight: 600;
-    color: #333;
-    text-decoration: none;
+    color: var(--fw-text-muted);
 }
+
+.fw-opps__column-total {
+    color: var(--fw-text-tertiary);
+}
+
+/* Card well — recessed screen the cards stack inside */
+.fw-opps__items {
+    padding: 10px;
+    margin: 10px;
+    flex-grow: 1;
+    min-height: 60px;
+    background: rgba(21, 39, 50, 0.03);
+    border-radius: var(--fw-radius-sm);
+    box-shadow: inset 0 2px 6px rgba(21, 39, 50, 0.06);
+    transition: background var(--fw-transition-base);
+}
+
+.fw-crm[data-theme="dark"] .fw-opps__items {
+    background: rgba(0, 0, 0, 0.22);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+/* ===== OPPORTUNITY CARDS — mini extruded slabs ===== */
+.fw-opps__card {
+    background: var(--fw-card-face);
+    border: 1px solid var(--fw-card-edge);
+    border-radius: var(--fw-radius-md);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: grab;
+    box-shadow: var(--fw-key-shadow);
+    transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), border-color var(--fw-transition-base);
+    position: relative;
+    overflow: hidden;
+}
+
+.fw-opps__card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+    opacity: 0;
+    transition: opacity var(--fw-transition-base);
+    pointer-events: none;
+}
+
+.fw-opps__card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--fw-key-shadow-hover), 0 18px 34px -14px var(--fw-primary-glow);
+    border-color: var(--fw-primary);
+}
+
+.fw-opps__card:hover::before {
+    opacity: 1;
+}
+
+.fw-opps__card:active {
+    cursor: grabbing;
+}
+
+.fw-opps__card.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+    transform: scale(0.98) rotate(1.2deg);
+}
+
+.fw-opps__card-title a {
+    font-weight: 700;
+    color: var(--fw-text-primary);
+    text-decoration: none;
+    transition: color var(--fw-transition-fast);
+}
+
 .fw-opps__card-title a:hover {
+    color: var(--fw-primary);
     text-decoration: underline;
 }
+
 .fw-opps__card-info {
     font-size: 0.85rem;
     margin-top: 0.25rem;
+    color: var(--fw-text-secondary);
+    font-weight: 600;
 }
+
 .fw-opps__card-meta {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--fw-text-muted);
     margin-top: 0.25rem;
 }
 
-/* While dragging */
-.fw-opps__card.dragging {
-    opacity: 0.5;
+.fw-opps__card-move {
+    margin-top: 8px;
 }
 
-/* Dark theme support */
-[data-theme="dark"] .fw-opps__column {
-    background-color: rgba(18, 24, 36, 0.6);
-    border-color: rgba(255, 255, 255, 0.08);
-}
-[data-theme="dark"] .fw-opps__column-header {
-    background-color: rgba(18, 24, 36, 0.8);
-    border-color: rgba(255, 255, 255, 0.08);
-    color: #e7ecf2;
-}
-[data-theme="dark"] .fw-opps__column-count,
-[data-theme="dark"] .fw-opps__column-total {
-    color: #9fb0c8;
-}
-[data-theme="dark"] .fw-opps__card {
-    background-color: rgba(30, 40, 60, 0.8);
-    border-color: rgba(255, 255, 255, 0.06);
-    color: #e7ecf2;
-}
-[data-theme="dark"] .fw-opps__card-title a {
-    color: #e7ecf2;
-}
-[data-theme="dark"] .fw-opps__card-meta {
-    color: #9fb0c8;
+/* Stale deals — amber warning edge + soft pulse */
+.fw-opps__card--stale {
+    border-left: 3px solid var(--neon-orange);
+    box-shadow:
+        var(--fw-key-shadow),
+        -4px 0 14px -6px rgba(245, 158, 11, 0.45);
 }
 
-/* Mobile stage selector for small screens */
+.fw-opps__stale-flag {
+    color: var(--neon-orange);
+    margin-left: 4px;
+    font-size: 12px;
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
+}
+
+.fw-opps__prob-chip {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--fw-primary-light);
+    color: var(--fw-primary);
+    font-size: 11px;
+    font-weight: 800;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        0 0 10px -3px var(--fw-primary-glow);
+}
+
+/* ===== FILTERS ===== */
+.fw-opps__filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+    margin: 0 0 16px;
+}
+
+.fw-opps__filters .fw-crm__select,
+.fw-opps__filters .fw-crm__input {
+    min-width: 150px;
+}
+
+.fw-opps__filter-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fw-text-tertiary);
+}
+
+/* ===== MOBILE ===== */
 .fw-opps__mobile-stage-select {
     display: none;
     width: 100%;
     margin-bottom: 0.75rem;
 }
 
-/* ===== MOBILE RESPONSIVE KANBAN ===== */
 @media (max-width: 768px) {
     .fw-opps__toolbar {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.5rem;
     }
+
     .fw-opps__board {
         flex-direction: column;
         overflow-x: visible;
     }
+
     .fw-opps__column {
         min-width: 100%;
         flex: none;
-    }
-    /* Collapse columns — show only active one */
-    .fw-opps__column {
         display: none;
     }
+
     .fw-opps__column.fw-opps__column--active {
         display: flex;
     }
+
     .fw-opps__mobile-stage-select {
         display: block;
-        padding: 0.5rem;
+        padding: 0.6rem 1rem;
         font-size: 1rem;
-        border: 1px solid #e0e0e0;
-        border-radius: 4px;
-        background: #fff;
+        border: 1px solid var(--fw-input-border);
+        border-radius: var(--fw-radius-md);
+        background: var(--fw-input-bg);
+        color: var(--fw-text-primary);
+        box-shadow: var(--fw-input-well);
     }
-    [data-theme="dark"] .fw-opps__mobile-stage-select {
-        background: rgba(18, 24, 36, 0.8);
-        border-color: rgba(255, 255, 255, 0.08);
-        color: #e7ecf2;
-    }
-    /* Cards need touch-friendly sizing */
+
     .fw-opps__card {
-        padding: 0.75rem;
+        padding: 0.85rem;
         margin-bottom: 0.75rem;
         cursor: pointer;
     }
+
     .fw-opps__card-title {
         font-size: 1rem;
     }
+
     .fw-opps__card-info {
         font-size: 0.9rem;
     }
-}
-/* ========== Phase E: filters, stale flags, probability chips ========== */
-.fw-opps__filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
-  margin: 0 0 16px;
-}
-.fw-opps__filters .fw-crm__select,
-.fw-opps__filters .fw-crm__input {
-  min-width: 150px;
-}
-.fw-opps__filter-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  opacity: .8;
-}
-.fw-opps__card--stale {
-  border-left: 3px solid #f59e0b;
-}
-.fw-opps__stale-flag {
-  color: #f59e0b;
-  margin-left: 4px;
-  font-size: 12px;
-}
-.fw-opps__prob-chip {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: rgba(6, 182, 212, .15);
-  color: #06b6d4;
-  font-size: 11px;
-  font-weight: 700;
-}
-@media (max-width: 768px) {
-  .fw-opps__filters { flex-direction: column; align-items: stretch; }
+
+    .fw-opps__filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
