@@ -7,7 +7,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-06-10-QI-CURRENCY');
+define('ASSET_VERSION', QI_ASSET_VERSION);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -17,6 +17,7 @@ $editMode = false;
 $quoteId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
 $quoteData = null;
 $lineItems = [];
+$editMilestones = [];
 
 if ($quoteId) {
     $editMode = true;
@@ -36,6 +37,21 @@ if ($quoteId) {
     $stmt = $DB->prepare("SELECT * FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
     $stmt->execute([$quoteId]);
     $lineItems = $stmt->fetchAll();
+
+    $stmt = $DB->prepare("
+        SELECT label, percentage, amount, due_date
+        FROM payment_milestones
+        WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ?
+        ORDER BY sort_order
+    ");
+    $stmt->execute([$quoteId, $companyId]);
+    foreach ($stmt->fetchAll() as $ms) {
+        $editMilestones[] = [
+            'label' => (string)$ms['label'],
+            'percentage' => (float)$ms['percentage'],
+            'due_date' => $ms['due_date'] ?: null,
+        ];
+    }
 }
 
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
@@ -67,15 +83,10 @@ $docSymbol = Currencies::symbol($docCurrency);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title><?= $editMode ? 'Edit Quote' : 'New Quote' ?> – <?= htmlspecialchars($company['name']) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
-    <style>
-        .fw-qi-form__line-item { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap: 12px; margin-bottom: 12px; align-items: start; }
-        .fw-qi-form__remove-line { background: #ef4444; color: white; border: none; border-radius: 6px; width: 40px; height: 40px; cursor: pointer; font-weight: 700; }
-        .fw-qi-form__remove-line:hover { background: #dc2626; }
-        .fw-qi-form__totals { max-width: 400px; margin-left: auto; padding: 20px; background: rgba(251,191,36,0.08); border-radius: 8px; margin-top: 20px; }
-        .fw-qi-form__total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; }
-        .fw-qi-form__total-row--grand { font-size: 22px; font-weight: 700; color: #fbbf24; border-top: 2px solid #fbbf24; padding-top: 12px; margin-top: 8px; }
-    </style>
 </head>
 <body class="fw-qi">
     <div class="fw-qi__container">
@@ -210,7 +221,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                     <button type="button" id="suggestLinesBtn" class="fw-qi__btn fw-qi__btn--secondary" style="margin-left:8px;">✨ Suggest Lines</button>
 
                     <!-- AI suggestions panel for line items -->
-                    <div id="aiLineSuggestions" class="fw-qi__panel" style="display:none;margin-top:10px;padding:10px;border:1px dashed #e5e7eb;border-radius:8px;background:rgba(243,244,246,0.4);">
+                    <div id="aiLineSuggestions" class="fw-qi__ai-panel" style="display:none;">
                         <p style="margin-bottom:8px;font-weight:600;">Suggested Items:</p>
                         <div id="aiLineList"></div>
                         <button type="button" id="importAllLinesBtn" class="fw-qi__btn fw-qi__btn--primary" style="margin-top:8px;display:none;">Add All</button>
@@ -262,7 +273,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                         <label class="fw-qi__label">Terms & Conditions <button type="button" id="suggestTermsBtn" class="fw-qi__btn fw-qi__btn--secondary" style="font-size:12px;padding:2px 6px;">✨ Suggest</button></label>
                         <textarea name="terms" class="fw-qi__textarea" id="termsTextarea" rows="4"><?= $editMode ? htmlspecialchars($quoteData['terms'] ?? '') : htmlspecialchars($defaultTerms) ?></textarea>
                         <!-- AI suggested terms panel -->
-                        <div id="aiTermsSuggestion" style="display:none;margin-top:6px;padding:8px;border:1px dashed #e5e7eb;border-radius:8px;background:rgba(243,244,246,0.4);"></div>
+                        <div id="aiTermsSuggestion" class="fw-qi__ai-panel" style="display:none;"></div>
                     </div>
 
                     <div class="fw-qi__form-group">
@@ -308,6 +319,206 @@ $docSymbol = Currencies::symbol($docCurrency);
         };
     </script>
     <script src="/qi/assets/qi.quote.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>
+        window.QI_EDIT_MILESTONES = <?= json_encode($editMilestones, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    </script>
+    <!-- Payment milestones (quote form does not load qi-form.js; its initForm would double-bind #quoteForm) -->
+    <script>
+    (function() {
+        'use strict';
+        const QI = window.QI = window.QI || {};
+        let milestoneCounter = 0;
+
+        function curSym() {
+            return (window.QICurrency) ? QICurrency.symbol() : 'R';
+        }
+
+        function grandTotal() {
+            let subtotal = 0;
+            document.querySelectorAll('.fw-qi-form__line-item').forEach(function(line) {
+                const qty = parseFloat(line.querySelector('[name="item_quantity[]"]')?.value) || 0;
+                const price = parseFloat(line.querySelector('[name="item_price[]"]')?.value) || 0;
+                subtotal += qty * price;
+            });
+            const rate = window.defaultTaxRate ? (parseFloat(window.defaultTaxRate) / 100) : 0.15;
+            return subtotal + subtotal * rate;
+        }
+
+        QI.toggleMilestones = function() {
+            const enabled = document.getElementById('enableMilestones')?.checked;
+            const section = document.getElementById('milestonesSection');
+            if (!section) return;
+            section.style.display = enabled ? 'block' : 'none';
+            if (enabled && document.querySelectorAll('.fw-qi__milestone-row').length === 0) {
+                QI.addMilestone('Deposit', 50);
+                QI.addMilestone('Final Payment', 50);
+            }
+        };
+
+        QI.addMilestone = function(defaultLabel, defaultPct, defaultAmount, defaultDueDate) {
+            milestoneCounter++;
+            const container = document.getElementById('milestonesContainer');
+            if (!container) return;
+            const row = document.createElement('div');
+            row.className = 'fw-qi__milestone-row';
+            row.dataset.milestoneId = milestoneCounter;
+            row.innerHTML = `
+              <div class="fw-qi__milestone-fields">
+                <div class="fw-qi__form-group">
+                  <label class="fw-qi__label">Phase Name</label>
+                  <input type="text" class="fw-qi__input ms-label" value="${defaultLabel || ''}" placeholder="e.g. Deposit, Progress, Final">
+                </div>
+                <div class="fw-qi__form-group">
+                  <label class="fw-qi__label">Type</label>
+                  <select class="fw-qi__input ms-type" onchange="QI.onMilestoneTypeChange(${milestoneCounter})">
+                    <option value="percentage" ${!defaultAmount ? 'selected' : ''}>Percentage (%)</option>
+                    <option value="fixed" ${defaultAmount ? 'selected' : ''}>Fixed Amount (${curSym()})</option>
+                  </select>
+                </div>
+                <div class="fw-qi__form-group ms-pct-group" ${defaultAmount ? 'style="display:none;"' : ''}>
+                  <label class="fw-qi__label">Percentage (%)</label>
+                  <input type="number" class="fw-qi__input ms-percentage" value="${defaultPct || ''}" step="0.01" min="0.01" max="100" placeholder="e.g. 50">
+                </div>
+                <div class="fw-qi__form-group ms-fixed-group" ${!defaultAmount ? 'style="display:none;"' : ''}>
+                  <label class="fw-qi__label">Amount (<span class="qi-currency-symbol">${curSym()}</span>)</label>
+                  <input type="number" class="fw-qi__input ms-fixed-amount" value="${defaultAmount || ''}" step="0.01" min="0.01" placeholder="e.g. 5000">
+                </div>
+                <div class="fw-qi__form-group">
+                  <label class="fw-qi__label">Due Date</label>
+                  <input type="date" class="fw-qi__input ms-due-date">
+                </div>
+                <div class="fw-qi__form-group">
+                  <label class="fw-qi__label">Calculated</label>
+                  <div class="fw-qi__milestone-amount" data-ms-id="${milestoneCounter}">${curSym()} 0.00</div>
+                </div>
+                <div class="fw-qi__form-group fw-qi__milestone-remove-col">
+                  <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="QI.removeMilestone(${milestoneCounter})">Remove</button>
+                </div>
+              </div>
+            `;
+            container.appendChild(row);
+            if (defaultDueDate) row.querySelector('.ms-due-date').value = defaultDueDate;
+            row.querySelector('.ms-percentage').addEventListener('input', QI.calculateMilestones);
+            row.querySelector('.ms-fixed-amount').addEventListener('input', QI.calculateMilestones);
+            QI.calculateMilestones();
+        };
+
+        QI.onMilestoneTypeChange = function(msId) {
+            const row = document.querySelector(`.fw-qi__milestone-row[data-milestone-id="${msId}"]`);
+            if (!row) return;
+            const type = row.querySelector('.ms-type').value;
+            row.querySelector('.ms-pct-group').style.display = type === 'percentage' ? '' : 'none';
+            row.querySelector('.ms-fixed-group').style.display = type === 'percentage' ? 'none' : '';
+            QI.calculateMilestones();
+        };
+
+        QI.removeMilestone = function(msId) {
+            const row = document.querySelector(`.fw-qi__milestone-row[data-milestone-id="${msId}"]`);
+            if (row) {
+                row.remove();
+                QI.calculateMilestones();
+            }
+        };
+
+        QI.calculateMilestones = function() {
+            const total = grandTotal();
+            let totalAllocated = 0;
+            document.querySelectorAll('.fw-qi__milestone-row').forEach(function(row) {
+                const type = row.querySelector('.ms-type')?.value || 'percentage';
+                let amount = 0;
+                if (type === 'percentage') {
+                    const pct = parseFloat(row.querySelector('.ms-percentage')?.value) || 0;
+                    amount = total * (pct / 100);
+                } else {
+                    amount = parseFloat(row.querySelector('.ms-fixed-amount')?.value) || 0;
+                }
+                totalAllocated += amount;
+                const amountDisplay = row.querySelector('.fw-qi__milestone-amount');
+                if (amountDisplay) amountDisplay.textContent = curSym() + ' ' + amount.toFixed(2);
+            });
+            const totalPct = total > 0 ? (totalAllocated / total) * 100 : 0;
+            const pctDisplay = document.getElementById('milestoneTotalPct');
+            if (pctDisplay) {
+                pctDisplay.textContent = totalPct.toFixed(2) + '% (' + curSym() + ' ' + totalAllocated.toFixed(2) + ')';
+                pctDisplay.style.color = Math.abs(totalPct - 100) < 0.01 ? 'var(--neon-green)' : 'var(--neon-red)';
+            }
+            const validationEl = document.getElementById('milestoneValidation');
+            if (validationEl) {
+                if (Math.abs(totalPct - 100) < 0.01) {
+                    validationEl.style.display = 'none';
+                } else if (totalPct < 100) {
+                    validationEl.textContent = `${(100 - totalPct).toFixed(2)}% (${curSym()} ${(total - totalAllocated).toFixed(2)}) still unallocated`;
+                    validationEl.style.display = 'block';
+                } else {
+                    validationEl.textContent = `${(totalPct - 100).toFixed(2)}% (${curSym()} ${(totalAllocated - total).toFixed(2)}) over-allocated`;
+                    validationEl.style.display = 'block';
+                }
+            }
+        };
+
+        QI.collectMilestones = function() {
+            if (!document.getElementById('enableMilestones')?.checked) return [];
+            const total = grandTotal();
+            const milestones = [];
+            document.querySelectorAll('.fw-qi__milestone-row').forEach(function(row) {
+                const type = row.querySelector('.ms-type')?.value || 'percentage';
+                let percentage, fixedAmount;
+                if (type === 'percentage') {
+                    percentage = parseFloat(row.querySelector('.ms-percentage')?.value) || 0;
+                    fixedAmount = null;
+                } else {
+                    fixedAmount = parseFloat(row.querySelector('.ms-fixed-amount')?.value) || 0;
+                    percentage = total > 0 ? (fixedAmount / total) * 100 : 0;
+                }
+                milestones.push({
+                    label: row.querySelector('.ms-label')?.value || '',
+                    percentage: percentage,
+                    fixed_amount: fixedAmount,
+                    due_date: row.querySelector('.ms-due-date')?.value || null
+                });
+            });
+            return milestones;
+        };
+
+        // qi.quote.js builds the save payload without milestones; inject them
+        // into the save_quote request so enabled phases actually persist.
+        // The key is always sent: [] means "explicitly disabled" and clears
+        // stored phases on edit; save_quote leaves rows alone only when the
+        // key is absent (non-shim clients).
+        const origFetch = window.fetch;
+        window.fetch = function(url, options) {
+            if (typeof url === 'string' && url.indexOf('/qi/ajax/save_quote.php') !== -1 &&
+                options && typeof options.body === 'string') {
+                try {
+                    const payload = JSON.parse(options.body);
+                    payload.milestones = QI.collectMilestones();
+                    options = Object.assign({}, options, { body: JSON.stringify(payload) });
+                } catch (e) { /* leave request untouched */ }
+            }
+            return origFetch.call(this, url, options);
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.getElementById('lineItemsContainer');
+            if (container) container.addEventListener('input', QI.calculateMilestones);
+
+            // Edit mode: rebuild stored phases so saving the form round-trips
+            // them instead of silently discarding them.
+            const stored = window.QI_EDIT_MILESTONES;
+            if (Array.isArray(stored) && stored.length) {
+                const toggle = document.getElementById('enableMilestones');
+                if (toggle && !toggle.checked) {
+                    toggle.checked = true;
+                    const section = document.getElementById('milestonesSection');
+                    if (section) section.style.display = 'block';
+                    stored.forEach(function(ms) {
+                        QI.addMilestone(ms.label, ms.percentage, null, ms.due_date);
+                    });
+                }
+            }
+        });
+    })();
+    </script>
 
     <!-- Import from project board functionality -->
     <script>

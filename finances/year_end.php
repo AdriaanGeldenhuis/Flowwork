@@ -21,6 +21,8 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 
 requireRoles(['admin']);
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;
 if (!$companyId || !$userId) {
@@ -79,8 +81,12 @@ while ($ref = $stmt->fetchColumn()) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Year-End Closing</title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 2rem; background-color: #f8f9fa; }
         h1 { margin-bottom: 0.5rem; }
         .subtitle { color: #6c757d; margin-bottom: 2rem; }
         .card { max-width: 700px; background: #fff; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 2rem; }
@@ -102,12 +108,13 @@ while ($ref = $stmt->fetchColumn()) {
         .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: bold; }
         .badge-closed { background-color: #d4edda; color: #155724; }
         .badge-open { background-color: #fff3cd; color: #664d03; }
-        a.back { display: inline-block; margin-bottom: 1rem; color: #0d6efd; text-decoration: none; }
-        a.back:hover { text-decoration: underline; }
     </style>
 </head>
-<body>
-    <a class="back" href="/finances/">&larr; Back to Finance Dashboard</a>
+<body class="fw-finance">
+    <div class="fw-finance__container">
+    <?php $finTitle = 'Year-End Closing'; $finBack = '/finances/'; include __DIR__ . '/partials/header.php'; ?>
+    <main class="fw-finance__main">
+    <div class="fw-finance__paper">
     <h1>Year-End Closing</h1>
     <p class="subtitle">Close a fiscal year by transferring net income to Retained Earnings (3100)</p>
 
@@ -155,6 +162,13 @@ while ($ref = $stmt->fetchColumn()) {
             </table>
         </div>
     </div>
+    </div><!-- /fw-finance__paper -->
+    </main>
+    <footer class="fw-finance__footer">
+        <span>Year-End Closing v<?= ASSET_VERSION ?></span>
+        <span id="themeIndicator">Theme: Light</span>
+    </footer>
+    </div><!-- /fw-finance__container -->
 
 <script>
 let previewData = null;
@@ -270,5 +284,6 @@ async function executeClose() {
     }
 }
 </script>
+<script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

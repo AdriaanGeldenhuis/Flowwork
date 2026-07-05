@@ -9,7 +9,7 @@ require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
 require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
+define('ASSET_VERSION', QI_ASSET_VERSION);
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -152,6 +152,9 @@ function qi_vat_label($invoice) {
     <?= Branding::fontHeadLinks() ?>
 
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= ASSET_VERSION ?>">
 

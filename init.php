@@ -12,6 +12,16 @@ if (!defined('CRM_ASSET_VERSION')) {
     define('CRM_ASSET_VERSION', '2026-07-05-crm-glossy-3d');
 }
 
+// Centralized QI asset version for cache busting
+if (!defined('QI_ASSET_VERSION')) {
+    define('QI_ASSET_VERSION', '2026-07-05-qi-glossy-3d');
+}
+
+// Centralized Finances asset version for cache busting
+if (!defined('FIN_ASSET_VERSION')) {
+    define('FIN_ASSET_VERSION', '2026-07-05-fin-glossy-3d');
+}
+
 // Helper function to get CRM settings
 function getCRMSetting($key, $default = null) {
     global $DB, $_SESSION;

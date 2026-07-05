@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', FIN_ASSET_VERSION);
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -37,6 +37,9 @@ $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Reminders – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__table {
@@ -61,39 +64,16 @@ $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
     </style>
 </head>
-<body>
-    <main class="fw-finance">
-        <div class="fw-finance__container">
-            <header class="fw-finance__header">
-                <div class="fw-finance__brand">
-                    <div class="fw-finance__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div class="fw-finance__brand-text">
-                        <div class="fw-finance__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-finance__app-name">Payment Reminders</div>
-                    </div>
-                </div>
-                <div class="fw-finance__greeting">
-                    Hello, <span class="fw-finance__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-                <div class="fw-finance__controls">
-                    <a href="/finances/ar/" class="fw-finance__back-btn" title="Back to AR">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    <a href="/finances/" class="fw-finance__home-btn" title="Finance Home">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                </div>
-            </header>
-            <div class="fw-finance__main">
+<body class="fw-finance">
+    <div class="fw-finance__container">
+            <?php
+            $finTitle = 'Payment Reminders';
+            $finBack = '/finances/ar/';
+            $finCompanyName = $companyName;
+            $finFirstName = $firstName;
+            include __DIR__ . '/../partials/header.php';
+            ?>
+            <main class="fw-finance__main">
                 <h2>Overdue Invoices</h2>
                 <?php if (empty($invoices)): ?>
                     <p>No overdue invoices at the moment. Great job!</p>
@@ -135,11 +115,12 @@ $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </table>
                     <p class="fw-finance__notice">To send a payment reminder, open each invoice and click "Send to Customer". Dedicated reminder emails will be available soon.</p>
                 <?php endif; ?>
-            </div>
+            </main>
             <footer class="fw-finance__footer">
-                <span>Finance AR Reminders v<?= ASSET_VERSION ?></span>
+                <span>Payment Reminders v<?= ASSET_VERSION ?></span>
+                <span id="themeIndicator">Theme: Light</span>
             </footer>
-        </div>
-    </main>
+    </div>
+    <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

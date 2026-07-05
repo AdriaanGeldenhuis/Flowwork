@@ -45,7 +45,12 @@ try {
             // Build WHERE clause
             $where = 'WHERE q.company_id = ?';
             $params = [$companyId];
-            if ($status !== '') {
+            if ($status === 'expired') {
+                // 'expired' is never stored on quotes — derive it from expiry_date
+                // the same way the overview does.
+                $where .= " AND (q.status = 'expired'
+                            OR (q.status IN ('sent','viewed') AND q.expiry_date < CURDATE()))";
+            } elseif ($status !== '') {
                 $where .= ' AND q.status = ?';
                 $params[] = $status;
             }
@@ -64,9 +69,14 @@ try {
             $countParams = $params;
             break;
         case 'invoice':
-            $where = 'WHERE i.company_id = ?';
+            $where = 'WHERE i.company_id = ? AND i.deleted_at IS NULL';
             $params = [$companyId];
-            if ($status !== '') {
+            if ($status === 'overdue') {
+                // 'overdue' is never stored on invoices — derive it from due_date
+                // the same way the overview KPIs do.
+                $where .= " AND i.status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
+                            AND i.balance_due > 0 AND i.due_date < CURDATE()";
+            } elseif ($status !== '') {
                 $where .= ' AND i.status = ?';
                 $params[] = $status;
             }

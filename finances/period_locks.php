@@ -26,6 +26,8 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 // Only allow admins or bookkeepers to access this page
 requireRoles(['admin','bookkeeper']);
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;
 if (!$companyId || !$userId) {
@@ -61,8 +63,12 @@ if ($userIds) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Period Locks</title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 2rem; background-color: #f8f9fa; }
         h1 { margin-bottom: 1.5rem; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
@@ -77,7 +83,11 @@ if ($userIds) {
         .danger-btn { background-color: #dc3545; color: #fff; border: none; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 4px; }
     </style>
 </head>
-<body>
+<body class="fw-finance">
+    <div class="fw-finance__container">
+    <?php $finTitle = 'Period Locks'; $finBack = '/finances/'; include __DIR__ . '/partials/header.php'; ?>
+    <main class="fw-finance__main">
+    <div class="fw-finance__paper">
     <h1>Period Locks</h1>
     <form id="lockForm">
         <div class="form-group">
@@ -113,6 +123,13 @@ if ($userIds) {
             <?php endforeach; ?>
         </tbody>
     </table>
+    </div><!-- /fw-finance__paper -->
+    </main>
+    <footer class="fw-finance__footer">
+        <span>Period Locks v<?= ASSET_VERSION ?></span>
+        <span id="themeIndicator">Theme: Light</span>
+    </footer>
+    </div><!-- /fw-finance__container -->
     <script>
         // Handle lock form submission
         document.getElementById('lockForm').addEventListener('submit', function(e) {
@@ -178,5 +195,6 @@ if ($userIds) {
             }
         });
     </script>
+    <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

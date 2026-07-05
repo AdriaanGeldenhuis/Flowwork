@@ -28,19 +28,28 @@ $assets = round($assets,2);
 $liab   = round($liab,2);
 $equity = round($equity,2);
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 header('Content-Type: text/html; charset=utf-8');
 ?>
 <!doctype html><html><head><meta charset="utf-8">
 <title>Balance Sheet as of <?=$asOf?></title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 <style>
-body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:20px}
 h1{margin:0 0 12px 0}
 .card{border:1px solid #eee;border-radius:8px;padding:16px;margin:10px 0}
 .row{display:flex;gap:12px}
 .col{flex:1}
 .amount{font-weight:600;font-size:1.2em;text-align:right}
 .small{color:#666;font-size:0.9em}
-</style></head><body>
+</style></head><body class="fw-finance">
+<div class="fw-finance__container">
+<?php $finTitle = 'Balance Sheet'; $finBack = '/finances/reports.php'; include __DIR__ . '/../partials/header.php'; ?>
+<main class="fw-finance__main">
+<div class="fw-finance__paper">
 <h1>Balance Sheet <small class="small">as of <?=$asOf?></small></h1>
 <form method="get"><label>As of <input type="date" name="as_of" value="<?=$asOf?>"></label> <button type="submit">Run</button></form>
 <div class="row">
@@ -61,4 +70,12 @@ h1{margin:0 0 12px 0}
 <strong class="small">Check</strong><br>
 Assets (<?=number_format($assets,2)?>) = Liabilities (<?=number_format($liab,2)?>) + Equity (<?=number_format($equity,2)?>)
 </div>
+</div><!-- /fw-finance__paper -->
+</main>
+<footer class="fw-finance__footer">
+    <span>Balance Sheet v<?= ASSET_VERSION ?></span>
+    <span id="themeIndicator">Theme: Light</span>
+</footer>
+</div><!-- /fw-finance__container -->
+<script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body></html>

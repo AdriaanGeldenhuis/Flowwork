@@ -1,9 +1,33 @@
+window.QI3D = window.QI3D || {};
+
 (function() {
   'use strict';
 
   const THEME_COOKIE = 'fw_theme';
   const THEME_DARK = 'dark';
   const THEME_LIGHT = 'light';
+  const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ========== TOASTS ==========
+  window.QI3D.toast = function(message, type) {
+    type = (type === 'error' || type === 'info') ? type : 'success';
+    let stack = document.getElementById('qiToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'qiToastStack';
+      stack.className = 'fw-qi__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'fw-qi__toast fw-qi__toast--' + type;
+    toast.textContent = message;
+    stack.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('fw-qi__toast--out');
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  };
 
   // ========== UTILITIES ==========
   function esc(str) {
@@ -11,6 +35,7 @@
     div.textContent = str == null ? '' : String(str);
     return div.innerHTML;
   }
+  window.QI3D.escapeHtml = esc;
 
   // Currency symbol for a list row. ZAR (or unknown) shows "R"; foreign
   // documents show their own symbol from window.QI_CURRENCY_SYMBOLS, or the
@@ -47,13 +72,23 @@
     const body = document.querySelector('.fw-qi');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || THEME_LIGHT;
+    let theme = getCookie(THEME_COOKIE) || THEME_DARK;
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
       theme = theme === THEME_DARK ? THEME_LIGHT : THEME_DARK;
       applyTheme(theme);
       setCookie(THEME_COOKIE, theme);
+
+      if (window.chartInstances) {
+        Object.values(window.chartInstances).forEach(chart => {
+          if (chart && typeof chart.destroy === 'function') chart.destroy();
+        });
+        window.chartInstances = {};
+      }
+
+      document.dispatchEvent(new CustomEvent('qi:theme', { detail: { theme } }));
+      if (window.QI3D.redrawSparks) window.QI3D.redrawSparks();
     });
 
     function applyTheme(t) {
@@ -95,322 +130,192 @@
     }
   }
 
-  // ========== OVERVIEW DASHBOARD ==========
-  function initOverview() {
-    const listContainer = document.getElementById('qiList');
-    if (!listContainer) {
-        return;
+  // ========== DIMENSION 3D ENGINE ==========
+  // Delegated pointer engine: works for cards rendered at any time (list
+  // views load via fetch, so per-card binding at DOMContentLoaded never sees
+  // them). Instead of writing inline transforms, it feeds the CSS custom
+  // properties (--rx/--ry for tilt, --mx/--my for the specular glare) that
+  // qi.css composes into the card transform.
+  function init3DTilt() {
+    if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-qi__kpi-card, [data-tilt]';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const activeTab = urlParams.get('tab') || 'overview';
-
-    if (activeTab !== 'overview') {
-        return;
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
     }
 
-    listContainer.innerHTML = `
-        <div class="fw-qi__loading">
-            <div class="fw-qi__spinner"></div>
-            <p>Loading overview...</p>
-        </div>
-    `;
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
 
-    fetch('/qi/ajax/load_overview.php')
-        .then(res => {
-            return res.json();
-        })
-        .then(data => {
-            if (data.ok) {
-                listContainer.innerHTML = renderOverview(data);
-            } else {
-                listContainer.innerHTML = '<div class="fw-qi__loading">Error: ' + (data.error || 'Unknown error') + '</div>';
-            }
-        })
-        .catch(err => {
-            listContainer.innerHTML = '<div class="fw-qi__loading">Network error: ' + err.message + '</div>';
-        });
-}
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
 
-function renderOverview(data) {
-    const stats = data.stats || {};
-    const overdueInvoices = data.overdue_invoices || [];
-    const pendingInvoices = data.pending_invoices || [];
-    const activeQuotes = data.active_quotes || [];
-    const recentPayments = data.recent_payments || [];
-    const revenueChart = data.revenue_chart || [];
-    const topCustomers = data.top_customers || [];
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
 
-    const avgPaymentDays = Math.round(stats.avg_payment_days || 0);
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
+    });
+  }
 
-    let html = `
-        <div class="fw-qi__overview">
-            
-            <!-- Hero Stats Row -->
-            <div class="fw-qi__hero-stats">
-                <div class="fw-qi__hero-stat fw-qi__hero-stat--primary">
-                    <div class="fw-qi__hero-stat-icon">💰</div>
-                    <div class="fw-qi__hero-stat-content">
-                        <div class="fw-qi__hero-stat-value">R ${parseFloat(stats.outstanding_amount || 0).toLocaleString('en-ZA', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</div>
-                        <div class="fw-qi__hero-stat-label">Outstanding</div>
-                    </div>
-                </div>
+  function initLogoTileEffect() {
+    const logoTile = document.querySelector('.fw-qi__logo-tile');
+    if (!logoTile || REDUCE_MOTION) return;
 
-                <div class="fw-qi__hero-stat fw-qi__hero-stat--success">
-                    <div class="fw-qi__hero-stat-icon">✅</div>
-                    <div class="fw-qi__hero-stat-content">
-                        <div class="fw-qi__hero-stat-value">R ${parseFloat(stats.paid_this_month || 0).toLocaleString('en-ZA', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</div>
-                        <div class="fw-qi__hero-stat-label">Paid This Month</div>
-                    </div>
-                </div>
-
-                <div class="fw-qi__hero-stat fw-qi__hero-stat--info">
-                    <div class="fw-qi__hero-stat-icon">📊</div>
-                    <div class="fw-qi__hero-stat-content">
-                        <div class="fw-qi__hero-stat-value">R ${parseFloat(stats.paid_this_year || 0).toLocaleString('en-ZA', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</div>
-                        <div class="fw-qi__hero-stat-label">YTD Revenue</div>
-                    </div>
-                </div>
-
-                <div class="fw-qi__hero-stat fw-qi__hero-stat--accent">
-                    <div class="fw-qi__hero-stat-icon">⏱️</div>
-                    <div class="fw-qi__hero-stat-content">
-                        <div class="fw-qi__hero-stat-value">${avgPaymentDays} days</div>
-                        <div class="fw-qi__hero-stat-label">Avg. Payment Time</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Stats Grid -->
-            <div class="fw-qi__stats-grid">
-                <div class="fw-qi__stat-card fw-qi__stat-card--danger" onclick="location.href='?tab=invoices&status=overdue'">
-                    <div class="fw-qi__stat-icon">⚠️</div>
-                    <div class="fw-qi__stat-value">${stats.overdue_invoices || 0}</div>
-                    <div class="fw-qi__stat-label">Overdue Invoices</div>
-                </div>
-
-                <div class="fw-qi__stat-card fw-qi__stat-card--warning" onclick="location.href='?tab=invoices&status=sent'">
-                    <div class="fw-qi__stat-icon">📋</div>
-                    <div class="fw-qi__stat-value">${stats.pending_invoices || 0}</div>
-                    <div class="fw-qi__stat-label">Pending Invoices</div>
-                </div>
-
-                <div class="fw-qi__stat-card fw-qi__stat-card--info" onclick="location.href='?tab=quotes'">
-                    <div class="fw-qi__stat-icon">📄</div>
-                    <div class="fw-qi__stat-value">${stats.active_quotes || 0}</div>
-                    <div class="fw-qi__stat-label">Active Quotes</div>
-                </div>
-            </div>
-
-            <!-- Main Content Grid -->
-            <div class="fw-qi__dashboard-grid">
-                
-                <!-- LEFT COLUMN -->
-                <div class="fw-qi__dashboard-left">
-                    
-                    <!-- OVERDUE INVOICES (Critical) -->
-                    ${overdueInvoices.length > 0 ? `
-                        <div class="fw-qi__dashboard-section fw-qi__dashboard-section--danger">
-                            <div class="fw-qi__section-header">
-                                <h3>⚠️ Overdue Invoices (Urgent)</h3>
-                                <a href="?tab=invoices&status=overdue" class="fw-qi__view-all">View All →</a>
-                            </div>
-                            <div class="fw-qi__table-wrapper">
-                                <table class="fw-qi__mini-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Invoice</th>
-                                            <th>Customer</th>
-                                            <th>Due Date</th>
-                                            <th class="fw-qi__table-align-right">Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${overdueInvoices.map(inv => `
-                                            <tr onclick="location.href='/qi/invoice_view.php?id=${parseInt(inv.id)}'" class="fw-qi__clickable-row">
-                                                <td><strong>${esc(inv.invoice_number)}</strong></td>
-                                                <td>${esc(inv.customer_name)}</td>
-                                                <td>
-                                                    <span class="fw-qi__overdue-badge-sm">${parseInt(inv.days_overdue)}d overdue</span>
-                                                </td>
-                                                <td class="fw-qi__table-align-right"><strong>${esc(moneySym(inv.currency))} ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ` : ''}
-
-                    <!-- PENDING INVOICES -->
-                    ${pendingInvoices.length > 0 ? `
-                        <div class="fw-qi__dashboard-section">
-                            <div class="fw-qi__section-header">
-                                <h3>📋 Pending Invoices</h3>
-                                <a href="?tab=invoices&status=sent" class="fw-qi__view-all">View All →</a>
-                            </div>
-                            <div class="fw-qi__table-wrapper">
-                                <table class="fw-qi__mini-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Invoice</th>
-                                            <th>Customer</th>
-                                            <th>Due</th>
-                                            <th class="fw-qi__table-align-right">Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${pendingInvoices.map(inv => `
-                                            <tr onclick="location.href='/qi/invoice_view.php?id=${parseInt(inv.id)}'" class="fw-qi__clickable-row">
-                                                <td><strong>${esc(inv.invoice_number)}</strong></td>
-                                                <td>${esc(inv.customer_name)}</td>
-                                                <td>
-                                                    ${inv.days_until_due <= 7 ?
-                                                        `<span class="fw-qi__due-soon-badge">${parseInt(inv.days_until_due)}d</span>` :
-                                                        esc(new Date(inv.due_date).toLocaleDateString())
-                                                    }
-                                                </td>
-                                                <td class="fw-qi__table-align-right"><strong>${esc(moneySym(inv.currency))} ${parseFloat(inv.balance_due).toFixed(2)}</strong></td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ` : ''}
-
-                    <!-- ACTIVE QUOTES -->
-                    ${activeQuotes.length > 0 ? `
-                        <div class="fw-qi__dashboard-section">
-                            <div class="fw-qi__section-header">
-                                <h3>📄 Active Quotes</h3>
-                                <a href="?tab=quotes" class="fw-qi__view-all">View All →</a>
-                            </div>
-                            <div class="fw-qi__table-wrapper">
-                                <table class="fw-qi__mini-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Quote</th>
-                                            <th>Customer</th>
-                                            <th>Expires</th>
-                                            <th class="fw-qi__table-align-right">Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${activeQuotes.map(q => `
-                                            <tr onclick="location.href='/qi/quote_view.php?id=${parseInt(q.id)}'" class="fw-qi__clickable-row">
-                                                <td><strong>${esc(q.quote_number)}</strong></td>
-                                                <td>${esc(q.customer_name)}</td>
-                                                <td>
-                                                    ${q.days_until_expiry <= 3 ?
-                                                        `<span class="fw-qi__expiring-badge">${parseInt(q.days_until_expiry)}d left</span>` :
-                                                        esc(new Date(q.expiry_date).toLocaleDateString())
-                                                    }
-                                                </td>
-                                                <td class="fw-qi__table-align-right"><strong>${esc(moneySym(q.currency))} ${parseFloat(q.total).toFixed(2)}</strong></td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ` : ''}
-
-                </div>
-
-                <!-- RIGHT COLUMN -->
-                <div class="fw-qi__dashboard-right">
-                    
-                    <!-- REVENUE CHART -->
-                    ${revenueChart.length > 0 ? `
-                        <div class="fw-qi__dashboard-section">
-                            <div class="fw-qi__section-header">
-                                <h3>📈 Revenue Trend (6 Months)</h3>
-                            </div>
-                            <div class="fw-qi__chart-container">
-                                ${renderMiniChart(revenueChart)}
-                            </div>
-                        </div>
-                    ` : ''}
-
-                    <!-- RECENT PAYMENTS -->
-                    ${recentPayments.length > 0 ? `
-                        <div class="fw-qi__dashboard-section">
-                            <div class="fw-qi__section-header">
-                                <h3>💳 Recent Payments</h3>
-                            </div>
-                            <div class="fw-qi__payment-list">
-                                ${recentPayments.map(pmt => `
-                                    <div class="fw-qi__payment-item">
-                                        <div class="fw-qi__payment-icon">✅</div>
-                                        <div class="fw-qi__payment-details">
-                                            <div class="fw-qi__payment-customer">${esc(pmt.customer_name)}</div>
-                                            <div class="fw-qi__payment-invoice">${esc(pmt.invoice_number)} • ${esc(new Date(pmt.payment_date).toLocaleDateString())}</div>
-                                        </div>
-                                        <div class="fw-qi__payment-amount">${esc(moneySym(pmt.currency))} ${parseFloat(pmt.amount).toFixed(2)}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-
-                    <!-- TOP CUSTOMERS -->
-                    ${topCustomers.length > 0 ? `
-                        <div class="fw-qi__dashboard-section">
-                            <div class="fw-qi__section-header">
-                                <h3>🏆 Top Customers (YTD)</h3>
-                            </div>
-                            <div class="fw-qi__top-customers">
-                                ${topCustomers.map((cust, idx) => `
-                                    <div class="fw-qi__top-customer-item">
-                                        <div class="fw-qi__top-customer-rank">${idx + 1}</div>
-                                        <div class="fw-qi__top-customer-info">
-                                            <div class="fw-qi__top-customer-name">${esc(cust.name)}</div>
-                                            <div class="fw-qi__top-customer-meta">${parseInt(cust.invoice_count)} invoices</div>
-                                        </div>
-                                        <div class="fw-qi__top-customer-revenue">R ${parseFloat(cust.total_revenue).toLocaleString('en-ZA', {minimumFractionDigits: 0})}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-
-                </div>
-
-            </div>
-
-        </div>
-    `;
-
-    return html;
-}
-
-function renderMiniChart(data) {
-    if (data.length === 0) return '<p class="fw-qi__no-data">No data available</p>';
-
-    const maxRevenue = Math.max(...data.map(d => parseFloat(d.revenue)));
-    const chartHeight = 120;
-
-    let html = '<div class="fw-qi__mini-chart">';
-    
-    data.forEach((item, idx) => {
-        const height = (parseFloat(item.revenue) / maxRevenue) * chartHeight;
-        const monthLabel = new Date(item.month + '-01').toLocaleDateString('en-ZA', { month: 'short' });
-        
-        html += `
-            <div class="fw-qi__chart-bar-wrapper">
-                <div class="fw-qi__chart-bar" style="height: ${height}px;" title="R ${parseFloat(item.revenue).toLocaleString('en-ZA')}">
-                    <div class="fw-qi__chart-bar-fill"></div>
-                </div>
-                <div class="fw-qi__chart-label">${monthLabel}</div>
-                <div class="fw-qi__chart-value">R ${(parseFloat(item.revenue) / 1000).toFixed(0)}k</div>
-            </div>
-        `;
+    logoTile.addEventListener('mouseenter', function() {
+      this.style.transform = 'scale(1.05) rotate(-3deg)';
     });
 
-    html += '</div>';
-    return html;
-}
+    logoTile.addEventListener('mouseleave', function() {
+      this.style.transform = '';
+    });
+  }
+
+  // Animated count-up for stat values marked with data-countup.
+  // Supports prefix/suffix (R, %, k, M) via data-prefix/data-suffix and
+  // decimals via data-decimals. Falls back to instant text when motion is off.
+  function initCountUp() {
+    const els = document.querySelectorAll('[data-countup]');
+    if (!els.length) return;
+
+    els.forEach(function(el) {
+      const target = parseFloat(el.getAttribute('data-countup'));
+      if (isNaN(target)) return;
+      const prefix = el.getAttribute('data-prefix') || '';
+      const suffix = el.getAttribute('data-suffix') || '';
+      const decimals = parseInt(el.getAttribute('data-decimals') || '0', 10);
+
+      function fmt(v) {
+        return prefix + v.toLocaleString(undefined, {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals
+        }) + suffix;
+      }
+
+      if (REDUCE_MOTION) {
+        el.textContent = fmt(target);
+        return;
+      }
+
+      const duration = 900;
+      const start = performance.now();
+
+      function tick(now) {
+        const p = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmt(target * eased);
+        if (p < 1) requestAnimationFrame(tick);
+      }
+
+      requestAnimationFrame(tick);
+    });
+  }
+
+  // Tiny dependency-free sparklines for canvases marked with data-spark
+  // (JSON array of numbers). Redrawn on theme toggle via QI3D.redrawSparks().
+  function drawSparkline(canvas) {
+    let values;
+    try {
+      values = JSON.parse(canvas.getAttribute('data-spark'));
+    } catch (e) {
+      return;
+    }
+    if (!Array.isArray(values) || values.length < 2) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = canvas.clientWidth || 120;
+    const cssHeight = canvas.clientHeight || 34;
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const color = canvas.getAttribute('data-spark-color') || '#fbbf24';
+    const max = Math.max.apply(null, values);
+    const min = Math.min.apply(null, values);
+    const range = (max - min) || 1;
+    const stepX = cssWidth / (values.length - 1);
+    const pad = 3;
+
+    function ptY(v) {
+      return cssHeight - pad - ((v - min) / range) * (cssHeight - pad * 2);
+    }
+
+    // Soft area fill
+    const grad = ctx.createLinearGradient(0, 0, 0, cssHeight);
+    grad.addColorStop(0, color + '55');
+    grad.addColorStop(1, color + '00');
+    ctx.beginPath();
+    ctx.moveTo(0, cssHeight);
+    values.forEach(function(v, i) { ctx.lineTo(i * stepX, ptY(v)); });
+    ctx.lineTo(cssWidth, cssHeight);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    values.forEach(function(v, i) {
+      if (i === 0) ctx.moveTo(0, ptY(v));
+      else ctx.lineTo(i * stepX, ptY(v));
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // End dot
+    ctx.beginPath();
+    ctx.arc(cssWidth - 1.5, ptY(values[values.length - 1]), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function initSparklines() {
+    document.querySelectorAll('canvas[data-spark]').forEach(drawSparkline);
+  }
+  window.QI3D.redrawSparks = initSparklines;
 
   // ========== LIST VIEW (Quotes, Invoices, etc.) ==========
   function initList() {
@@ -695,15 +600,11 @@ function renderMiniChart(data) {
   function init() {
     initTheme();
     initKebabMenu();
-    
-    const urlParams = new URLSearchParams(window.location.search);
-    const activeTab = urlParams.get('tab') || 'overview';
-    
-    if (activeTab === 'overview') {
-        initOverview();
-    } else {
-        initList();
-    }
+    initList();
+    init3DTilt();
+    initLogoTileEffect();
+    initCountUp();
+    initSparklines();
   }
 
   if (document.readyState === 'loading') {

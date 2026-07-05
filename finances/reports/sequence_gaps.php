@@ -9,6 +9,8 @@ require_once __DIR__ . '/../lib/AccountsMap.php';
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 if (!$companyId) { http_response_code(403); echo 'No company'; exit; }
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 header('Content-Type: text/html; charset=utf-8');
 
 // Fetch sequence settings for current period
@@ -54,8 +56,11 @@ for ($i=1; $i <= $max; $i++) {
 <head>
   <meta charset="utf-8">
   <title>Sequence gaps</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:20px}
     code{background:#f3f3f3;padding:2px 4px;border-radius:4px}
     .bad{color:#b00020}
     .ok{color:#0a7d00}
@@ -63,7 +68,11 @@ for ($i=1; $i <= $max; $i++) {
     td,th{padding:6px 10px;border-bottom:1px solid #eee}
   </style>
 </head>
-<body>
+<body class="fw-finance">
+  <div class="fw-finance__container">
+  <?php $finTitle = 'Sequence Gaps'; $finBack = '/finances/reports.php'; include __DIR__ . '/../partials/header.php'; ?>
+  <main class="fw-finance__main">
+  <div class="fw-finance__paper">
   <h1>AR Invoice sequence check</h1>
   <p>Prefix: <code><?=htmlspecialchars($prefix)?></code> Pad: <code><?=$pad?></code> Last issued: <code><?=$max?></code></p>
   <?php if ($gaps): ?>
@@ -81,5 +90,13 @@ for ($i=1; $i <= $max; $i++) {
     <?php endforeach; ?>
     </table>
   <?php endif; ?>
+  </div><!-- /fw-finance__paper -->
+  </main>
+  <footer class="fw-finance__footer">
+      <span>Sequence Gaps v<?= ASSET_VERSION ?></span>
+      <span id="themeIndicator">Theme: Light</span>
+  </footer>
+  </div><!-- /fw-finance__container -->
+  <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

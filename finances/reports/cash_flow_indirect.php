@@ -87,12 +87,17 @@ $cashDelta = delta($DB, $companyId, $groups['CASH'] ?? [], $from, $to);
 $cashInv = delta($DB, $companyId, $groups['INVESTING'] ?? [], $from, $to);
 $cashFin = delta($DB, $companyId, $groups['FINANCING'] ?? [], $from, $to);
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 header('Content-Type: text/html; charset=utf-8');
 ?>
 <!doctype html><html><head><meta charset="utf-8">
 <title>Cash Flow (Indirect) <?=$from?> to <?=$to?></title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 <style>
-body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:20px}
 h1{margin:0 0 12px 0}
 table{border-collapse:collapse;width:100%}
 td{padding:6px 10px;border-bottom:1px solid #eee}
@@ -100,7 +105,11 @@ td:first-child{text-align:left}
 td:last-child{text-align:right}
 .total{font-weight:700}
 .small{color:#666;font-size:0.9em}
-</style></head><body>
+</style></head><body class="fw-finance">
+<div class="fw-finance__container">
+<?php $finTitle = 'Cash Flow (Indirect)'; $finBack = '/finances/reports.php'; include __DIR__ . '/../partials/header.php'; ?>
+<main class="fw-finance__main">
+<div class="fw-finance__paper">
 <h1>Cash Flow (Indirect) <span class="small"><?=$from?> → <?=$to?></span></h1>
 <form method="get">
   <label>From <input type="date" name="from" value="<?=$from?>"></label>
@@ -117,4 +126,12 @@ td:last-child{text-align:right}
   <tr><td>Net Cash from Financing</td><td><?=number_format($cashFin,2)?></td></tr>
   <tr><td class="total">Net Increase in Cash and Equivalents</td><td class="total"><?=number_format($cashDelta,2)?></td></tr>
 </table>
+</div><!-- /fw-finance__paper -->
+</main>
+<footer class="fw-finance__footer">
+    <span>Cash Flow (Indirect) v<?= ASSET_VERSION ?></span>
+    <span id="themeIndicator">Theme: Light</span>
+</footer>
+</div><!-- /fw-finance__container -->
+<script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body></html>

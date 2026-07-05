@@ -25,6 +25,8 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 // Allow finance admins, bookkeepers and viewers to view reports
 requireRoles(['admin','bookkeeper','viewer']);
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;
 if (!$companyId || !$userId) {
@@ -44,8 +46,11 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trial Balance – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 1.5rem; background: #f8f9fa; }
         h1 { margin-bottom: 1rem; }
         .filters { margin-bottom: 1rem; }
         label { margin-right: 0.5rem; }
@@ -59,7 +64,11 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
         .message { margin-top: 1rem; font-weight: bold; }
     </style>
 </head>
-<body>
+<body class="fw-finance">
+    <div class="fw-finance__container">
+    <?php $finTitle = 'Trial Balance'; $finBack = '/finances/reports.php'; include __DIR__ . '/../partials/header.php'; ?>
+    <main class="fw-finance__main">
+    <div class="fw-finance__paper">
     <h1>Trial Balance</h1>
     <div class="filters">
         <label for="reportDate">As of date:</label>
@@ -68,6 +77,13 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
         <button id="exportBtn" disabled>Export CSV</button>
     </div>
     <div id="reportContainer">Select a date and click "Run Report".</div>
+    </div><!-- /fw-finance__paper -->
+    </main>
+    <footer class="fw-finance__footer">
+        <span>Trial Balance v<?= ASSET_VERSION ?></span>
+        <span id="themeIndicator">Theme: Light</span>
+    </footer>
+    </div><!-- /fw-finance__container -->
     <script>
     (function() {
         const runBtn = document.getElementById('runBtn');
@@ -119,5 +135,6 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
         }
     })();
     </script>
+    <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>
