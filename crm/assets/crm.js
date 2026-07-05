@@ -97,14 +97,19 @@ window.CRM = window.CRM || {};
       theme = theme === THEME_DARK ? THEME_LIGHT : THEME_DARK;
       applyTheme(theme);
       setCookie(THEME_COOKIE, theme);
-      
+
       // Rebuild charts with new theme
       if (window.chartInstances && Object.keys(window.chartInstances).length > 0) {
         Object.values(window.chartInstances).forEach(chart => chart.destroy());
+        window.chartInstances = {};
         if (typeof buildPlayground === 'function') {
           buildPlayground();
         }
       }
+
+      // Let page-level scripts (dashboard charts, sparklines) re-render
+      document.dispatchEvent(new CustomEvent('crm:theme', { detail: { theme } }));
+      if (window.CRM.redrawSparks) window.CRM.redrawSparks();
     });
 
     function applyTheme(t) {
@@ -435,11 +440,204 @@ window.CRM = window.CRM || {};
     }
   });
 
+  // ========== DIMENSION 3D ENGINE ==========
+  const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Delegated pointer engine: works for cards rendered at any time (account
+  // lists load via fetch, so per-card binding at DOMContentLoaded never sees
+  // them). Instead of writing inline transforms, it feeds the CSS custom
+  // properties (--rx/--ry for tilt, --mx/--my for the specular glare) that
+  // crm.css composes into the card transform.
+  function init3DTilt() {
+    if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-crm__account-card, .fw-crm__contact-card, .fw-crm__address-card, .fw-crm__kpi-card';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
+
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
+
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
+    });
+  }
+
+  function initLogoTileEffect() {
+    const logoTile = document.querySelector('.fw-crm__logo-tile');
+    if (!logoTile || REDUCE_MOTION) return;
+
+    logoTile.addEventListener('mouseenter', function() {
+      this.style.transform = 'scale(1.05) rotate(-3deg)';
+    });
+
+    logoTile.addEventListener('mouseleave', function() {
+      this.style.transform = '';
+    });
+  }
+
+  // Animated count-up for stat values marked with data-countup.
+  // Supports prefix/suffix (R, %, k, M) via data-prefix/data-suffix and
+  // decimals via data-decimals. Falls back to instant text when motion is off.
+  function initCountUp() {
+    const els = document.querySelectorAll('[data-countup]');
+    if (!els.length) return;
+
+    els.forEach(function(el) {
+      const target = parseFloat(el.getAttribute('data-countup'));
+      if (isNaN(target)) return;
+      const prefix = el.getAttribute('data-prefix') || '';
+      const suffix = el.getAttribute('data-suffix') || '';
+      const decimals = parseInt(el.getAttribute('data-decimals') || '0', 10);
+
+      function fmt(v) {
+        return prefix + v.toLocaleString(undefined, {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals
+        }) + suffix;
+      }
+
+      if (REDUCE_MOTION) {
+        el.textContent = fmt(target);
+        return;
+      }
+
+      const duration = 900;
+      const start = performance.now();
+
+      function tick(now) {
+        const p = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmt(target * eased);
+        if (p < 1) requestAnimationFrame(tick);
+      }
+
+      requestAnimationFrame(tick);
+    });
+  }
+
+  // Tiny dependency-free sparklines for canvases marked with data-spark
+  // (JSON array of numbers). Redrawn on theme toggle via CRM.redrawSparks().
+  function drawSparkline(canvas) {
+    let values;
+    try {
+      values = JSON.parse(canvas.getAttribute('data-spark'));
+    } catch (e) {
+      return;
+    }
+    if (!Array.isArray(values) || values.length < 2) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = canvas.clientWidth || 120;
+    const cssHeight = canvas.clientHeight || 34;
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const color = canvas.getAttribute('data-spark-color') || '#06b6d4';
+    const max = Math.max.apply(null, values);
+    const min = Math.min.apply(null, values);
+    const range = (max - min) || 1;
+    const stepX = cssWidth / (values.length - 1);
+    const pad = 3;
+
+    function ptY(v) {
+      return cssHeight - pad - ((v - min) / range) * (cssHeight - pad * 2);
+    }
+
+    // Soft area fill
+    const grad = ctx.createLinearGradient(0, 0, 0, cssHeight);
+    grad.addColorStop(0, color + '55');
+    grad.addColorStop(1, color + '00');
+    ctx.beginPath();
+    ctx.moveTo(0, cssHeight);
+    values.forEach(function(v, i) { ctx.lineTo(i * stepX, ptY(v)); });
+    ctx.lineTo(cssWidth, cssHeight);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    values.forEach(function(v, i) {
+      if (i === 0) ctx.moveTo(0, ptY(v));
+      else ctx.lineTo(i * stepX, ptY(v));
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // End dot
+    ctx.beginPath();
+    ctx.arc(cssWidth - 1.5, ptY(values[values.length - 1]), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function initSparklines() {
+    document.querySelectorAll('canvas[data-spark]').forEach(drawSparkline);
+  }
+  window.CRM.redrawSparks = initSparklines;
+
   // ========== INIT ==========
   function init() {
     initTheme();
     initKebabMenu();
     initAccountList();
+    init3DTilt();
+    initLogoTileEffect();
+    initCountUp();
+    initSparklines();
   }
 
   if (document.readyState === 'loading') {

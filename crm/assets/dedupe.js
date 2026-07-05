@@ -189,9 +189,16 @@
 
   function renderMergeUI() {
     const body = document.getElementById('mergeModalBody');
-    
+    // DB fields (names, notes, websites…) are attacker-controllable via
+    // import/edit — never interpolate them into innerHTML unescaped
+    const esc = (window.CRM && CRM.escapeHtml) ? CRM.escapeHtml : function(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    };
+
     const fields = [
-      'name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone', 
+      'name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone',
       'website', 'industry_id', 'region_id', 'status', 'notes'
     ];
 
@@ -202,7 +209,7 @@
       <div class="fw-crm__merge-grid">
         <div class="fw-crm__merge-column">
           <div class="fw-crm__merge-column-header">
-            ${leftAccount.name}
+            ${esc(leftAccount.name)}
             <span class="fw-crm__badge fw-crm__badge--primary" style="margin-left:8px;">Master</span>
           </div>
           <div id="leftFields"></div>
@@ -211,7 +218,7 @@
         <div class="fw-crm__merge-arrow">→</div>
 
         <div class="fw-crm__merge-column">
-          <div class="fw-crm__merge-column-header">${rightAccount.name}</div>
+          <div class="fw-crm__merge-column-header">${esc(rightAccount.name)}</div>
           <div id="rightFields"></div>
         </div>
       </div>
@@ -238,7 +245,7 @@
       leftFieldEl.dataset.side = 'left';
       leftFieldEl.innerHTML = `
         <div class="fw-crm__merge-field-label">${fieldLabel}</div>
-        <div class="fw-crm__merge-field-value">${leftValue || '(empty)'}</div>
+        <div class="fw-crm__merge-field-value">${esc(leftValue) || '(empty)'}</div>
       `;
       leftFieldEl.addEventListener('click', () => selectField(field, 'left'));
       leftFieldsContainer.appendChild(leftFieldEl);
@@ -250,7 +257,7 @@
       rightFieldEl.dataset.side = 'right';
       rightFieldEl.innerHTML = `
         <div class="fw-crm__merge-field-label">${fieldLabel}</div>
-        <div class="fw-crm__merge-field-value">${rightValue || '(empty)'}</div>
+        <div class="fw-crm__merge-field-value">${esc(rightValue) || '(empty)'}</div>
       `;
       rightFieldEl.addEventListener('click', () => selectField(field, 'right'));
       rightFieldsContainer.appendChild(rightFieldEl);

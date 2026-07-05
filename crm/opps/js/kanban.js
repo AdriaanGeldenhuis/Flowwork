@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             card.addEventListener('dragend', function () {
                 this.classList.remove('dragging');
+                document.querySelectorAll('.fw-opps__column.drag-over')
+                    .forEach(col => col.classList.remove('drag-over'));
             });
         });
     }
@@ -129,11 +131,20 @@ document.addEventListener('DOMContentLoaded', function () {
     // Drop handler for columns
     function initColumnDropHandlers() {
         document.querySelectorAll('.fw-opps__items').forEach(itemsContainer => {
+            const column = itemsContainer.closest('.fw-opps__column');
             itemsContainer.addEventListener('dragover', function (e) {
                 e.preventDefault();
+                if (column) column.classList.add('drag-over');
+            });
+            itemsContainer.addEventListener('dragleave', function (e) {
+                if (column && !itemsContainer.contains(e.relatedTarget)) {
+                    column.classList.remove('drag-over');
+                }
             });
             itemsContainer.addEventListener('drop', function (e) {
                 e.preventDefault();
+                document.querySelectorAll('.fw-opps__column.drag-over')
+                    .forEach(col => col.classList.remove('drag-over'));
                 const oppId = e.dataTransfer.getData('text/plain');
                 const draggedCard = document.querySelector('.fw-opps__card[data-id="' + oppId + '"]');
                 if (!draggedCard) return;
