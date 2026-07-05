@@ -26,8 +26,8 @@ header('Content-Disposition: attachment; filename="vat_summary.csv"');
 
 // Resolve VAT output and input account codes
 $accountsMap = new AccountsMap($DB, (int)$companyId);
-$vatOutCode = $accountsMap->get('finance_vat_output_account_id', '2120');
-$vatInCode  = $accountsMap->get('finance_vat_input_account_id', '2130');
+$vatOutCode = $accountsMap->get('finance_vat_output_account_id', '2110');
+$vatInCode  = $accountsMap->get('finance_vat_input_account_id', '2120');
 
 // Aggregate VAT balances, optionally filtered by date range
 $sql = "SELECT

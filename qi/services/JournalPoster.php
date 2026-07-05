@@ -165,9 +165,9 @@ class JournalPoster
             return;
         }
         // Determine default accounts
-        $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1200');
+        $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1100');
         $salesDef = $this->getAccountCodeBySetting('finance_sales_account_id', '4100');
-        $vatCode  = $this->getAccountCodeBySetting('finance_vat_output_account_id', '2120');
+        $vatCode  = $this->getAccountCodeBySetting('finance_vat_output_account_id', '2110');
 
         // Resolve output tax_code_id for SARS VAT201 compliance
         $outputTaxCodeId = $this->resolveOutputTaxCodeId();
@@ -318,7 +318,7 @@ class JournalPoster
         }
         // Determine accounts
         $bankCode = $this->getAccountCodeBySetting('finance_bank_account_id', '1110');
-        $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1200');
+        $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1100');
         // Payment amounts are recorded in the invoice's currency — convert each
         // allocation to ZAR at the invoice's captured rate
         $totalAmt = 0.0;
@@ -430,9 +430,9 @@ class JournalPoster
             return;
         }
         // Determine accounts
-        $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1200');
+        $arCode   = $this->getAccountCodeBySetting('finance_ar_account_id', '1100');
         $salesDef = $this->getAccountCodeBySetting('finance_sales_account_id', '4100');
-        $vatCode  = $this->getAccountCodeBySetting('finance_vat_output_account_id', '2120');
+        $vatCode  = $this->getAccountCodeBySetting('finance_vat_output_account_id', '2110');
         // Resolve output tax_code_id for SARS VAT201 compliance
         $outputTaxCodeId = $this->resolveOutputTaxCodeId();
         // Aggregate sales per account and VAT

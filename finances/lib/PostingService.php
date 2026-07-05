@@ -181,7 +181,7 @@ class PostingService
             throw new Exception('Invoice has no lines');
         }
         // Determine default accounts
-        $arCode    = $this->accounts->get('finance_ar_account_id', '1200');
+        $arCode    = $this->accounts->get('finance_ar_account_id', '1100');
         $salesDef  = $this->accounts->get('finance_sales_account_id', '4100');
         $vatCode   = $this->accounts->get('finance_vat_output_account_id', '2110');
         // Accounts for inventory and cost of goods sold
@@ -451,7 +451,7 @@ class PostingService
             // Fallback to finance_bank_account_id setting or 1110
             $bankCode = $this->accounts->get('finance_bank_account_id', '1110');
         }
-        $arCode = $this->accounts->get('finance_ar_account_id', '1200');
+        $arCode = $this->accounts->get('finance_ar_account_id', '1100');
         // Payment amounts are recorded in the invoice's currency — convert each
         // allocation to ZAR at the invoice's captured rate (1 unit = X ZAR).
         // KNOWN LIMITATION: foreign-currency receipts are converted at the
@@ -585,7 +585,7 @@ class PostingService
             throw new Exception('Credit note has no lines');
         }
         // Resolve account codes
-        $arCode   = $this->accounts->get('finance_ar_account_id', '1200');
+        $arCode   = $this->accounts->get('finance_ar_account_id', '1100');
         $salesDef = $this->accounts->get('finance_sales_account_id', '4100');
         $vatCode  = $this->accounts->get('finance_vat_output_account_id', '2110');
         if (!$arCode || !$salesDef) {
@@ -1085,7 +1085,7 @@ class PostingService
             throw new Exception('AP bill has no lines');
         }
         // Determine account codes
-        $apCode = $this->accounts->get('finance_ap_account_id', '2110');
+        $apCode = $this->accounts->get('finance_ap_account_id', '2010');
         $vatInCode = $this->accounts->get('finance_vat_input_account_id', '2120');
         // Loop lines, compute net and VAT per line and build journal lines.
         // Stock receipts are only collected here and recorded later, inside the
@@ -1359,7 +1359,7 @@ class PostingService
             // Fallback to finance_bank_account_id or 1110
             $bankCode = $this->accounts->get('finance_bank_account_id', '1110');
         }
-        $apCode = $this->accounts->get('finance_ap_account_id', '2110');
+        $apCode = $this->accounts->get('finance_ap_account_id', '2010');
         // Compute total amount: round each AP debit line to 2dp and make the
         // balancing bank credit the sum of the ROUNDED lines
         $totalAmt = 0.0;
@@ -1519,7 +1519,7 @@ class PostingService
             throw new Exception('Vendor credit has no lines');
         }
         // Account codes
-        $apCode   = $this->accounts->get('finance_ap_account_id', '2110');
+        $apCode   = $this->accounts->get('finance_ap_account_id', '2010');
         $vatInCode = $this->accounts->get('finance_vat_input_account_id', '2120');
         // Compute totals and build lines
         $journalLines = [];

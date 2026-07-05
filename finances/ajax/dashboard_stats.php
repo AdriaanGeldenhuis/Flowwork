@@ -20,8 +20,8 @@ if (!$companyId) {
 try {
     // Resolve account codes from company settings (with sensible defaults)
     $accountsMap = new AccountsMap($DB, (int)$companyId);
-    $arCode       = $accountsMap->get('finance_ar_account_id', '1200');
-    $apCode       = $accountsMap->get('finance_ap_account_id', '2110');
+    $arCode       = $accountsMap->get('finance_ar_account_id', '1100');
+    $apCode       = $accountsMap->get('finance_ap_account_id', '2010');
     $vatOutCode   = $accountsMap->get('finance_vat_output_account_id', '2110');
     $vatInCode    = $accountsMap->get('finance_vat_input_account_id', '2120');
 
