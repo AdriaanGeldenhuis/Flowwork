@@ -7,13 +7,19 @@ require_once __DIR__ . '/../../../auth_gate.php';
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'POST required']);
     exit;
 }
 
+// CSRF validation (session already bootstrapped by init.php/auth_gate.php)
+require_once __DIR__ . '/../../lib/Csrf.php';
+Csrf::validate();
+
 // Only allow admin or bookkeeper to apply matches
 $role = $_SESSION['role'] ?? 'member';
 if (!in_array($role, ['admin', 'bookkeeper'])) {
+    http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;
 }
@@ -119,7 +125,9 @@ try {
     $DB->commit();
     echo json_encode(['ok' => true, 'inserted' => $inserted, 'errors' => $errors]);
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log('Bill match error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => 'Failed to apply matches']);
 }

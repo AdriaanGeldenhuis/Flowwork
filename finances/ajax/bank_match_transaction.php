@@ -8,6 +8,7 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/PeriodService.php';
+require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
@@ -71,6 +72,19 @@ try {
     if (!$validatedAccountCode) {
         throw new Exception('Account code not found');
     }
+    // Validate the tax code belongs to this company and fetch its rate for the VAT split
+    $taxRatePercent = 0.0;
+    if ($taxCodeId !== null) {
+        $stmt = $DB->prepare(
+            "SELECT tax_code_id, rate_percent FROM gl_tax_codes WHERE tax_code_id = ? AND company_id = ? AND is_active = 1"
+        );
+        $stmt->execute([$taxCodeId, $companyId]);
+        $taxCode = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$taxCode) {
+            throw new Exception('Tax code not found for this company');
+        }
+        $taxRatePercent = (float)$taxCode['rate_percent'];
+    }
     // Create a journal entry for this match
     $stmt = $DB->prepare(
         "INSERT INTO journal_entries (
@@ -104,17 +118,47 @@ try {
     if (!$bankAccountCode) {
         throw new Exception('Bank GL account not configured for this bank account');
     }
+    // Split gross into net + VAT when a tax code with a non-zero rate is attached.
+    // VAT is extracted from the gross amount: VAT = gross x r / (100 + r), rounded
+    // to 2dp; net = gross - VAT so the journal always balances to the cent.
+    $isMoneyIn = intval($tx['amount_cents']) > 0;
+    $vatAmount = 0.0;
+    $vatAccountCode = null;
+    if ($taxCodeId !== null && $taxRatePercent > 0) {
+        $vatAmount = round($amount * $taxRatePercent / (100 + $taxRatePercent), 2);
+        if ($vatAmount > 0) {
+            // Money in = income => output VAT (liability); money out = expense => input VAT (claimable)
+            $accountsMap = new AccountsMap($DB, $companyId);
+            $vatAccountCode = $isMoneyIn
+                ? $accountsMap->get('finance_vat_output_account_id', '2110')
+                : $accountsMap->get('finance_vat_input_account_id', '2120');
+            // Ensure the resolved VAT control account exists in this company's chart
+            $stmt = $DB->prepare("SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_code = ?");
+            $stmt->execute([$companyId, $vatAccountCode]);
+            if (!$stmt->fetchColumn()) {
+                throw new Exception('VAT control account ' . $vatAccountCode . ' not found in chart of accounts');
+            }
+        }
+    }
+    $netAmount = round($amount - $vatAmount, 2);
+
     // Insert journal lines (debits/credits) with optional tax code for SARS VAT tracking
     $lineStmt = $DB->prepare(
         "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)"
     );
-    if (intval($tx['amount_cents']) > 0) {
-        // Money IN: Dr bank, Cr other
+    if ($isMoneyIn) {
+        // Money IN: Dr bank (gross), Cr other (net), Cr VAT Output (VAT)
         $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, null, $reference]);
-        $lineStmt->execute([$journalId, $validatedAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $taxCodeId, $reference]);
+        $lineStmt->execute([$journalId, $validatedAccountCode, $description, 0.0, number_format($netAmount, 2, '.', ''), $taxCodeId, $reference]);
+        if ($vatAmount > 0 && $vatAccountCode !== null) {
+            $lineStmt->execute([$journalId, $vatAccountCode, 'VAT Output - ' . $description, 0.0, number_format($vatAmount, 2, '.', ''), $taxCodeId, $reference]);
+        }
     } else {
-        // Money OUT: Dr other, Cr bank
-        $lineStmt->execute([$journalId, $validatedAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $taxCodeId, $reference]);
+        // Money OUT: Dr other (net), Dr VAT Input (VAT), Cr bank (gross)
+        $lineStmt->execute([$journalId, $validatedAccountCode, $description, number_format($netAmount, 2, '.', ''), 0.0, $taxCodeId, $reference]);
+        if ($vatAmount > 0 && $vatAccountCode !== null) {
+            $lineStmt->execute([$journalId, $vatAccountCode, 'VAT Input - ' . $description, number_format($vatAmount, 2, '.', ''), 0.0, $taxCodeId, $reference]);
+        }
         $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), null, $reference]);
     }
     // Mark the bank transaction as matched and store journal id

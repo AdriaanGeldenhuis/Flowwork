@@ -68,9 +68,16 @@ try {
     }
     $lockDate  = $row['lock_date'];
     $lockReason = $row['lock_reason'];
-    // Delete lock
-    $stmt = $DB->prepare("UPDATE gl_period_locks SET is_active = 0, deleted_at = NOW(), deleted_by = ? WHERE company_id = ? AND lock_id = ?");
-    $stmt->execute([$userId, $companyId, $lockId]);
+    // Hard-delete the lock. Every consumer of gl_period_locks in the codebase
+    // (PeriodService::isLocked, finances/index.php, finances/journals.php,
+    // finances/ajax/vat_file.php, period_lock_save.php, period_locks.php) reads
+    // the table WITHOUT filtering on is_active, so the previous soft delete
+    // (is_active = 0) left the lock fully in force — deletion was a no-op that
+    // the UI reported as success. A hard DELETE makes the removal effective for
+    // all consumers; the audit_log insert below preserves the deletion history
+    // (who, when, which lock date and reason).
+    $stmt = $DB->prepare("DELETE FROM gl_period_locks WHERE company_id = ? AND lock_id = ?");
+    $stmt->execute([$companyId, $lockId]);
     // Audit log
     $stmt = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)\n" .

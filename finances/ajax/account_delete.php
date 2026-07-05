@@ -59,6 +59,38 @@ try {
         throw new Exception('Cannot delete — account has sub-accounts. Remove children first.');
     }
 
+    // Check other records that reference this account by id (company-scoped)
+    $referencedBy = [];
+    $refChecks = [
+        'bank accounts (GL mapping)' => ["SELECT EXISTS(SELECT 1 FROM gl_bank_accounts WHERE company_id = ? AND gl_account_id = ?)", [$companyId, $accountId]],
+        'bank rules'                 => ["SELECT EXISTS(SELECT 1 FROM gl_bank_rules WHERE company_id = ? AND gl_account_id = ?)", [$companyId, $accountId]],
+        'budgets'                    => ["SELECT EXISTS(SELECT 1 FROM gl_budgets WHERE company_id = ? AND gl_account_id = ?)", [$companyId, $accountId]],
+        'fixed assets'               => ["SELECT EXISTS(SELECT 1 FROM gl_fixed_assets WHERE company_id = ? AND (asset_account_id = ? OR depreciation_expense_account_id = ? OR accumulated_depreciation_account_id = ?))", [$companyId, $accountId, $accountId, $accountId]],
+    ];
+    foreach ($refChecks as $label => [$sql, $params]) {
+        $stmt = $DB->prepare($sql);
+        $stmt->execute($params);
+        if ((int)$stmt->fetchColumn() > 0) { $referencedBy[] = $label; }
+    }
+
+    // company_settings finance_*_account_id mappings may store the account_id
+    // or the account_code (see AccountsMap::get)
+    $stmt = $DB->prepare("
+        SELECT setting_key FROM company_settings
+        WHERE company_id = ?
+          AND setting_key LIKE 'finance%account_id'
+          AND setting_value IN (?, ?)
+    ");
+    $stmt->execute([$companyId, (string)$accountId, $account['account_code']]);
+    $settingKeys = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if ($settingKeys) {
+        $referencedBy[] = 'finance settings (' . implode(', ', $settingKeys) . ')';
+    }
+
+    if ($referencedBy) {
+        throw new Exception('Cannot delete — account is still referenced by: ' . implode('; ', $referencedBy) . '. Update those references first, or deactivate the account instead.');
+    }
+
     // Safe to delete
     $stmt = $DB->prepare("DELETE FROM gl_accounts WHERE account_id = ? AND company_id = ?");
     $stmt->execute([$accountId, $companyId]);

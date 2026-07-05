@@ -29,6 +29,9 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 // Allow admin, bookkeeper and viewer roles to fetch reports
 requireRoles(['admin','bookkeeper','viewer']);
 
+require_once __DIR__ . '/report_helpers.php';
+require_once __DIR__ . '/../lib/AccountsMap.php';
+
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;
 if (!$companyId || !$userId) {
@@ -41,13 +44,30 @@ if (!$companyId || !$userId) {
 $report = $_GET['report'] ?? '';
 $export = isset($_GET['export']);
 
+// Guard against CSV formula injection: prefix a single quote to any cell that
+// starts with =, +, -, @, tab or carriage return so spreadsheet apps treat it
+// as text. Plain numeric values (e.g. "-123.45") are left intact.
+function csvGuardCell($value) {
+    if (!is_string($value) || $value === '') {
+        return $value;
+    }
+    $first = $value[0];
+    if ($first === '=' || $first === '+' || $first === '-' || $first === '@' || $first === "\t" || $first === "\r") {
+        if (($first === '-' || $first === '+') && is_numeric($value)) {
+            return $value;
+        }
+        return "'" . $value;
+    }
+    return $value;
+}
+
 // Helper to send CSV
 function sendCsv($filename, array $rows) {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename=' . $filename);
     $out = fopen('php://output', 'w');
     foreach ($rows as $row) {
-        fputcsv($out, $row);
+        fputcsv($out, array_map('csvGuardCell', $row));
     }
     fclose($out);
     exit;
@@ -104,20 +124,37 @@ try {
             break;
 
         case 'pl':
-            // Profit & Loss up to date
+            // Profit & Loss for a period. Mirrors report_pl.php: end date from
+            // ?date, start date from ?start_date, defaulting to the company's
+            // fiscal year start; year-end closing journals are excluded.
             $date = $_GET['date'] ?? date('Y-m-d');
+            $dtEnd = DateTime::createFromFormat('Y-m-d', $date);
+            if (!$dtEnd || $dtEnd->format('Y-m-d') !== $date) {
+                $date = date('Y-m-d');
+            }
+            $startDate = $_GET['start_date'] ?? null;
+            if ($startDate) {
+                $dtStart = DateTime::createFromFormat('Y-m-d', $startDate);
+                if (!$dtStart || $dtStart->format('Y-m-d') !== $startDate) {
+                    $startDate = null;
+                }
+            }
+            if (!$startDate) {
+                $startDate = getFiscalYearStart($DB, (int)$companyId, $date);
+            }
             // Revenue
             $stmtR = $DB->prepare(
                 "SELECT ga.account_id, ga.account_code, ga.account_name,
-                COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (jl.credit - jl.debit) ELSE 0 END),0) * 100 AS balance
+                COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ? AND ? THEN (jl.credit - jl.debit) ELSE 0 END),0) * 100 AS balance
                 FROM gl_accounts ga
                 LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
                 LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                    AND (je.module IS NULL OR je.module <> 'year_end')
                 WHERE ga.company_id = ? AND ga.account_type = 'revenue'
                 GROUP BY ga.account_id, ga.account_code, ga.account_name
                 ORDER BY ga.account_code"
             );
-            $stmtR->execute([$date, $companyId, $companyId]);
+            $stmtR->execute([$startDate, $date, $companyId, $companyId]);
             $revenue = [];
             $totalRevenue = 0;
             while ($row = $stmtR->fetch(PDO::FETCH_ASSOC)) {
@@ -135,15 +172,16 @@ try {
             // Expenses
             $stmtE = $DB->prepare(
                 "SELECT ga.account_id, ga.account_code, ga.account_name,
-                COALESCE(SUM(CASE WHEN je.entry_date <= ? THEN (jl.debit - jl.credit) ELSE 0 END),0) * 100 AS balance
+                COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ? AND ? THEN (jl.debit - jl.credit) ELSE 0 END),0) * 100 AS balance
                 FROM gl_accounts ga
                 LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
                 LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                    AND (je.module IS NULL OR je.module <> 'year_end')
                 WHERE ga.company_id = ? AND ga.account_type = 'expense'
                 GROUP BY ga.account_id, ga.account_code, ga.account_name
                 ORDER BY ga.account_code"
             );
-            $stmtE->execute([$date, $companyId, $companyId]);
+            $stmtE->execute([$startDate, $date, $companyId, $companyId]);
             $expenses = [];
             $totalExpenses = 0;
             while ($row = $stmtE->fetch(PDO::FETCH_ASSOC)) {
@@ -171,9 +209,11 @@ try {
                 }
                 $rows[] = ['Expenses','','Total Expenses', number_format($totalExpenses/100, 2, '.', '')];
                 $rows[] = ['','Net Income','', number_format($netIncome/100, 2, '.', '')];
-                sendCsv('profit_and_loss_' . $date . '.csv', $rows);
+                sendCsv('profit_and_loss_' . $startDate . '_to_' . $date . '.csv', $rows);
             }
             echo json_encode(['ok' => true, 'data' => [
+                'start_date' => $startDate,
+                'end_date' => $date,
                 'revenue' => $revenue,
                 'expenses' => $expenses,
                 'total_revenue_cents' => $totalRevenue,
@@ -217,6 +257,40 @@ try {
                 }
                 $results[$type] = $list;
             }
+
+            // Inject Current Year Earnings into equity, mirroring
+            // report_balance_sheet.php, so Assets = Liabilities + Equity holds.
+            // NOTE: unlike the P&L, this deliberately INCLUDES year-end closing
+            // journals — after a close the closed year's P&L nets to zero here
+            // and its profit lives in retained earnings instead.
+            $stmtNI = $DB->prepare(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN ga.account_type = 'revenue' AND je.entry_date <= ? THEN jl.credit - jl.debit ELSE 0 END),0) AS revenue,
+                    COALESCE(SUM(CASE WHEN ga.account_type = 'expense' AND je.entry_date <= ? THEN jl.debit - jl.credit ELSE 0 END),0) AS expenses
+                FROM gl_accounts ga
+                LEFT JOIN journal_lines jl ON ga.account_code = jl.account_code
+                LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                WHERE ga.company_id = ? AND ga.account_type IN ('revenue','expense')"
+            );
+            $stmtNI->execute([$date, $date, $companyId, $companyId]);
+            $plData = $stmtNI->fetch(PDO::FETCH_ASSOC);
+            $netIncomeCents = (int) round((floatval($plData['revenue']) - floatval($plData['expenses'])) * 100);
+            if ($netIncomeCents != 0) {
+                $cyeCode = '3300';
+                try {
+                    $accountsMap = new AccountsMap($DB, (int)$companyId);
+                    $cyeCode = $accountsMap->get('finance_current_year_earnings_account_id', '3300');
+                } catch (Exception $e) {
+                    // keep fallback code
+                }
+                $results['equity'][] = [
+                    'account_id'    => null,
+                    'account_code'  => $cyeCode,
+                    'account_name'  => 'Current Year Earnings',
+                    'balance_cents' => $netIncomeCents
+                ];
+            }
+
             if ($export) {
                 $rows = [];
                 $rows[] = ['Section','Account Code','Account Name','Balance'];

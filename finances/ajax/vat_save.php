@@ -61,8 +61,8 @@ try {
 
     // Compute VAT totals using centralised helper
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
 
     $vatData = VatCalculator::calculate(
         $DB, $companyId,
@@ -100,6 +100,9 @@ try {
 
     // Insert a period lock using gl_period_locks so the posting service respects it
     // We lock up to the period_end date inclusive
+    // KNOWN LIMITATION: locking at period_end means preparing periods out of
+    // order (e.g. preparing a later period before an earlier one) over-locks
+    // earlier, still-open periods. Left as-is intentionally.
     $stmt = $DB->prepare(
         "INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at)
          VALUES (?, ?, 'vat_period_locked', ?, NOW())"

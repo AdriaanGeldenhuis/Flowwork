@@ -95,28 +95,67 @@
   if (manualBillForm) {
     manualBillForm.addEventListener('submit', async function(e) {
       e.preventDefault();
-      var data = {
-        supplier_id: supplierSelect.value,
-        bill_date: document.getElementById('billDate').value,
-        invoice_number: document.getElementById('invoiceNumber').value,
-        due_date: document.getElementById('dueDate').value,
-        expense_account_id: expenseAccountSelect.value,
-        amount: parseFloat(billAmountInput.value) || 0,
-        vat_amount: parseFloat(vatAmountInput.value) || 0,
-        description: document.getElementById('description').value
-      };
-      if (!data.supplier_id || !data.expense_account_id || data.amount <= 0) {
+      var supplierId = supplierSelect.value;
+      var billDate = document.getElementById('billDate').value;
+      var invoiceNumber = (document.getElementById('invoiceNumber').value || '').trim();
+      var dueDate = document.getElementById('dueDate').value;
+      var expenseAccountId = expenseAccountSelect.value;
+      var amount = parseFloat(billAmountInput.value) || 0;
+      var vatAmount = parseFloat(vatAmountInput.value) || 0;
+      var description = document.getElementById('description').value;
+      if (!supplierId || !expenseAccountId || amount <= 0) {
         showMessage('billFormMessage', 'Please fill in all required fields', 'error');
         return;
       }
-      var result = await FinanceAPI.request('/finances/ajax/ap_post_bill.php', 'POST', data);
+      // bill_create.php requires an invoice number (used for duplicate
+      // detection); generate a reference when the user leaves it blank.
+      if (!invoiceNumber) {
+        invoiceNumber = 'MAN-' + Date.now();
+      }
+      // Express the VAT amount as a line tax rate so the server-side
+      // recomputation (subtotal + tax from lines) reproduces it exactly.
+      var taxRate = (vatAmount > 0 && amount > 0) ? (vatAmount / amount) * 100 : 0;
+      // Step 1: create the bill via the AP bill API (single line built
+      // from the amount / VAT fields).
+      var createPayload = {
+        header: {
+          supplier_id: parseInt(supplierId, 10),
+          invoice_number: invoiceNumber,
+          invoice_date: billDate,
+          due_date: dueDate || null,
+          subtotal: amount,
+          tax: vatAmount,
+          total: amount + vatAmount,
+          notes: description || null
+        },
+        lines: [{
+          description: description || 'Supplier bill',
+          qty: 1,
+          unit_price: amount,
+          discount: 0,
+          tax_rate: taxRate,
+          gl_account_id: parseInt(expenseAccountId, 10)
+        }]
+      };
+      var created = await FinanceAPI.request('/finances/ap/api/bill_create.php', 'POST', createPayload);
+      if (!created || !created.ok) {
+        showMessage('billFormMessage', (created && created.error) || 'Failed to create bill', 'error');
+        return;
+      }
+      // Step 2: post the new bill to the GL.
+      var result = await FinanceAPI.request('/finances/ajax/ap_post_bill.php', 'POST', { bill_id: created.bill_id });
       if (result && result.ok) {
-        showMessage('billFormMessage', 'Bill posted to GL successfully!', 'success');
+        var msg = 'Bill posted to GL successfully!';
+        if (result.sars_warnings && result.sars_warnings.length) {
+          msg += ' Warning: ' + result.sars_warnings.join(' ');
+        }
+        showMessage('billFormMessage', msg, 'success');
         manualBillForm.reset();
         document.getElementById('billDate').value = new Date().toISOString().split('T')[0];
         calculateTotal();
+        loaded.bills = false; // refresh Bills List on next visit
       } else {
-        showMessage('billFormMessage', (result && result.error) || 'Failed to post bill', 'error');
+        showMessage('billFormMessage', 'Bill #' + created.bill_id + ' was created but not posted: ' + ((result && result.error) || 'Failed to post bill'), 'error');
       }
     });
   }

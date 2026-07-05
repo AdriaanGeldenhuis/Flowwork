@@ -42,51 +42,90 @@ if (!$creditId || !$allocs || !is_array($allocs)) {
     exit;
 }
 
+// Aggregate requested allocation per bill (guards against the same bill
+// appearing more than once in a single request).
+$perBill = [];
+foreach ($allocs as $a) {
+    $bId = isset($a['bill_id']) ? (int)$a['bill_id'] : 0;
+    $amt = isset($a['amount']) ? (float)$a['amount'] : 0.0;
+    if ($bId <= 0 || $amt <= 0) {
+        continue;
+    }
+    $perBill[$bId] = ($perBill[$bId] ?? 0.0) + $amt;
+}
+$allocSum = array_sum($perBill);
+if (!$perBill || $allocSum <= 0) {
+    echo json_encode(['ok' => false, 'error' => 'No valid allocations supplied']);
+    exit;
+}
+
 try {
-    // Fetch credit record and validate
-    $stmt = $DB->prepare("SELECT * FROM vendor_credits WHERE id = ? AND company_id = ? LIMIT 1");
+    $DB->beginTransaction();
+    // Fetch and lock the credit so concurrent allocations serialise and
+    // repeated calls cannot over-allocate.
+    $stmt = $DB->prepare("SELECT * FROM vendor_credits WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE");
     $stmt->execute([$creditId, $companyId]);
     $credit = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$credit) {
+        $DB->rollBack();
         echo json_encode(['ok' => false, 'error' => 'Vendor credit not found']);
         exit;
     }
     if ($credit['status'] === 'applied') {
+        $DB->rollBack();
         echo json_encode(['ok' => false, 'error' => 'Credit already applied']);
         exit;
     }
+    $creditSupplierId = (int)$credit['supplier_id'];
     $totalCredit = floatval($credit['total']);
-    // Sum allocations and validate does not exceed credit
-    $allocSum = 0.0;
-    foreach ($allocs as $a) {
-        $amt = isset($a['amount']) ? (float)$a['amount'] : 0.0;
-        if ($amt > 0) {
-            $allocSum += $amt;
-        }
-    }
-    if ($allocSum <= 0 || $allocSum > $totalCredit + 0.0001) {
-        echo json_encode(['ok' => false, 'error' => 'Allocations exceed credit total']);
+    // Validate against the UNALLOCATED remainder (total - prior allocations)
+    $stmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM vendor_credit_allocations WHERE credit_id = ?");
+    $stmt->execute([$creditId]);
+    $alreadyAllocated = floatval($stmt->fetchColumn());
+    $remainingCredit  = $totalCredit - $alreadyAllocated;
+    if ($allocSum > $remainingCredit + 0.01) {
+        $DB->rollBack();
+        echo json_encode(['ok' => false, 'error' => 'Allocations of R' . number_format($allocSum, 2) . ' exceed the unallocated credit remainder of R' . number_format($remainingCredit, 2)]);
         exit;
     }
+    // Validate each target bill: must exist in this company, belong to the
+    // credit's supplier and have enough remaining balance. Locked FOR UPDATE.
+    $stmtChk = $DB->prepare(
+        "SELECT b.total, b.supplier_id,
+                COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = b.id), 0) AS paid,
+                COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = b.id), 0) AS credited
+         FROM ap_bills b WHERE b.id = ? AND b.company_id = ? FOR UPDATE"
+    );
+    foreach ($perBill as $bId => $amt) {
+        $stmtChk->execute([$bId, $companyId]);
+        $row = $stmtChk->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Bill #' . $bId . ' was not found for this company']);
+            exit;
+        }
+        if ((int)$row['supplier_id'] !== $creditSupplierId) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Bill #' . $bId . ' belongs to a different supplier than this credit']);
+            exit;
+        }
+        $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
+        if ($amt > $remaining + 0.01) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Credit allocation of R' . number_format($amt, 2) . ' exceeds outstanding balance of R' . number_format($remaining, 2) . ' on bill #' . $bId]);
+            exit;
+        }
+    }
     // Insert allocations
-    $DB->beginTransaction();
     $insAlloc = $DB->prepare(
         "INSERT INTO vendor_credit_allocations (credit_id, bill_id, amount, created_at) VALUES (?, ?, ?, NOW())"
     );
-    foreach ($allocs as $a) {
-        $billId = isset($a['bill_id']) ? (int)$a['bill_id'] : 0;
-        $amt    = isset($a['amount']) ? (float)$a['amount'] : 0.0;
-        if ($billId && $amt > 0) {
-            $insAlloc->execute([$creditId, $billId, $amt]);
-        }
+    foreach ($perBill as $billId => $amt) {
+        $insAlloc->execute([$creditId, $billId, $amt]);
     }
-    $DB->commit();
     // Update affected bills' statuses if they are fully paid/credited
-    $stmtBillIds = $DB->prepare(
-        "SELECT DISTINCT bill_id FROM vendor_credit_allocations WHERE credit_id = ?"
-    );
-    $stmtBillIds->execute([$creditId]);
-    $billIds = $stmtBillIds->fetchAll(PDO::FETCH_COLUMN, 0);
+    // (inside the same transaction so allocation + status commit atomically)
+    $billIds = array_keys($perBill);
     foreach ($billIds as $bId) {
         $stmtBal = $DB->prepare(
             "SELECT total,
@@ -106,6 +145,7 @@ try {
             }
         }
     }
+    $DB->commit();
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
     if ($DB->inTransaction()) { $DB->rollBack(); }

@@ -39,10 +39,16 @@ try {
     // Opening balance prior to start date
     $openDebit = 0.0;
     $openCredit = 0.0;
+    // Statements show real, issued documents only: draft and cancelled
+    // invoices/credit notes (and soft-deleted invoices) are excluded
+    // everywhere; paid invoices stay in — the statement is the full history
+    // of real documents and their payments.
     if ($startDate) {
         // Sum of invoice totals before start date
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM invoices WHERE company_id = ? AND customer_id = ? AND issue_date < ?"
+            "SELECT SUM(total) FROM invoices
+             WHERE company_id = ? AND customer_id = ? AND issue_date < ?
+               AND deleted_at IS NULL AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $customerId, $startDate]);
         $openDebit = floatval($stmt->fetchColumn());
@@ -51,13 +57,16 @@ try {
             "SELECT SUM(pa.amount) FROM payment_allocations pa
              JOIN invoices i ON pa.invoice_id = i.id
              JOIN payments p ON pa.payment_id = p.id
-             WHERE i.company_id = ? AND i.customer_id = ? AND p.payment_date < ?"
+             WHERE i.company_id = ? AND i.customer_id = ? AND p.payment_date < ?
+               AND i.deleted_at IS NULL AND i.status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $customerId, $startDate]);
         $openCredit += floatval($stmt->fetchColumn());
         // Sum of credit notes totals for this customer before start date
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM credit_notes WHERE company_id = ? AND customer_id = ? AND issue_date < ? AND status != 'cancelled'"
+            "SELECT SUM(total) FROM credit_notes
+             WHERE company_id = ? AND customer_id = ? AND issue_date < ?
+               AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $customerId, $startDate]);
         $openCredit += floatval($stmt->fetchColumn());
@@ -88,6 +97,7 @@ try {
                    0 AS credit
             FROM invoices i
             WHERE i.company_id = ? AND i.customer_id = ?
+              AND i.deleted_at IS NULL AND i.status NOT IN ('draft','cancelled')
             UNION ALL
             -- Payments
             SELECT p.payment_date AS t_date,
@@ -100,6 +110,7 @@ try {
             JOIN payments p ON pa.payment_id = p.id
             JOIN invoices i ON pa.invoice_id = i.id
             WHERE i.company_id = ? AND i.customer_id = ?
+              AND i.deleted_at IS NULL AND i.status NOT IN ('draft','cancelled')
             UNION ALL
             -- Credit notes
             SELECT cn.issue_date AS t_date,
@@ -109,7 +120,7 @@ try {
                    0 AS debit,
                    cn.total AS credit
             FROM credit_notes cn
-            WHERE cn.company_id = ? AND cn.customer_id = ? AND cn.status != 'cancelled'
+            WHERE cn.company_id = ? AND cn.customer_id = ? AND cn.status NOT IN ('draft','cancelled')
         ) AS all_txn
         WHERE 1=1 " . $dateFilterSql . "
         ORDER BY t_date, ref

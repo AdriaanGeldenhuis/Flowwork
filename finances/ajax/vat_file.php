@@ -3,6 +3,8 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../permissions.php';
+require_once __DIR__ . '/../lib/AccountsMap.php';
+require_once __DIR__ . '/../lib/VatCalculator.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
@@ -45,13 +47,34 @@ try {
         throw new Exception('Period must be prepared or adjusted before filing');
     }
 
-    // Update period status to filed
+    // Snapshot final figures at filing time (same computation as vat_prepare)
+    // so the filed return is served from stored values and cannot silently
+    // change if journals later move.
+    $accounts = new AccountsMap($DB, (int)$companyId);
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
+
+    $vatData = VatCalculator::calculate(
+        $DB, (int)$companyId,
+        $period['period_start'], $period['period_end'],
+        $vatOutputCode, $vatInputCode
+    );
+
+    // Update period status to filed and store the final figures
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
-         SET status = 'filed', filed_by = ?, filed_at = NOW()
+         SET status = 'filed', filed_by = ?, filed_at = NOW(),
+             output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?
          WHERE id = ? AND company_id = ?"
     );
-    $stmt->execute([$userId, $periodId, $companyId]);
+    $stmt->execute([
+        $userId,
+        $vatData['total_output_vat_cents'],
+        $vatData['total_input_vat_cents'],
+        $vatData['net_vat_cents'],
+        $periodId,
+        $companyId
+    ]);
 
     // Insert a period lock if one does not already exist at or after this date
     $stmt = $DB->prepare(
@@ -74,7 +97,12 @@ try {
     $stmt->execute([
         $companyId,
         $userId,
-        json_encode(['period_id' => $periodId]),
+        json_encode([
+            'period_id' => $periodId,
+            'output_vat_cents' => $vatData['total_output_vat_cents'],
+            'input_vat_cents'  => $vatData['total_input_vat_cents'],
+            'net_vat_cents'    => $vatData['net_vat_cents']
+        ]),
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
 

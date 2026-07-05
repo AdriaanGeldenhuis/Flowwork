@@ -244,9 +244,15 @@
     document.getElementById('accountType').value = account.account_type;
     document.getElementById('accountDescription').value = account.description || '';
     document.getElementById('normalBalance').value = account.normal_balance || 'debit';
-    document.getElementById('parentId').value = account.parent_id || '';
     document.getElementById('taxCodeId').value = account.tax_code_id || '';
     document.getElementById('isActive').checked = account.is_active == 1;
+
+    // Rebuild the parent dropdown (synchronous, filtered by the account type set
+    // above) BEFORE setting its value — populateParentDropdown() replaces the
+    // options via innerHTML, which would otherwise wipe the current parent and
+    // silently re-parent the account on save.
+    populateParentDropdown(accountId);
+    document.getElementById('parentId').value = account.parent_id || '';
 
     // Populate subtype dropdown for this type, then set value
     populateSubtypeDropdown(account.account_type);
@@ -262,7 +268,6 @@
       document.getElementById('saveBtn').textContent = 'Save Account';
     }
 
-    populateParentDropdown(accountId);
     FinanceModal.open('accountModal');
   }
 

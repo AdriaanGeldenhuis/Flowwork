@@ -89,11 +89,13 @@ class PostingService
     /**
      * Remove an existing journal entry by id. This helper deletes the entry
      * and its associated lines. Use this prior to re-posting a transaction
-     * that has already been posted. If the period of the entry is locked
-     * the deletion will be skipped silently.
+     * that has already been posted. Must be called inside the same database
+     * transaction as the replacement insert so a failed re-post cannot lose
+     * the original journal.
      *
      * @param int $journalId
      * @return void
+     * @throws RuntimeException if the existing journal falls in a locked period
      */
     private function deleteJournal(int $journalId): void
     {
@@ -104,15 +106,43 @@ class PostingService
         $stmt = $this->db->prepare("SELECT entry_date FROM journal_entries WHERE id = ? AND company_id = ?");
         $stmt->execute([$journalId, $this->companyId]);
         $date = $stmt->fetchColumn();
-        if (!$date || $this->periodService->isLocked($date)) {
-            // Period is locked or journal not found; do not delete
+        if (!$date) {
+            // Journal no longer exists; nothing to delete
             return;
+        }
+        if ($this->periodService->isLocked($date)) {
+            // Never skip silently: callers proceed to insert a replacement
+            // journal, which would leave BOTH the old and the new journal live
+            // (duplicate postings for the same source document). Abort instead.
+            throw new RuntimeException(
+                'Cannot re-post: original journal #' . $journalId . ' dated ' . $date . ' falls in a locked period'
+            );
         }
         // Delete lines then entry
         $stmt = $this->db->prepare("DELETE FROM journal_lines WHERE journal_id = ?");
         $stmt->execute([$journalId]);
         $stmt = $this->db->prepare("DELETE FROM journal_entries WHERE id = ? AND company_id = ?");
         $stmt->execute([$journalId, $this->companyId]);
+    }
+
+    /**
+     * Assert that a journal balances (sum of debits equals sum of credits)
+     * before any lines are written. Amounts must already be rounded to 2dp.
+     *
+     * @param float  $totalDebit
+     * @param float  $totalCredit
+     * @param string $context Description used in the error message
+     * @throws RuntimeException if the journal does not balance
+     */
+    private function assertBalanced(float $totalDebit, float $totalCredit, string $context): void
+    {
+        if (abs($totalDebit - $totalCredit) >= 0.005) {
+            throw new RuntimeException(
+                'Unbalanced journal for ' . $context . ': debits '
+                . number_format($totalDebit, 2, '.', '') . ' != credits '
+                . number_format($totalCredit, 2, '.', '')
+            );
+        }
     }
 
     /**
@@ -141,10 +171,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if present
-        if (!empty($invoice['journal_id'])) {
-            $this->deleteJournal((int)$invoice['journal_id']);
-        }
         // Fetch invoice lines (including optional inventory item reference)
         $stmt = $this->db->prepare(
             "SELECT quantity, unit_price, discount, tax_rate, gl_account_id, inventory_item_id FROM invoice_lines WHERE invoice_id = ?"
@@ -157,18 +183,17 @@ class PostingService
         // Determine default accounts
         $arCode    = $this->accounts->get('finance_ar_account_id', '1200');
         $salesDef  = $this->accounts->get('finance_sales_account_id', '4100');
-        $vatCode   = $this->accounts->get('finance_vat_output_account_id', '2120');
+        $vatCode   = $this->accounts->get('finance_vat_output_account_id', '2110');
         // Accounts for inventory and cost of goods sold
         $inventoryCode = $this->accounts->get('finance_inventory_account_id', '1300');
         $cogsCode      = $this->accounts->get('finance_cogs_account_id', '5000');
         if (!$arCode || !$salesDef) {
             throw new Exception('Finance settings incomplete (AR or Sales)');
         }
-        // Aggregate net sales, VAT, and inventory cost
+        // Aggregate net sales and VAT (pure computation; stock movements are
+        // recorded later, inside the posting transaction)
         $salesTotals = [];
         $totalVat    = 0.0;
-        $cogsTotals  = [];
-        $invTotals   = [];
         // Resolve output tax_code_id for SARS compliance
         $primaryTaxRate = 0.0;
         foreach ($lines as $li) {
@@ -193,23 +218,6 @@ class PostingService
             }
             $salesTotals[$code] += $net;
             $totalVat += $vat;
-            // If line relates to a stocked inventory item, record COGS/inventory movements
-            $invItemId = isset($li['inventory_item_id']) && $li['inventory_item_id'] ? (int)$li['inventory_item_id'] : null;
-            if ($invItemId && $qty > 0) {
-                // Use invoice issue date if available
-                $invDate = $invoice['issue_date'] ?? date('Y-m-d');
-                $cost    = $this->inventory->issue($invItemId, $qty, $invDate, 'invoice', $invoiceId);
-                if ($cost > 0.0001) {
-                    if (!isset($cogsTotals[$cogsCode])) {
-                        $cogsTotals[$cogsCode] = 0.0;
-                    }
-                    if (!isset($invTotals[$inventoryCode])) {
-                        $invTotals[$inventoryCode] = 0.0;
-                    }
-                    $cogsTotals[$cogsCode] += $cost;
-                    $invTotals[$inventoryCode] += $cost;
-                }
-            }
         }
         // Convert document-currency sales/VAT to ZAR at the invoice's captured
         // rate (1 unit = X ZAR). Inventory/COGS costs are already in ZAR.
@@ -220,14 +228,68 @@ class PostingService
         }
         if ($fxRate != 1.0) {
             foreach ($salesTotals as $code => $amt) {
-                $salesTotals[$code] = round($amt * $fxRate, 2);
+                $salesTotals[$code] = $amt * $fxRate;
             }
-            $totalVat = round($totalVat * $fxRate, 2);
+            $totalVat = $totalVat * $fxRate;
         }
-        $total = array_sum($salesTotals) + $totalVat;
-        // Post journal
+        // Round every journal line to 2dp; the balancing AR debit is computed
+        // from the ROUNDED counterpart lines so the journal always balances.
+        foreach ($salesTotals as $code => $amt) {
+            $salesTotals[$code] = round($amt, 2);
+        }
+        $totalVat = round($totalVat, 2);
+        $total    = round(array_sum($salesTotals) + $totalVat, 2);
+        // Post journal. The old-journal delete, the stock movements and the new
+        // journal insert share ONE transaction so a failed re-post can neither
+        // lose the original journal nor duplicate inventory movements.
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($invoice['journal_id'])) {
+                $this->deleteJournal((int)$invoice['journal_id']);
+            }
+            // Idempotent inventory issue: remove any stock movements previously
+            // recorded for this invoice before re-issuing, so re-posting cannot
+            // double-decrement stock or double COGS. InventoryService shares
+            // this PDO connection, so these writes join the transaction.
+            $delMov = $this->db->prepare(
+                "DELETE FROM inventory_movements WHERE company_id = ? AND ref_type = 'invoice' AND ref_id = ?"
+            );
+            $delMov->execute([$this->companyId, $invoiceId]);
+            $cogsTotals = [];
+            $invTotals  = [];
+            foreach ($lines as $li) {
+                $qty       = floatval($li['quantity']);
+                $invItemId = isset($li['inventory_item_id']) && $li['inventory_item_id'] ? (int)$li['inventory_item_id'] : null;
+                if ($invItemId && $qty > 0) {
+                    // Use invoice issue date if available
+                    $invDate = $invoice['issue_date'] ?? date('Y-m-d');
+                    $cost    = $this->inventory->issue($invItemId, $qty, $invDate, 'invoice', $invoiceId);
+                    if ($cost > 0.0001) {
+                        if (!isset($cogsTotals[$cogsCode])) {
+                            $cogsTotals[$cogsCode] = 0.0;
+                        }
+                        if (!isset($invTotals[$inventoryCode])) {
+                            $invTotals[$inventoryCode] = 0.0;
+                        }
+                        $cogsTotals[$cogsCode] += $cost;
+                        $invTotals[$inventoryCode] += $cost;
+                    }
+                }
+            }
+            // Round COGS/inventory lines to 2dp (identical amounts on both sides)
+            foreach ($cogsTotals as $code => $amt) {
+                $cogsTotals[$code] = round($amt, 2);
+            }
+            foreach ($invTotals as $code => $amt) {
+                $invTotals[$code] = round($amt, 2);
+            }
+            // Assert debits equal credits before writing any lines
+            $this->assertBalanced(
+                $total + array_sum($cogsTotals),
+                array_sum($salesTotals) + $totalVat + array_sum($invTotals),
+                'invoice #' . $invoiceId
+            );
             // Insert journal entry
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
@@ -361,10 +423,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post payment to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if present
-        if (!empty($payment['journal_id'])) {
-            $this->deleteJournal((int)$payment['journal_id']);
-        }
         // Fetch allocations (with each invoice's currency for ZAR conversion)
         $stmt = $this->db->prepare(
             "SELECT pa.amount, i.customer_id, i.invoice_number, i.currency, i.exchange_rate
@@ -395,19 +453,36 @@ class PostingService
         }
         $arCode = $this->accounts->get('finance_ar_account_id', '1200');
         // Payment amounts are recorded in the invoice's currency — convert each
-        // allocation to ZAR at the invoice's captured rate (1 unit = X ZAR)
+        // allocation to ZAR at the invoice's captured rate (1 unit = X ZAR).
+        // KNOWN LIMITATION: foreign-currency receipts are converted at the
+        // INVOICE's historical exchange_rate, not the rate on the payment date,
+        // so no realised FX gain/loss is recognised. There is currently no rate
+        // feed available at payment time; revisit when one exists.
         $totalAmt = 0.0;
         foreach ($allocs as $idx => $al) {
             $fxRate = (float)($al['exchange_rate'] ?? 1);
             if (strtoupper(trim($al['currency'] ?? 'ZAR')) === 'ZAR' || $al['currency'] === null || $fxRate <= 0) {
                 $fxRate = 1.0;
             }
+            // Round each AR credit line to 2dp; the balancing bank debit is the
+            // sum of the ROUNDED lines so the journal always balances.
             $allocs[$idx]['amount_zar'] = round(floatval($al['amount']) * $fxRate, 2);
             $totalAmt += $allocs[$idx]['amount_zar'];
         }
-        // Post journal
+        $totalAmt = round($totalAmt, 2);
+        // Post journal (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($payment['journal_id'])) {
+                $this->deleteJournal((int)$payment['journal_id']);
+            }
+            // Assert debits equal credits before writing any lines
+            $creditSum = 0.0;
+            foreach ($allocs as $al) {
+                $creditSum += round(floatval($al['amount_zar'] ?? $al['amount']), 2);
+            }
+            $this->assertBalanced($totalAmt, round($creditSum, 2), 'customer payment #' . $paymentId);
             $reference = $payment['reference'] ?: ('PAY' . $paymentId);
             $desc      = 'Payment';
             // Insert journal entry
@@ -500,10 +575,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post credit note to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if any
-        if (!empty($credit['journal_id'])) {
-            $this->deleteJournal((int)$credit['journal_id']);
-        }
         // Fetch credit note lines
         $stmt = $this->db->prepare(
             "SELECT quantity, unit_price, discount, tax_rate FROM credit_note_lines WHERE credit_note_id = ?"
@@ -516,7 +587,7 @@ class PostingService
         // Resolve account codes
         $arCode   = $this->accounts->get('finance_ar_account_id', '1200');
         $salesDef = $this->accounts->get('finance_sales_account_id', '4100');
-        $vatCode  = $this->accounts->get('finance_vat_output_account_id', '2120');
+        $vatCode  = $this->accounts->get('finance_vat_output_account_id', '2110');
         if (!$arCode || !$salesDef) {
             throw new Exception('Finance settings incomplete (AR or Sales)');
         }
@@ -544,14 +615,24 @@ class PostingService
             $fxRate = 1.0;
         }
         if ($fxRate != 1.0) {
-            $netTotal = round($netTotal * $fxRate, 2);
-            $vatTotal = round($vatTotal * $fxRate, 2);
+            $netTotal = $netTotal * $fxRate;
+            $vatTotal = $vatTotal * $fxRate;
         }
-        $total = $netTotal + $vatTotal;
+        // Round each debit line to 2dp; the balancing AR credit is the sum of
+        // the ROUNDED counterpart lines so the journal always balances.
+        $netTotal = round($netTotal, 2);
+        $vatTotal = round($vatTotal, 2);
+        $total    = round($netTotal + $vatTotal, 2);
         $outputTaxCodeId = $this->resolveOutputTaxCodeId($primaryTaxRate);
-        // Post journal
+        // Post journal (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if any (throws if in a locked period)
+            if (!empty($credit['journal_id'])) {
+                $this->deleteJournal((int)$credit['journal_id']);
+            }
+            // Assert debits equal credits before writing any lines
+            $this->assertBalanced($netTotal + $vatTotal, $total, 'credit note #' . $creditNoteId);
             // Insert journal entry; ref_type/source_type set to credit_note
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
@@ -658,10 +739,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post payroll run to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if present
-        if (!empty($run['journal_id'])) {
-            $this->deleteJournal((int)$run['journal_id']);
-        }
         // Load aggregated totals from pay_run_employees
         $stmt = $this->db->prepare(
             "SELECT 
@@ -711,18 +788,22 @@ class PostingService
         $uifTotal = $uifEmp + $uifEmpr;
         // Total wages expense: gross + employer contributions + reimbursements - other deductions + SDL
         // The formula ensures debits equal credits: see explanation in documentation.
-        $wageDebit = $gross + $uifEmpr + $sdl + $reimburse - $otherDed;
-        // Compute credits breakdown
-        $credits = [
-            $bankCode => $bankTotal,
-            $payeCode => $paye,
-            $uifCode  => $uifTotal,
-            $sdlCode  => $sdl
-        ];
-        // Remove zero-credit accounts
-        foreach ($credits as $code => $amount) {
-            if ($amount <= 0.0001) {
-                unset($credits[$code]);
+        // KNOWN LIMITATION: other_deductions (garnishees, loan repayments, etc.)
+        // are netted against wage expense instead of being credited to a payroll
+        // deductions liability account. payroll_settings only exposes GL codes
+        // for wages/PAYE/UIF/SDL, so there is no configured liability account to
+        // credit; understates wage expense until such a setting exists.
+        $wageDebit = round($gross + $uifEmpr + $sdl + $reimburse - $otherDed, 2);
+        // Compute credits breakdown (each line rounded to 2dp). Accumulate per
+        // account code so that two categories configured to the same GL code
+        // sum instead of silently overwriting each other (which would post an
+        // unbalanced journal).
+        $credits = [];
+        foreach ([[$bankCode, $bankTotal], [$payeCode, $paye], [$uifCode, $uifTotal], [$sdlCode, $sdl]] as $pair) {
+            [$code, $amount] = $pair;
+            $amount = round($amount, 2);
+            if ($amount > 0.0001) {
+                $credits[$code] = round(($credits[$code] ?? 0.0) + $amount, 2);
             }
         }
         // Only post if there is anything to post
@@ -730,9 +811,15 @@ class PostingService
             // Nothing to post
             return;
         }
-        // Post journal
+        // Post journal (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($run['journal_id'])) {
+                $this->deleteJournal((int)$run['journal_id']);
+            }
+            // Assert debits equal credits before writing any lines
+            $this->assertBalanced($wageDebit, round(array_sum($credits), 2), 'payroll run #' . $runId);
             // Insert journal entry
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (
@@ -839,10 +926,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post depreciation to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if present (possible re-post)
-        if (!empty($run['journal_id'])) {
-            $this->deleteJournal((int)$run['journal_id']);
-        }
         // Fetch depreciation lines with associated asset accounts
         $stmt = $this->db->prepare(
             "SELECT l.amount_cents, a.depreciation_expense_account_id, a.accumulated_depreciation_account_id
@@ -879,9 +962,27 @@ class PostingService
             }
             $accumTotals[$accCode] += $amount;
         }
-        // Build journal entry
+        // Round every line to 2dp (amounts originate from integer cents, so
+        // this is defensive) and assert the journal balances
+        foreach ($expenseTotals as $code => $amt) {
+            $expenseTotals[$code] = round($amt, 2);
+        }
+        foreach ($accumTotals as $code => $amt) {
+            $accumTotals[$code] = round($amt, 2);
+        }
+        // Build journal entry (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($run['journal_id'])) {
+                $this->deleteJournal((int)$run['journal_id']);
+            }
+            // Assert debits equal credits before writing any lines
+            $this->assertBalanced(
+                round(array_sum($expenseTotals), 2),
+                round(array_sum($accumTotals), 2),
+                'depreciation run #' . $runId
+            );
             $reference = 'DEP' . $runId;
             $desc      = 'Depreciation Run ' . $entryDate;
             $stmtJ = $this->db->prepare(
@@ -973,10 +1074,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post AP bill to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if present
-        if (!empty($bill['journal_id'])) {
-            $this->deleteJournal((int)$bill['journal_id']);
-        }
         // Fetch bill lines including inventory_item_id
         $stmt = $this->db->prepare(
             "SELECT quantity, unit_price, discount, tax_rate, gl_account_id, project_board_id, project_item_id, item_description, inventory_item_id\n"
@@ -989,9 +1086,12 @@ class PostingService
         }
         // Determine account codes
         $apCode = $this->accounts->get('finance_ap_account_id', '2110');
-        $vatInCode = $this->accounts->get('finance_vat_input_account_id', '2130');
-        // Loop lines, compute net and VAT per line and build journal lines
+        $vatInCode = $this->accounts->get('finance_vat_input_account_id', '2120');
+        // Loop lines, compute net and VAT per line and build journal lines.
+        // Stock receipts are only collected here and recorded later, inside the
+        // posting transaction, so a failed post cannot leave stray movements.
         $journalLines = [];
+        $pendingReceipts = [];
         $totalNet = 0.0;
         $totalVat = 0.0;
         foreach ($lines as $li) {
@@ -999,17 +1099,18 @@ class PostingService
             $price    = floatval($li['unit_price']);
             $discount = isset($li['discount']) ? floatval($li['discount']) : 0.0;
             $taxRate  = isset($li['tax_rate']) ? floatval($li['tax_rate']) : 0.0;
-            $net      = ($qty * $price) - $discount;
-            $vat      = ($taxRate > 0) ? $net * ($taxRate / 100.0) : 0.0;
+            // Round every line to 2dp; totals are sums of the ROUNDED lines
+            $net      = round(($qty * $price) - $discount, 2);
+            $vat      = ($taxRate > 0) ? round($net * ($taxRate / 100.0), 2) : 0.0;
 
             // Determine if this line is a stock receipt. If inventory_item_id is
             // provided, debit the inventory account instead of an expense and
             // record a movement. Otherwise debit expense.
             $invItemId = isset($li['inventory_item_id']) && $li['inventory_item_id'] ? (int)$li['inventory_item_id'] : null;
             if ($invItemId) {
-                // Compute unit cost (net per unit) and record receipt
+                // Compute unit cost (net per unit); receipt recorded in the transaction below
                 $unitCost = $qty > 0 ? ($net / $qty) : 0.0;
-                $this->inventory->receive($invItemId, $qty, $unitCost, $entryDate, 'ap_bill', $billId);
+                $pendingReceipts[] = ['item_id' => $invItemId, 'qty' => $qty, 'unit_cost' => $unitCost];
                 // Use inventory account
                 $acctCode = $this->accounts->get('finance_inventory_account_id', '1300');
             } else {
@@ -1034,43 +1135,77 @@ class PostingService
                 'board_id'     => !empty($li['project_board_id']) ? (int)$li['project_board_id'] : null,
                 'item_id'      => !empty($li['project_item_id']) ? (int)$li['project_item_id'] : null,
                 'supplier_id'  => (int)$bill['supplier_id'],
-                'tax_code_id'  => $lineTaxCodeId
+                'tax_code_id'  => $lineTaxCodeId,
+                'vat'          => $vat
             ];
             $totalNet += $net;
             $totalVat += $vat;
         }
-        // Detect if any line debits a fixed asset account (capital goods for SARS VAT201 Box 7)
-        $hasCapitalGoods = false;
+        // Split input VAT between capital and non-capital goods (SARS VAT201
+        // Box 7 vs Box 8): classify each detail line by whether it debits a
+        // fixed-asset account and apportion the line's own VAT accordingly,
+        // instead of flagging the whole VAT amount as capital when any single
+        // line is a fixed asset.
+        $capitalVat = 0.0;
+        $nonCapitalVat = 0.0;
+        $subtypeCache = [];
+        $stmtChk = $this->db->prepare(
+            "SELECT account_subtype FROM gl_accounts WHERE account_code = ? AND company_id = ? LIMIT 1"
+        );
         foreach ($journalLines as $jl) {
-            $stmtChk = $this->db->prepare(
-                "SELECT account_subtype FROM gl_accounts WHERE account_code = ? AND company_id = ? LIMIT 1"
-            );
-            $stmtChk->execute([$jl['account_code'], $this->companyId]);
-            $subtype = $stmtChk->fetchColumn();
-            if ($subtype === 'fixed_asset' && $jl['debit'] > 0) {
-                $hasCapitalGoods = true;
-                break;
+            $code = $jl['account_code'];
+            if (!array_key_exists($code, $subtypeCache)) {
+                $stmtChk->execute([$code, $this->companyId]);
+                $subtypeCache[$code] = $stmtChk->fetchColumn();
+            }
+            if ($subtypeCache[$code] === 'fixed_asset' && $jl['debit'] > 0) {
+                $capitalVat += $jl['vat'];
+            } else {
+                $nonCapitalVat += $jl['vat'];
             }
         }
+        $capitalVat    = round($capitalVat, 2);
+        $nonCapitalVat = round($nonCapitalVat, 2);
 
-        // VAT Input line if applicable
+        // VAT Input line(s) if applicable: capital portion flagged separately
         if ($totalVat > 0.0001) {
             $inputTaxCodeId = $this->resolveInputTaxCodeId(15.0);
-            $journalLines[] = [
-                'account_code'    => $vatInCode,
-                'description'     => 'VAT Input - ' . ($bill['vendor_invoice_number'] ?: 'AP Bill'),
-                'debit'           => $totalVat,
-                'credit'          => 0.0,
-                'project_id'      => null,
-                'board_id'        => null,
-                'item_id'         => null,
-                'supplier_id'     => (int)$bill['supplier_id'],
-                'tax_code_id'     => $inputTaxCodeId,
-                'is_capital_goods' => $hasCapitalGoods ? 1 : 0
-            ];
+            if ($nonCapitalVat > 0.0001) {
+                $journalLines[] = [
+                    'account_code'    => $vatInCode,
+                    'description'     => 'VAT Input - ' . ($bill['vendor_invoice_number'] ?: 'AP Bill'),
+                    'debit'           => $nonCapitalVat,
+                    'credit'          => 0.0,
+                    'project_id'      => null,
+                    'board_id'        => null,
+                    'item_id'         => null,
+                    'supplier_id'     => (int)$bill['supplier_id'],
+                    'tax_code_id'     => $inputTaxCodeId,
+                    'is_capital_goods' => 0
+                ];
+            }
+            if ($capitalVat > 0.0001) {
+                $journalLines[] = [
+                    'account_code'    => $vatInCode,
+                    'description'     => 'VAT Input (Capital Goods) - ' . ($bill['vendor_invoice_number'] ?: 'AP Bill'),
+                    'debit'           => $capitalVat,
+                    'credit'          => 0.0,
+                    'project_id'      => null,
+                    'board_id'        => null,
+                    'item_id'         => null,
+                    'supplier_id'     => (int)$bill['supplier_id'],
+                    'tax_code_id'     => $inputTaxCodeId,
+                    'is_capital_goods' => 1
+                ];
+            }
         }
-        // Credit AP for gross (net + VAT)
-        $gross = $totalNet + $totalVat;
+        // Credit AP for gross: the sum of the ROUNDED debit lines above, so the
+        // journal balances to the cent by construction
+        $gross = 0.0;
+        foreach ($journalLines as $jl) {
+            $gross += $jl['debit'];
+        }
+        $gross = round($gross, 2);
         $journalLines[] = [
             'account_code' => $apCode,
             'description'  => 'Accounts Payable - ' . ($bill['vendor_invoice_number'] ?: ''),
@@ -1082,9 +1217,33 @@ class PostingService
             'supplier_id'  => (int)$bill['supplier_id'],
             'tax_code_id'  => null
         ];
-        // Now post journal
+        // Assert debits equal credits before opening the transaction
+        $sumDebit = 0.0;
+        $sumCredit = 0.0;
+        foreach ($journalLines as $jl) {
+            $sumDebit  += round($jl['debit'], 2);
+            $sumCredit += round($jl['credit'], 2);
+        }
+        $this->assertBalanced(round($sumDebit, 2), round($sumCredit, 2), 'AP bill #' . $billId);
+        // Now post journal (old-journal delete and stock receipts share this
+        // transaction so a failed re-post loses nothing and re-posting cannot
+        // duplicate inventory movements)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($bill['journal_id'])) {
+                $this->deleteJournal((int)$bill['journal_id']);
+            }
+            // Idempotent stock receipts: clear movements previously recorded
+            // for this bill before re-receiving (InventoryService shares this
+            // PDO connection, so these writes join the transaction)
+            $delMov = $this->db->prepare(
+                "DELETE FROM inventory_movements WHERE company_id = ? AND ref_type = 'ap_bill' AND ref_id = ?"
+            );
+            $delMov->execute([$this->companyId, $billId]);
+            foreach ($pendingReceipts as $rc) {
+                $this->inventory->receive($rc['item_id'], $rc['qty'], $rc['unit_cost'], $entryDate, 'ap_bill', $billId);
+            }
             // Create journal entry
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id,\n"
@@ -1172,10 +1331,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post supplier payment to locked period (' . $entryDate . ')');
         }
-        // Remove existing journal if present
-        if (!empty($payment['journal_id'])) {
-            $this->deleteJournal((int)$payment['journal_id']);
-        }
         // Fetch allocations with related bill info (supplier) and amounts
         $stmt = $this->db->prepare(
             "SELECT apa.amount, b.supplier_id, b.vendor_invoice_number, b.total\n"
@@ -1205,14 +1360,27 @@ class PostingService
             $bankCode = $this->accounts->get('finance_bank_account_id', '1110');
         }
         $apCode = $this->accounts->get('finance_ap_account_id', '2110');
-        // Compute total amount
+        // Compute total amount: round each AP debit line to 2dp and make the
+        // balancing bank credit the sum of the ROUNDED lines
         $totalAmt = 0.0;
-        foreach ($allocs as $al) {
-            $totalAmt += floatval($al['amount']);
+        foreach ($allocs as $idx => $al) {
+            $allocs[$idx]['amount'] = round(floatval($al['amount']), 2);
+            $totalAmt += $allocs[$idx]['amount'];
         }
-        // Post journal
+        $totalAmt = round($totalAmt, 2);
+        // Post journal (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($payment['journal_id'])) {
+                $this->deleteJournal((int)$payment['journal_id']);
+            }
+            // Assert debits equal credits before writing any lines
+            $debitSum = 0.0;
+            foreach ($allocs as $al) {
+                $debitSum += round(floatval($al['amount']), 2);
+            }
+            $this->assertBalanced(round($debitSum, 2), $totalAmt, 'supplier payment #' . $paymentId);
             $reference = $payment['reference'] ?: ('APPAY' . $paymentId);
             $desc      = 'Supplier Payment';
             // Insert journal entry
@@ -1340,9 +1508,6 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post vendor credit to locked period (' . $entryDate . ')');
         }
-        if (!empty($credit['journal_id'])) {
-            $this->deleteJournal((int)$credit['journal_id']);
-        }
         // Fetch credit lines
         $stmt = $this->db->prepare(
             "SELECT quantity, unit_price, discount, tax_rate, gl_account_id, item_description\n"
@@ -1355,7 +1520,7 @@ class PostingService
         }
         // Account codes
         $apCode   = $this->accounts->get('finance_ap_account_id', '2110');
-        $vatInCode = $this->accounts->get('finance_vat_input_account_id', '2130');
+        $vatInCode = $this->accounts->get('finance_vat_input_account_id', '2120');
         // Compute totals and build lines
         $journalLines = [];
         $netTotal = 0.0;
@@ -1365,8 +1530,9 @@ class PostingService
             $price    = floatval($li['unit_price']);
             $discount = isset($li['discount']) ? floatval($li['discount']) : 0.0;
             $taxRate  = isset($li['tax_rate']) ? floatval($li['tax_rate']) : 0.0;
-            $net      = ($qty * $price) - $discount;
-            $vat      = ($taxRate > 0) ? $net * ($taxRate / 100.0) : 0.0;
+            // Round every line to 2dp; totals are sums of the ROUNDED lines
+            $net      = round(($qty * $price) - $discount, 2);
+            $vat      = ($taxRate > 0) ? round($net * ($taxRate / 100.0), 2) : 0.0;
             $acctCode = null;
             if (!empty($li['gl_account_id'])) {
                 $acctCode = $this->accounts->getById($li['gl_account_id']);
@@ -1397,14 +1563,19 @@ class PostingService
                 'account_code' => $vatInCode,
                 'description'  => 'VAT Input (Vendor Credit)',
                 'debit'        => 0.0,
-                'credit'       => $vatTotal,
+                'credit'       => round($vatTotal, 2),
                 'supplier_id'  => (int)$credit['supplier_id'],
                 'reference'    => $credit['credit_number'],
                 'tax_code_id'  => $inputTaxCodeId
             ];
         }
-        // Debit AP for total credit (net + vat)
-        $total = $netTotal + $vatTotal;
+        // Debit AP for total credit: the sum of the ROUNDED credit lines above,
+        // so the journal balances to the cent by construction
+        $total = 0.0;
+        foreach ($journalLines as $jl) {
+            $total += round($jl['credit'], 2);
+        }
+        $total = round($total, 2);
         $journalLines[] = [
             'account_code' => $apCode,
             'description'  => 'Accounts Payable',
@@ -1414,9 +1585,21 @@ class PostingService
             'reference'    => $credit['credit_number'],
             'tax_code_id'  => null
         ];
-        // Post to GL
+        // Assert debits equal credits before writing any lines
+        $sumDebit = 0.0;
+        $sumCredit = 0.0;
+        foreach ($journalLines as $jl) {
+            $sumDebit  += round($jl['debit'], 2);
+            $sumCredit += round($jl['credit'], 2);
+        }
+        $this->assertBalanced(round($sumDebit, 2), round($sumCredit, 2), 'vendor credit #' . $creditId);
+        // Post to GL (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if (!empty($credit['journal_id'])) {
+                $this->deleteJournal((int)$credit['journal_id']);
+            }
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id,\n"
                 . "source_type, source_id, created_by, created_at, status, posted_by, posted_at)\n"
@@ -1494,17 +1677,29 @@ class PostingService
         if ($this->periodService->isLocked($entryDate)) {
             throw new Exception('Cannot post VAT adjustment to locked period (' . $entryDate . ')');
         }
-        if ($existingJournalId) {
-            $this->deleteJournal($existingJournalId);
-        }
-        $vatOutCode  = $this->accounts->get('finance_vat_output_account_id', '2120');
-        $vatInCode   = $this->accounts->get('finance_vat_input_account_id', '2130');
+        $vatOutCode  = $this->accounts->get('finance_vat_output_account_id', '2110');
+        $vatInCode   = $this->accounts->get('finance_vat_input_account_id', '2120');
         $vatCtrlCode = $this->accounts->get('finance_vat_control_account_id', '2140');
 
+        // Round each line to 2dp and derive the balancing control-account line
+        // from the ROUNDED lines so the journal always balances
+        $vatOutputTotal = round($vatOutputTotal, 2);
+        $vatInputTotal  = round($vatInputTotal, 2);
         $netVat = round($vatOutputTotal - $vatInputTotal, 2);
+        // Assert debits equal credits before writing any lines:
+        // debits = VAT output cleared (+ control if receivable), credits = VAT input cleared (+ control if payable)
+        $this->assertBalanced(
+            $vatOutputTotal + ($netVat < 0 ? abs($netVat) : 0.0),
+            $vatInputTotal + ($netVat > 0 ? $netVat : 0.0),
+            'VAT adjustment ' . ($reference ?: '')
+        );
 
         $this->db->beginTransaction();
         try {
+            // Remove existing journal if present (throws if in a locked period)
+            if ($existingJournalId) {
+                $this->deleteJournal($existingJournalId);
+            }
             $desc = 'VAT Adjustment ' . $reference;
             $stmt = $this->db->prepare(
                 "INSERT INTO journal_entries (company_id, entry_date, reference, description, module, ref_type, ref_id,

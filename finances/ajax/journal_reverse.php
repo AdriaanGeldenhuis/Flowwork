@@ -22,9 +22,19 @@ if (!$companyId || !$userId) { json_error('Not authorised', 403); }
 $input     = json_decode(file_get_contents('php://input'), true);
 $journalId = isset($input['journal_id']) ? (int)$input['journal_id'] : 0;
 $reason    = trim($input['reason'] ?? '');
+$reversalDateIn = trim($input['reversal_date'] ?? '');
 
 if ($journalId <= 0) { json_error('Invalid journal_id'); }
 if ($reason === '') { json_error('A reason is required for reversals (SARS audit trail)'); }
+
+// Optional explicit reversal date (YYYY-MM-DD, must be a real calendar date)
+if ($reversalDateIn !== '') {
+    $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', $reversalDateIn)
+        ? DateTime::createFromFormat('Y-m-d', $reversalDateIn) : false;
+    if (!$d || $d->format('Y-m-d') !== $reversalDateIn) {
+        json_error('Invalid reversal_date: ' . $reversalDateIn . ' (expected YYYY-MM-DD)');
+    }
+}
 
 try {
     // Verify the journal is posted and not already reversed
@@ -36,11 +46,27 @@ try {
     if ($row['status'] !== 'posted') { json_error('Only posted journals can be reversed', 409); }
     if ($row['reversed_by_journal_id']) { json_error('Journal has already been reversed (by #' . $row['reversed_by_journal_id'] . ')', 409); }
 
+    // Resolve the reversal date: explicit payload date wins; otherwise use the
+    // original entry_date when its period is still open, else fall back to today
+    // so journals in locked periods remain reversible.
+    require_once __DIR__ . '/../lib/PeriodService.php';
+    $periods = new PeriodService($DB, $companyId);
+    if ($reversalDateIn !== '') {
+        $reversalDate = $reversalDateIn;
+    } elseif (!$periods->isLocked($row['entry_date'])) {
+        $reversalDate = $row['entry_date'];
+    } else {
+        $reversalDate = date('Y-m-d');
+    }
+    if ($periods->isLocked($reversalDate)) {
+        json_error('Reversal date ' . $reversalDate . ' falls in a locked period', 409);
+    }
+
     $service = new ReversalService($DB, $companyId);
-    $reversalId = $service->reverseJournal($journalId, $userId, $reason);
+    $reversalId = $service->reverseJournal($journalId, $userId, $reason, $reversalDate);
 
     if (!$reversalId) {
-        json_error('Failed to reverse — the entry date may be in a locked period');
+        json_error('Failed to reverse — the reversal date may be in a locked period');
     }
 
     // Audit
@@ -50,6 +76,7 @@ try {
         'reversal_journal_id' => $reversalId,
         'reason'              => $reason,
         'entry_date'          => $row['entry_date'],
+        'reversal_date'       => $reversalDate,
         'description'         => $row['description']
     ]);
 

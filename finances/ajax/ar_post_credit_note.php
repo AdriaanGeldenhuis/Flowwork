@@ -58,7 +58,7 @@ if ($creditNoteId <= 0) {
 try {
     // Fetch credit note details
     $stmt = $DB->prepare(
-        "SELECT id, issue_date, status, journal_id FROM credit_notes WHERE id = ? AND company_id = ? LIMIT 1"
+        "SELECT id, issue_date, status, journal_id, reason_code, invoice_id FROM credit_notes WHERE id = ? AND company_id = ? LIMIT 1"
     );
     $stmt->execute([$creditNoteId, $companyId]);
     $cn = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -70,6 +70,16 @@ try {
     $status = strtolower((string)$cn['status']);
     if (!in_array($status, ['approved', 'applied'], true)) {
         echo json_encode(['ok' => false, 'error' => 'Credit note not approved or applied']);
+        exit;
+    }
+    // SARS s21 compliance: a credit note may not post without a classified
+    // reason code and a link to the original tax invoice it corrects.
+    if (empty($cn['reason_code'])) {
+        echo json_encode(['ok' => false, 'error' => 'Credit note reason code is required before posting (SARS s21)']);
+        exit;
+    }
+    if (empty($cn['invoice_id'])) {
+        echo json_encode(['ok' => false, 'error' => 'Credit note must be linked to its original invoice before posting (SARS s21)']);
         exit;
     }
     // Duplicate check: if journal_id already set, treat as duplicate

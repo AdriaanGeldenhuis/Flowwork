@@ -92,7 +92,9 @@ try {
                 FROM journal_lines jl
                 JOIN journal_entries je ON je.id = jl.journal_id
                 JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = ?
-                WHERE je.company_id = ? AND je.status = 'posted' AND YEAR(je.entry_date) = ? AND ga.account_code IN ($placeholders)
+                WHERE je.company_id = ? AND je.status = 'posted'
+                  AND (je.module IS NULL OR je.module <> 'year_end')
+                  AND YEAR(je.entry_date) = ? AND ga.account_code IN ($placeholders)
                 GROUP BY ga.account_id, m";
         $params[] = $companyId;
         $params[] = $companyId;
