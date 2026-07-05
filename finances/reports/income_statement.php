@@ -52,12 +52,17 @@ $gross = $rev - $cogs;
 $ebit  = $gross - $opex;
 $net   = $ebit + $oi - $oe;
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 header('Content-Type: text/html; charset=utf-8');
 ?>
 <!doctype html><html><head><meta charset="utf-8">
 <title>Income Statement <?=$from?> to <?=$to?></title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
 <style>
-body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:20px}
 h1{margin:0 0 12px 0}
 table{border-collapse:collapse;width:100%}
 td{padding:6px 10px;border-bottom:1px solid #eee}
@@ -66,7 +71,11 @@ td:last-child{text-align:right}
 .group{font-weight:600}
 .total{font-weight:700}
 .small{color:#666;font-size:0.9em}
-</style></head><body>
+</style></head><body class="fw-finance">
+<div class="fw-finance__container">
+<?php $finTitle = 'Income Statement'; $finBack = '/finances/reports.php'; include __DIR__ . '/../partials/header.php'; ?>
+<main class="fw-finance__main">
+<div class="fw-finance__paper">
 <h1>Income Statement <span class="small"><?=$from?> → <?=$to?></span></h1>
 <form method="get">
   <label>From <input type="date" name="from" value="<?=$from?>"></label>
@@ -83,4 +92,12 @@ td:last-child{text-align:right}
   <tr><td class="group">Other Expenses</td><td><?=number_format($oe,2)?></td></tr>
   <tr><td class="group">Net Profit</td><td class="total"><?=number_format($net,2)?></td></tr>
 </table>
+</div><!-- /fw-finance__paper -->
+</main>
+<footer class="fw-finance__footer">
+    <span>Income Statement v<?= ASSET_VERSION ?></span>
+    <span id="themeIndicator">Theme: Light</span>
+</footer>
+</div><!-- /fw-finance__container -->
+<script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body></html>

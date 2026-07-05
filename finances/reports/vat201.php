@@ -22,6 +22,8 @@ require_once __DIR__ . '/../lib/VatCalculator.php';
 
 requireRoles(['admin', 'bookkeeper', 'viewer']);
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
@@ -49,10 +51,12 @@ $periods = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VAT201 Return – <?= htmlspecialchars($company['name'] ?? 'Company') ?></title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 2rem; background-color: #f8f9fa; }
-        a.back { display: inline-block; margin-bottom: 1rem; color: #0d6efd; text-decoration: none; }
-        a.back:hover { text-decoration: underline; }
         h1 { margin-bottom: 0.3rem; }
         .subtitle { color: #6c757d; margin-bottom: 1.5rem; }
         .controls { display: flex; gap: 1rem; align-items: end; margin-bottom: 2rem; flex-wrap: wrap; }
@@ -99,8 +103,11 @@ $periods = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
     </style>
 </head>
-<body>
-    <a class="back" href="/finances/vat.php">&larr; Back to VAT Returns</a>
+<body class="fw-finance">
+    <div class="fw-finance__container">
+    <?php $finTitle = 'VAT201 Return'; $finBack = '/finances/vat.php'; include __DIR__ . '/../partials/header.php'; ?>
+    <main class="fw-finance__main">
+    <div class="fw-finance__paper">
     <h1>SARS VAT201 Return</h1>
     <p class="subtitle">Value-Added Tax return form with official box mapping</p>
 
@@ -221,6 +228,13 @@ $periods = $stmt->fetchAll(PDO::FETCH_ASSOC);
             This is a working document for review purposes. The official return must be submitted via SARS eFiling.
         </div>
     </div>
+    </div><!-- /fw-finance__paper -->
+    </main>
+    <footer class="fw-finance__footer">
+        <span>VAT201 Return v<?= ASSET_VERSION ?></span>
+        <span id="themeIndicator">Theme: Light</span>
+    </footer>
+    </div><!-- /fw-finance__container -->
 
 <script>
 let vatData = null;
@@ -315,5 +329,6 @@ function exportCSV() {
     a.click();
 }
 </script>
+<script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>

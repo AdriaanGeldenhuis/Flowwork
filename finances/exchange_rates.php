@@ -23,6 +23,8 @@ requireRoles(['admin', 'bookkeeper']);
 require_once __DIR__ . '/lib/Csrf.php';
 $csrfToken = Csrf::token();
 
+define('ASSET_VERSION', FIN_ASSET_VERSION);
+
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
@@ -46,10 +48,11 @@ $commonCurrencies = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KE
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
     <title>Exchange Rates</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 2rem; background-color: #f8f9fa; }
-        a.back { display: inline-block; margin-bottom: 1rem; color: #0d6efd; text-decoration: none; }
-        a.back:hover { text-decoration: underline; }
         h1 { margin-bottom: 0.3rem; }
         .subtitle { color: #6c757d; margin-bottom: 1.5rem; }
         .card { max-width: 600px; background: #fff; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 2rem; }
@@ -67,8 +70,11 @@ $commonCurrencies = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KE
         .info-box { background-color: #e7f3ff; border: 1px solid #b6d4fe; padding: 0.75rem; border-radius: 4px; margin-bottom: 1.5rem; font-size: 0.85rem; color: #084298; }
     </style>
 </head>
-<body>
-    <a class="back" href="/finances/">&larr; Back to Finance Dashboard</a>
+<body class="fw-finance">
+    <div class="fw-finance__container">
+    <?php $finTitle = 'Exchange Rates'; $finBack = '/finances/'; include __DIR__ . '/partials/header.php'; ?>
+    <main class="fw-finance__main">
+    <div class="fw-finance__paper">
     <h1>Exchange Rates</h1>
     <p class="subtitle">Manage foreign currency exchange rates (1 unit = X ZAR)</p>
 
@@ -124,6 +130,13 @@ $commonCurrencies = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KE
             <?php endif; ?>
         </tbody>
     </table>
+    </div><!-- /fw-finance__paper -->
+    </main>
+    <footer class="fw-finance__footer">
+        <span>Exchange Rates v<?= ASSET_VERSION ?></span>
+        <span id="themeIndicator">Theme: Light</span>
+    </footer>
+    </div><!-- /fw-finance__container -->
 
 <script>
 document.getElementById('rateForm').addEventListener('submit', async function(e) {
@@ -172,5 +185,6 @@ document.getElementById('rateForm').addEventListener('submit', async function(e)
     }
 });
 </script>
+<script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
 </html>
