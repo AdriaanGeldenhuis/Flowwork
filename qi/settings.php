@@ -8,7 +8,7 @@ require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
 require_once __DIR__ . '/lib/Currencies.php';
 
-define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
+define('ASSET_VERSION', QI_ASSET_VERSION);
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -182,6 +182,9 @@ $currentDefaultCurrency = Currencies::isValid($qiDefaults['default_currency'] ??
     <title>Q&I Settings – <?= htmlspecialchars($company['name']) ?></title>
     <?= Branding::fontHeadLinks() ?>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-qi__color-input-wrapper { display: flex; gap: 12px; align-items: center; }
@@ -760,15 +763,15 @@ $currentDefaultCurrency = Currencies::isValid($qiDefaults['default_currency'] ??
                 const data = await res.json();
                 if (data.ok) {
                     status.textContent = 'Uploaded!';
-                    status.style.color = '#10b981';
+                    status.style.color = 'var(--neon-green)';
                     setTimeout(() => location.reload(), 1000);
                 } else {
                     status.textContent = 'Error: ' + (data.error || 'Failed');
-                    status.style.color = '#ef4444';
+                    status.style.color = 'var(--neon-red)';
                 }
             } catch (err) {
                 status.textContent = 'Network error';
-                status.style.color = '#ef4444';
+                status.style.color = 'var(--neon-red)';
             }
         });
 

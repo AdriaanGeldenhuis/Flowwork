@@ -115,9 +115,11 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($quote['quote_number']) ?> – <?= htmlspecialchars($quote['company_name']) ?></title>
     <?= Branding::fontHeadLinks() ?>
-
-    <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= htmlspecialchars(CRM_ASSET_VERSION) ?>">
-    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= htmlspecialchars(CRM_ASSET_VERSION) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= htmlspecialchars(QI_ASSET_VERSION) ?>">
+    <link rel="stylesheet" href="/qi/assets/templates-pro.css?v=<?= htmlspecialchars(QI_ASSET_VERSION) ?>">
     <style>
 <?= Branding::documentStyle($brand) ?>
         <?= $customCss ?>
