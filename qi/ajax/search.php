@@ -45,7 +45,12 @@ try {
             // Build WHERE clause
             $where = 'WHERE q.company_id = ?';
             $params = [$companyId];
-            if ($status !== '') {
+            if ($status === 'expired') {
+                // 'expired' is never stored on quotes — derive it from expiry_date
+                // the same way the overview does.
+                $where .= " AND (q.status = 'expired'
+                            OR (q.status IN ('sent','viewed') AND q.expiry_date < CURDATE()))";
+            } elseif ($status !== '') {
                 $where .= ' AND q.status = ?';
                 $params[] = $status;
             }

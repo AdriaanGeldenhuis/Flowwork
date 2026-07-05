@@ -217,9 +217,18 @@ try {
         }
     }
 
-    // Handle payment milestones
-    $milestones = $input['milestones'] ?? [];
-    $hasMilestones = !empty($milestones) && is_array($milestones) ? 1 : 0;
+    // Handle payment milestones. Only requests that carry the key touch
+    // stored phases: clients that never send it (no milestone UI) must not
+    // wipe phases already attached to the quote.
+    $milestonesProvided = array_key_exists('milestones', $input) && is_array($input['milestones']);
+    $milestones = $milestonesProvided ? $input['milestones'] : [];
+    $hasMilestones = !empty($milestones) ? 1 : 0;
+
+    if ($milestonesProvided && !$hasMilestones && $editMode) {
+        // Explicitly disabled on edit: clear stored phases.
+        $stmt = $DB->prepare("DELETE FROM payment_milestones WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ?");
+        $stmt->execute([$quoteId, $companyId]);
+    }
 
     if ($hasMilestones) {
         // Calculate total allocated (supports both percentage and fixed amounts)
@@ -267,9 +276,11 @@ try {
         }
     }
 
-    // Update has_milestones flag
-    $stmt = $DB->prepare("UPDATE quotes SET has_milestones = ? WHERE id = ?");
-    $stmt->execute([$hasMilestones, $quoteId]);
+    // Update has_milestones flag (only when the request spoke about milestones)
+    if ($milestonesProvided) {
+        $stmt = $DB->prepare("UPDATE quotes SET has_milestones = ? WHERE id = ?");
+        $stmt->execute([$hasMilestones, $quoteId]);
+    }
 
     $DB->commit();
     

@@ -17,6 +17,7 @@ $editMode = false;
 $quoteId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
 $quoteData = null;
 $lineItems = [];
+$editMilestones = [];
 
 if ($quoteId) {
     $editMode = true;
@@ -36,6 +37,21 @@ if ($quoteId) {
     $stmt = $DB->prepare("SELECT * FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
     $stmt->execute([$quoteId]);
     $lineItems = $stmt->fetchAll();
+
+    $stmt = $DB->prepare("
+        SELECT label, percentage, amount, due_date
+        FROM payment_milestones
+        WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ?
+        ORDER BY sort_order
+    ");
+    $stmt->execute([$quoteId, $companyId]);
+    foreach ($stmt->fetchAll() as $ms) {
+        $editMilestones[] = [
+            'label' => (string)$ms['label'],
+            'percentage' => (float)$ms['percentage'],
+            'due_date' => $ms['due_date'] ?: null,
+        ];
+    }
 }
 
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
@@ -303,6 +319,9 @@ $docSymbol = Currencies::symbol($docCurrency);
         };
     </script>
     <script src="/qi/assets/qi.quote.js?v=<?= ASSET_VERSION ?>"></script>
+    <script>
+        window.QI_EDIT_MILESTONES = <?= json_encode($editMilestones, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    </script>
     <!-- Payment milestones (quote form does not load qi-form.js; its initForm would double-bind #quoteForm) -->
     <script>
     (function() {
@@ -336,7 +355,7 @@ $docSymbol = Currencies::symbol($docCurrency);
             }
         };
 
-        QI.addMilestone = function(defaultLabel, defaultPct, defaultAmount) {
+        QI.addMilestone = function(defaultLabel, defaultPct, defaultAmount, defaultDueDate) {
             milestoneCounter++;
             const container = document.getElementById('milestonesContainer');
             if (!container) return;
@@ -378,6 +397,7 @@ $docSymbol = Currencies::symbol($docCurrency);
               </div>
             `;
             container.appendChild(row);
+            if (defaultDueDate) row.querySelector('.ms-due-date').value = defaultDueDate;
             row.querySelector('.ms-percentage').addEventListener('input', QI.calculateMilestones);
             row.querySelector('.ms-fixed-amount').addEventListener('input', QI.calculateMilestones);
             QI.calculateMilestones();
@@ -462,6 +482,9 @@ $docSymbol = Currencies::symbol($docCurrency);
 
         // qi.quote.js builds the save payload without milestones; inject them
         // into the save_quote request so enabled phases actually persist.
+        // The key is always sent: [] means "explicitly disabled" and clears
+        // stored phases on edit; save_quote leaves rows alone only when the
+        // key is absent (non-shim clients).
         const origFetch = window.fetch;
         window.fetch = function(url, options) {
             if (typeof url === 'string' && url.indexOf('/qi/ajax/save_quote.php') !== -1 &&
@@ -478,6 +501,21 @@ $docSymbol = Currencies::symbol($docCurrency);
         document.addEventListener('DOMContentLoaded', function() {
             const container = document.getElementById('lineItemsContainer');
             if (container) container.addEventListener('input', QI.calculateMilestones);
+
+            // Edit mode: rebuild stored phases so saving the form round-trips
+            // them instead of silently discarding them.
+            const stored = window.QI_EDIT_MILESTONES;
+            if (Array.isArray(stored) && stored.length) {
+                const toggle = document.getElementById('enableMilestones');
+                if (toggle && !toggle.checked) {
+                    toggle.checked = true;
+                    const section = document.getElementById('milestonesSection');
+                    if (section) section.style.display = 'block';
+                    stored.forEach(function(ms) {
+                        QI.addMilestone(ms.label, ms.percentage, null, ms.due_date);
+                    });
+                }
+            }
         });
     })();
     </script>

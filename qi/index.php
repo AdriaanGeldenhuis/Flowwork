@@ -30,7 +30,7 @@ if (!in_array($activeTab, $allowedTabs)) {
 $stmt = $DB->prepare("
     SELECT
         (SELECT COUNT(*) FROM quotes WHERE company_id = ? AND status NOT IN ('expired','declined')) as quote_count,
-        (SELECT COUNT(*) FROM invoices WHERE company_id = ? AND status NOT IN ('cancelled')) as invoice_count,
+        (SELECT COUNT(*) FROM invoices WHERE company_id = ? AND status NOT IN ('cancelled') AND deleted_at IS NULL) as invoice_count,
         (SELECT COUNT(*) FROM recurring_invoices WHERE company_id = ? AND active = 1) as recurring_count,
         (SELECT COUNT(*) FROM credit_notes WHERE company_id = ?) as credit_count
 ");
@@ -186,8 +186,10 @@ if ($activeTab === 'overview') {
     // --- Quote KPIs (one pass) ---
     $quoteKpi = $DB->prepare("
         SELECT
-            SUM(status IN ('draft','sent','viewed')) AS open_cnt,
-            COALESCE(SUM(CASE WHEN status IN ('draft','sent','viewed')
+            SUM(status = 'draft' OR (status IN ('sent','viewed')
+                AND (expiry_date IS NULL OR expiry_date >= CURDATE()))) AS open_cnt,
+            COALESCE(SUM(CASE WHEN status = 'draft' OR (status IN ('sent','viewed')
+                              AND (expiry_date IS NULL OR expiry_date >= CURDATE()))
                               THEN total * exchange_rate END), 0) AS open_value_zar,
             SUM(status = 'draft') AS draft_cnt,
             SUM(status IN ('sent','viewed')
@@ -391,7 +393,7 @@ if ($activeTab === 'overview') {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/qi/assets/qi.css?v=<?= QI_ASSET_VERSION ?>">
 </head>
-<body class="fw-qi">
+<body class="fw-qi" data-theme="<?= ($_COOKIE['fw_theme'] ?? 'dark') === 'light' ? 'light' : 'dark' ?>">
     <div class="fw-qi__container">
 
         <!-- Header -->
@@ -870,6 +872,7 @@ if ($activeTab === 'overview') {
         // Currency symbols for list/dashboard rows (foreign-currency documents)
         window.QI_CURRENCY_SYMBOLS = <?= json_encode(Currencies::symbolMap()) ?>;
     </script>
+    <script src="/qi/assets/qi.js?v=<?= QI_ASSET_VERSION ?>"></script>
     <?php if ($activeTab === 'overview'): ?>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
@@ -1116,6 +1119,5 @@ if ($activeTab === 'overview') {
     })();
     </script>
     <?php endif; ?>
-    <script src="/qi/assets/qi.js?v=<?= QI_ASSET_VERSION ?>"></script>
 </body>
 </html>

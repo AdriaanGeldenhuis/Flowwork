@@ -178,6 +178,7 @@
   --fw-surface-2: rgba(4, 10, 16, 0.6);
   --fw-border-base: rgba(255, 255, 255, 0.08);
   --fw-border-strong: rgba(255, 255, 255, 0.14);
+  --fw-border: var(--fw-border-base);
   --fw-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4);
   --fw-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
   --fw-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6);
@@ -916,10 +917,6 @@ input[type="date"].fw-qi__input {
   cursor: pointer;
 }
 
-.fw-qi[data-theme="dark"] input[type="date"].fw-qi__filter::-webkit-calendar-picker-indicator,
-.fw-qi[data-theme="dark"] input[type="date"].fw-qi__input::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-}
 
 /* ===== BUTTONS — extruded pressable keys ===== */
 .fw-qi__btn {
@@ -1557,6 +1554,14 @@ select.fw-qi__input:focus {
 .fw-qi__badge--applied { background: linear-gradient(165deg, #93c5fd, var(--neon-blue) 60%, #1d4ed8); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -2px 3px rgba(20, 40, 110, 0.35), 0 2px 6px rgba(0, 0, 0, 0.18); }
 .fw-qi__badge--void { background: linear-gradient(165deg, #94a3b8, #64748b 60%, #475569); }
 .fw-qi__badge--inactive { background: linear-gradient(165deg, #cbd5e1, #94a3b8 60%, #64748b); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 3px rgba(30, 40, 50, 0.25), 0 2px 6px rgba(0, 0, 0, 0.14); }
+
+/* Inside the printable document, badges stay flat — templates-pro owns the
+   look there and its rules are single-class, so glossy shadows must not
+   leak through. */
+.fw-qi__document .fw-qi__badge {
+  box-shadow: none;
+  text-shadow: none;
+}
 
 /* ===== ALERTS (page-level banners) ===== */
 .fw-qi__alert {
@@ -2763,7 +2768,8 @@ body.fw-modal-open {
   margin-bottom: var(--fw-spacing-lg);
 }
 
-.fw-qi__mini-kpi {
+.fw-qi__mini-kpi,
+.fw-qi__kpi {
   padding: 14px 16px;
   background: var(--fw-card-face);
   border: 1px solid var(--fw-border-base);
@@ -2772,7 +2778,8 @@ body.fw-modal-open {
   transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), border-color var(--fw-transition-base);
 }
 
-.fw-qi__mini-kpi:hover {
+.fw-qi__mini-kpi:hover,
+.fw-qi__kpi:hover {
   transform: translateY(-3px);
   box-shadow: var(--fw-key-shadow-hover);
   border-color: var(--fw-primary);
@@ -2962,7 +2969,7 @@ body.fw-modal-open {
 
 .fw-qi__funnel-fill--current { background: linear-gradient(165deg, #6ee7b7, var(--neon-green) 60%, #059669); }
 .fw-qi__funnel-fill--b30 { background: linear-gradient(165deg, #fde68a, #facc15 60%, #ca8a04); color: #3a2a00; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
-.fw-qi__funnel-fill--b60 { background: linear-gradient(165deg, #fcd34d, var(--neon-orange) 60%, #d97706); }
+.fw-qi__funnel-fill--b60 { background: linear-gradient(165deg, #fcd34d, var(--neon-orange) 60%, #d97706); color: #3a2400; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
 .fw-qi__funnel-fill--b90 { background: linear-gradient(165deg, #fb923c, #ea580c 60%, #c2410c); }
 .fw-qi__funnel-fill--b90plus { background: linear-gradient(165deg, #f87171, var(--neon-red) 60%, #b91c1c); }
 

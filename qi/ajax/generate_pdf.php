@@ -20,7 +20,7 @@ if (!$id) {
     exit;
 }
 
-define('ASSET_VERSION', '2026-06-10-QI-currency-v1');
+define('ASSET_VERSION', QI_ASSET_VERSION);
 
 // Formats amounts in the document's currency; the symbol is set after the
 // document is fetched (defaults to ZAR's "R").
