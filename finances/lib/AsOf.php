@@ -25,19 +25,28 @@ class AsOf
     /** Trial balance lines: account_id, code, name, debit, credit, balance (debit-positive) */
     public function trialBalance(string $asOf): array
     {
+        // Aggregate journal activity in a company-scoped subquery: joining
+        // journal_lines on account_code alone pulls in other companies' lines
+        // (journal_lines carries no company_id), and filtering after a LEFT
+        // JOIN re-admits them via the entry_date IS NULL branch.
         $sql = "
         SELECT a.account_id, a.account_code, a.account_name,
-               COALESCE(SUM(jl.debit),0) AS total_debit,
-               COALESCE(SUM(jl.credit),0) AS total_credit
+               COALESCE(t.total_debit, 0) AS total_debit,
+               COALESCE(t.total_credit, 0) AS total_credit
         FROM gl_accounts a
-        LEFT JOIN journal_lines jl ON jl.account_code = a.account_code
-        LEFT JOIN journal_entries je ON je.id = jl.journal_id AND je.company_id = a.company_id
+        LEFT JOIN (
+            SELECT jl.account_code,
+                   SUM(jl.debit) AS total_debit,
+                   SUM(jl.credit) AS total_credit
+            FROM journal_lines jl
+            JOIN journal_entries je ON je.id = jl.journal_id
+            WHERE je.company_id = :cid2 AND je.status = 'posted' AND je.entry_date <= :asof
+            GROUP BY jl.account_code
+        ) t ON t.account_code = a.account_code
         WHERE a.company_id = :cid
-          AND (je.entry_date IS NULL OR (je.entry_date <= :asof AND je.status = 'posted'))
-        GROUP BY a.account_id, a.account_code, a.account_name
         ORDER BY a.account_code";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([':cid'=>$this->companyId, ':asof'=>$asOf]);
+        $stmt->execute([':cid'=>$this->companyId, ':cid2'=>$this->companyId, ':asof'=>$asOf]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $out = [];

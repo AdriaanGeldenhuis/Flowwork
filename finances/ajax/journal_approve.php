@@ -2,12 +2,13 @@
 // /finances/ajax/journal_approve.php
 // Approve a draft/prepared journal for posting.
 
+// permissions.php must load first: it bootstraps the app session
+// (FLOWWORKSESSID) that Csrf::validate() reads the token from.
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 require_method('POST');
 Csrf::validate();
-
-require_once __DIR__ . '/../permissions.php';
 requireRoles(['bookkeeper','admin']);
 
 header('Content-Type: application/json');

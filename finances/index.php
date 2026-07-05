@@ -30,10 +30,17 @@ $stmt = $DB->prepare("SELECT COUNT(*) as cnt FROM gl_accounts WHERE company_id =
 $stmt->execute([$companyId]);
 $accountCount = $stmt->fetch()['cnt'];
 
-if ($accountCount == 0) {
-    // Seed SARS-aligned chart of accounts for new companies
-    $stmtSeed = $DB->prepare("CALL seed_sars_chart_of_accounts(?)");
-    $stmtSeed->execute([$companyId]);
+if ($accountCount == 0 && in_array(fw_get_user_role($DB), ['admin', 'bookkeeper'], true)) {
+    // Seed SARS-aligned chart of accounts for new companies. Write-role only
+    // (viewers must not mutate the books), and tolerant of the concurrent-GET
+    // race: the procedure re-checks, and a duplicate-seed error must not take
+    // the dashboard down.
+    try {
+        $stmtSeed = $DB->prepare("CALL seed_sars_chart_of_accounts(?)");
+        $stmtSeed->execute([$companyId]);
+    } catch (Throwable $e) {
+        error_log('CoA seed skipped: ' . $e->getMessage());
+    }
 }
 
 // Statistics for the overview command deck.
@@ -411,6 +418,11 @@ $apAgingBuckets = [
 $maxApAging = max(1, max(array_column($apAgingBuckets, 'val')));
 
 $moduleLabels = ['qi' => 'QI', 'fin' => 'Finance', 'payroll' => 'Payroll', 'manual' => 'Manual'];
+
+// Quick actions + kebab menu come from the shared role-aware nav
+// (single source of truth in partials/nav.php).
+require_once __DIR__ . '/partials/nav.php';
+$quickActions = fw_finance_quick_actions($DB);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -430,14 +442,8 @@ $moduleLabels = ['qi' => 'QI', 'fin' => 'Finance', 'payroll' => 'Payroll', 'manu
         <?php
         $finTitle = 'Finances';
         $finBack = null;
-        $finKebab = [
-            'Journal Entries' => '/finances/journals.php',
-            'Chart of Accounts' => '/finances/chart.php',
-            'Bank & Reconciliation' => '/finances/bank/',
-            'VAT' => '/finances/vat.php',
-            'Reports' => '/finances/reports.php',
-            'Settings' => '/finances/settings.php',
-        ];
+        // $finKebab intentionally not set — header.php defaults to the full
+        // role-aware menu from partials/nav.php
         $finCompanyName = $companyName;
         $finFirstName = $firstName;
         include __DIR__ . '/partials/header.php';
@@ -464,6 +470,16 @@ $moduleLabels = ['qi' => 'QI', 'fin' => 'Finance', 'payroll' => 'Payroll', 'manu
                     <a href="/finances/journals.php" class="fw-finance__dash-chip">➕ New journal</a>
                 </div>
             </div>
+
+            <!-- Quick actions command deck — first thing in view, full SARS bookkeeping cycle -->
+            <section class="fw-finance__table-card fw-finance__qa-deck" aria-label="Quick actions">
+                <h3 class="fw-finance__chart-title">Quick Actions <small>SARS bookkeeping · one tap away</small></h3>
+                <div class="fw-finance__quick-actions fw-finance__quick-actions--deck">
+                    <?php foreach ($quickActions as $qa): ?>
+                    <a href="<?= htmlspecialchars($qa['href']) ?>" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon"><?= $qa['icon'] ?></span><span class="fw-finance__qa-label"><?= htmlspecialchars($qa['label']) ?></span></a>
+                    <?php endforeach; ?>
+                </div>
+            </section>
 
             <!-- Hero KPI slabs -->
             <div class="fw-finance__kpi-grid">
@@ -626,21 +642,8 @@ $moduleLabels = ['qi' => 'QI', 'fin' => 'Finance', 'payroll' => 'Payroll', 'manu
                 </div>
             </div>
 
-            <!-- Quick actions + top overdue receivables + top overdue payables -->
-            <div class="fw-finance__dash-grid-3">
-                <div class="fw-finance__table-card">
-                    <h3 class="fw-finance__chart-title">Quick Actions</h3>
-                    <div class="fw-finance__quick-actions">
-                        <a href="/finances/journals.php" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📝</span><span class="fw-finance__qa-label">New Journal</span></a>
-                        <a href="/finances/chart.php" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📊</span><span class="fw-finance__qa-label">Chart of Accounts</span></a>
-                        <a href="/finances/bank/" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">🏦</span><span class="fw-finance__qa-label">Bank &amp; Rec</span></a>
-                        <a href="/finances/vat.php" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">🧾</span><span class="fw-finance__qa-label">VAT Returns</span></a>
-                        <a href="/finances/reports.php" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📈</span><span class="fw-finance__qa-label">Reports</span></a>
-                        <a href="/finances/ar/" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📄</span><span class="fw-finance__qa-label">Receivables</span></a>
-                        <a href="/finances/ap/" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📑</span><span class="fw-finance__qa-label">Payables</span></a>
-                        <a href="/finances/budgets/edit.php" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📅</span><span class="fw-finance__qa-label">Budgets</span></a>
-                    </div>
-                </div>
+            <!-- Top overdue receivables + top overdue payables -->
+            <div class="fw-finance__tables-grid">
                 <div class="fw-finance__table-card">
                     <h3 class="fw-finance__chart-title">Top Overdue Receivables <small>most overdue first</small></h3>
                     <div class="fw-finance__mini-list">
