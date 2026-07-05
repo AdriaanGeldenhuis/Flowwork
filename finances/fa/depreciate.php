@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../permissions.php';
 requireRoles(['admin', 'bookkeeper']);
 
-define('ASSET_VERSION', '2026-04-07-FIN-3');
+define('ASSET_VERSION', FIN_ASSET_VERSION);
 
 require_once __DIR__ . '/../lib/Csrf.php';
 
@@ -42,6 +42,9 @@ $runs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Run Depreciation – <?= htmlspecialchars($companyName) ?></title>
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .fw-finance__form {
@@ -72,34 +75,16 @@ $runs = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
     </style>
 </head>
-<body>
-<main class="fw-finance">
+<body class="fw-finance">
     <div class="fw-finance__container">
-        <!-- Header -->
-        <header class="fw-finance__header">
-            <div class="fw-finance__brand">
-                <div class="fw-finance__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="fw-finance__brand-text">
-                    <div class="fw-finance__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-finance__app-name">Run Depreciation</div>
-                </div>
-            </div>
-            <div class="fw-finance__greeting">
-                Hello, <span class="fw-finance__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-            <div class="fw-finance__controls">
-                <a href="/finances/fa/" class="fw-finance__back-btn" title="Back to Fixed Assets">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-            </div>
-        </header>
-        <div class="fw-finance__main">
+        <?php
+        $finTitle = 'Run Depreciation';
+        $finBack = '/finances/fa/';
+        $finCompanyName = $companyName;
+        $finFirstName = $firstName;
+        include __DIR__ . '/../partials/header.php';
+        ?>
+        <main class="fw-finance__main">
             <form id="runForm" class="fw-finance__form" onsubmit="return false;">
                 <label>
                     Depreciation Month
@@ -135,12 +120,12 @@ $runs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <?php endif; ?>
                 </tbody>
             </table>
-        </div>
+        </main>
         <footer class="fw-finance__footer">
-            <span>Finance Depreciation v<?= ASSET_VERSION ?></span>
+            <span>Run Depreciation v<?= ASSET_VERSION ?></span>
+            <span id="themeIndicator">Theme: Light</span>
         </footer>
     </div>
-</main>
 <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 <script>
 document.getElementById('runForm').addEventListener('submit', function() {

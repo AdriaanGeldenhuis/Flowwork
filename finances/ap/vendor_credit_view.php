@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
-define('ASSET_VERSION', '2026-04-10-AP-1');
+define('ASSET_VERSION', FIN_ASSET_VERSION);
 
 require_once __DIR__ . '/../lib/Csrf.php';
 $csrfToken = Csrf::token();
@@ -76,6 +76,9 @@ $companyName = $company['name'] ?? 'Company';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vendor Credit Detail – <?= htmlspecialchars($companyName) ?></title>
     <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?= ASSET_VERSION ?>">
     <style>
         .summary-table {
@@ -114,33 +117,16 @@ $companyName = $company['name'] ?? 'Company';
         }
     </style>
 </head>
-<body>
-<main class="fw-finance">
+<body class="fw-finance">
     <div class="fw-finance__container">
-        <header class="fw-finance__header">
-            <div class="fw-finance__brand">
-                <div class="fw-finance__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="fw-finance__brand-text">
-                    <div class="fw-finance__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-finance__app-name">Vendor Credit Detail</div>
-                </div>
-            </div>
-            <div class="fw-finance__greeting">
-                Hello, <span class="fw-finance__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-            <div class="fw-finance__controls">
-                <a href="/finances/ap/bills_list.php" class="fw-finance__back-btn" title="Back to Bills">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-            </div>
-        </header>
-        <div class="fw-finance__main">
+        <?php
+        $finTitle = 'Vendor Credit Detail';
+        $finBack = '/finances/ap/bills_list.php';
+        $finCompanyName = $companyName;
+        $finFirstName = $firstName;
+        include __DIR__ . '/../partials/header.php';
+        ?>
+        <main class="fw-finance__main">
             <h2>Vendor Credit: <?= htmlspecialchars($credit['credit_number']) ?></h2>
             <table class="summary-table">
                 <tr><th>Supplier:</th><td><?= htmlspecialchars($credit['supplier_name']) ?></td></tr>
@@ -199,12 +185,12 @@ $companyName = $company['name'] ?? 'Company';
             <button id="applyBtn" class="fw-finance__btn fw-finance__btn--primary" style="margin-top:1rem;">Apply Credit</button>
             <div id="applyMessage"></div>
             <?php endif; ?>
-        </div>
+        </main>
         <footer class="fw-finance__footer">
-            <span>Finance AP Vendor Credit View v<?= ASSET_VERSION ?></span>
+            <span>Vendor Credit Detail v<?= ASSET_VERSION ?></span>
+            <span id="themeIndicator">Theme: Light</span>
         </footer>
     </div>
-</main>
 <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 <?php if ($remaining > 0 && $credit['status'] !== 'applied'): ?>
 <script>
