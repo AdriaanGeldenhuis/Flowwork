@@ -4,6 +4,7 @@
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
@@ -32,14 +33,14 @@ if (!$opp) {
 }
 
 // Authorization: viewer can view but not edit; owner can edit; admin can edit
-$canEdit = ($role === 'admin' || (int)$opp['owner_user_id'] === (int)$userId);
+$canEdit = (crm_role_rank($role) >= crm_role_rank('admin') || (int)$opp['owner_user_id'] === (int)$userId);
 
 // Fetch supporting lists for editing if allowed
 $accounts = [];
 $owners   = [];
 if ($canEdit) {
     // Accounts (customers)
-    $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' ORDER BY name ASC");
+    $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'customer' AND deleted_at IS NULL ORDER BY name ASC");
     $stmt->execute([$companyId]);
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     // Owners (users)
@@ -183,6 +184,17 @@ $companyName = $company['name'] ?? 'Company';
                         <div class="fw-crm__static-text"><?= ucfirst($opp['stage']) ?></div>
                     <?php endif; ?>
                 </div>
+                <div class="fw-crm__form-group" id="lossReasonGroup" style="<?= $opp['stage'] === 'lost' ? '' : 'display:none;' ?>">
+                    <label for="loss_reason" class="fw-crm__label">Loss reason</label>
+                    <?php if ($canEdit): ?>
+                        <input type="text" name="loss_reason" id="loss_reason" class="fw-crm__input" maxlength="255"
+                               value="<?= htmlspecialchars($opp['loss_reason'] ?? '') ?>"
+                               <?= $opp['stage'] === 'lost' ? '' : 'disabled' ?>
+                               placeholder="e.g. price, timing, went with competitor">
+                    <?php else: ?>
+                        <div class="fw-crm__static-text"><?= htmlspecialchars($opp['loss_reason'] ?? '') ?></div>
+                    <?php endif; ?>
+                </div>
                 <div class="fw-crm__form-group">
                     <label for="probability" class="fw-crm__label">Probability (%)</label>
                     <?php if ($canEdit): ?>
@@ -201,7 +213,7 @@ $companyName = $company['name'] ?? 'Company';
                 </div>
                 <div class="fw-crm__form-group">
                     <label for="owner_id" class="fw-crm__label">Owner</label>
-                    <?php if ($canEdit && $role === 'admin'): ?>
+                    <?php if ($canEdit && crm_role_rank($role) >= crm_role_rank('admin')): ?>
                         <select name="owner_id" id="owner_id" class="fw-crm__input" required>
                             <?php foreach ($owners as $o): ?>
                                 <option value="<?= (int)$o['id'] ?>" <?= (int)$o['id'] === (int)$opp['owner_user_id'] ? 'selected' : '' ?>><?= htmlspecialchars(trim($o['first_name'] . ' ' . $o['last_name'])) ?></option>
@@ -221,6 +233,43 @@ $companyName = $company['name'] ?? 'Company';
                 <?php endif; ?>
             </form>
             <div id="oppEditMessage" class="fw-crm__alert" style="display:none"></div>
+
+            <!-- Follow-up reminder (rides the calendar + notifications stack) -->
+            <?php if (crm_role_rank($role) >= crm_role_rank('member')): ?>
+            <div class="fw-crm__form-card" style="margin-top:24px;">
+                <h2 class="fw-crm__form-card-title">⏰ Schedule Follow-up</h2>
+                <form id="oppFollowupForm" class="fw-crm__form">
+                    <input type="hidden" name="linked_type" value="opportunity">
+                    <input type="hidden" name="linked_id" value="<?= (int)$opp['id'] ?>">
+                    <div class="fw-crm__form-row">
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">When <span class="fw-crm__required">*</span></label>
+                            <input type="datetime-local" name="due_datetime" class="fw-crm__input" required>
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Remind me</label>
+                            <select name="minutes_before" class="fw-crm__input">
+                                <option value="15">15 minutes before</option>
+                                <option value="60" selected>1 hour before</option>
+                                <option value="1440">1 day before</option>
+                            </select>
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Via</label>
+                            <select name="channel" class="fw-crm__input">
+                                <option value="in_app" selected>In-app notification</option>
+                                <option value="email">Email</option>
+                                <option value="both">Both</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="fw-crm__form-actions">
+                        <button type="submit" class="fw-crm__btn fw-crm__btn--secondary">Create Follow-up</button>
+                    </div>
+                </form>
+                <div id="oppFollowupMessage" class="fw-crm__alert" style="display:none"></div>
+            </div>
+            <?php endif; ?>
         </main>
     </div>
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
@@ -228,6 +277,46 @@ $companyName = $company['name'] ?? 'Company';
     (function() {
         const canEdit = <?= $canEdit ? 'true' : 'false' ?>;
         const oppId = <?= (int)$opp['id'] ?>;
+
+        // Loss reason only applies to lost deals (disabled inputs don't submit)
+        const stageSelect = document.getElementById('stage');
+        const lossGroup = document.getElementById('lossReasonGroup');
+        const lossInput = document.getElementById('loss_reason');
+        if (stageSelect && lossGroup) {
+            stageSelect.addEventListener('change', function() {
+                const isLost = this.value === 'lost';
+                lossGroup.style.display = isLost ? '' : 'none';
+                if (lossInput) lossInput.disabled = !isLost;
+            });
+        }
+
+        // Follow-up creation (available to any member+ viewer of the opp)
+        const followupForm = document.getElementById('oppFollowupForm');
+        if (followupForm) {
+            followupForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const msg = document.getElementById('oppFollowupMessage');
+                msg.style.display = 'none';
+                fetch('/crm/ajax/followup_create.php', {
+                    method: 'POST',
+                    body: new FormData(followupForm)
+                }).then(resp => resp.json())
+                .then(data => {
+                    msg.textContent = data.ok
+                        ? 'Follow-up scheduled — it will appear on your calendar.'
+                        : (data.error || 'Failed to create follow-up.');
+                    msg.classList.toggle('fw-crm__alert--success', !!data.ok);
+                    msg.classList.toggle('fw-crm__alert--error', !data.ok);
+                    msg.style.display = 'block';
+                    if (data.ok) followupForm.reset();
+                }).catch(() => {
+                    msg.textContent = 'An error occurred.';
+                    msg.classList.remove('fw-crm__alert--success');
+                    msg.classList.add('fw-crm__alert--error');
+                    msg.style.display = 'block';
+                });
+            });
+        }
         // Form submission for editing
         if (canEdit) {
             document.getElementById('oppEditForm').addEventListener('submit', function(e) {

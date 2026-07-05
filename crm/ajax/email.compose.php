@@ -17,10 +17,13 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../../mail/lib/SecureVault.php';
 require_once __DIR__ . '/../../mail/lib/SmtpSender.php';
 
 header('Content-Type: application/json');
+
+crm_require_min_role('member');
 
 $companyId = $_SESSION['company_id'] ?? 0;
 $userId    = $_SESSION['user_id'] ?? 0;
@@ -65,6 +68,13 @@ try {
     $mailAcc = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$mailAcc) {
         throw new Exception('Mail account not found or inactive');
+    }
+
+    // The compose modal sends plain text; convert it to safe HTML so line
+    // breaks survive in recipients' clients and a typed '<' isn't parsed as
+    // markup. Bodies that already contain HTML pass through untouched.
+    if ($body !== '' && $body === strip_tags($body)) {
+        $body = nl2br(htmlspecialchars($body, ENT_QUOTES));
     }
 
     // Append signature if provided
@@ -136,8 +146,8 @@ try {
     $linkStmt->execute([$companyId, $emailId, $linkedType, $crmAccountId, $userId]);
 
     echo json_encode(['ok' => true]);
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('CRM email compose error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
     exit;
 }

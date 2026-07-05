@@ -7,18 +7,15 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
-$role      = $_SESSION['role'] ?? 'viewer';
 
-// Only admins or members can convert opportunities
-if (!in_array($role, ['admin', 'member'])) {
-    echo json_encode(['ok' => false, 'error' => 'Permission denied']);
-    exit;
-}
+// Members and up can convert opportunities
+crm_require_min_role('member');
 
 $oppId = isset($_POST['id']) ? (int)$_POST['id'] : 0;
 if ($oppId <= 0) {
@@ -106,10 +103,10 @@ try {
     $DB->commit();
     echo json_encode(['ok' => true, 'project_id' => $projectId]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log('Opportunity convert error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

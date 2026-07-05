@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -20,23 +21,40 @@ if ($oppId <= 0) {
     exit;
 }
 
+const CRM_OPP_STAGES = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost', 'converted'];
+
 try {
     // Fetch opportunity and check ownership
-    $stmt = $DB->prepare("SELECT company_id, owner_id FROM crm_opportunities WHERE id = ?");
+    $stmt = $DB->prepare("SELECT company_id, owner_id, stage FROM crm_opportunities WHERE id = ?");
     $stmt->execute([$oppId]);
     $opp = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$opp || $opp['company_id'] != $companyId) {
         throw new Exception('Opportunity not found');
     }
 
-    // Check permission: admin or owner
-    if ($role !== 'admin' && (int)$opp['owner_id'] !== (int)$userId) {
+    // Check permission: admin-level role, or the opportunity's owner
+    if (crm_role_rank($role) < crm_role_rank('admin') && (int)$opp['owner_id'] !== (int)$userId) {
         throw new Exception('Permission denied');
     }
 
     // Build update data
     $fields = [];
     $params = [];
+    // Account reassignment (the opp_view form posts this; it was silently
+    // ignored before — saves reported ok without changing the account)
+    if (isset($_POST['account_id'])) {
+        $newAccountId = (int)$_POST['account_id'];
+        $accStmt = $DB->prepare("
+            SELECT id FROM crm_accounts
+            WHERE id = ? AND company_id = ? AND type = 'customer' AND deleted_at IS NULL
+        ");
+        $accStmt->execute([$newAccountId, $companyId]);
+        if (!$accStmt->fetch()) {
+            throw new Exception('Account not found');
+        }
+        $fields[] = 'account_id = ?';
+        $params[] = $newAccountId;
+    }
     // Title
     if (isset($_POST['title'])) {
         $title = trim($_POST['title']);
@@ -50,12 +68,28 @@ try {
         $fields[] = 'amount = ?';
         $params[] = $amount;
     }
-    // Stage
+    // Stage (validated against the pipeline's stage list)
     if (isset($_POST['stage'])) {
         $stage = trim($_POST['stage']);
-        if ($stage === '') throw new Exception('Stage cannot be empty');
+        if (!in_array($stage, CRM_OPP_STAGES)) {
+            throw new Exception('Invalid stage');
+        }
         $fields[] = 'stage = ?';
         $params[] = $stage;
+
+        if ($stage !== $opp['stage']) {
+            $fields[] = 'stage_changed_at = NOW()';
+            // Leaving 'lost' clears any recorded loss reason
+            if ($opp['stage'] === 'lost' && $stage !== 'lost' && !isset($_POST['loss_reason'])) {
+                $fields[] = 'loss_reason = NULL';
+            }
+        }
+    }
+    // Loss reason (kanban lost-drop modal and opp_view send it)
+    if (array_key_exists('loss_reason', $_POST)) {
+        $lossReason = trim($_POST['loss_reason']);
+        $fields[] = 'loss_reason = ?';
+        $params[] = $lossReason !== '' ? mb_substr($lossReason, 0, 255) : null;
     }
     // Probability
     if (isset($_POST['probability'])) {
@@ -75,8 +109,8 @@ try {
     // Owner change
     if (isset($_POST['owner_id'])) {
         $newOwnerId = (int)$_POST['owner_id'];
-        // Only admin can change owner
-        if ($role !== 'admin') {
+        // Only admin-level roles can change owner
+        if (crm_role_rank($role) < crm_role_rank('admin')) {
             throw new Exception('Only admin can reassign owner');
         }
         // Verify the new owner exists and belongs to the company
@@ -103,7 +137,9 @@ try {
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
 
-    // Audit log entry
+    // Audit log entry (drop the CSRF token from the recorded payload)
+    $auditPayload = $_POST;
+    unset($auditPayload['csrf_token']);
     $stmt = $DB->prepare("INSERT INTO audit_log (
             company_id, user_id, action, entity_type, entity_id, details, created_at
         ) VALUES (?, ?, 'update', 'crm_opportunity', ?, ?, NOW())");
@@ -111,12 +147,12 @@ try {
         $companyId,
         $userId,
         $oppId,
-        json_encode($_POST)
+        json_encode($auditPayload)
     ]);
 
     echo json_encode(['ok' => true]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('Opportunity update error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

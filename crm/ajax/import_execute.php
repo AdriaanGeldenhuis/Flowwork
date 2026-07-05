@@ -2,6 +2,9 @@
 // /crm/ajax/import_execute.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 // Disable buffering for streaming
 ob_implicit_flush(true);
@@ -73,6 +76,14 @@ try {
 
     streamProgress(10, 'Mapping columns...');
 
+    // Count data rows upfront so progress reporting is real
+    $totalCount = 0;
+    while (fgetcsv($handle) !== false) {
+        $totalCount++;
+    }
+    rewind($handle);
+    fgetcsv($handle); // skip headers again
+
     $totalRows = 0;
     $successful = 0;
     $failed = 0;
@@ -94,7 +105,7 @@ try {
         }
 
         // Calculate progress (15% to 90%)
-        $progressPercent = 15 + (($totalRows / max($totalRows + 1, 1)) * 75);
+        $progressPercent = 15 + (int)round(($totalRows / max($totalCount, 1)) * 75);
         if ($totalRows % 10 === 0) {
             streamProgress($progressPercent, "Processing row {$totalRows}...");
         }
@@ -108,9 +119,13 @@ try {
                 importAddress($rowData, $companyId, $userId, $dryRun);
             }
             $successful++;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $failed++;
-            $errors[] = "Row {$totalRows}: " . $e->getMessage();
+            // Import is admin-gated and row diagnostics are the product here:
+            // pass through Exception (incl. PDOException) messages, keep the
+            // generic wrapper only for engine errors (TypeError etc.)
+            $errors[] = "Row {$totalRows}: "
+                . ($e instanceof Exception ? $e->getMessage() : crm_public_error($e));
         }
     }
 
@@ -144,7 +159,7 @@ try {
     streamProgress(100, 'Import complete!');
     streamComplete($totalRows, $successful, $failed, $errors, $dryRun);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
@@ -161,7 +176,7 @@ try {
     }
 
     error_log("Import execute error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]) . "\n";
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]) . "\n";
 }
 
 // ========== IMPORT FUNCTIONS ==========
@@ -177,9 +192,9 @@ function importAccount($data, $companyId, $userId, $skipDuplicates, $dryRun) {
     // Check for duplicates
     if ($skipDuplicates) {
         $stmt = $DB->prepare("
-            SELECT id FROM crm_accounts 
-            WHERE company_id = ? AND (
-                name = ? 
+            SELECT id FROM crm_accounts
+            WHERE company_id = ? AND deleted_at IS NULL AND (
+                name = ?
                 OR (email IS NOT NULL AND email = ?)
                 OR (vat_no IS NOT NULL AND vat_no = ?)
             )
@@ -205,16 +220,29 @@ function importAccount($data, $companyId, $userId, $skipDuplicates, $dryRun) {
         $phone = '+27' . ltrim($phone, '0');
     }
 
+    // Account type from the mapped column (customers were impossible to
+    // import before — the type was hardcoded to supplier)
+    $accountType = strtolower(trim($data['type'] ?? ''));
+    if (!in_array($accountType, ['supplier', 'customer'])) {
+        $accountType = 'supplier';
+    }
+
+    $status = strtolower(trim($data['status'] ?? ''));
+    if (!in_array($status, CRM_ACCOUNT_STATUSES)) {
+        $status = 'active';
+    }
+
     // Insert account
     $stmt = $DB->prepare("
         INSERT INTO crm_accounts (
             company_id, type, name, legal_name, reg_no, vat_no,
-            phone, email, website, status, notes, created_by, created_at
-        ) VALUES (?, 'supplier', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            phone, email, website, industry_id, region_id, status, notes, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     ");
 
     $stmt->execute([
         $companyId,
+        $accountType,
         $name,
         $data['legal_name'] ?? null,
         $data['reg_no'] ?? null,
@@ -222,10 +250,32 @@ function importAccount($data, $companyId, $userId, $skipDuplicates, $dryRun) {
         $phone ?: null,
         $data['email'] ?? null,
         $data['website'] ?? null,
-        $data['status'] ?? 'active',
+        importLookupId('crm_industries', $data['industry'] ?? ''),
+        importLookupId('crm_regions', $data['region'] ?? ''),
+        $status,
         $data['notes'] ?? null,
         $userId
     ]);
+}
+
+// Resolve an industry/region NAME from the CSV to its id (exact,
+// case-insensitive). Unknown names import as NULL rather than failing the row.
+function importLookupId($table, $name) {
+    global $DB;
+    static $cache = [];
+
+    $name = trim((string)$name);
+    if ($name === '') {
+        return null;
+    }
+    $key = $table . '|' . strtolower($name);
+    if (!array_key_exists($key, $cache)) {
+        $stmt = $DB->prepare("SELECT id FROM `$table` WHERE LOWER(name) = LOWER(?) LIMIT 1");
+        $stmt->execute([$name]);
+        $id = $stmt->fetchColumn();
+        $cache[$key] = $id !== false ? (int)$id : null;
+    }
+    return $cache[$key];
 }
 
 function importContact($data, $companyId, $userId, $skipDuplicates, $dryRun) {

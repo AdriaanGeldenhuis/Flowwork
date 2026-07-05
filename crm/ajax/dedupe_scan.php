@@ -2,6 +2,9 @@
 // /crm/ajax/dedupe_scan.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 // Disable buffering for streaming
 ob_implicit_flush(true);
@@ -56,7 +59,7 @@ try {
     streamProgress(15, 'Loading accounts...');
 
     // Fetch all accounts
-    $sql = "SELECT id, name, email, phone, vat_no, reg_no FROM crm_accounts WHERE company_id = ?";
+    $sql = "SELECT id, name, email, phone, vat_no, reg_no FROM crm_accounts WHERE company_id = ? AND deleted_at IS NULL";
     $params = [$companyId];
 
     if ($type !== 'all') {
@@ -183,9 +186,9 @@ try {
     streamProgress(100, 'Scan complete!');
     streamComplete($accountsScanned, $candidatesFound, $candidatesAdded);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("Dedupe scan error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]) . "\n";
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]) . "\n";
 }
 
 // ========== HELPER FUNCTION ==========

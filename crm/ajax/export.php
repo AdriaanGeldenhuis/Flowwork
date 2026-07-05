@@ -2,6 +2,9 @@
 // /crm/ajax/export.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 $companyId = $_SESSION['company_id'];
 $type = $_GET['type'] ?? 'accounts';
@@ -14,11 +17,11 @@ try {
 
     if ($type === 'accounts' || $type === 'suppliers' || $type === 'customers') {
         $sql = "
-            SELECT 
-                name, legal_name, reg_no, vat_no, email, phone, website, 
+            SELECT
+                name, legal_name, reg_no, vat_no, email, phone, website,
                 status, type, notes, created_at
             FROM crm_accounts
-            WHERE company_id = ?
+            WHERE company_id = ? AND deleted_at IS NULL
         ";
         
         if ($type === 'suppliers') {
@@ -93,21 +96,17 @@ try {
         
         fclose($output);
 
-    } elseif ($format === 'xlsx') {
-        // For XLSX, you'd need a library like PHPSpreadsheet
-        // For now, fall back to CSV
-        header('Content-Type: text/csv');
-        header('Content-Disposition: attachment; filename="' . $filename . '.csv"');
-
-        $output = fopen('php://output', 'w');
-        fputcsv($output, array_keys($data[0]));
-        foreach ($data as $row) {
-            fputcsv($output, $row);
-        }
-        fclose($output);
+    } else {
+        // XLSX would need a library like PHPSpreadsheet; previously this
+        // branch silently emitted CSV — be honest about it instead.
+        throw new Exception('Only CSV export is supported');
     }
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("Export error: " . $e->getMessage());
-    die('Export failed: ' . $e->getMessage());
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: text/plain');
+    }
+    die('Export failed: ' . crm_public_error($e));
 }

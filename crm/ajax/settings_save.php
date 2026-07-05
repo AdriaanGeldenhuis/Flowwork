@@ -2,26 +2,20 @@
 // /crm/ajax/settings_save.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
 
-// Check admin rights
-$stmt = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$userRole = $stmt->fetchColumn();
-
-if (!in_array($userRole, ['admin', 'owner'])) {
-    echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
-    exit;
-}
+crm_require_min_role('admin');
 
 try {
     $DB->beginTransaction();
 
-    // Define all CRM settings keys
+    // Whitelisted CRM settings keys. Only keys actually submitted are saved,
+    // so callers can post a subset (checkboxes must ship a hidden "0" field).
     $settingsKeys = [
         'crm_default_supplier_status',
         'crm_default_customer_status',
@@ -32,22 +26,39 @@ try {
         'crm_interaction_retention_days',
         'crm_enable_duplicate_check',
         'crm_duplicate_threshold',
-        // new timeline limit and compliance badge toggles
+        // timeline limit and compliance badge toggles
         'crm_timeline_limit',
         'crm_compliance_badge_enable',
+        // general prefs saved from the settings page
+        'crm_phone_format',
+        'crm_enable_tags',
         'crm_email_template_rfq',
         'crm_email_template_welcome',
         'crm_email_template_reminder'
     ];
 
+    $booleanKeys = [
+        'crm_require_vat_number', 'crm_require_reg_number', 'crm_auto_create_tags',
+        'crm_enable_duplicate_check', 'crm_compliance_badge_enable', 'crm_enable_tags'
+    ];
+
+    $statusKeys = ['crm_default_supplier_status', 'crm_default_customer_status'];
+
     $saved = [];
 
     foreach ($settingsKeys as $key) {
-        // Handle checkboxes (0 if not present)
-        if (in_array($key, ['crm_require_vat_number', 'crm_require_reg_number', 'crm_auto_create_tags', 'crm_enable_duplicate_check', 'crm_compliance_badge_enable'])) {
-            $value = isset($_POST[$key]) ? '1' : '0';
+        if (!array_key_exists($key, $_POST)) {
+            continue;
+        }
+
+        if (in_array($key, $booleanKeys)) {
+            $value = $_POST[$key] === '1' ? '1' : '0';
         } else {
-            $value = $_POST[$key] ?? '';
+            $value = $_POST[$key];
+        }
+
+        if (in_array($key, $statusKeys) && !in_array($value, CRM_ACCOUNT_STATUSES)) {
+            throw new Exception('Invalid default status');
         }
 
         // Validate specific fields
@@ -101,10 +112,10 @@ try {
 
     echo json_encode(['ok' => true, 'saved' => $saved]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log("CRM settings_save error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

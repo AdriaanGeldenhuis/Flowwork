@@ -6,6 +6,8 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../includes/compliance.php';
 
 header('Content-Type: application/json');
 
@@ -36,6 +38,16 @@ try {
     $stmt->execute([$accountId, $companyId]);
     if (!$stmt->fetch()) {
         throw new Exception('Invalid supplier account');
+    }
+
+    // Company policy: refuse RFQs to suppliers with missing/expired required docs
+    $compliance = crm_compliance_state($DB, $companyId, $accountId);
+    if ($compliance['blocking']) {
+        $problem = array_merge($compliance['missing_types'], $compliance['expired_types']);
+        throw new Exception(
+            'Supplier is blocked by compliance policy (missing/expired: '
+            . implode(', ', $problem) . ')'
+        );
     }
 
     // Determine if an RFQ table exists
@@ -110,8 +122,8 @@ try {
         $insertStub->execute([$companyId, $accountId, $details, $userId]);
     }
     echo json_encode(['ok' => true]);
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('RFQ create error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
     exit;
 }

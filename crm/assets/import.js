@@ -160,13 +160,14 @@
     const fieldMap = {
       accounts: [
         { value: 'name', label: 'Name *', required: true },
+        { value: 'type', label: 'Account Type (supplier/customer)' },
         { value: 'legal_name', label: 'Legal Name' },
         { value: 'reg_no', label: 'Registration Number' },
         { value: 'vat_no', label: 'VAT Number' },
         { value: 'email', label: 'Email' },
         { value: 'phone', label: 'Phone' },
         { value: 'website', label: 'Website' },
-        { value: 'status', label: 'Status (active/inactive/prospect)' },
+        { value: 'status', label: 'Status (active/inactive/prospect/banned)' },
         { value: 'industry', label: 'Industry' },
         { value: 'region', label: 'Region' },
         { value: 'notes', label: 'Notes' }

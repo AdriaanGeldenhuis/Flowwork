@@ -7,19 +7,16 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
 // Capture session variables
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
-$role      = $_SESSION['role'] ?? 'viewer';
 
-// Only admins or members may create opportunities
-if (!in_array($role, ['admin', 'member'])) {
-    echo json_encode(['ok' => false, 'error' => 'Permission denied']);
-    exit;
-}
+// Members and up may create opportunities
+crm_require_min_role('member');
 
 // Read and sanitize input
 $title       = trim($_POST['title'] ?? '');
@@ -91,7 +88,7 @@ try {
 
     echo json_encode(['ok' => true, 'opportunity_id' => $oppId]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('Opportunity create error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

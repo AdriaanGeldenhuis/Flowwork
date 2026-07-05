@@ -2,6 +2,7 @@
 // /crm/ajax/account_save.php - FINAL FIXED VERSION
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../../qi/lib/Currencies.php';
 
 header('Content-Type: application/json');
@@ -27,6 +28,27 @@ try {
         throw new Exception('Invalid account type');
     }
 
+    // Company policy: required identifiers (settings on /crm/settings.php).
+    // Enforced on create only, so legacy accounts saved before the policy
+    // was switched on stay editable.
+    if (!$isEdit) {
+        if (isVATRequired() && trim($_POST['vat_no'] ?? '') === '') {
+            throw new Exception('VAT number is required');
+        }
+        if (isRegNumberRequired() && trim($_POST['reg_no'] ?? '') === '') {
+            throw new Exception('Registration number is required');
+        }
+    }
+
+    // Status: validate when provided, default from settings on create
+    $statusVal = trim($_POST['status'] ?? '');
+    if ($statusVal === '') {
+        $statusVal = getCRMSetting('crm_default_' . $type . '_status', 'active');
+    }
+    if (!in_array($statusVal, CRM_ACCOUNT_STATUSES)) {
+        throw new Exception('Invalid status value');
+    }
+
     // Normalize phone
     $phone = trim($_POST['phone'] ?? '');
     if ($phone && !preg_match('/^\+/', $phone)) {
@@ -42,8 +64,8 @@ try {
     if ($isEdit) {
         // Check for duplicate name (exclude self)
         $dupStmt = $DB->prepare("
-            SELECT id FROM crm_accounts 
-            WHERE company_id = ? AND type = ? AND name = ? AND id != ?
+            SELECT id FROM crm_accounts
+            WHERE company_id = ? AND type = ? AND name = ? AND id != ? AND deleted_at IS NULL
         ");
         $dupStmt->execute([$companyId, $type, $name, $accountId]);
         if ($dupStmt->fetch()) {
@@ -58,7 +80,6 @@ try {
         $websiteVal = trim($_POST['website'] ?? '');
         $industryId = !empty($_POST['industry_id']) ? (int)$_POST['industry_id'] : null;
         $regionId = !empty($_POST['region_id']) ? (int)$_POST['region_id'] : null;
-        $statusVal = $_POST['status'] ?? 'active';
         $preferredVal = isset($_POST['preferred']) ? 1 : 0;
         $notesVal = trim($_POST['notes'] ?? '');
         $deletedFlag = isset($_POST['deleted']) ? 1 : 0;
@@ -132,8 +153,8 @@ try {
     } else {
         // Check for duplicate name
         $dupStmt = $DB->prepare("
-            SELECT id FROM crm_accounts 
-            WHERE company_id = ? AND type = ? AND name = ?
+            SELECT id FROM crm_accounts
+            WHERE company_id = ? AND type = ? AND name = ? AND deleted_at IS NULL
         ");
         $dupStmt->execute([$companyId, $type, $name]);
         if ($dupStmt->fetch()) {
@@ -166,7 +187,7 @@ try {
             !empty($_POST['industry_id']) ? (int)$_POST['industry_id'] : null,
             !empty($_POST['region_id']) ? (int)$_POST['region_id'] : null,
             $accountCurrency,
-            $_POST['status'] ?? 'active',
+            $statusVal,
             isset($_POST['preferred']) ? 1 : 0,
             trim($_POST['notes'] ?? '') ?: null,
             $userId
@@ -244,10 +265,10 @@ try {
 
     echo json_encode(['ok' => true, 'account_id' => $accountId]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log("CRM account_save error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

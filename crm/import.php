@@ -2,11 +2,14 @@
 // /crm/import.php - COMPLETE IMPORT/EXPORT PAGE
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
+
+crm_require_min_role('admin', 'html');
 
 // Fetch user info
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");

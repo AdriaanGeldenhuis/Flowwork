@@ -3,17 +3,13 @@
 // Handles bulk actions on CRM accounts (e.g. status change)
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
 
 header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
-$role = $_SESSION['role'] ?? 'viewer';
-
-if (!in_array($role, ['admin', 'owner', 'member'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
-    exit;
-}
+crm_require_min_role('member');
 
 $action = $_POST['action'] ?? '';
 $ids = $_POST['ids'] ?? [];
@@ -38,7 +34,7 @@ try {
     switch ($action) {
         case 'update_status':
             $newStatus = $_POST['status'] ?? '';
-            if (!in_array($newStatus, ['active', 'inactive', 'prospect'])) {
+            if (!in_array($newStatus, CRM_ACCOUNT_STATUSES)) {
                 throw new Exception('Invalid status value');
             }
 
@@ -108,10 +104,10 @@ try {
             throw new Exception('Unknown bulk action');
     }
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log("CRM bulk_action error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

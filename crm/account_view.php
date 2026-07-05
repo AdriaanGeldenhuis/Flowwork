@@ -2,6 +2,7 @@
 // /crm/account_view.php - FINAL WORKING VERSION
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/ajax/_helpers.php';
 require_once __DIR__ . '/../qi/lib/Currencies.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
@@ -140,6 +141,45 @@ try {
         $complianceBadgeEnabled = ($badgeVal == '1');
     }
 } catch (Exception $e) {}
+
+// Viewer-role users get a read-only page (matches the endpoints' gates)
+$canWrite = crm_role_rank($_SESSION['role'] ?? 'viewer') >= crm_role_rank('member');
+
+// Tagging toggle (write UI additionally needs member role)
+$tagsEnabled = getCRMSetting('crm_enable_tags', '1') === '1' && $canWrite;
+
+// Mail accounts + signatures for the "Send Email" modal (same queries as /mail/compose.php)
+$stmt = $DB->prepare("SELECT account_id, account_name, email_address FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
+$stmt->execute([$companyId, $userId]);
+$mailAccounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$mailSignatures = [];
+if ($mailAccounts) {
+    $stmt = $DB->prepare("SELECT signature_id, name, is_default FROM email_signatures WHERE company_id = ? AND (user_id = ? OR user_id IS NULL) ORDER BY is_default DESC, name");
+    $stmt->execute([$companyId, $userId]);
+    $mailSignatures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Primary contact email prefills the compose "To" field
+$primaryContactEmail = '';
+foreach ($contacts as $c) {
+    if (!empty($c['email'])) {
+        $primaryContactEmail = $c['email'];
+        if ($c['is_primary']) {
+            break;
+        }
+    }
+}
+if ($primaryContactEmail === '' && !empty($account['email'])) {
+    $primaryContactEmail = $account['email'];
+}
+
+// Client portal link (customers only; token scheme lives in portal/functions.php)
+$portalUrl = '';
+if ($account['type'] === 'customer') {
+    require_once __DIR__ . '/../portal/functions.php';
+    $portalUrl = '/portal/client/index.php?cid=' . $accountId . '&token=' . generatePortalToken($accountId);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -152,7 +192,7 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="fw-crm" data-theme="dark" data-account-id="<?= $accountId ?>">
     <div class="fw-crm__container">
@@ -220,6 +260,9 @@ try {
                     <nav class="fw-crm__kebab-menu" id="kebabMenu" aria-hidden="true">
                         <a href="/crm/account_edit.php?id=<?= $accountId ?>" class="fw-crm__kebab-item">Edit Account</a>
                         <a href="/quotes/new.php?customer_id=<?= $accountId ?>" class="fw-crm__kebab-item">New Quote</a>
+                        <?php if ($portalUrl): ?>
+                        <button type="button" class="fw-crm__kebab-item" id="copyPortalLink" data-portal-url="<?= htmlspecialchars($portalUrl) ?>" style="width:100%; text-align:left; background:none; border:none; cursor:pointer;">Copy client portal link</button>
+                        <?php endif; ?>
                         <hr style="margin:4px 0; border:none; border-top:1px solid var(--fw-border-base);">
                         <a href="/crm/?tab=<?= $account['type'] === 'supplier' ? 'suppliers' : 'customers' ?>" class="fw-crm__kebab-item">Back to List</a>
                     </nav>
@@ -252,16 +295,45 @@ try {
                                 <span class="fw-crm__badge fw-crm__badge--preferred">⭐ Preferred</span>
                             <?php endif; ?>
                         </div>
-                        <div class="fw-crm__account-header-tags">
+                        <div class="fw-crm__account-header-tags" id="accountTags" style="position:relative;">
                             <?php foreach ($tags as $tag): ?>
-                                <span class="fw-crm__tag" style="background:<?= htmlspecialchars($tag['color']) ?>">
+                                <span class="fw-crm__tag" data-tag-id="<?= (int)$tag['id'] ?>" style="background:<?= htmlspecialchars($tag['color']) ?>">
                                     <?= htmlspecialchars($tag['name']) ?>
+                                    <?php if ($tagsEnabled): ?>
+                                    <button type="button" class="fw-crm__tag-remove" data-tag-id="<?= (int)$tag['id'] ?>" aria-label="Remove tag <?= htmlspecialchars($tag['name']) ?>">&times;</button>
+                                    <?php endif; ?>
                                 </span>
                             <?php endforeach; ?>
+                            <?php if ($tagsEnabled): ?>
+                            <button type="button" class="fw-crm__tag-add" id="tagAddBtn">+ Tag</button>
+                            <div class="fw-crm__tag-popover" id="tagPopover">
+                                <input type="text" id="tagNameInput" class="fw-crm__input" placeholder="Tag name" maxlength="50">
+                                <div class="fw-crm__tag-suggests" id="tagSuggests"></div>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <input type="color" id="tagColorInput" value="#06b6d4" style="width:36px; height:32px; border:none; background:none; cursor:pointer;">
+                                    <button type="button" class="fw-crm__btn fw-crm__btn--primary" id="tagSaveBtn" style="height:32px; font-size:12px; padding:0 12px;">Add</button>
+                                    <button type="button" class="fw-crm__btn fw-crm__btn--secondary" id="tagCancelBtn" style="height:32px; font-size:12px; padding:0 12px;">Cancel</button>
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
                 <div class="fw-crm__account-header-actions">
+                    <?php if ($canWrite): ?>
+                    <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.openModal('followupModal')">
+                        ⏰ Follow-up
+                    </button>
+                    <?php if ($mailAccounts): ?>
+                    <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.openModal('emailModal')">
+                        ✉️ Send Email
+                    </button>
+                    <?php else: ?>
+                    <a href="/mail/settings.php" class="fw-crm__btn fw-crm__btn--secondary" title="Connect a mail account to send email from the CRM">
+                        ✉️ Send Email
+                    </a>
+                    <?php endif; ?>
+                    <?php endif; ?>
                     <a href="/crm/account_edit.php?id=<?= $accountId ?>" class="fw-crm__btn fw-crm__btn--secondary">
                         Edit
                     </a>
@@ -287,6 +359,39 @@ try {
                 
                 <!-- OVERVIEW TAB -->
                 <div class="fw-crm__tab-panel fw-crm__tab-panel--active" data-panel="overview">
+                    <?php if ($account['type'] === 'supplier'): ?>
+                    <div class="fw-crm__kpi-tiles">
+                        <div class="fw-crm__kpi-tile">
+                            <div class="fw-crm__kpi-tile-label">On-time delivery</div>
+                            <div class="fw-crm__kpi-tile-value">
+                                <?= ($account['on_time_percent'] ?? null) !== null ? round((float)$account['on_time_percent']) . '%' : '—' ?>
+                            </div>
+                            <div class="fw-crm__kpi-tile-hint">GRN vs PO ratio, from nightly aggregation</div>
+                        </div>
+                        <div class="fw-crm__kpi-tile">
+                            <div class="fw-crm__kpi-tile-label">Avg response time</div>
+                            <div class="fw-crm__kpi-tile-value">
+                                <?= ($account['avg_response_hours'] ?? null) !== null ? round((float)$account['avg_response_hours'], 1) . ' h' : '—' ?>
+                            </div>
+                            <div class="fw-crm__kpi-tile-hint">PO to GRN, from nightly aggregation</div>
+                        </div>
+                        <div class="fw-crm__kpi-tile">
+                            <div class="fw-crm__kpi-tile-label">Defect rate</div>
+                            <div class="fw-crm__kpi-tile-value">
+                                <?= ($account['defect_rate_percent'] ?? null) !== null ? round((float)$account['defect_rate_percent'], 1) . '%' : '—' ?>
+                            </div>
+                            <div class="fw-crm__kpi-tile-hint">Cancelled GRNs, from nightly aggregation</div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="fw-crm__info-card" style="margin-bottom:24px;">
+                        <h3 class="fw-crm__info-card-title">⏰ Upcoming Follow-ups</h3>
+                        <div id="followupsList">
+                            <div class="fw-crm__loading">Loading follow-ups...</div>
+                        </div>
+                    </div>
+
                     <div class="crm-playground">
                         <div class="crm-playground-header">
                             <h2>📊 Account Analytics</h2>
@@ -590,19 +695,17 @@ try {
                     <?php endif; ?>
                 </div>
 
-                <!-- LINKED ITEMS TAB -->
+                <!-- LINKED ITEMS TAB (loaded on first open from ajax/account_linked.php) -->
                 <div class="fw-crm__tab-panel" data-panel="linked">
-                    <div class="fw-crm__empty-state">
-                        Linked projects, quotes, invoices will appear here.<br>
-                        <small>Feature coming soon</small>
+                    <div id="linkedItemsContainer">
+                        <div class="fw-crm__loading">Loading linked items...</div>
                     </div>
                 </div>
 
-                <!-- TIMELINE TAB -->
+                <!-- TIMELINE TAB (loaded on first open from ajax/account_timeline.php) -->
                 <div class="fw-crm__tab-panel" data-panel="timeline">
-                    <div class="fw-crm__empty-state">
-                        Complete timeline of all account activity.<br>
-                        <small>Feature coming soon</small>
+                    <div id="timelineContainer">
+                        <div class="fw-crm__loading">Loading timeline...</div>
                     </div>
                 </div>
 
@@ -826,6 +929,12 @@ try {
                         <label class="fw-crm__label">Notes <span class="fw-crm__required">*</span></label>
                         <textarea name="body" class="fw-crm__textarea" rows="5" required></textarea>
                     </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Next action (optional)</label>
+                        <input type="datetime-local" name="next_action_at" class="fw-crm__input">
+                        <small class="fw-crm__help-text">Setting this creates a follow-up reminder on your calendar</small>
+                    </div>
                 </form>
             </div>
             <div class="fw-crm__modal-footer">
@@ -835,16 +944,135 @@ try {
         </div>
     </div>
 
-    <!-- DATA FOR JS -->
-    <script>
-        window.CRM_DATA = {
-            accountId: <?= $accountId ?>,
-            contactsCount: <?= $contactsCount ?>,
-            addressesCount: <?= $addressesCount ?>,
-            complianceCount: <?= $complianceCount ?>,
-            interactionsCount: <?= $interactionsCount ?>
-        };
-    </script>
+    <!-- FOLLOW-UP MODAL -->
+    <div class="fw-crm__modal-overlay" id="followupModal" aria-hidden="true">
+        <div class="fw-crm__modal">
+            <div class="fw-crm__modal-header">
+                <h3 class="fw-crm__modal-title">Schedule Follow-up</h3>
+                <button type="button" class="fw-crm__modal-close" onclick="CRM.closeModal('followupModal')">&times;</button>
+            </div>
+            <div class="fw-crm__modal-body">
+                <form id="followupForm">
+                    <input type="hidden" name="linked_type" value="account">
+                    <input type="hidden" name="linked_id" value="<?= $accountId ?>">
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Title</label>
+                        <input type="text" name="title" class="fw-crm__input" placeholder="Follow up: <?= htmlspecialchars($account['name']) ?>" maxlength="200">
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">When <span class="fw-crm__required">*</span></label>
+                        <input type="datetime-local" name="due_datetime" class="fw-crm__input" required>
+                    </div>
+
+                    <div class="fw-crm__form-row">
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Remind me</label>
+                            <select name="minutes_before" class="fw-crm__select">
+                                <option value="15">15 minutes before</option>
+                                <option value="60" selected>1 hour before</option>
+                                <option value="1440">1 day before</option>
+                            </select>
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Via</label>
+                            <select name="channel" class="fw-crm__select">
+                                <option value="in_app" selected>In-app notification</option>
+                                <option value="email">Email</option>
+                                <option value="both">Both</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="fw-crm__modal-footer">
+                <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.closeModal('followupModal')">Cancel</button>
+                <button type="submit" form="followupForm" class="fw-crm__btn fw-crm__btn--primary">Create Follow-up</button>
+            </div>
+        </div>
+    </div>
+
+    <?php if ($mailAccounts): ?>
+    <!-- SEND EMAIL MODAL -->
+    <div class="fw-crm__modal-overlay" id="emailModal" aria-hidden="true">
+        <div class="fw-crm__modal" style="max-width:640px;">
+            <div class="fw-crm__modal-header">
+                <h3 class="fw-crm__modal-title">Send Email</h3>
+                <button type="button" class="fw-crm__modal-close" onclick="CRM.closeModal('emailModal')">&times;</button>
+            </div>
+            <div class="fw-crm__modal-body">
+                <form id="emailForm">
+                    <input type="hidden" name="crm_account_id" value="<?= $accountId ?>">
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">From</label>
+                        <select name="mail_account_id" class="fw-crm__select" required>
+                            <?php foreach ($mailAccounts as $ma): ?>
+                                <option value="<?= (int)$ma['account_id'] ?>">
+                                    <?= htmlspecialchars(($ma['account_name'] ? $ma['account_name'] . ' — ' : '') . $ma['email_address']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">To <span class="fw-crm__required">*</span></label>
+                        <input type="text" name="to" class="fw-crm__input" required
+                               value="<?= htmlspecialchars($primaryContactEmail) ?>"
+                               placeholder="email@example.com, another@example.com">
+                    </div>
+
+                    <div class="fw-crm__form-row">
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Cc</label>
+                            <input type="text" name="cc" class="fw-crm__input">
+                        </div>
+                        <div class="fw-crm__form-group">
+                            <label class="fw-crm__label">Bcc</label>
+                            <input type="text" name="bcc" class="fw-crm__input">
+                        </div>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Template</label>
+                        <select id="emailTemplateSelect" class="fw-crm__select">
+                            <option value="">No template</option>
+                        </select>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Subject <span class="fw-crm__required">*</span></label>
+                        <input type="text" name="subject" class="fw-crm__input" required>
+                    </div>
+
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Message</label>
+                        <textarea name="body" class="fw-crm__textarea" rows="8"></textarea>
+                    </div>
+
+                    <?php if ($mailSignatures): ?>
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Signature</label>
+                        <select name="signature_id" class="fw-crm__select">
+                            <option value="0">No signature</option>
+                            <?php foreach ($mailSignatures as $sig): ?>
+                                <option value="<?= (int)$sig['signature_id'] ?>" <?= $sig['is_default'] ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($sig['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <?php endif; ?>
+                </form>
+            </div>
+            <div class="fw-crm__modal-footer">
+                <button type="button" class="fw-crm__btn fw-crm__btn--secondary" onclick="CRM.closeModal('emailModal')">Cancel</button>
+                <button type="submit" form="emailForm" class="fw-crm__btn fw-crm__btn--primary">Send Email</button>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script src="/crm/assets/account_view.js?v=<?= CRM_ASSET_VERSION ?>"></script>

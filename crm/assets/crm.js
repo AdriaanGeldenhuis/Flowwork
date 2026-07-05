@@ -1,7 +1,32 @@
 // /crm/assets/crm.js - COMPLETE WITH PLAYGROUND
+window.CRM = window.CRM || {};
 
 (function() {
   'use strict';
+
+  // ========== TOASTS ==========
+  // CRM.toast('Saved', 'success' | 'error') — non-blocking feedback for async
+  // actions. Falls back gracefully if called before DOM is ready.
+  window.CRM.toast = function(message, type) {
+    type = type === 'error' ? 'error' : 'success';
+    let stack = document.getElementById('crmToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'crmToastStack';
+      stack.className = 'fw-crm__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'fw-crm__toast fw-crm__toast--' + type;
+    toast.textContent = message;
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-crm__toast--visible'));
+    setTimeout(() => {
+      toast.classList.remove('fw-crm__toast--visible');
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  };
 
   const THEME_COOKIE = 'fw_theme';
   const THEME_DARK = 'dark';
@@ -29,9 +54,10 @@
 
   function escapeHtml(str) {
     const div = document.createElement('div');
-    div.textContent = str || '';
+    div.textContent = str == null ? '' : String(str);
     return div.innerHTML;
   }
+  window.CRM.escapeHtml = escapeHtml;
 
   function getCsrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -276,6 +302,7 @@
               <option value="status:active">Set status: Active</option>
               <option value="status:inactive">Set status: Inactive</option>
               <option value="status:prospect">Set status: Prospect</option>
+              <option value="status:banned">Set status: Banned</option>
             </optgroup>
             <optgroup label="Lifecycle">
               <option value="soft_delete">Delete</option>
@@ -302,7 +329,7 @@
       const bar = document.getElementById('bulkBar');
       const actionSelect = bar.querySelector('.fw-crm__bulk-action-select');
       const value = actionSelect.value;
-      if (!value) { alert('Choose an action first'); return; }
+      if (!value) { CRM.toast('Choose an action first', 'error'); return; }
 
       const params = new URLSearchParams();
       let confirmMsg;
@@ -332,13 +359,15 @@
       .then(res => res.json())
       .then(data => {
         if (data.ok) {
+          const n = data.affected || data.updated || '';
+          CRM.toast((n ? n + ' ' : '') + 'account(s) updated');
           selectedIds.clear();
           loadAccounts(currentPage);
         } else {
-          alert(data.error || 'Bulk action failed');
+          CRM.toast(data.error || 'Bulk action failed', 'error');
         }
       })
-      .catch(() => alert('Network error'));
+      .catch(() => CRM.toast('Network error', 'error'));
     }
 
     // Initial load
@@ -365,10 +394,14 @@
   }
 
   // ========== MODAL SYSTEM ==========
+  // The stylesheet only displays overlays via [aria-hidden="false"]
+  // (display:none !important otherwise), so open/close MUST drive that
+  // attribute — the --active class alone never showed anything.
   window.CRMModal = {open: function(modalId) {
       const modal = document.getElementById(modalId);
       if (modal) {
         modal.classList.add('fw-crm__modal-overlay--active');
+        modal.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
       }
     },
@@ -376,6 +409,7 @@
       const modal = document.getElementById(modalId);
       if (modal) {
         modal.classList.remove('fw-crm__modal-overlay--active');
+        modal.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
       }
     }
@@ -385,6 +419,7 @@
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('fw-crm__modal-overlay')) {
       e.target.classList.remove('fw-crm__modal-overlay--active');
+      e.target.setAttribute('aria-hidden', 'true');
       document.body.style.overflow = '';
     }
   });
@@ -394,6 +429,7 @@
     if (e.key === 'Escape') {
       document.querySelectorAll('.fw-crm__modal-overlay--active').forEach(modal => {
         modal.classList.remove('fw-crm__modal-overlay--active');
+        modal.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
       });
     }

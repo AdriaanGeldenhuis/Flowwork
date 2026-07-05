@@ -29,16 +29,40 @@ $stages = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'
 // Build placeholders for FIELD order by clause
 $stagePlaceholders = implode(',', array_fill(0, count($stages), '?'));
 
+// Board filters (GET; server-rendered board reloads on submit)
+$filterOwner = (int)($_GET['owner'] ?? 0);
+$filterFrom = trim($_GET['close_from'] ?? '');
+$filterTo = trim($_GET['close_to'] ?? '');
+if ($filterFrom !== '' && strtotime($filterFrom) === false) $filterFrom = '';
+if ($filterTo !== '' && strtotime($filterTo) === false) $filterTo = '';
+
+// Owner list for the filter dropdown
+$ownersStmt = $DB->prepare("SELECT id, first_name, last_name FROM users WHERE company_id = ? ORDER BY first_name, last_name");
+$ownersStmt->execute([$companyId]);
+$ownerOptions = $ownersStmt->fetchAll(PDO::FETCH_ASSOC);
+
 // Load all opportunities for this company, ordering by stage order and created date
 $sql = "SELECT o.*, a.name AS account_name, u.first_name AS owner_first, u.last_name AS owner_last
         FROM crm_opportunities o
         LEFT JOIN crm_accounts a ON o.account_id = a.id
         LEFT JOIN users u ON o.owner_id = u.id
-        WHERE o.company_id = ?
-        ORDER BY FIELD(o.stage, $stagePlaceholders), o.created_at ASC";
+        WHERE o.company_id = ?";
+$params = [$companyId];
+if ($filterOwner) {
+    $sql .= " AND o.owner_id = ?";
+    $params[] = $filterOwner;
+}
+if ($filterFrom !== '') {
+    $sql .= " AND o.close_date >= ?";
+    $params[] = $filterFrom;
+}
+if ($filterTo !== '') {
+    $sql .= " AND o.close_date <= ?";
+    $params[] = $filterTo;
+}
+$sql .= " ORDER BY FIELD(o.stage, $stagePlaceholders), o.created_at ASC";
 $stmt = $DB->prepare($sql);
-// Merge companyId and stages as parameters
-$params = array_merge([$companyId], $stages);
+$params = array_merge($params, $stages);
 $stmt->execute($params);
 $opps = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -153,6 +177,28 @@ $totalPipeline = array_sum($stageTotals);
             <div class="fw-opps__summary">
                 Total Pipeline Value: <strong>R<?= number_format($totalPipeline, 2) ?></strong>
             </div>
+
+            <!-- Board filters -->
+            <form method="GET" class="fw-opps__filters">
+                <select name="owner" class="fw-crm__select">
+                    <option value="">All owners</option>
+                    <?php foreach ($ownerOptions as $o): ?>
+                        <option value="<?= (int)$o['id'] ?>" <?= $filterOwner === (int)$o['id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars(trim($o['first_name'] . ' ' . $o['last_name'])) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <label class="fw-opps__filter-label">Close date
+                    <input type="date" name="close_from" class="fw-crm__input" value="<?= htmlspecialchars($filterFrom) ?>">
+                </label>
+                <label class="fw-opps__filter-label">to
+                    <input type="date" name="close_to" class="fw-crm__input" value="<?= htmlspecialchars($filterTo) ?>">
+                </label>
+                <button type="submit" class="fw-crm__btn fw-crm__btn--secondary">Filter</button>
+                <?php if ($filterOwner || $filterFrom !== '' || $filterTo !== ''): ?>
+                    <a href="/crm/opps_list.php" class="fw-crm__btn fw-crm__btn--secondary">Clear</a>
+                <?php endif; ?>
+            </form>
             <!-- Mobile stage selector -->
             <select id="mobileStageSelect" class="fw-opps__mobile-stage-select">
                 <?php foreach ($stages as $i => $stage): ?>
@@ -169,16 +215,38 @@ $totalPipeline = array_sum($stageTotals);
                         </div>
                         <div class="fw-opps__items">
                             <?php foreach ($board[$stage] as $opp): ?>
-                                <div class="fw-opps__card" draggable="true" data-id="<?= (int)$opp['id'] ?>">
+                                <?php
+                                // Stale = open deal whose close date passed, or with no
+                                // stage movement (fallback: created) for over 30 days
+                                $isOpen = !in_array($opp['stage'], ['won', 'lost', 'converted']);
+                                $lastMove = $opp['stage_changed_at'] ?? null;
+                                $ageRef = $lastMove ?: $opp['created_at'];
+                                $isStale = $isOpen && (
+                                    (!empty($opp['close_date']) && strtotime($opp['close_date']) < strtotime('today'))
+                                    || ($ageRef && strtotime($ageRef) < strtotime('-30 days'))
+                                );
+                                ?>
+                                <div class="fw-opps__card<?= $isStale ? ' fw-opps__card--stale' : '' ?>" draggable="true"
+                                     data-id="<?= (int)$opp['id'] ?>"
+                                     data-amount="<?= (float)$opp['amount'] ?>">
                                     <div class="fw-opps__card-title">
                                         <a href="/crm/opp_view.php?opp_id=<?= (int)$opp['id'] ?>"><?= htmlspecialchars($opp['title']) ?></a>
+                                        <?php if ($isStale): ?>
+                                            <span class="fw-opps__stale-flag" title="No movement in 30+ days or close date passed">⚠</span>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="fw-opps__card-info">
                                         <?= htmlspecialchars($opp['account_name'] ?? '—') ?><br>
                                         R<?= number_format((float)$opp['amount'], 2) ?>
+                                        <?php if ((float)$opp['probability'] > 0): ?>
+                                            <span class="fw-opps__prob-chip"><?= round((float)$opp['probability']) ?>%</span>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="fw-opps__card-meta">
                                         Owner: <?= htmlspecialchars(($opp['owner_first'] ?? '') . ' ' . ($opp['owner_last'] ?? '')) ?>
+                                        <?php if (!empty($opp['close_date'])): ?>
+                                            <br>Close: <?= htmlspecialchars($opp['close_date']) ?>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -188,6 +256,32 @@ $totalPipeline = array_sum($stageTotals);
             </div>
         </main>
     </div>
+    <!-- Loss reason modal (shown when a deal is dropped into Lost) -->
+    <div class="fw-crm__modal-overlay" id="lossReasonModal" aria-hidden="true">
+        <div class="fw-crm__modal">
+            <div class="fw-crm__modal-header">
+                <h2 class="fw-crm__modal-title">Why was this deal lost?</h2>
+                <button type="button" class="fw-crm__modal-close" id="lossReasonClose">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="fw-crm__modal-body">
+                <div class="fw-crm__form-group">
+                    <label class="fw-crm__label">Reason (optional, helps win/loss review)</label>
+                    <input type="text" id="lossReasonInput" class="fw-crm__input" maxlength="255"
+                           placeholder="e.g. price, timing, went with competitor">
+                </div>
+            </div>
+            <div class="fw-crm__modal-footer">
+                <button type="button" class="fw-crm__btn fw-crm__btn--secondary" id="lossReasonSkip">Skip</button>
+                <button type="button" class="fw-crm__btn fw-crm__btn--primary" id="lossReasonSave">Save Reason</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/crm/assets/crm.js?v=<?= CRM_ASSET_VERSION ?>"></script>
     <script src="/crm/opps/js/kanban.js?v=<?= CRM_ASSET_VERSION ?>"></script>
 </body>

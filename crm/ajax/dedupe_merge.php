@@ -2,6 +2,9 @@
 // /crm/ajax/dedupe_merge.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/_helpers.php';
+
+crm_require_min_role('admin');
 
 header('Content-Type: application/json');
 
@@ -26,42 +29,31 @@ try {
 
     $DB->beginTransaction();
 
-    // Verify both accounts exist and belong to company
-    $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE id = ? AND company_id = ?");
-    
+    // Verify both accounts exist and belong to company (fetch the mergeable
+    // columns up front — the old code re-queried once per field)
+    $fields = [
+        'name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone',
+        'website', 'industry_id', 'region_id', 'status', 'notes'
+    ];
+    $stmt = $DB->prepare("SELECT id, " . implode(', ', $fields) . " FROM crm_accounts WHERE id = ? AND company_id = ?");
+
     $stmt->execute([$leftId, $companyId]);
-    $leftAccount = $stmt->fetch();
+    $leftAccount = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$leftAccount) {
         throw new Exception('Left account not found');
     }
 
     $stmt->execute([$rightId, $companyId]);
-    $rightAccount = $stmt->fetch();
+    $rightAccount = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$rightAccount) {
         throw new Exception('Right account not found');
     }
 
     // Build merged account data based on selected fields
     $mergedData = [];
-    $fields = [
-        'name', 'legal_name', 'reg_no', 'vat_no', 'email', 'phone', 
-        'website', 'industry_id', 'region_id', 'status', 'notes'
-    ];
-
     foreach ($fields as $field) {
         $selectedSide = $selectedFields[$field] ?? 'left';
-        
-        if ($selectedSide === 'left') {
-            // Get value from left account
-            $stmt = $DB->prepare("SELECT {$field} FROM crm_accounts WHERE id = ?");
-            $stmt->execute([$leftId]);
-            $mergedData[$field] = $stmt->fetchColumn();
-        } else {
-            // Get value from right account
-            $stmt = $DB->prepare("SELECT {$field} FROM crm_accounts WHERE id = ?");
-            $stmt->execute([$rightId]);
-            $mergedData[$field] = $stmt->fetchColumn();
-        }
+        $mergedData[$field] = $selectedSide === 'left' ? $leftAccount[$field] : $rightAccount[$field];
     }
 
     // Update left account with merged data
@@ -126,9 +118,33 @@ try {
 
     // 4. Compliance docs
     $stmt = $DB->prepare("
-        UPDATE crm_compliance_docs 
+        UPDATE crm_compliance_docs
         SET account_id = ?, updated_at = NOW()
         WHERE account_id = ? AND company_id = ?
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+
+    // 4b. Opportunities (previously missed — merges orphaned these)
+    $stmt = $DB->prepare("
+        UPDATE crm_opportunities
+        SET account_id = ?, updated_at = NOW()
+        WHERE account_id = ? AND company_id = ?
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+
+    // 4c. Purchase orders reference suppliers directly
+    $stmt = $DB->prepare("
+        UPDATE purchase_orders
+        SET supplier_id = ?
+        WHERE supplier_id = ? AND company_id = ?
+    ");
+    $stmt->execute([$leftId, $rightId, $companyId]);
+
+    // 4d. Projects carry the CRM customer in client_id (opportunity_convert)
+    $stmt = $DB->prepare("
+        UPDATE projects
+        SET client_id = ?
+        WHERE client_id = ? AND company_id = ?
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
 
@@ -148,13 +164,25 @@ try {
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
 
-    // 7. Emails: repoint account_id
+    // 7. Emails are associated to CRM accounts via email_links only —
+    //    emails.account_id is the MAIL account id (email_accounts), so the
+    //    old "repoint emails.account_id" step here silently moved a whole
+    //    mailbox between mail accounts and was removed.
+
+    // 7b. Polymorphic email links (linked_type is the account's type string).
+    //     UPDATE IGNORE skips rows that would duplicate an existing link to
+    //     the winner; the DELETE clears those leftovers.
     $stmt = $DB->prepare("
-        UPDATE emails 
-        SET account_id = ?, folder = folder
-        WHERE account_id = ? AND company_id = ?
+        UPDATE IGNORE email_links
+        SET linked_id = ?
+        WHERE linked_id = ? AND company_id = ? AND linked_type IN ('supplier', 'customer')
     ");
     $stmt->execute([$leftId, $rightId, $companyId]);
+    $stmt = $DB->prepare("
+        DELETE FROM email_links
+        WHERE linked_id = ? AND company_id = ? AND linked_type IN ('supplier', 'customer')
+    ");
+    $stmt->execute([$rightId, $companyId]);
 
     // 5. Tags (merge without duplicates)
     $stmt = $DB->prepare("
@@ -167,9 +195,11 @@ try {
     $stmt = $DB->prepare("DELETE FROM crm_account_tags WHERE account_id = ?");
     $stmt->execute([$rightId]);
 
-    // 6. Delete the right account
+    // 6. Soft-delete the losing account (audit trail + restorable via the
+    //    "Deleted only" filter; a hard DELETE also broke FK'd history rows)
     $stmt = $DB->prepare("
-        DELETE FROM crm_accounts 
+        UPDATE crm_accounts
+        SET deleted_at = NOW(), updated_at = NOW()
         WHERE id = ? AND company_id = ?
     ");
     $stmt->execute([$rightId, $companyId]);
@@ -216,10 +246,10 @@ try {
         'merged_from_id' => $rightId
     ]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
     error_log("Dedupe merge error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
 }

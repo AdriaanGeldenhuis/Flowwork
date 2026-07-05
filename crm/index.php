@@ -21,6 +21,14 @@ $companyName = $company['name'] ?? 'Company';
 // Get active tab from URL
 $activeTab = $_GET['tab'] ?? 'overview';
 
+// Lookup lists for the list-tab filters (global tables)
+$filterIndustries = [];
+$filterRegions = [];
+if ($activeTab === 'suppliers' || $activeTab === 'customers') {
+    $filterIndustries = $DB->query("SELECT id, name FROM crm_industries ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $filterRegions = $DB->query("SELECT id, name FROM crm_regions ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // Always fetch tab counts (used in tab headers on every tab) - exclude soft-deleted
 $suppliersCount = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND deleted_at IS NULL");
 $suppliersCount->execute([$companyId]);
@@ -174,7 +182,7 @@ if ($activeTab === 'overview') {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/crm/assets/crm.css?v=<?= CRM_ASSET_VERSION ?>">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="fw-crm">
     <div class="fw-crm__container">
@@ -237,6 +245,7 @@ if ($activeTab === 'overview') {
                         <a href="/crm/settings.php" class="fw-crm__kebab-item">CRM Settings</a>
                         <a href="/crm/import.php" class="fw-crm__kebab-item">Import/Export</a>
                         <a href="/crm/dedupe.php" class="fw-crm__kebab-item">Dedupe & Merge</a>
+                        <a href="/crm/compliance.php" class="fw-crm__kebab-item">Compliance</a>
                     </nav>
                 </div>
             </div>
@@ -373,12 +382,19 @@ if ($activeTab === 'overview') {
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                             <option value="prospect">Prospect</option>
+                            <option value="banned">Banned</option>
                         </select>
                         <select id="filterIndustry" class="fw-crm__select">
                             <option value="">All Industries</option>
+                            <?php foreach ($filterIndustries as $ind): ?>
+                                <option value="<?= (int)$ind['id'] ?>"><?= htmlspecialchars($ind['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterRegion" class="fw-crm__select">
                             <option value="">All Regions</option>
+                            <?php foreach ($filterRegions as $reg): ?>
+                                <option value="<?= (int)$reg['id'] ?>"><?= htmlspecialchars($reg['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterDeleted" class="fw-crm__select" title="Deleted accounts">
                             <option value="0">Active (not deleted)</option>
@@ -407,12 +423,19 @@ if ($activeTab === 'overview') {
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                             <option value="prospect">Prospect</option>
+                            <option value="banned">Banned</option>
                         </select>
                         <select id="filterIndustry" class="fw-crm__select">
                             <option value="">All Industries</option>
+                            <?php foreach ($filterIndustries as $ind): ?>
+                                <option value="<?= (int)$ind['id'] ?>"><?= htmlspecialchars($ind['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterRegion" class="fw-crm__select">
                             <option value="">All Regions</option>
+                            <?php foreach ($filterRegions as $reg): ?>
+                                <option value="<?= (int)$reg['id'] ?>"><?= htmlspecialchars($reg['name']) ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <select id="filterDeleted" class="fw-crm__select" title="Deleted accounts">
                             <option value="0">Active (not deleted)</option>
