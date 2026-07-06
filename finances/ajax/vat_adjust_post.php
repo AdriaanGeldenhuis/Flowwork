@@ -61,91 +61,51 @@ try {
     $vatOutputCode = $accountsMap->code('finance_vat_output_account_id');
     $vatInputCode  = $accountsMap->code('finance_vat_input_account_id');
 
-    // Build journal lines arrays
+    // Build journal lines in INTEGER CENTS: the previous float totals with an
+    // "abs(imbalance) > 0.01" contra threshold let a 1-cent-imbalanced
+    // journal post straight into the GL as status 'posted'.
     $journalLines = [];
-    $totalDebit  = 0.0;
-    $totalCredit = 0.0;
+    $totalDebitC  = 0;
+    $totalCreditC = 0;
     foreach ($lines as $line) {
-        $type   = isset($line['account']) ? strtolower(trim($line['account'])) : '';
-        $amount = (float)($line['amount'] ?? 0);
-        $memo   = trim($line['memo'] ?? '');
+        $type    = isset($line['account']) ? strtolower(trim($line['account'])) : '';
+        $amountC = (int)round(((float)($line['amount'] ?? 0)) * 100);
+        $memo    = trim($line['memo'] ?? '');
         if ($type !== 'output' && $type !== 'input') {
             throw new Exception('Invalid account type for adjustment');
         }
-        if ($amount == 0.0) {
+        if ($amountC === 0) {
             continue; // skip zero lines
         }
-        // Determine account code and debit/credit
         $accountCode = ($type === 'output') ? $vatOutputCode : $vatInputCode;
         $description = $memo !== '' ? $memo : 'VAT adjustment';
-        if ($type === 'output') {
-            if ($amount > 0) {
-                // Increase output VAT: credit VAT output
-                $journalLines[] = [
-                    'account_code' => $accountCode,
-                    'description'  => $description,
-                    'debit'        => 0.0,
-                    'credit'       => round($amount, 2)
-                ];
-                $totalCredit += round($amount, 2);
-            } else {
-                // Decrease output VAT: debit VAT output
-                $abs = abs($amount);
-                $journalLines[] = [
-                    'account_code' => $accountCode,
-                    'description'  => $description,
-                    'debit'        => round($abs, 2),
-                    'credit'       => 0.0
-                ];
-                $totalDebit += round($abs, 2);
-            }
-        } else { // input
-            if ($amount > 0) {
-                // Increase input VAT: debit VAT input
-                $journalLines[] = [
-                    'account_code' => $accountCode,
-                    'description'  => $description,
-                    'debit'        => round($amount, 2),
-                    'credit'       => 0.0
-                ];
-                $totalDebit += round($amount, 2);
-            } else {
-                // Decrease input VAT: credit VAT input
-                $abs = abs($amount);
-                $journalLines[] = [
-                    'account_code' => $accountCode,
-                    'description'  => $description,
-                    'debit'        => 0.0,
-                    'credit'       => round($abs, 2)
-                ];
-                $totalCredit += round($abs, 2);
-            }
-        }
+        // Output increase = credit VAT output; input increase = debit VAT input.
+        $isDebit = ($type === 'output') ? ($amountC < 0) : ($amountC > 0);
+        $absC = abs($amountC);
+        $journalLines[] = [
+            'account_code' => $accountCode,
+            'description'  => $description,
+            'debit'        => $isDebit ? $absC / 100 : 0,
+            'credit'       => $isDebit ? 0 : $absC / 100,
+        ];
+        if ($isDebit) { $totalDebitC += $absC; } else { $totalCreditC += $absC; }
     }
-    // Auto-balance: if a single-sided adjustment, add contra to VAT Control (2100)
-    $imbalance = round($totalDebit - $totalCredit, 2);
-    if (abs($imbalance) > 0.01) {
+    // Auto-balance: contra to VAT Control for ANY residual, including 1 cent.
+    $imbalanceC = $totalDebitC - $totalCreditC;
+    if ($imbalanceC !== 0) {
         $vatControlCode = $accountsMap->code('finance_vat_control_account_id');
-        if ($imbalance > 0) {
-            $journalLines[] = [
-                'account_code' => $vatControlCode,
-                'description'  => 'VAT adjustment contra',
-                'debit'        => 0.0,
-                'credit'       => round($imbalance, 2)
-            ];
-            $totalCredit += round($imbalance, 2);
-        } else {
-            $journalLines[] = [
-                'account_code' => $vatControlCode,
-                'description'  => 'VAT adjustment contra',
-                'debit'        => round(abs($imbalance), 2),
-                'credit'       => 0.0
-            ];
-            $totalDebit += round(abs($imbalance), 2);
-        }
+        $journalLines[] = [
+            'account_code' => $vatControlCode,
+            'description'  => 'VAT adjustment contra',
+            'debit'        => $imbalanceC < 0 ? -$imbalanceC / 100 : 0,
+            'credit'       => $imbalanceC > 0 ? $imbalanceC / 100 : 0,
+        ];
     }
     if (empty($journalLines)) {
         throw new Exception('No valid adjustment lines');
+    }
+    if (count($journalLines) < 2) {
+        throw new Exception('Adjustment must produce a balanced journal — add a second line');
     }
 
     // Determine entry date: use period_end for consistency
@@ -155,40 +115,21 @@ try {
 
     $DB->beginTransaction();
 
-    // Insert journal entry (posted immediately so VAT calcs include it)
-    $stmt = $DB->prepare(
-        "INSERT INTO journal_entries (
-            company_id, entry_date, description, reference, module, ref_type, ref_id,
-            created_by, created_at, status, posted_by, posted_at
-        ) VALUES (?, ?, ?, ?, 'vat_adjust', 'vat_period', ?, ?, NOW(), 'posted', ?, NOW())"
-    );
-    $stmt->execute([
-        $companyId,
-        $entryDate,
-        $memo,
-        $reference,
-        $periodId,
-        $userId,
-        $userId
-    ]);
-    $journalId = (int)$DB->lastInsertId();
-
-    // Prepare journal lines insert statement
-    $stmtLine = $DB->prepare(
-        "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, reference)
-         VALUES (?, ?, ?, ?, ?, ?)"
-    );
-
-    foreach ($journalLines as $jl) {
-        $stmtLine->execute([
-            $journalId,
-            $jl['account_code'],
-            $jl['description'],
-            number_format($jl['debit'], 2, '.', ''),
-            number_format($jl['credit'], 2, '.', ''),
-            $reference
-        ]);
-    }
+    // Post through the engine choke point: period-lock check, integer-cents
+    // balance assertion, account-existence check, audit trail, status
+    // 'posted' — the previous hand-rolled INSERT enforced none of these.
+    require_once __DIR__ . '/../lib/PostingService.php';
+    $posting = new PostingService($DB, (int)$companyId, (int)$userId);
+    $journalId = $posting->postAdHocJournal([
+        'entry_date'  => $entryDate,
+        'reference'   => $reference,
+        'description' => $memo,
+        'module'      => 'vat_adjust',
+        'ref_type'    => 'vat_period',
+        'ref_id'      => $periodId,
+        'source_type' => 'vat_adjustment',
+        'source_id'   => $periodId,
+    ], $journalLines);
 
     // Update period status to adjusted and refresh the stored totals so the
     // filed figures include this adjustment (the snapshot taken at prepare
@@ -239,9 +180,12 @@ try {
         $DB->rollBack();
     }
     error_log('VAT adjust error: ' . $e->getMessage());
+    // Business-rule messages (locked period, unknown account) reach the
+    // bookkeeper; PDO/engine details stay in the log.
+    $msg = ($e instanceof PDOException) ? 'Failed to post VAT adjustment' : $e->getMessage();
     echo json_encode([
         'ok'    => false,
-        'error' => 'Failed to post VAT adjustment'
+        'error' => $msg
     ]);
     exit;
 }

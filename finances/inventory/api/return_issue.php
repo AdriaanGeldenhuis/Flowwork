@@ -56,11 +56,6 @@ try {
     if ($periodService->isLocked($date)) {
         throw new Exception('Cannot post return into locked period (' . $date . ')');
     }
-    // Compute current average cost and record receipt
-    $inventory = new InventoryService($DB, $companyId);
-    $unitCost = $inventory->getAverageCost($itemId);
-    // Record the return as a receipt
-    $totalCost = $inventory->receive($itemId, $qty, $unitCost, $date, $refType, $refId);
     // Determine GL accounts
     $accounts = new AccountsMap($DB, $companyId);
     $invCode  = $accounts->code('finance_inventory_account_id');
@@ -68,49 +63,50 @@ try {
     if (!$invCode || !$cogsCode) {
         throw new Exception('Missing inventory or COGS account mapping');
     }
-    // Begin transaction for GL entry
+
+    // ONE transaction around movement + journal: the movement used to commit
+    // in autocommit BEFORE the transaction started, so a failed journal left
+    // phantom stock (and a retry doubled it). The journal also posted with
+    // default status 'draft', invisible to every posted-only report.
     $DB->beginTransaction();
-    // Create journal entry
+
+    $inventory = new InventoryService($DB, $companyId);
+    $unitCost = $inventory->getAverageCost($itemId);
+    $totalCost = $inventory->receive($itemId, $qty, $unitCost, $date, $refType, $refId);
+    $movementId = (int)$DB->lastInsertId();
+
+    require_once __DIR__ . '/../../lib/PostingService.php';
     $reference = 'RET' . $itemId . '-' . date('Ymd');
-    $description = 'Inventory return for item ' . $itemId;
-    $stmtJ = $DB->prepare(
-        "INSERT INTO journal_entries (
-            company_id, entry_date, reference, description,
-            module, ref_type, ref_id, source_type, source_id,
-            created_by, created_at
-        ) VALUES (?, ?, ?, ?, 'fin', 'inventory_return', ?, 'inventory', ?, ?, NOW())"
-    );
-    $stmtJ->execute([
-        $companyId,
-        $date,
-        $reference,
-        $description,
-        $itemId,
-        $itemId,
-        $userId
+    $posting = new PostingService($DB, (int)$companyId, (int)$userId);
+    $journalId = $posting->postAdHocJournal([
+        'entry_date'  => $date,
+        'reference'   => $reference,
+        'description' => 'Inventory return for item ' . $itemId,
+        'module'      => 'fin',
+        'ref_type'    => 'inventory_return',
+        'ref_id'      => $itemId,
+        'source_type' => 'inventory',
+        'source_id'   => $itemId,
+    ], [
+        [
+            'account_code' => $invCode,
+            'description'  => 'Return to inventory',
+            'debit'        => round($totalCost, 2),
+            'credit'       => 0,
+        ],
+        [
+            'account_code' => $cogsCode,
+            'description'  => 'Reverse COGS on return',
+            'debit'        => 0,
+            'credit'       => round($totalCost, 2),
+        ],
     ]);
-    $journalId = (int)$DB->lastInsertId();
-    // Insert inventory debit and COGS credit
-    $stmtL = $DB->prepare(
-        "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit)
-         VALUES (?, ?, ?, ?, ?)"
-    );
-    // Debit inventory (increase asset)
-    $stmtL->execute([
-        $journalId,
-        $invCode,
-        'Return to inventory',
-        number_format($totalCost, 2, '.', ''),
-        '0.00'
-    ]);
-    // Credit COGS (reduce expense)
-    $stmtL->execute([
-        $journalId,
-        $cogsCode,
-        'Reverse COGS on return',
-        '0.00',
-        number_format($totalCost, 2, '.', '')
-    ]);
+
+    // Link the movement to its journal so a future reversal of this journal
+    // reverses the stock too (reverseMovementsForJournal matches journal_id).
+    $DB->prepare("UPDATE inventory_movements SET journal_id = ? WHERE id = ? AND company_id = ?")
+        ->execute([$journalId, $movementId, $companyId]);
+
     $DB->commit();
     echo json_encode(['ok' => true, 'data' => ['journal_id' => $journalId, 'unit_cost' => $unitCost]]);
 } catch (Exception $e) {

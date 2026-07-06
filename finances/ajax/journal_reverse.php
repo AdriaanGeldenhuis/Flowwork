@@ -63,9 +63,22 @@ try {
     }
 
     // ReversalService::reverseJournal throws on any failure and returns the
-    // reversal journal id.
-    $service = new ReversalService($DB, $companyId);
-    $reversalId = $service->reverseJournal($journalId, $userId, $reason, $reversalDate);
+    // reversal journal id. Inventory movements linked to the journal are
+    // reversed in the same transaction (mirrors supersedeJournal) — a
+    // manually reversed stock journal otherwise kept its movements, so a
+    // later re-issue decremented stock twice.
+    $DB->beginTransaction();
+    try {
+        $service = new ReversalService($DB, $companyId);
+        $reversalId = $service->reverseJournal($journalId, $userId, $reason, $reversalDate);
+        require_once __DIR__ . '/../lib/InventoryService.php';
+        (new InventoryService($DB, $companyId))
+            ->reverseMovementsForJournal($journalId, $reversalId, $reversalDate);
+        $DB->commit();
+    } catch (Throwable $e) {
+        if ($DB->inTransaction()) { $DB->rollBack(); }
+        throw $e;
+    }
 
     // Audit
     require_once __DIR__ . '/../lib/Audit.php';
@@ -82,5 +95,7 @@ try {
 
 } catch (Throwable $e) {
     error_log('journal_reverse: ' . $e->getMessage());
-    json_error('Failed to reverse journal', 500);
+    // Business-rule failures (already reversed, locked period) surface to the
+    // user; PDO/engine detail is replaced by a generic message.
+    json_exception($e, 409);
 }

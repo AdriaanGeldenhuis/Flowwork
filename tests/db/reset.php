@@ -18,7 +18,7 @@ $tables = [
     'pay_run_employees', 'pay_runs',
     'depreciation_lines', 'depreciation_runs',
     'fa_depreciation_lines', 'fa_depreciation_runs', 'gl_fixed_assets', 'fa_disposals',
-    'bank_transactions', 'bank_import_batches',
+    'gl_bank_transactions',
     'doc_sequences', 'qi_sequences',
     'audit_log',
     'gl_budgets',

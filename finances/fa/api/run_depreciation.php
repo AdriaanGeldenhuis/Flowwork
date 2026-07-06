@@ -49,21 +49,24 @@ if ($periodService->isLocked($runMonthDate)) {
 }
 
 try {
-    // Check for existing run for the month
-    $stmt = $DB->prepare("SELECT id, status FROM fa_depreciation_runs WHERE company_id = ? AND run_month = ? LIMIT 1");
+    // ONE transaction from the existence check onward: two concurrent runs
+    // for the same month both used to pass the (unlocked, separately
+    // committed) check and each post a full depreciation journal. The row
+    // lock serialises them; the unique index uq_fa_dep_run_month
+    // (Migrations/2026-07-06-finance-sars-06) backstops the first-insert race.
+    $DB->beginTransaction();
+    $stmt = $DB->prepare("SELECT id, status FROM fa_depreciation_runs WHERE company_id = ? AND run_month = ? LIMIT 1 FOR UPDATE");
     $stmt->execute([$companyId, $runMonthDate]);
     $existing = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($existing) {
-        // If exists and already posted, return error; else allow re-run by deleting old run?
+        // If exists and already posted, return error; else allow re-run by deleting old run
         if ($existing['status'] === 'posted') {
             throw new Exception('A posted depreciation run already exists for this month');
         }
         // Remove existing unposted run and its lines
         $runIdToDelete = (int)$existing['id'];
-        $DB->beginTransaction();
         $DB->prepare("DELETE FROM fa_depreciation_lines WHERE run_id = ?")->execute([$runIdToDelete]);
         $DB->prepare("DELETE FROM fa_depreciation_runs WHERE id = ?")->execute([$runIdToDelete]);
-        $DB->commit();
     }
     // Fetch active assets purchased on or before run month
     $stmt = $DB->prepare(
@@ -123,14 +126,16 @@ try {
     if (empty($lines)) {
         throw new Exception('No depreciable amounts calculated for this month');
     }
-    // Run + lines + GL journal + accumulated-depreciation update happen in
-    // ONE transaction. The previous three-transaction flow could commit the
-    // journal but crash before updating accumulated depreciation, which made
-    // the next month's run over-depreciate every affected asset.
-    $DB->beginTransaction();
-    // Insert run
+    // Insert run (same transaction as the existence check above)
     $stmt = $DB->prepare("INSERT INTO fa_depreciation_runs (company_id, run_month, status, created_by, created_at) VALUES (?, ?, 'draft', ?, NOW())");
-    $stmt->execute([$companyId, $runMonthDate, $userId]);
+    try {
+        $stmt->execute([$companyId, $runMonthDate, $userId]);
+    } catch (PDOException $e) {
+        if (($e->errorInfo[1] ?? 0) == 1062 || $e->getCode() == '23000') {
+            throw new Exception('A depreciation run for this month was just created by another request');
+        }
+        throw $e;
+    }
     $runId = (int)$DB->lastInsertId();
     // Insert lines
     $insLine = $DB->prepare("INSERT INTO fa_depreciation_lines (run_id, asset_id, amount_cents) VALUES (?, ?, ?)");
@@ -161,6 +166,7 @@ try {
         $DB->rollBack();
     }
     error_log('FA depreciation run error: ' . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'Failed to run depreciation']);
+    $msg = ($e instanceof PDOException) ? 'Failed to run depreciation' : $e->getMessage();
+    echo json_encode(['success' => false, 'message' => $msg]);
 }
 ?>

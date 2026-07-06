@@ -25,6 +25,7 @@ if (PHP_SAPI !== 'cli') {
 
 require_once __DIR__ . '/../../db.php'; // defines $DB (PDO)
 require_once __DIR__ . '/../lib/PostingService.php';
+require_once __DIR__ . '/../lib/InventoryService.php';
 
 $options = getopt('', ['company::', 'user::', 'dry-run']);
 $onlyCompany = isset($options['company']) ? (int)$options['company'] : 0;
@@ -68,9 +69,28 @@ foreach ($companyIds as $cid) {
     $svc = new PostingService($DB, $cid, $userId);
     $counts = ['ok' => 0, 'skip' => 0, 'fail' => 0];
 
+    // Legacy stock movements (journal_id IS NULL — the old engines never
+    // linked them) must be neutralised BEFORE the repost, in the same
+    // transaction: supersedeJournal only reverses journal-linked movements,
+    // so a repost would otherwise issue/receive the stock a second time.
+    $inventory = new InventoryService($DB, $cid);
+    $repostWithLegacyStock = function (string $refType, int $docId, string $date, callable $post) use ($DB, $inventory) {
+        $DB->beginTransaction();
+        try {
+            $inventory->reverseLegacyMovementsFor($refType, $docId, $date);
+            $post();
+            $DB->commit();
+        } catch (Throwable $e) {
+            if ($DB->inTransaction()) {
+                $DB->rollBack();
+            }
+            throw $e;
+        }
+    };
+
     // --- Invoices: posted (not draft/cancelled, journal linked) -------------
     $stmt = $DB->prepare(
-        "SELECT id, invoice_number FROM invoices
+        "SELECT id, invoice_number, issue_date FROM invoices
           WHERE company_id = ? AND journal_id IS NOT NULL
             AND status NOT IN ('draft','cancelled')
             AND deleted_at IS NULL
@@ -79,12 +99,13 @@ foreach ($companyIds as $cid) {
     $stmt->execute([$cid]);
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         attempt($counts, "invoice #{$row['id']} ({$row['invoice_number']})",
-            fn() => $svc->postInvoice((int)$row['id']), $dryRun);
+            fn() => $repostWithLegacyStock('invoice', (int)$row['id'], $row['issue_date'],
+                fn() => $svc->postInvoice((int)$row['id'])), $dryRun);
     }
 
     // --- AP bills: posted are reposted; paid are reported and skipped -------
     $stmt = $DB->prepare(
-        "SELECT id, vendor_invoice_number, status FROM ap_bills
+        "SELECT id, vendor_invoice_number, status, issue_date FROM ap_bills
           WHERE company_id = ? AND status IN ('posted','paid')
           ORDER BY issue_date, id"
     );
@@ -98,7 +119,9 @@ foreach ($companyIds as $cid) {
             echo "SKIP  $label — bill is paid; engine forbids reposting settled bills\n";
             continue;
         }
-        attempt($counts, $label, fn() => $svc->postApBill((int)$row['id'], true), $dryRun);
+        attempt($counts, $label,
+            fn() => $repostWithLegacyStock('ap_bill', (int)$row['id'], $row['issue_date'],
+                fn() => $svc->postApBill((int)$row['id'], true)), $dryRun);
     }
 
     // --- Credit notes --------------------------------------------------------

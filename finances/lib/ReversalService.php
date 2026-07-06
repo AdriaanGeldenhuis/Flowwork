@@ -39,40 +39,43 @@ class ReversalService
             throw new InvalidArgumentException('A reason is required for journal reversals (SARS compliance)');
         }
 
-        $stmt = $this->db->prepare(
-            "SELECT id, entry_date, description, reversed_by_journal_id
-               FROM journal_entries WHERE id = ? AND company_id = ?"
-        );
-        $stmt->execute([$journalId, $this->companyId]);
-        $hdr = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$hdr) {
-            throw new Exception('Journal #' . $journalId . ' not found');
-        }
-        if (!empty($hdr['reversed_by_journal_id'])) {
-            throw new Exception('Journal #' . $journalId . ' has already been reversed');
-        }
-
-        $date = $reversalDate ?: $hdr['entry_date'];
-        if ($this->periods->isLocked($date)) {
-            throw new Exception('Cannot post reversal into locked period (' . $date . ')');
-        }
-
-        $lines = $this->db->prepare(
-            "SELECT account_code, debit, credit, description, tax_code_id, is_capital_goods,
-                    customer_id, supplier_id, employee_id, project_id, board_id, item_id, reference
-               FROM journal_lines WHERE journal_id = ?"
-        );
-        $lines->execute([$journalId]);
-        $rows = $lines->fetchAll(PDO::FETCH_ASSOC);
-        if (!$rows) {
-            throw new Exception('Journal #' . $journalId . ' has no lines to reverse');
-        }
-
+        // The transaction opens BEFORE the header read so FOR UPDATE actually
+        // holds: two concurrent reversals of the same journal serialize here,
+        // and the loser sees reversed_by_journal_id set (double-click on
+        // "Reverse" used to create two posted reversal journals).
         $ownTxn = !$this->db->inTransaction();
         if ($ownTxn) {
             $this->db->beginTransaction();
         }
         try {
+            $stmt = $this->db->prepare(
+                "SELECT id, entry_date, description, reversed_by_journal_id
+                   FROM journal_entries WHERE id = ? AND company_id = ? FOR UPDATE"
+            );
+            $stmt->execute([$journalId, $this->companyId]);
+            $hdr = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$hdr) {
+                throw new Exception('Journal #' . $journalId . ' not found');
+            }
+            if (!empty($hdr['reversed_by_journal_id'])) {
+                throw new Exception('Journal #' . $journalId . ' has already been reversed');
+            }
+
+            $date = $reversalDate ?: $hdr['entry_date'];
+            if ($this->periods->isLocked($date)) {
+                throw new Exception('Cannot post reversal into locked period (' . $date . ')');
+            }
+
+            $lines = $this->db->prepare(
+                "SELECT account_code, debit, credit, description, tax_code_id, is_capital_goods,
+                        customer_id, supplier_id, employee_id, project_id, board_id, item_id, reference
+                   FROM journal_lines WHERE journal_id = ?"
+            );
+            $lines->execute([$journalId]);
+            $rows = $lines->fetchAll(PDO::FETCH_ASSOC);
+            if (!$rows) {
+                throw new Exception('Journal #' . $journalId . ' has no lines to reverse');
+            }
             $desc = 'Reversal of #' . $journalId . ' - ' . $reason;
             $reference = 'REV-' . $journalId;
             $ins = $this->db->prepare(
@@ -113,10 +116,17 @@ class ReversalService
                 ]);
             }
 
+            // Predicate + rowCount: belt-and-braces against a concurrent
+            // reversal that slipped past the lock (e.g. a caller without a
+            // transaction) — the loser rolls its reversal journal back.
             $up1 = $this->db->prepare(
-                "UPDATE journal_entries SET reversed_by_journal_id = ? WHERE id = ? AND company_id = ?"
+                "UPDATE journal_entries SET reversed_by_journal_id = ?
+                  WHERE id = ? AND company_id = ? AND reversed_by_journal_id IS NULL"
             );
             $up1->execute([$revId, $journalId, $this->companyId]);
+            if ($up1->rowCount() === 0) {
+                throw new Exception('Journal #' . $journalId . ' has already been reversed');
+            }
 
             Audit::log('journal_reversed', [
                 'journal_id' => $journalId,

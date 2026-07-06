@@ -122,48 +122,23 @@ try {
         $insAlloc->execute([$creditId, $billId, $amt]);
         $insertedAllocIds[] = (int)$DB->lastInsertId();
     }
-    $DB->commit();
-} catch (Exception $e) {
-    if ($DB->inTransaction()) {
-        $DB->rollBack();
-    }
-    error_log('Vendor credit post error: ' . $e->getMessage());
-    json_exception($e);
-    exit;
-}
 
-try {
-    // Post credit to GL. postVendorCredit() manages its own transaction so it
-    // must run after our commit; on failure we compensate by removing the
-    // allocations inserted above so state stays consistent.
+    // Post credit to GL inside the SAME transaction (withTransaction joins an
+    // open one): allocations without a journal can no longer be stranded by a
+    // crash between two commits — the previous two-transaction flow
+    // compensated with a best-effort DELETE that could itself fail.
     // Note: by GL design the posting debits AP for the FULL credit total (a
-    // vendor credit note is a full AP reduction, mirroring Tieout.php which
-    // subtracts full vendor_credits.total from the AP subledger). Only the
-    // status/remainder tracking is adjusted below for partial allocation.
+    // vendor credit note is a full AP reduction, mirroring the AP subledger
+    // which subtracts full vendor_credits.total). Only the status/remainder
+    // tracking is adjusted below for partial allocation.
     $posting = new PostingService($DB, $companyId, $userId);
     $posting->postVendorCredit($creditId);
-} catch (Exception $e) {
-    error_log('Vendor credit GL post failed (credit #' . $creditId . '), rolling back allocations: ' . $e->getMessage());
-    try {
-        if ($insertedAllocIds) {
-            $ph  = implode(',', array_fill(0, count($insertedAllocIds), '?'));
-            $del = $DB->prepare("DELETE FROM vendor_credit_allocations WHERE id IN ($ph) AND credit_id = ?");
-            $del->execute(array_merge($insertedAllocIds, [$creditId]));
-        }
-    } catch (Exception $cleanupEx) {
-        error_log('Vendor credit compensating cleanup failed (credit #' . $creditId . '): ' . $cleanupEx->getMessage());
-    }
-    echo json_encode(['ok' => false, 'error' => 'GL posting failed, credit was not applied' . ($e instanceof PDOException ? '' : ': ' . $e->getMessage())]);
-    exit;
-}
 
-try {
     // postVendorCredit() flips status to 'applied' unconditionally. 'applied'
     // must mean fully allocated (the UI blocks further allocation once a
     // credit is 'applied'), so when a remainder is left we revert the status
-    // to 'draft' - the only other non-cancelled status in use for
-    // vendor_credits - keeping the remainder allocatable. The journal_id set
-    // by posting is preserved either way.
+    // to 'draft' — keeping the remainder allocatable. The journal_id set by
+    // posting is preserved either way.
     $stmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM vendor_credit_allocations WHERE credit_id = ?");
     $stmt->execute([$creditId]);
     $allocatedNow = floatval($stmt->fetchColumn());
@@ -171,7 +146,7 @@ try {
         $stmt = $DB->prepare("UPDATE vendor_credits SET status = 'draft' WHERE id = ? AND company_id = ?");
         $stmt->execute([$creditId, $companyId]);
     }
-    // After posting, update bill statuses if fully settled
+    // Update bill statuses if fully settled
     foreach (array_keys($perBill) as $bId) {
         $stmtBal = $DB->prepare(
             "SELECT total,
@@ -191,10 +166,14 @@ try {
             }
         }
     }
+
+    $DB->commit();
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
-    // Credit is posted and allocations recorded; status/bill flag updates are
-    // cosmetic - report success with a warning rather than fail the request.
-    error_log('Vendor credit post-posting status update failed (credit #' . $creditId . '): ' . $e->getMessage());
-    echo json_encode(['ok' => true, 'warning' => 'Credit applied, but the status refresh failed — reload the page']);
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
+    error_log('Vendor credit post error: ' . $e->getMessage());
+    json_exception($e);
+    exit;
 }

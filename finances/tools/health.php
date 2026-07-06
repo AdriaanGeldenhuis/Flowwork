@@ -195,23 +195,22 @@ try {
     $checks[] = ['name'=>'Unreconciled bank transactions','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
 }
 
-// 3.7 Orphaned journal lines
-// journal_lines carries no company_id, so scope via this company's account
-// codes — keeps the check per-tenant like the others instead of reporting
-// every company's orphans.
+// 3.7 Orphaned journal lines (SYSTEM-WIDE)
+// journal_lines carries no company_id and an orphan has no header row left
+// to scope by — every company shares the seeded code set, so an
+// account-code filter only pretended to be per-tenant. Reported honestly as
+// a system-wide data-integrity count.
 try {
-    $stmt = $DB->prepare(
+    $stmt = $DB->query(
         "SELECT COUNT(*) FROM journal_lines jl
           LEFT JOIN journal_entries je ON je.id = jl.journal_id
          WHERE jl.journal_id IS NOT NULL
-           AND je.id IS NULL
-           AND jl.account_code IN (SELECT account_code FROM gl_accounts WHERE company_id = ?)"
+           AND je.id IS NULL"
     );
-    $stmt->execute([$companyId]);
     $cnt = (int)$stmt->fetchColumn();
-    $checks[] = ['name'=>'Orphaned journal lines','status'=>$cnt?("$cnt lines"):'OK','count'=>$cnt];
+    $checks[] = ['name'=>'Orphaned journal lines (system-wide)','status'=>$cnt?("$cnt lines"):'OK','count'=>$cnt];
 } catch (Exception $e) {
-    $checks[] = ['name'=>'Orphaned journal lines','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+    $checks[] = ['name'=>'Orphaned journal lines (system-wide)','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
 }
 
 // 3.8 Payroll runs – “locked maar nie gepos nie”
@@ -246,22 +245,32 @@ require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/../lib/Tieout.php';
 require_once __DIR__ . '/../lib/VatCalculator.php';
 
-// 3.10 Unbalanced posted journals — debits must equal credits to the cent
+// 3.10 Unbalanced journals — debits must equal credits to the cent.
+// Posted ones corrupt reports (count as failures); draft/approved ones are
+// legacy-era artefacts that journal_post.php would reject — reported as
+// informational so the operator knows the legacy ledger holds them.
 try {
     $stmt = $DB->prepare(
-        "SELECT je.id
+        "SELECT je.id, je.status
            FROM journal_entries je
            JOIN journal_lines jl ON jl.journal_id = je.id
-          WHERE je.company_id = ? AND je.status = 'posted'
-          GROUP BY je.id
+          WHERE je.company_id = ?
+          GROUP BY je.id, je.status
          HAVING SUM(ROUND(jl.debit*100)) <> SUM(ROUND(jl.credit*100))"
     );
     $stmt->execute([$companyId]);
-    $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
-    $cnt = count($ids);
+    $postedIds = [];
+    $otherCnt = 0;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        if ($r['status'] === 'posted') { $postedIds[] = (int)$r['id']; } else { $otherCnt++; }
+    }
+    $cnt = count($postedIds);
     $status = $cnt
-        ? ("$cnt unbalanced journal(s), ids: " . implode(', ', array_slice($ids, 0, 10)) . ($cnt > 10 ? ', …' : ''))
+        ? ("$cnt unbalanced POSTED journal(s), ids: " . implode(', ', array_slice($postedIds, 0, 10)) . ($cnt > 10 ? ', …' : ''))
         : 'OK';
+    if ($otherCnt) {
+        $status .= " ($otherCnt unbalanced non-posted legacy journal(s) — excluded from reports, blocked from posting)";
+    }
     $checks[] = ['name'=>'Unbalanced posted journals','status'=>$status,'count'=>$cnt];
 } catch (Exception $e) {
     $checks[] = ['name'=>'Unbalanced posted journals','status'=>'Error: '.h($e->getMessage()),'count'=>-1];

@@ -64,6 +64,42 @@ if ($invoiceId) {
 require_once __DIR__ . '/../../finances/lib/TaxCodes.php';
 $taxCodes = new TaxCodes($DB, (int)$companyId);
 
+// Recalculate subtotal/tax/total from the lines in INTEGER CENTS (same
+// rounding as the posting engine) — the header used to be taken verbatim
+// from the client, but the s21 creditable cap checks the header while the
+// GL posting is line-driven: a tampered header (total=0.01, lines=R1150)
+// bypassed the cap and desynced the subledger from the GL.
+$subtotalC = 0;
+$taxC = 0;
+try {
+    foreach ($lines as $i => $line) {
+        $qty = floatval($line['quantity'] ?? 1);
+        $unitPrice = floatval($line['unit_price'] ?? 0);
+        $discount = floatval($line['discount'] ?? 0);
+        $taxRate = isset($line['tax_rate']) && $line['tax_rate'] !== ''
+            ? floatval($line['tax_rate'])
+            : $taxCodes->standardRatePercent();
+        $taxCodeId = $taxCodes->resolveOutputForLine(
+            isset($line['tax_code_id']) && $line['tax_code_id'] !== '' ? (int)$line['tax_code_id'] : null,
+            $line['tax_code'] ?? null,
+            $taxRate
+        );
+        $lineNetC = (int)round(($qty * $unitPrice - $discount) * 100);
+        $lineVatC = (int)round($lineNetC * $taxRate / 100);
+        $lines[$i]['tax_rate'] = $taxRate;
+        $lines[$i]['tax_code_id'] = $taxCodeId;
+        $lines[$i]['line_total_c'] = $lineNetC + $lineVatC;
+        $subtotalC += $lineNetC;
+        $taxC += $lineVatC;
+    }
+} catch (Exception $e) {
+    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    exit;
+}
+$subtotal = $subtotalC / 100;
+$tax = $taxC / 100;
+$total = ($subtotalC + $taxC) / 100;
+
 try {
     $DB->beginTransaction();
 
@@ -118,26 +154,10 @@ try {
     $creditNoteId = $DB->lastInsertId();
 
     // Insert line items (per-line tax code so the VAT reversal lands in the
-    // right VAT201 classification — default rate comes from the STD code)
+    // right VAT201 classification — rates/codes resolved in the recompute
+    // block above, totals in integer cents matching the engine)
     $sortOrder = 0;
     foreach ($lines as $line) {
-        $qty = floatval($line['quantity'] ?? 1);
-        $unitPrice = floatval($line['unit_price'] ?? 0);
-        $discount = floatval($line['discount'] ?? 0);
-        $taxRate = isset($line['tax_rate']) && $line['tax_rate'] !== ''
-            ? floatval($line['tax_rate'])
-            : $taxCodes->standardRatePercent();
-        $taxCodeId = $taxCodes->resolveOutputForLine(
-            isset($line['tax_code_id']) && $line['tax_code_id'] !== '' ? (int)$line['tax_code_id'] : null,
-            $line['tax_code'] ?? null,
-            $taxRate
-        );
-
-        $lineSubtotal = $qty * $unitPrice;
-        $lineNet = $lineSubtotal - $discount;
-        $lineTax = $lineNet * ($taxRate / 100);
-        $lineTotal = $lineNet + $lineTax;
-
         $stmt = $DB->prepare("
             INSERT INTO credit_note_lines (
                 credit_note_id, item_description, quantity, unit, unit_price,
@@ -147,13 +167,13 @@ try {
         $stmt->execute([
             $creditNoteId,
             $line['description'] ?? '',
-            $qty,
+            floatval($line['quantity'] ?? 1),
             $line['unit'] ?? 'unit',
-            $unitPrice,
-            $discount,
-            $taxRate,
-            $taxCodeId,
-            $lineTotal,
+            floatval($line['unit_price'] ?? 0),
+            floatval($line['discount'] ?? 0),
+            $line['tax_rate'],
+            $line['tax_code_id'],
+            $line['line_total_c'] / 100,
             $sortOrder++
         ]);
     }

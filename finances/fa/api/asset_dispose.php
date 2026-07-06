@@ -55,13 +55,16 @@ try {
     if (!is_numeric($proceeds)) {
         throw new Exception('Invalid proceeds value');
     }
-    // Load asset
+    // Load and LOCK the asset — the whole flow (read status → post journal →
+    // mark disposed) is check-then-act; a double-submitted disposal used to
+    // credit the asset cost twice.
+    $DB->beginTransaction();
     $stmt = $DB->prepare(
         "SELECT asset_id, asset_name, purchase_cost_cents, accumulated_depreciation_cents,
                 asset_account_id, accumulated_depreciation_account_id, status
          FROM gl_fixed_assets
          WHERE company_id = ? AND asset_id = ?
-         LIMIT 1"
+         LIMIT 1 FOR UPDATE"
     );
     $stmt->execute([$companyId, $assetId]);
     $asset = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -97,10 +100,18 @@ try {
     $costDec  = $asset['purchase_cost_cents'] / 100.0;
     $accumDec = $asset['accumulated_depreciation_cents'] / 100.0;
     $proceedsDec = round(floatval($proceeds), 2);
-    // Calculate VAT on proceeds if applicable (VAT-inclusive: VAT = proceeds * 15/115)
+    // Calculate VAT on proceeds if applicable (VAT-inclusive tax fraction at
+    // the company's configured standard rate, tagged with the STD code so the
+    // VAT201 output build-up includes the disposal — a hardcoded 15/115 with
+    // no tax_code_id left the disposal's output VAT out of the filed boxes).
+    require_once __DIR__ . '/../../lib/TaxCodes.php';
+    $taxCodes = new TaxCodes($DB, (int)$companyId);
+    $stdRate = $taxCodes->standardRatePercent();
     $vatAmt = 0.0;
+    $vatTaxCodeId = null;
     if ($includeVat && $proceedsDec > 0) {
-        $vatAmt = round($proceedsDec * 15 / 115, 2);
+        $vatAmt = round($proceedsDec * $stdRate / (100 + $stdRate), 2);
+        $vatTaxCodeId = $taxCodes->resolveOutputForLine(null, 'STD', $stdRate);
     }
     $proceedsExVat = $proceedsDec - $vatAmt;
     // Compute book value and difference (gain/loss based on ex-VAT proceeds)
@@ -112,99 +123,56 @@ try {
     $assetAmt  = $costDec;
     $gainAmt   = $diff > 0 ? $diff : 0.0;
     $lossAmt   = $diff < 0 ? abs($diff) : 0.0;
-    // Begin database transaction
-    $DB->beginTransaction();
-    // Insert journal entry
+    // Build journal lines and post through the engine choke point (balance
+    // assertion, account existence, audit trail).
     $reference = 'DISP' . $assetId;
-    $description = 'Disposal of asset ' . $asset['asset_name'];
-    $stmtJ = $DB->prepare(
-        "INSERT INTO journal_entries (
-            company_id, entry_date, reference, description,
-            module, ref_type, ref_id, source_type, source_id,
-            created_by, created_at, status, posted_by, posted_at
-        ) VALUES (?, ?, ?, ?, 'fin', 'fa_disposal', ?, 'manual', ?, ?, NOW(), 'posted', ?, NOW())"
-    );
-    $stmtJ->execute([
-        $companyId,
-        $dateStr,
-        $reference,
-        $description,
-        $assetId,
-        $assetId,
-        $userId,
-        $userId
-    ]);
-    $journalId = (int)$DB->lastInsertId();
-    // Insert journal lines
-    // Debit bank for proceeds (if any)
-    $stmtL = $DB->prepare(
-        "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit)
-         VALUES (?, ?, ?, ?, ?)"
-    );
+    $journalLines = [];
     if ($bankAmt > 0.00001) {
-        $stmtL->execute([
-            $journalId,
-            $bankCode,
-            'Proceeds from asset disposal',
-            number_format($bankAmt, 2, '.', ''),
-            '0.00'
-        ]);
+        $journalLines[] = ['account_code' => $bankCode, 'description' => 'Proceeds from asset disposal',
+            'debit' => round($bankAmt, 2), 'credit' => 0];
     }
-    // Debit accumulated depreciation
     if ($accumAmt > 0.00001) {
-        $stmtL->execute([
-            $journalId,
-            $accumCode,
-            'Reverse accumulated depreciation',
-            number_format($accumAmt, 2, '.', ''),
-            '0.00'
-        ]);
+        $journalLines[] = ['account_code' => $accumCode, 'description' => 'Reverse accumulated depreciation',
+            'debit' => round($accumAmt, 2), 'credit' => 0];
     }
-    // Loss entry (debit if any)
     if ($lossAmt > 0.00001) {
-        $stmtL->execute([
-            $journalId,
-            $lossCode,
-            'Loss on disposal',
-            number_format($lossAmt, 2, '.', ''),
-            '0.00'
-        ]);
+        $journalLines[] = ['account_code' => $lossCode, 'description' => 'Loss on disposal',
+            'debit' => round($lossAmt, 2), 'credit' => 0];
     }
-    // Credit asset cost
     if ($assetAmt > 0.00001) {
-        $stmtL->execute([
-            $journalId,
-            $assetCode,
-            'Remove asset cost',
-            '0.00',
-            number_format($assetAmt, 2, '.', '')
-        ]);
+        $journalLines[] = ['account_code' => $assetCode, 'description' => 'Remove asset cost',
+            'debit' => 0, 'credit' => round($assetAmt, 2)];
     }
-    // Gain entry (credit if any)
     if ($gainAmt > 0.00001) {
-        $stmtL->execute([
-            $journalId,
-            $gainCode,
-            'Gain on disposal',
-            '0.00',
-            number_format($gainAmt, 2, '.', '')
-        ]);
+        $journalLines[] = ['account_code' => $gainCode, 'description' => 'Gain on disposal',
+            'debit' => 0, 'credit' => round($gainAmt, 2)];
     }
     // VAT output on disposal proceeds (SARS Section 8(13))
     if ($vatAmt > 0.00001) {
-        $stmtL->execute([
-            $journalId,
-            $vatOutputCode,
-            'VAT on disposal proceeds (15%)',
-            '0.00',
-            number_format($vatAmt, 2, '.', '')
-        ]);
+        $journalLines[] = ['account_code' => $vatOutputCode,
+            'description' => 'VAT on disposal proceeds (' . rtrim(rtrim(number_format($stdRate, 2, '.', ''), '0'), '.') . '%)',
+            'debit' => 0, 'credit' => round($vatAmt, 2), 'tax_code_id' => $vatTaxCodeId];
     }
-    // Update asset record: mark disposed
+
+    require_once __DIR__ . '/../../lib/PostingService.php';
+    $posting = new PostingService($DB, (int)$companyId, (int)$userId);
+    $journalId = $posting->postAdHocJournal([
+        'entry_date'  => $dateStr,
+        'reference'   => $reference,
+        'description' => 'Disposal of asset ' . $asset['asset_name'],
+        'module'      => 'fin',
+        'ref_type'    => 'fa_disposal',
+        'ref_id'      => $assetId,
+        'source_type' => 'fa_disposal',
+        'source_id'   => $assetId,
+    ], $journalLines);
+
+    // Update asset record: mark disposed. status='active' predicate +
+    // rowCount guard backstop a concurrent disposal that slipped the lock.
     $stmtU = $DB->prepare(
         "UPDATE gl_fixed_assets
          SET status = 'disposed', disposal_date = ?, disposal_proceeds_cents = ?, disposal_journal_id = ?, updated_at = NOW()
-         WHERE asset_id = ? AND company_id = ?"
+         WHERE asset_id = ? AND company_id = ? AND status = 'active'"
     );
     $stmtU->execute([
         $dateStr,
@@ -213,6 +181,9 @@ try {
         $assetId,
         $companyId
     ]);
+    if ($stmtU->rowCount() === 0) {
+        throw new Exception('Asset was disposed by another request');
+    }
     // Insert into fa_disposals table
     $stmtD = $DB->prepare(
         "INSERT INTO fa_disposals (company_id, asset_id, disposal_date, proceeds_cents, notes, journal_id, created_by)
@@ -240,6 +211,7 @@ try {
         $DB->rollBack();
     }
     error_log('FA asset dispose error: ' . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'Failed to dispose asset']);
+    $msg = ($e instanceof PDOException) ? 'Failed to dispose asset' : $e->getMessage();
+    echo json_encode(['success' => false, 'message' => $msg]);
 }
 ?>

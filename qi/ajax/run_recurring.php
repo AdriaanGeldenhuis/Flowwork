@@ -20,8 +20,9 @@ if (!$recurringId) {
 try {
     $DB->beginTransaction();
 
-    // Fetch recurring invoice
-    $stmt = $DB->prepare("SELECT * FROM recurring_invoices WHERE id = ? AND company_id = ?");
+    // Fetch and LOCK the recurring template — serialises a manual "run now"
+    // against an overlapping cron run so only one of them generates.
+    $stmt = $DB->prepare("SELECT * FROM recurring_invoices WHERE id = ? AND company_id = ? FOR UPDATE");
     $stmt->execute([$recurringId, $companyId]);
     $recurring = $stmt->fetch();
 
@@ -38,27 +39,26 @@ try {
     $alloc = new SequenceAllocator($DB);
     [$invoiceNumber, $seqNum] = $alloc->allocate($companyId, 'invoice', null, true);
 
-    // Calculate totals
-    $subtotal = 0;
-    $discount = 0;
-    $tax = 0;
-
+    // Calculate totals in INTEGER CENTS with the engine's per-line rounding
+    // (float totals drifted ±1c from the GL AR and broke the tie-out).
+    $subtotalC = 0;
+    $discountC = 0;
+    $taxC = 0;
     foreach ($lines as $line) {
         $qty = floatval($line['quantity']);
         $price = floatval($line['unit_price']);
         $disc = floatval($line['discount']);
         $taxRate = floatval($line['tax_rate']);
-
-        $lineSubtotal = $qty * $price;
-        $lineNet = $lineSubtotal - $disc;
-        $lineTax = $lineNet * ($taxRate / 100);
-
-        $subtotal += $lineSubtotal;
-        $discount += $disc;
-        $tax += $lineTax;
+        $lineNetC = (int)round(($qty * $price - $disc) * 100);
+        $lineVatC = (int)round($lineNetC * $taxRate / 100);
+        $subtotalC += $lineNetC;
+        $discountC += (int)round($disc * 100);
+        $taxC += $lineVatC;
     }
-
-    $total = $subtotal - $discount + $tax;
+    $subtotal = $subtotalC / 100;
+    $discount = $discountC / 100;
+    $tax = $taxC / 100;
+    $total = ($subtotalC + $taxC) / 100;
 
     // Create invoice - use qi_settings for payment terms and default currency
     $issueDate = date('Y-m-d');
@@ -98,7 +98,7 @@ try {
 
     $invoiceId = $DB->lastInsertId();
 
-    // Copy line items
+    // Copy line items (line_total in the engine's integer-cents rounding)
     $sortOrder = 0;
     foreach ($lines as $line) {
         $qty = floatval($line['quantity']);
@@ -106,10 +106,9 @@ try {
         $disc = floatval($line['discount']);
         $taxRate = floatval($line['tax_rate']);
 
-        $lineSubtotal = $qty * $price;
-        $lineNet = $lineSubtotal - $disc;
-        $lineTax = $lineNet * ($taxRate / 100);
-        $lineTotal = $lineNet + $lineTax;
+        $lineNetC = (int)round(($qty * $price - $disc) * 100);
+        $lineVatC = (int)round($lineNetC * $taxRate / 100);
+        $lineTotal = ($lineNetC + $lineVatC) / 100;
 
         $stmt = $DB->prepare("
             INSERT INTO invoice_lines (

@@ -53,9 +53,19 @@ for f in $(ls "$REPO_ROOT/Migrations"/*.sql | sort); do
   if out=$($MARIADB --init-command="SET SESSION sql_mode=''; SET SESSION foreign_key_checks=0;" "$DB_NAME" < "$f" 2>&1); then
     echo "    OK   $name"
   else
-    # Non-finance migrations can collide with data already present in the base
-    # dump (duplicate seed rows / indexes). Report and continue.
-    echo "    SKIP $name :: $(echo "$out" | head -1)"
+    case "$name" in
+      2026-07-*)
+        # The finance remediation migrations are the artefact under test —
+        # a failure here must fail the setup, not be skipped silently.
+        echo "    FAIL $name :: $(echo "$out" | head -1)" >&2
+        exit 1
+        ;;
+      *)
+        # Non-finance migrations can collide with data already present in the
+        # base dump (duplicate seed rows / indexes). Report and continue.
+        echo "    SKIP $name :: $(echo "$out" | head -1)"
+        ;;
+    esac
   fi
 done
 

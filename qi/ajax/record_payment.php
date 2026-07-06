@@ -20,6 +20,7 @@ if (is_array($inputData)) {
     $notes       = $inputData['notes'] ?? '';
     $milestoneId = isset($inputData['milestone_id']) && $inputData['milestone_id'] !== '' ? (int)$inputData['milestone_id'] : null;
     $idempotencyKey = isset($inputData['idempotency_key']) ? substr(trim((string)$inputData['idempotency_key']), 0, 64) : '';
+    $exchangeRateIn = isset($inputData['exchange_rate']) && $inputData['exchange_rate'] !== '' ? (float)$inputData['exchange_rate'] : null;
 } else {
     // Fallback to standard form POST
     $invoiceId   = filter_input(INPUT_POST, 'invoice_id', FILTER_VALIDATE_INT);
@@ -30,6 +31,7 @@ if (is_array($inputData)) {
     $notes       = $_POST['notes'] ?? '';
     $milestoneId = isset($_POST['milestone_id']) && $_POST['milestone_id'] !== '' ? (int)$_POST['milestone_id'] : null;
     $idempotencyKey = isset($_POST['idempotency_key']) ? substr(trim((string)$_POST['idempotency_key']), 0, 64) : '';
+    $exchangeRateIn = isset($_POST['exchange_rate']) && $_POST['exchange_rate'] !== '' ? (float)$_POST['exchange_rate'] : null;
 }
 
 if (!$invoiceId || $amount <= 0) {
@@ -49,7 +51,12 @@ try {
         $stmt->execute([$companyId, $idempotencyKey]);
         if ($existingId = $stmt->fetchColumn()) {
             $DB->rollBack();
-            echo json_encode(['ok' => true, 'payment_id' => (int)$existingId, 'duplicate' => true]);
+            // Include the invoice's current balance — the success toast reads
+            // new_balance and printed "R NaN" on replayed requests without it.
+            $bal = $DB->prepare("SELECT balance_due FROM invoices WHERE id = ? AND company_id = ?");
+            $bal->execute([$invoiceId, $companyId]);
+            echo json_encode(['ok' => true, 'payment_id' => (int)$existingId, 'duplicate' => true,
+                'new_balance' => round((float)$bal->fetchColumn(), 2)]);
             exit;
         }
     }
@@ -74,13 +81,20 @@ try {
         InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, $invoiceId);
     }
 
-    // Create payment
+    // Create payment. exchange_rate is the payment-date ZAR rate for foreign-
+    // currency invoices: PostingService.postCustomerPayment books the bank
+    // leg at THIS rate and the AR relief at the invoice's historic rate, with
+    // the difference to realised FX gain/loss (s24I). Default = the invoice's
+    // own rate (no FX difference) when the caller doesn't supply one.
+    $exchangeRate = $exchangeRateIn && $exchangeRateIn > 0
+        ? $exchangeRateIn
+        : ((float)($invoice['exchange_rate'] ?? 1) ?: 1.0);
     $stmt = $DB->prepare("
-        INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key, exchange_rate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference, $notes, $userId,
-        $idempotencyKey !== '' ? $idempotencyKey : null]);
+        $idempotencyKey !== '' ? $idempotencyKey : null, $exchangeRate]);
     $paymentId = $DB->lastInsertId();
 
     // Allocate to invoice
