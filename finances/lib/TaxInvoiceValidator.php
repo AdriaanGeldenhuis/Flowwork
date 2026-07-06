@@ -153,7 +153,10 @@ class TaxInvoiceValidator
         //    Above R5,000 a FULL tax invoice needs the recipient's VAT number
         //    (when the recipient is a vendor) and address; we cannot know
         //    whether the customer is a vendor, so both stay warnings.
-        $total = floatval($invoice['total'] ?? 0);
+        // The R5,000 threshold is in RAND: convert foreign-currency totals
+        // at the invoice's captured rate before comparing.
+        $fx = (float)($invoice['exchange_rate'] ?? 1);
+        $total = floatval($invoice['total'] ?? 0) * ($fx > 0 ? $fx : 1);
         if ($total > 5000) {
             if (empty($invoice['customer_vat'])) {
                 $issues[] = [

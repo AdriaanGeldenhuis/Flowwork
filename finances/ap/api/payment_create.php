@@ -87,7 +87,7 @@ try {
             continue;
         }
         $stmtBal = $DB->prepare(
-            "SELECT b.total,
+            "SELECT b.total, b.supplier_id,
                     COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?), 0) AS paid,
                     COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = ?), 0) AS credited
              FROM ap_bills b WHERE b.id = ? AND b.company_id = ? FOR UPDATE"
@@ -96,6 +96,9 @@ try {
         $row = $stmtBal->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
             throw new Exception('Bill #' . $bId . ' not found');
+        }
+        if ((int)$row['supplier_id'] !== $supplierId) {
+            throw new Exception('Bill #' . $bId . ' belongs to a different supplier than this payment');
         }
         $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
         if ($amt > $remaining + 0.01) {

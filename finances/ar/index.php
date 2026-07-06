@@ -2,6 +2,8 @@
 // /finances/ar/index.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../lib/Csrf.php';
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
@@ -29,8 +31,10 @@ $stmt = $DB->prepare("
     SELECT 
         COUNT(*) as total_invoices,
         SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_invoices,
-        SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdue_invoices,
-        SUM(CASE WHEN status IN ('sent','viewed','part-paid','overdue') THEN balance_due ELSE 0 END) as total_outstanding
+        SUM(CASE WHEN status IN ('sent','viewed','part-paid','overdue')
+                  AND balance_due > 0 AND due_date < CURDATE() THEN 1 ELSE 0 END) as overdue_invoices,
+        SUM(CASE WHEN status IN ('sent','viewed','part-paid','overdue')
+                 THEN balance_due * COALESCE(NULLIF(exchange_rate, 0), 1) ELSE 0 END) as total_outstanding
     FROM invoices
     WHERE company_id = ?
       AND status NOT IN ('draft','cancelled')

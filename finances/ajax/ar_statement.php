@@ -42,7 +42,8 @@ try {
     if ($startDate) {
         // Sum of invoice totals before start date
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM invoices WHERE company_id = ? AND customer_id = ? AND issue_date < ?"
+            "SELECT SUM(total) FROM invoices WHERE company_id = ? AND customer_id = ? AND issue_date < ?
+              AND deleted_at IS NULL AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $customerId, $startDate]);
         $openDebit = floatval($stmt->fetchColumn());
@@ -51,13 +52,14 @@ try {
             "SELECT SUM(pa.amount) FROM payment_allocations pa
              JOIN invoices i ON pa.invoice_id = i.id
              JOIN payments p ON pa.payment_id = p.id
-             WHERE i.company_id = ? AND i.customer_id = ? AND p.payment_date < ?"
+             WHERE i.company_id = ? AND i.customer_id = ? AND p.payment_date < ?
+               AND i.deleted_at IS NULL AND i.status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $customerId, $startDate]);
         $openCredit += floatval($stmt->fetchColumn());
         // Sum of credit notes totals for this customer before start date
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM credit_notes WHERE company_id = ? AND customer_id = ? AND issue_date < ? AND status != 'cancelled'"
+            "SELECT SUM(total) FROM credit_notes WHERE company_id = ? AND customer_id = ? AND issue_date < ? AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $customerId, $startDate]);
         $openCredit += floatval($stmt->fetchColumn());

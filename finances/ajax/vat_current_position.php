@@ -2,6 +2,8 @@
 // /finances/ajax/vat_current_position.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 // Include AccountsMap for resolving VAT account codes
 require_once __DIR__ . '/../lib/AccountsMap.php';
 

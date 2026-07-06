@@ -128,10 +128,14 @@ try {
     }
 
     // --- Insert lines ---
+    // Persist the analytic columns too: a draft edit deletes + reinserts all
+    // lines, so any tax_code_id (which feeds VAT reporting on manual
+    // journals) or project tag would otherwise be silently dropped.
     $lineStmt = $DB->prepare("
         INSERT INTO journal_lines
-            (journal_id, account_code, description, debit, credit)
-        VALUES (?, ?, ?, ?, ?)
+            (journal_id, account_code, description, debit, credit,
+             tax_code_id, project_id, board_id, item_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     foreach ($lines as $line) {
         $lineStmt->execute([
@@ -139,7 +143,11 @@ try {
             trim($line['account_code']),
             trim($line['description'] ?? ''),
             round((float)($line['debit'] ?? 0), 2),
-            round((float)($line['credit'] ?? 0), 2)
+            round((float)($line['credit'] ?? 0), 2),
+            !empty($line['tax_code_id']) ? (int)$line['tax_code_id'] : null,
+            !empty($line['project_id']) ? (int)$line['project_id'] : null,
+            !empty($line['board_id']) ? (int)$line['board_id'] : null,
+            !empty($line['item_id']) ? (int)$line['item_id'] : null
         ]);
     }
 

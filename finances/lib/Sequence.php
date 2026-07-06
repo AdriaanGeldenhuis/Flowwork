@@ -40,6 +40,8 @@ class Sequence
         if ($ownTxn) {
             $this->db->beginTransaction();
         }
+        $attempt = 0;
+        retry:
         try {
             // Upsert the sequence row
             $sel = $this->db->prepare("SELECT id, last_number FROM doc_sequences WHERE company_id = :cid AND doc_type = :dt AND period_key = :pk FOR UPDATE");
@@ -58,6 +60,17 @@ class Sequence
                 $this->db->commit();
             }
         } catch (Throwable $e) {
+            // Two concurrent FIRST issuances of a new (company, doc_type,
+            // period) both miss the FOR UPDATE row and race the INSERT; the
+            // unique key (Migrations/2026-07-05-doc-sequences-unique.sql)
+            // makes the loser fail with 1062 — retry once through the locked
+            // SELECT path, which now finds the winner's row.
+            $isDup = ($e instanceof PDOException)
+                && (($e->errorInfo[1] ?? 0) == 1062 || $e->getCode() == '23000');
+            if ($isDup && $attempt === 0) {
+                $attempt = 1;
+                goto retry;
+            }
             if ($ownTxn && $this->db->inTransaction()) {
                 $this->db->rollBack();
             }

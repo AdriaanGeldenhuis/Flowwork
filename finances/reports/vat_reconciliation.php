@@ -160,13 +160,23 @@ foreach ($periods as $p) {
 
     // 3. Source document totals - invoices VAT
     $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(i.tax), 0) AS invoice_vat
+        "SELECT COALESCE(SUM(i.tax * COALESCE(NULLIF(i.exchange_rate, 0), 1)), 0) AS invoice_vat
          FROM invoices i
          WHERE i.company_id = ? AND i.issue_date BETWEEN ? AND ?
            AND i.journal_id IS NOT NULL"
     );
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
     $invoiceVatCents = (int)round((float)$stmt->fetchColumn() * 100);
+
+    // Net off posted credit notes — the GL side reflects their reversals.
+    $stmt = $DB->prepare(
+        "SELECT COALESCE(SUM(cn.tax * COALESCE(NULLIF(cn.exchange_rate, 0), 1)), 0)
+         FROM credit_notes cn
+         WHERE cn.company_id = ? AND cn.issue_date BETWEEN ? AND ?
+           AND cn.journal_id IS NOT NULL"
+    );
+    $stmt->execute([$companyId, $periodStart, $periodEnd]);
+    $invoiceVatCents -= (int)round((float)$stmt->fetchColumn() * 100);
 
     // Source doc: bills VAT
     $stmt = $DB->prepare(
@@ -177,6 +187,16 @@ foreach ($periods as $p) {
     );
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
     $billVatCents = (int)round((float)$stmt->fetchColumn() * 100);
+
+    // Net off posted vendor credits — the GL side reflects their reversals.
+    $stmt = $DB->prepare(
+        "SELECT COALESCE(SUM(vc.tax), 0)
+         FROM vendor_credits vc
+         WHERE vc.company_id = ? AND vc.issue_date BETWEEN ? AND ?
+           AND vc.journal_id IS NOT NULL"
+    );
+    $stmt->execute([$companyId, $periodStart, $periodEnd]);
+    $billVatCents -= (int)round((float)$stmt->fetchColumn() * 100);
 
     // Calculate variances
     $outputVariance = $glOutputCents - $returnOutputCents;

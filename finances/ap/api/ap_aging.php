@@ -78,8 +78,8 @@ try {
     if ($suppliers) {
         $ids = array_keys($suppliers);
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE id IN ($placeholders)");
-        $stmt->execute($ids);
+        $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE id IN ($placeholders) AND company_id = ?");
+        $stmt->execute(array_merge($ids, [$companyId]));
         $names = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         foreach ($suppliers as $sid => &$row) {
             $row['supplier_name'] = $names[$sid] ?? '';
