@@ -57,15 +57,15 @@ class ArService
      */
     public function postInvoice(int $invoiceId): void
     {
-        // Post the invoice using PostingService
-        $this->postingService->postInvoice($invoiceId);
-        // After posting, attempt to tag the resulting journal lines with project context
-        try {
-            $this->updateInvoiceJournalProjectContext($invoiceId);
-        } catch (\Exception $ex) {
-            // Silently ignore tagging errors; posting already completed
-            error_log('AR project context tagging failed (invoice): ' . $ex->getMessage());
-        }
+        // Resolve the invoice's project context up front so the journal lines
+        // are tagged inside the posting transaction (they were previously
+        // updated after commit — a post-hoc mutation of a posted journal).
+        $stmt = $this->db->prepare(
+            "SELECT project_id FROM invoices WHERE id = ? AND company_id = ? LIMIT 1"
+        );
+        $stmt->execute([$invoiceId, $this->companyId]);
+        $projectId = $stmt->fetchColumn();
+        $this->postingService->postInvoice($invoiceId, $projectId ? (int)$projectId : null);
     }
 
     /**

@@ -138,18 +138,14 @@ try {
             ");
             $stmt->execute([$nextDate, $rec['id']]);
 
-            $DB->commit();
+            // A generated recurring invoice is an intentional issuance:
+            // transition it out of draft and post it to the GL inside this
+            // transaction (rolls back the generation if posting fails).
+            require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
+            $userId = $rec['created_by'] ?: 1;
+            InvoiceLifecycle::issueInvoice($DB, (int)$rec['company_id'], (int)$userId, (int)$invoiceId);
 
-            // Post journal entry for the generated invoice (Section 11)
-            try {
-                require_once __DIR__ . '/../services/JournalPoster.php';
-                // Use the recurring created_by as the user posting this journal (fallback to 1)
-                $userId = $rec['created_by'] ?: 1;
-                $poster = new JournalPoster($DB, $rec['company_id'], $userId);
-                $poster->postInvoice((int)$invoiceId);
-            } catch (Exception $e) {
-                error_log('Recurring cron journal posting failed: ' . $e->getMessage());
-            }
+            $DB->commit();
 
             echo "Generated invoice {$invoiceNumber} from recurring {$rec['id']}\n";
 

@@ -165,16 +165,13 @@ try {
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
 
-    $DB->commit();
+    // A generated recurring invoice is an intentional issuance: transition it
+    // out of draft and post it to the GL inside this transaction (rolls back
+    // the generation if posting fails).
+    require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
+    InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, (int)$invoiceId);
 
-    // Post journal entry for the generated invoice (Section 11)
-    try {
-        require_once __DIR__ . '/../services/JournalPoster.php';
-        $poster = new JournalPoster($DB, $companyId, $userId);
-        $poster->postInvoice((int)$invoiceId);
-    } catch (Exception $e) {
-        error_log('Recurring invoice journal posting failed: ' . $e->getMessage());
-    }
+    $DB->commit();
 
     echo json_encode(['ok' => true, 'invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber]);
 

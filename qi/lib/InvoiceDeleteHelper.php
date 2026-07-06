@@ -75,28 +75,15 @@ class InvoiceDeleteHelper
     }
 
     /**
-     * Reverse a posted journal entry for this invoice if one exists.
-     * Best-effort: silently logs and continues on failure.
+     * Reverse the posted journal for this invoice if one exists. Throws on
+     * failure (e.g. locked period) so the calling delete/void rolls back —
+     * the previous best-effort version called a method that never existed
+     * and silently left voided invoices' revenue and VAT in the GL.
      */
     public static function reverseJournal(PDO $db, int $companyId, int $userId, int $invoiceId): void
     {
-        try {
-            $stmt = $db->prepare('SELECT journal_id FROM invoices WHERE id = ? AND company_id = ?');
-            $stmt->execute([$invoiceId, $companyId]);
-            $journalId = (int)$stmt->fetchColumn();
-            if (!$journalId) return;
-
-            $postingServicePath = __DIR__ . '/../../finances/lib/PostingService.php';
-            if (!file_exists($postingServicePath)) return;
-            require_once $postingServicePath;
-            if (!class_exists('PostingService')) return;
-
-            $posting = new PostingService($db, $companyId, $userId);
-            if (method_exists($posting, 'reverseJournal')) {
-                $posting->reverseJournal($journalId, 'invoice-reverse');
-            }
-        } catch (Throwable $e) {
-            error_log('InvoiceDeleteHelper reverseJournal: '.$e->getMessage());
-        }
+        require_once __DIR__ . '/../../finances/lib/PostingService.php';
+        (new PostingService($db, $companyId, $userId))
+            ->unpostInvoice($invoiceId, 'Invoice deleted/voided');
     }
 }

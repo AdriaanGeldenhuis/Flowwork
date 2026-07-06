@@ -52,12 +52,52 @@ ALTER TABLE gl_fixed_assets
   ADD COLUMN IF NOT EXISTS tax_method ENUM('none','s11e','s12c') NOT NULL DEFAULT 'none' AFTER depreciation_method,
   ADD COLUMN IF NOT EXISTS tax_writeoff_years TINYINT UNSIGNED NULL AFTER tax_method;
 
--- Part-paid invoices are a first-class status (code already references it).
+-- The application sets several statuses that were never added to the enum
+-- (part-paid, written_off, refunded, uncollectible) — non-strict MariaDB was
+-- silently storing them as ''. Make every status the code writes legal.
 ALTER TABLE invoices
-  MODIFY COLUMN status ENUM('draft','sent','viewed','part-paid','paid','overdue','cancelled') NOT NULL DEFAULT 'draft';
+  MODIFY COLUMN status ENUM('draft','sent','viewed','part-paid','paid','overdue',
+                            'cancelled','written_off','refunded','uncollectible')
+         NOT NULL DEFAULT 'draft';
 
 -- Reversal linkage (present in the base schema; ensured here for any
 -- environment created from an older dump).
 ALTER TABLE journal_entries
   ADD COLUMN IF NOT EXISTS reverses_journal_id BIGINT UNSIGNED NULL,
   ADD COLUMN IF NOT EXISTS reversed_by_journal_id BIGINT UNSIGNED NULL;
+
+-- source_type was ENUM('invoice','payment','receipt','manual') but the code
+-- has always written richer values (ap_bill, credit_note, vendor_credit,
+-- payroll, reversal, vat_adjustment...) which non-strict MariaDB silently
+-- stored as '' — breaking source-document traceability. Widen to VARCHAR.
+ALTER TABLE journal_entries
+  MODIFY COLUMN source_type VARCHAR(50) NULL;
+
+-- ---------------------------------------------------------------------------
+-- Schema-drift reconciliation: columns the application writes that exist on
+-- the production database but have no migration in the repo (the base dump
+-- predates them). No-ops where the column already exists.
+-- ---------------------------------------------------------------------------
+ALTER TABLE invoices
+  ADD COLUMN IF NOT EXISTS exchange_rate DECIMAL(12,6) NULL AFTER currency,
+  ADD COLUMN IF NOT EXISTS has_milestones TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS deleted_at DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS deleted_by INT NULL,
+  ADD COLUMN IF NOT EXISTS delete_reason VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS archived_at DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS archived_by INT NULL,
+  ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS write_off_amount DECIMAL(15,2) NULL,
+  ADD COLUMN IF NOT EXISTS write_off_at DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS write_off_by INT NULL;
+ALTER TABLE credit_notes
+  ADD COLUMN IF NOT EXISTS currency CHAR(3) NULL DEFAULT 'ZAR' AFTER total,
+  ADD COLUMN IF NOT EXISTS exchange_rate DECIMAL(12,6) NULL AFTER currency;
+ALTER TABLE quotes
+  ADD COLUMN IF NOT EXISTS exchange_rate DECIMAL(12,6) NULL,
+  ADD COLUMN IF NOT EXISTS has_milestones TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS accepted_ip VARCHAR(45) NULL;
+ALTER TABLE recurring_invoices
+  ADD COLUMN IF NOT EXISTS template_name VARCHAR(190) NULL,
+  ADD COLUMN IF NOT EXISTS terms TEXT NULL,
+  ADD COLUMN IF NOT EXISTS notes TEXT NULL;

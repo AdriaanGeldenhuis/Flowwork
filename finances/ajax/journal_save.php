@@ -109,12 +109,13 @@ try {
 
     } else {
         // --- INSERT new journal ---
-        // Auto-generate reference if not provided (SARS sequential numbering)
+        // Auto-generate reference if not provided (SARS sequential numbering).
+        // Uses the FOR UPDATE-locked Sequence — the previous MAX()+1 query
+        // could hand two concurrent saves the same number.
         if (!$reference) {
-            $stmt = $DB->prepare("SELECT MAX(CAST(SUBSTRING(reference, 5) AS UNSIGNED)) FROM journal_entries WHERE company_id = ? AND reference LIKE 'JNL-%'");
-            $stmt->execute([$companyId]);
-            $maxNum = (int)$stmt->fetchColumn();
-            $reference = 'JNL-' . str_pad($maxNum + 1, 4, '0', STR_PAD_LEFT);
+            require_once __DIR__ . '/../lib/Sequence.php';
+            $seq = new Sequence($DB, $companyId);
+            $reference = $seq->issue('JNL', ['prefix' => 'JNL-', 'pad' => 4, 'period_key' => 'ALL']);
         }
 
         $stmt = $DB->prepare("

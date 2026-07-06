@@ -51,6 +51,13 @@ try {
         throw new Exception('Payment amount exceeds balance due');
     }
 
+    // Paying a draft implicitly issues it: transition to sent and post it to
+    // the GL so the receipt below has an invoice journal to settle against.
+    if ($invoice['status'] === 'draft') {
+        require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
+        InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, $invoiceId);
+    }
+
     // Create payment
     $stmt = $DB->prepare("
         INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by)
@@ -104,16 +111,15 @@ try {
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
 
-    $DB->commit();
+    // Post the receipt to the GL INSIDE this transaction: if posting fails
+    // (locked period, broken account mapping) the payment must not exist
+    // either — a payment with no ledger entry silently breaks the AR
+    // subledger-to-GL tie-out.
+    require_once __DIR__ . '/../../finances/lib/PostingService.php';
+    $posting = new PostingService($DB, $companyId, $userId);
+    $posting->postCustomerPayment((int)$paymentId);
 
-    // Post journal entry for this payment via PostingService
-    try {
-        require_once __DIR__ . '/../../finances/lib/PostingService.php';
-        $posting = new PostingService($DB, $companyId, $userId);
-        $posting->postCustomerPayment((int)$paymentId);
-    } catch (Exception $e) {
-        error_log('Payment journal posting failed: ' . $e->getMessage());
-    }
+    $DB->commit();
 
     echo json_encode(['ok' => true, 'payment_id' => $paymentId, 'new_balance' => $newBalance]);
 

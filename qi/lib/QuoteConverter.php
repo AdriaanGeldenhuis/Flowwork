@@ -124,13 +124,9 @@ class QuoteConverter {
             error_log('Calendar hook for invoice failed: ' . $chEx->getMessage());
         }
 
-        try {
-            require_once __DIR__ . '/../services/JournalPoster.php';
-            $poster = new JournalPoster($DB, $companyId, $userId);
-            $poster->postInvoice($invoiceId);
-        } catch (Exception $e) {
-            error_log('Invoice journal posting failed: ' . $e->getMessage());
-        }
+        // The converted invoice is created as a DRAFT: it posts to the GL
+        // when it is issued (send_invoice.php), not here — a draft is not a
+        // tax invoice and must not appear in the ledger.
 
         return [
             'invoice_id' => $invoiceId,

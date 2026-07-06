@@ -45,7 +45,11 @@ try {
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$reason ?: null, $invoiceId, $companyId]);
-            InvoiceDeleteHelper::reverseJournal($DB, $companyId, $userId, $invoiceId);
+            // Reverse the GL journal (throws on locked period, rolling back
+            // the void — a cancelled invoice must not keep revenue/VAT posted)
+            require_once __DIR__ . '/../../finances/lib/PostingService.php';
+            (new PostingService($DB, $companyId, $userId))
+                ->unpostInvoice($invoiceId, 'Invoice voided' . ($reason ? ': ' . $reason : ''));
             InvoiceDeleteHelper::log($DB, $companyId, $userId, 'invoice_voided',
                 ['invoice_id'=>$invoiceId, 'prior_status'=>$status, 'reason'=>$reason]);
             break;
@@ -62,6 +66,10 @@ try {
             }
             $stmt = $DB->prepare("UPDATE invoices SET status='draft', updated_at=NOW() WHERE id=? AND company_id=?");
             $stmt->execute([$invoiceId, $companyId]);
+            // A draft is not a tax invoice — its journal must leave the GL.
+            require_once __DIR__ . '/../../finances/lib/PostingService.php';
+            (new PostingService($DB, $companyId, $userId))
+                ->unpostInvoice($invoiceId, 'Invoice reverted to draft');
             InvoiceDeleteHelper::log($DB, $companyId, $userId, 'invoice_reverted_to_draft',
                 ['invoice_id'=>$invoiceId, 'prior_status'=>$status]);
             break;

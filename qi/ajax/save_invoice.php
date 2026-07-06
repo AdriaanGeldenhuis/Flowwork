@@ -283,16 +283,9 @@ try {
 
     $DB->commit();
 
-    // After invoice is saved, post journal entry to general ledger (Section 11).
-    try {
-        // JournalPoster is located under qi/services; relative to this file go two levels up
-        require_once __DIR__ . '/../services/JournalPoster.php';
-        $poster = new JournalPoster($DB, $companyId, $userId);
-        $poster->postInvoice($invoiceId);
-    } catch (Exception $e) {
-        // Log but do not interrupt response
-        error_log('Invoice journal posting failed: ' . $e->getMessage());
-    }
+    // Draft invoices do NOT post to the general ledger — a draft is not a tax
+    // invoice. Posting happens when the invoice is issued (send_invoice.php /
+    // invoice_action.php via InvoiceLifecycle::issueInvoice).
 
     echo json_encode([
         'ok' => true,

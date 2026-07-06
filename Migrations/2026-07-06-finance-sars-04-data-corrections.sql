@@ -18,6 +18,19 @@ JOIN gl_tax_codes tc     ON tc.company_id = cn.company_id
 SET cl.tax_code_id = tc.tax_code_id
 WHERE cl.tax_code_id IS NULL;
 
+-- Seed the manual-journal sequence from the highest existing JNL-#### number
+-- so the new FOR UPDATE-locked Sequence continues (not restarts) numbering.
+INSERT INTO doc_sequences (company_id, doc_type, period_key, prefix, pad, last_number, updated_at)
+SELECT je.company_id, 'JNL', 'ALL', 'JNL-', 4,
+       MAX(CAST(SUBSTRING(je.reference, 5) AS UNSIGNED)), NOW()
+FROM journal_entries je
+WHERE je.reference LIKE 'JNL-%'
+  AND NOT EXISTS (
+      SELECT 1 FROM doc_sequences ds
+      WHERE ds.company_id = je.company_id AND ds.doc_type = 'JNL' AND ds.period_key = 'ALL'
+  )
+GROUP BY je.company_id;
+
 -- Collapse duplicate standard-rate output codes: some companies carry both
 -- 'STD' and a legacy 'STANDARD' (same 15% output). Point references at STD,
 -- then deactivate the duplicate so pickers show one standard code.

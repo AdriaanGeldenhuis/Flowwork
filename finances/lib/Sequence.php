@@ -33,7 +33,13 @@ class Sequence
             '{MM}'   => $now->format('m'),
         ]);
 
-        $this->db->beginTransaction();
+        // Join the caller's transaction when one is open: the FOR UPDATE row
+        // lock then holds until the caller commits, and a failed posting
+        // rolls the number back instead of leaving a gap.
+        $ownTxn = !$this->db->inTransaction();
+        if ($ownTxn) {
+            $this->db->beginTransaction();
+        }
         try {
             // Upsert the sequence row
             $sel = $this->db->prepare("SELECT id, last_number FROM doc_sequences WHERE company_id = :cid AND doc_type = :dt AND period_key = :pk FOR UPDATE");
@@ -48,9 +54,13 @@ class Sequence
                 $ins = $this->db->prepare("INSERT INTO doc_sequences (company_id, doc_type, period_key, prefix, pad, last_number, updated_at) VALUES (:cid,:dt,:pk,:p,:pad,:n,NOW())");
                 $ins->execute([':cid'=>$this->companyId, ':dt'=>$docType, ':pk'=>$periodKey, ':p'=>$prefixFmt, ':pad'=>$pad, ':n'=>$next]);
             }
-            $this->db->commit();
+            if ($ownTxn) {
+                $this->db->commit();
+            }
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($ownTxn && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
 

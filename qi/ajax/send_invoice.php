@@ -126,9 +126,12 @@ try {
         $invoice['pdf_path'] = $relPath;
     }
 
-    // Update status to sent if currently draft
-    $stmt = $DB->prepare("\n        UPDATE invoices \n        SET status = CASE\n            WHEN status = 'draft' THEN 'sent'\n            ELSE status\n        END,\n        updated_at = NOW() \n        WHERE id = ? AND company_id = ?\n    ");
-    $stmt->execute([$invoiceId, $companyId]);
+    // Issue the invoice: draft -> sent AND post to the general ledger (a sent
+    // invoice is a tax invoice and must be in the GL/VAT201). Throws — and
+    // rolls the whole send back — if posting fails, so an invoice can never
+    // be sent to a customer without its ledger entry.
+    require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
+    InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, $invoiceId);
 
     // Compose the email subject and body using company and invoice details
     $subject = 'Invoice ' . $invoice['invoice_number'] . ' from ' . ($invoice['company_name'] ?? '');
