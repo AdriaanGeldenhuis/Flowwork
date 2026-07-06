@@ -51,8 +51,8 @@ WHERE s.setting_key = 'finance_vat_output_account_id'
         AND jl.account_code = '2120' AND jl.credit > 0
   );
 
-INSERT INTO company_settings (company_id, setting_key, setting_value, created_at, updated_at)
-SELECT a.company_id, 'finance_vat_output_account_id', a.account_id, NOW(), NOW()
+INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+SELECT a.company_id, 'finance_vat_output_account_id', a.account_id, NOW()
 FROM gl_accounts a
 WHERE a.account_code = '2120'
   AND NOT EXISTS (
@@ -81,8 +81,8 @@ WHERE s.setting_key = 'finance_vat_input_account_id'
         AND jl.account_code = '2130' AND jl.debit > 0
   );
 
-INSERT INTO company_settings (company_id, setting_key, setting_value, created_at, updated_at)
-SELECT a.company_id, 'finance_vat_input_account_id', a.account_id, NOW(), NOW()
+INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+SELECT a.company_id, 'finance_vat_input_account_id', a.account_id, NOW()
 FROM gl_accounts a
 WHERE a.account_code = '2130'
   AND NOT EXISTS (
@@ -111,8 +111,8 @@ WHERE s.setting_key = 'finance_ar_account_id'
         AND jl.account_code = '1200'
   );
 
-INSERT INTO company_settings (company_id, setting_key, setting_value, created_at, updated_at)
-SELECT a.company_id, 'finance_ar_account_id', a.account_id, NOW(), NOW()
+INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+SELECT a.company_id, 'finance_ar_account_id', a.account_id, NOW()
 FROM gl_accounts a
 WHERE a.account_code = '1200'
   AND NOT EXISTS (
@@ -144,8 +144,8 @@ WHERE s.setting_key = 'finance_ap_account_id'
         AND jl.account_code = '2110'
   );
 
-INSERT INTO company_settings (company_id, setting_key, setting_value, created_at, updated_at)
-SELECT a.company_id, 'finance_ap_account_id', a.account_id, NOW(), NOW()
+INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+SELECT a.company_id, 'finance_ap_account_id', a.account_id, NOW()
 FROM gl_accounts a
 WHERE a.account_code = '2110'
   AND NOT EXISTS (

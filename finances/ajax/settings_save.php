@@ -144,10 +144,10 @@ try {
             );
             $stmt->execute([$value, $companyId, $settingKey]);
         } else {
-            // Insert new
+            // Insert new (company_settings has no created_at column)
             $stmt = $DB->prepare(
-                "INSERT INTO company_settings (company_id, setting_key, setting_value, created_at, updated_at)
-                 VALUES (?, ?, ?, NOW(), NOW())"
+                "INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+                 VALUES (?, ?, ?, NOW())"
             );
             $stmt->execute([$companyId, $settingKey, $value]);
         }
