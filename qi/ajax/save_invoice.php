@@ -98,7 +98,8 @@ try {
         $taxC += $lineVatC;
     }
 } catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Invalid line data' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
     exit;
 }
 

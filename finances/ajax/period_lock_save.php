@@ -117,5 +117,6 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log('Period lock save error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to save period lock' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

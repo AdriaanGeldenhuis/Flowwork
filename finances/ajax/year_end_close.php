@@ -317,5 +317,6 @@ try {
         $DB->rollBack();
     }
     error_log('Year-end close error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'Failed to process year-end closing: ' . $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to process year-end closing' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

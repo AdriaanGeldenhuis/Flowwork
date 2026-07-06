@@ -50,5 +50,6 @@ try {
     echo json_encode(['ok' => true, 'journal_id' => $jid]);
 } catch (Exception $e) {
     error_log('AP bill post error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to post bill' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

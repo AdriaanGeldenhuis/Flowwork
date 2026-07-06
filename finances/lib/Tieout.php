@@ -45,59 +45,99 @@ class Tieout
     }
 
     // --- Accounts Receivable subledger total as of a date ---
-    // Drafts are excluded on both sides: they are no longer posted to the GL
-    // (post-on-issue) and are not receivables.
+    // Must mirror what the posting engine puts INTO the AR control, in ZAR:
+    //   + invoices (issued, at the invoice's captured rate — s25D)
+    //   − receipts: allocations at the INVOICE's rate (the engine relieves AR
+    //     at the historic rate; any payment-date rate difference goes to FX
+    //     gain/loss, not AR) + the UNALLOCATED remainder of posted payments
+    //     (an unapplied receipt keeps its posted Cr AR — it is a customer
+    //     credit the subledger must count)
+    //   − credit notes with a posted journal, at their rate
+    //   − write-offs (the write-off journal credits AR; balance_due already
+    //     reflects it, invoices.total does not)
+    // Drafts are excluded on both sides: they are not posted (post-on-issue)
+    // and are not receivables.
     public function arSubledger(string $asOf): float
     {
+        $fx = "COALESCE(NULLIF(exchange_rate, 0), 1)";
+
         $inv = (float)$this->scalar("
-            SELECT COALESCE(SUM(total),0)
+            SELECT COALESCE(SUM(total * $fx),0)
             FROM invoices
             WHERE company_id = ? AND issue_date <= ?
               AND status NOT IN ('draft','cancelled','void')
               AND deleted_at IS NULL
         ", [$this->companyId, $asOf]);
 
-        $pay = (float)$this->scalar("
-            SELECT COALESCE(SUM(pa.amount),0)
+        $writeOffs = (float)$this->scalar("
+            SELECT COALESCE(SUM(write_off_amount * $fx),0)
+            FROM invoices
+            WHERE company_id = ? AND issue_date <= ?
+              AND COALESCE(write_off_amount,0) > 0
+              AND status NOT IN ('draft','cancelled','void')
+              AND deleted_at IS NULL
+        ", [$this->companyId, $asOf]);
+
+        $alloc = (float)$this->scalar("
+            SELECT COALESCE(SUM(pa.amount * COALESCE(NULLIF(i.exchange_rate,0),1)),0)
             FROM payment_allocations pa
             JOIN payments p ON pa.payment_id = p.id
             JOIN invoices i ON pa.invoice_id = i.id
-            WHERE i.company_id = ? AND p.payment_date <= ?
+            WHERE p.company_id = ? AND p.payment_date <= ?
+              AND p.journal_id IS NOT NULL
+        ", [$this->companyId, $asOf]);
+
+        $unallocated = (float)$this->scalar("
+            SELECT COALESCE(SUM(
+                (p.amount - COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
+                                       WHERE pa.payment_id = p.id), 0))
+                * COALESCE(NULLIF(p.exchange_rate,0),1)
+            ),0)
+            FROM payments p
+            WHERE p.company_id = ? AND p.payment_date <= ?
+              AND p.journal_id IS NOT NULL
         ", [$this->companyId, $asOf]);
 
         $crn = (float)$this->scalar("
-            SELECT COALESCE(SUM(total),0)
+            SELECT COALESCE(SUM(total * $fx),0)
             FROM credit_notes
             WHERE company_id = ? AND issue_date <= ?
+              AND journal_id IS NOT NULL
               AND status NOT IN ('draft','cancelled')
         ", [$this->companyId, $asOf]);
 
-        return round($inv - $pay - $crn, 2);
+        return round($inv - $writeOffs - $alloc - $unallocated - $crn, 2);
     }
 
     // --- Accounts Payable subledger total as of a date ---
-    // Draft bills are not posted and not payables yet.
+    // Only documents that reached the GL count: posted/paid bills, posted
+    // supplier payments (full amount — an unallocated remainder still sits as
+    // a Dr AP prepayment), vendor credits with a posted journal. Draft
+    // documents used to leak in (draft vendor credits showed spurious
+    // differences before ever being posted).
     public function apSubledger(string $asOf): float
     {
         $bills = (float)$this->scalar("
             SELECT COALESCE(SUM(total),0)
             FROM ap_bills
             WHERE company_id = ? AND issue_date <= ?
+              AND journal_id IS NOT NULL
               AND status NOT IN ('draft','cancelled','void','blocked')
         ", [$this->companyId, $asOf]);
 
         $pay = (float)$this->scalar("
-            SELECT COALESCE(SUM(apa.amount),0)
-            FROM ap_payment_allocations apa
-            JOIN ap_payments p ON apa.ap_payment_id = p.id
-            JOIN ap_bills b ON apa.bill_id = b.id
-            WHERE b.company_id = ? AND p.payment_date <= ?
+            SELECT COALESCE(SUM(amount),0)
+            FROM ap_payments
+            WHERE company_id = ? AND payment_date <= ?
+              AND journal_id IS NOT NULL
         ", [$this->companyId, $asOf]);
 
         $vcr = (float)$this->scalar("
             SELECT COALESCE(SUM(total),0)
             FROM vendor_credits
-            WHERE company_id = ? AND issue_date <= ? AND status != 'cancelled'
+            WHERE company_id = ? AND issue_date <= ?
+              AND journal_id IS NOT NULL
+              AND status != 'cancelled'
         ", [$this->companyId, $asOf]);
 
         return round($bills - $pay - $vcr, 2);

@@ -104,7 +104,7 @@ try {
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$newBalance, $newStatus, $writeAmount, $userId, $reason ?: null, $invoiceId, $companyId]);
-            // GL: DR Bad Debts (net) + DR VAT Output (s22 relief) / CR AR.
+            // GL: DR Bad Debts (net) + DR VAT Input (s22 relief) / CR AR.
             // Previously only balance_due changed — the AR control account,
             // P&L and VAT201 never saw the write-off.
             require_once __DIR__ . '/../../finances/lib/PostingService.php';
@@ -191,5 +191,6 @@ try {
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();
     error_log('Invoice action error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'The action failed — please try again' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

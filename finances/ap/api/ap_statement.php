@@ -142,5 +142,6 @@ try {
     ]);
 } catch (Exception $e) {
     error_log('AP statement error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to build statement' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

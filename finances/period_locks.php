@@ -148,16 +148,18 @@ if ($userIds) {
             .then(data => {
                 document.getElementById('saveLockBtn').disabled = false;
                 if (data.ok) {
+                    // period_lock_save.php nests its payload: {ok, data:{lock_id, locked_at}}
+                    var lock = data.data || data;
                     document.getElementById('formMessage').textContent = 'Lock added successfully.';
                     // Add new row to table (cells filled via textContent — reason is user input)
                     var tbody = document.getElementById('locksTableBody');
                     var tr = document.createElement('tr');
-                    tr.setAttribute('data-lock-id', data.lock_id);
+                    tr.setAttribute('data-lock-id', lock.lock_id);
                     var cells = [
                         lockDate,
                         reason || '',
                         <?php echo json_encode($userNames[$userId] ?? (($_SESSION['first_name'] ?? '') . ' ' . ($_SESSION['last_name'] ?? '')), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
-                        data.locked_at || ''
+                        lock.locked_at || ''
                     ];
                     cells.forEach(function(text) {
                         var td = document.createElement('td');
@@ -167,7 +169,7 @@ if ($userIds) {
                     var tdBtn = document.createElement('td');
                     var btn = document.createElement('button');
                     btn.className = 'danger-btn';
-                    btn.setAttribute('data-id', data.lock_id);
+                    btn.setAttribute('data-id', lock.lock_id);
                     btn.textContent = 'Delete';
                     tdBtn.appendChild(btn);
                     tr.appendChild(tdBtn);

@@ -163,5 +163,6 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Create quote error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'Failed to create quote: ' . $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to create quote' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

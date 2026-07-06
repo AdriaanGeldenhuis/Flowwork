@@ -149,5 +149,6 @@ try {
         $DB->rollBack();
     }
     error_log('AP payment create error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to record payment' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

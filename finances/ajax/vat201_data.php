@@ -74,5 +74,6 @@ try {
 
 } catch (Exception $e) {
     error_log("VAT201 data error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to compute VAT201' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

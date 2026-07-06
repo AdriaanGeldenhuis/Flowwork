@@ -164,5 +164,6 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Send invoice error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to send invoice' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

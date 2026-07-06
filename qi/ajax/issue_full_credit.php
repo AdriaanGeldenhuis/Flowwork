@@ -88,5 +88,6 @@ try {
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();
     error_log('Issue full credit error: '.$e->getMessage());
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to issue credit note' : $e->getMessage();
+    echo json_encode(['ok'=>false, 'error'=>$msg]);
 }

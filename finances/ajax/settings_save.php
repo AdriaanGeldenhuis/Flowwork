@@ -185,6 +185,7 @@ try {
         $DB->rollBack();
     }
     error_log('Finance settings save error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to save settings' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
     exit;
 }

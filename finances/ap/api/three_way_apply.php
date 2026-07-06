@@ -185,5 +185,6 @@ try {
         $DB->rollBack();
     }
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'Failed to apply matches: ' . $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to apply matches' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }
