@@ -66,6 +66,29 @@ try {
     $salvageCents = (int)round(floatval($salvageVal) * 100);
     $lifeMonths  = (int)$lifeMonths;
     $method      = in_array($method, ['straight_line','declining_balance']) ? $method : 'straight_line';
+    // Validate the three GL account ids: each must reference a gl_accounts row
+    // belonging to this company, otherwise the depreciation run later fails to
+    // resolve account codes and cannot post.
+    $assetAccId = (int)$assetAccId;
+    $expAccId   = (int)$expAccId;
+    $accumAccId = (int)$accumAccId;
+    $accCheck = $DB->prepare("SELECT COUNT(*) FROM gl_accounts WHERE company_id = ? AND account_id = ?");
+    $accountFields = [
+        'asset account'                    => $assetAccId,
+        'depreciation expense account'     => $expAccId,
+        'accumulated depreciation account' => $accumAccId
+    ];
+    foreach ($accountFields as $label => $accId) {
+        $valid = false;
+        if ($accId > 0) {
+            $accCheck->execute([$companyId, $accId]);
+            $valid = ((int)$accCheck->fetchColumn() > 0);
+        }
+        if (!$valid) {
+            echo json_encode(['success' => false, 'message' => 'Invalid ' . $label . ': GL account not found for this company']);
+            exit;
+        }
+    }
     // Insert asset
     $stmt = $DB->prepare(
         "INSERT INTO gl_fixed_assets (

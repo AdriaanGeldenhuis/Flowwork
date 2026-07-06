@@ -4,8 +4,8 @@
 // stock at the current weighted average cost and posts a reversing COGS/Inventory
 // journal entry.
 
-require_once __DIR__ . '/../../../../init.php';
-require_once __DIR__ . '/../../../../auth_gate.php';
+require_once __DIR__ . '/../../../init.php';
+require_once __DIR__ . '/../../../auth_gate.php';
 
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -15,16 +15,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 // CSRF validation
-require_once __DIR__ . '/../../../lib/Csrf.php';
+require_once __DIR__ . '/../../lib/Csrf.php';
 Csrf::validate();
 
 // Restrict access to admins and bookkeepers
-require_once __DIR__ . '/../../../permissions.php';
+require_once __DIR__ . '/../../permissions.php';
 requireRoles(['admin', 'bookkeeper']);
 
-require_once __DIR__ . '/../../../lib/AccountsMap.php';
-require_once __DIR__ . '/../../../lib/PeriodService.php';
-require_once __DIR__ . '/../../../lib/InventoryService.php';
+require_once __DIR__ . '/../../lib/AccountsMap.php';
+require_once __DIR__ . '/../../lib/http.php';
+require_once __DIR__ . '/../../lib/PeriodService.php';
+require_once __DIR__ . '/../../lib/InventoryService.php';
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
@@ -62,8 +63,8 @@ try {
     $totalCost = $inventory->receive($itemId, $qty, $unitCost, $date, $refType, $refId);
     // Determine GL accounts
     $accounts = new AccountsMap($DB, $companyId);
-    $invCode  = $accounts->get('finance_inventory_account_id', '1300');
-    $cogsCode = $accounts->get('finance_cogs_account_id', '5000');
+    $invCode  = $accounts->code('finance_inventory_account_id');
+    $cogsCode = $accounts->code('finance_cogs_account_id');
     if (!$invCode || !$cogsCode) {
         throw new Exception('Missing inventory or COGS account mapping');
     }
@@ -116,6 +117,6 @@ try {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    json_exception($e);
 }
 ?>

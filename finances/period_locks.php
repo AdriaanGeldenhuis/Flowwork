@@ -39,7 +39,7 @@ if (!$companyId || !$userId) {
 // schema: lock_id, lock_date, lock_reason, locked_by, locked_at.
 $stmt = $DB->prepare(
     "SELECT lock_id, lock_date, lock_reason, locked_by, locked_at\n" .
-    "FROM gl_period_locks WHERE company_id = ? ORDER BY lock_date DESC"
+    "FROM gl_period_locks WHERE company_id = ? AND is_active = 1 ORDER BY lock_date DESC"
 );
 $stmt->execute([$companyId]);
 $locks = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -49,8 +49,8 @@ $userIds = array_column($locks, 'locked_by');
 $userNames = [];
 if ($userIds) {
     $placeholders = implode(',', array_fill(0, count($userIds), '?'));
-    $sql = "SELECT user_id, CONCAT(first_name, ' ', last_name) AS full_name\n" .
-           "FROM users WHERE user_id IN ($placeholders)";
+    $sql = "SELECT id, CONCAT(first_name, ' ', last_name) AS full_name\n" .
+           "FROM users WHERE id IN ($placeholders)";
     $stmtU = $DB->prepare($sql);
     $stmtU->execute($userIds);
     $userNames = $stmtU->fetchAll(PDO::FETCH_KEY_PAIR);
@@ -131,6 +131,7 @@ if ($userIds) {
     </footer>
     </div><!-- /fw-finance__container -->
     <script>
+        var CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         // Handle lock form submission
         document.getElementById('lockForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -140,7 +141,7 @@ if ($userIds) {
             document.getElementById('formMessage').textContent = '';
             fetch('/finances/ajax/period_lock_save.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
                 body: JSON.stringify({ lock_date: lockDate, reason: reason })
             })
             .then(res => res.json())
@@ -148,15 +149,28 @@ if ($userIds) {
                 document.getElementById('saveLockBtn').disabled = false;
                 if (data.ok) {
                     document.getElementById('formMessage').textContent = 'Lock added successfully.';
-                    // Add new row to table
+                    // Add new row to table (cells filled via textContent — reason is user input)
                     var tbody = document.getElementById('locksTableBody');
                     var tr = document.createElement('tr');
                     tr.setAttribute('data-lock-id', data.lock_id);
-                    tr.innerHTML = '<td>' + lockDate + '</td>' +
-                                   '<td>' + (reason || '') + '</td>' +
-                                   '<td><?php echo htmlspecialchars($userNames[$userId] ?? (($_SESSION['first_name'] ?? '') . ' ' . ($_SESSION['last_name'] ?? ''))); ?>' + '</td>' +
-                                   '<td>' + data.locked_at + '</td>' +
-                                   '<td><button class="danger-btn" data-id="' + data.lock_id + '">Delete</button></td>';
+                    var cells = [
+                        lockDate,
+                        reason || '',
+                        <?php echo json_encode($userNames[$userId] ?? (($_SESSION['first_name'] ?? '') . ' ' . ($_SESSION['last_name'] ?? '')), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
+                        data.locked_at || ''
+                    ];
+                    cells.forEach(function(text) {
+                        var td = document.createElement('td');
+                        td.textContent = text;
+                        tr.appendChild(td);
+                    });
+                    var tdBtn = document.createElement('td');
+                    var btn = document.createElement('button');
+                    btn.className = 'danger-btn';
+                    btn.setAttribute('data-id', data.lock_id);
+                    btn.textContent = 'Delete';
+                    tdBtn.appendChild(btn);
+                    tr.appendChild(tdBtn);
                     tbody.insertBefore(tr, tbody.firstChild);
                     // Reset form
                     document.getElementById('lock_date').value = '';
@@ -177,7 +191,7 @@ if ($userIds) {
                 if (confirm('Delete this lock?')) {
                     fetch('/finances/ajax/period_lock_delete.php', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
                         body: JSON.stringify({ lock_id: id })
                     })
                     .then(res => res.json())

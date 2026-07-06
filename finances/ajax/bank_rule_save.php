@@ -29,13 +29,31 @@ $ruleName = trim($input['rule_name'] ?? '');
 $matchField = $input['match_field'] ?? 'description';
 $matchOperator = $input['match_operator'] ?? 'contains';
 $matchValue = trim($input['match_value'] ?? '');
-$glAccountId = $input['gl_account_id'] ?? null;
+$glAccountId = !empty($input['gl_account_id']) ? (int)$input['gl_account_id'] : null;
 $taxCodeId = !empty($input['tax_code_id']) ? (int)$input['tax_code_id'] : null;
 $descriptionTemplate = trim($input['description_template'] ?? '');
 
 if (!$ruleName || !$matchValue || !$glAccountId) {
     echo json_encode(['ok' => false, 'error' => 'Missing required fields']);
     exit;
+}
+
+// Validate GL account belongs to this company
+$stmt = $DB->prepare("SELECT account_id FROM gl_accounts WHERE account_id = ? AND company_id = ?");
+$stmt->execute([$glAccountId, $companyId]);
+if (!$stmt->fetch()) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid GL account']);
+    exit;
+}
+
+// Validate tax code belongs to this company
+if ($taxCodeId !== null) {
+    $stmt = $DB->prepare("SELECT tax_code_id FROM gl_tax_codes WHERE tax_code_id = ? AND company_id = ? AND is_active = 1");
+    $stmt->execute([$taxCodeId, $companyId]);
+    if (!$stmt->fetch()) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid tax code']);
+        exit;
+    }
 }
 
 try {

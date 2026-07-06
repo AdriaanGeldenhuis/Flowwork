@@ -14,34 +14,39 @@ if (!$companyId) {
 }
 
 try {
+    // Aging over OPEN invoices only (mirrors finances/index.php): not
+    // soft-deleted, status outside the draft/closed family, balance_due > 0.
+    // Amounts are ZAR (balance_due × exchange_rate). Invoices with no due
+    // date cannot be overdue, so they belong in the 'current' bucket.
     $stmt = $DB->prepare("
-        SELECT 
+        SELECT
             c.name as customer_name,
-            SUM(CASE 
-                WHEN DATEDIFF(CURDATE(), i.due_date) <= 0 THEN i.balance_due 
-                ELSE 0 
+            SUM(CASE
+                WHEN i.due_date IS NULL OR DATEDIFF(CURDATE(), i.due_date) <= 0 THEN i.balance_due * i.exchange_rate
+                ELSE 0
             END) as current,
-            SUM(CASE 
-                WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 1 AND 30 THEN i.balance_due 
-                ELSE 0 
+            SUM(CASE
+                WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 1 AND 30 THEN i.balance_due * i.exchange_rate
+                ELSE 0
             END) as days_1_30,
-            SUM(CASE 
-                WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 31 AND 60 THEN i.balance_due 
-                ELSE 0 
+            SUM(CASE
+                WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 31 AND 60 THEN i.balance_due * i.exchange_rate
+                ELSE 0
             END) as days_31_60,
-            SUM(CASE 
-                WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 61 AND 90 THEN i.balance_due 
-                ELSE 0 
+            SUM(CASE
+                WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 61 AND 90 THEN i.balance_due * i.exchange_rate
+                ELSE 0
             END) as days_61_90,
-            SUM(CASE 
-                WHEN DATEDIFF(CURDATE(), i.due_date) > 90 THEN i.balance_due 
-                ELSE 0 
+            SUM(CASE
+                WHEN DATEDIFF(CURDATE(), i.due_date) > 90 THEN i.balance_due * i.exchange_rate
+                ELSE 0
             END) as days_90_plus,
-            SUM(i.balance_due) as total
+            SUM(i.balance_due * i.exchange_rate) as total
         FROM invoices i
         LEFT JOIN crm_accounts c ON i.customer_id = c.id
         WHERE i.company_id = ?
-        AND i.status != 'paid'
+        AND i.deleted_at IS NULL
+        AND i.status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
         AND i.balance_due > 0
         GROUP BY c.id, c.name
         HAVING total > 0

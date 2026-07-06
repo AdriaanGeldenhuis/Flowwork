@@ -202,7 +202,10 @@ async function previewClose() {
     try {
         const res = await fetch('/finances/ajax/year_end_close.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+            },
             body: JSON.stringify({ action: 'preview', fy_start: start, fy_end: end })
         });
         const data = await res.json();
@@ -256,7 +259,10 @@ async function executeClose() {
     try {
         const res = await fetch('/finances/ajax/year_end_close.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+            },
             body: JSON.stringify({ action: 'execute', fy_start: start, fy_end: end })
         });
         const data = await res.json();

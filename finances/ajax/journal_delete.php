@@ -35,11 +35,18 @@ try {
 
     $DB->beginTransaction();
 
+    // Atomic guard: only a journal still in draft may be deleted. The status
+    // predicate closes the check-then-act race with a concurrent approve/post,
+    // and the header is deleted first so lines are only removed if it held.
+    $stmt = $DB->prepare("DELETE FROM journal_entries WHERE id = ? AND company_id = ? AND status = 'draft'");
+    $stmt->execute([$journalId, $companyId]);
+    if ($stmt->rowCount() === 0) {
+        $DB->rollBack();
+        json_error('Journal status changed concurrently — only drafts can be deleted', 409);
+    }
+
     $stmt = $DB->prepare("DELETE FROM journal_lines WHERE journal_id = ?");
     $stmt->execute([$journalId]);
-
-    $stmt = $DB->prepare("DELETE FROM journal_entries WHERE id = ? AND company_id = ?");
-    $stmt->execute([$journalId, $companyId]);
 
     require_once __DIR__ . '/../lib/Audit.php';
     Audit::log('journal_deleted', [

@@ -70,10 +70,14 @@ try {
     $existingId = $stmt->fetchColumn();
 
     if ($existingId) {
-        // Update existing lock: update reason and locked_by/locked_at
+        // Update existing lock: update reason and locked_by/locked_at.
+        // Also resurrect a soft-deleted lock (is_active = 0) for the same
+        // date, otherwise re-adding a previously deleted lock would leave it
+        // invisible to PeriodService::isLocked (which filters is_active = 1).
         $stmt = $DB->prepare(
             "UPDATE gl_period_locks\n" .
-            "SET lock_reason = ?, locked_by = ?, locked_at = NOW()\n" .
+            "SET lock_reason = ?, locked_by = ?, locked_at = NOW(),\n" .
+            "    is_active = 1, deleted_at = NULL, deleted_by = NULL\n" .
             "WHERE company_id = ? AND lock_id = ?"
         );
         $stmt->execute([$reason, $userId, $companyId, $existingId]);

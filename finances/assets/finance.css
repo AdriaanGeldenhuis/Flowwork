@@ -4669,6 +4669,37 @@ table.bva-table thead th {
   font-weight: 700;
 }
 
+/* Command-deck quick actions — dashboard, first section above the KPI grid */
+.fw-finance__qa-deck {
+  margin-bottom: var(--fw-spacing-lg);
+  animation: fwCardFade 0.5s ease backwards;
+}
+
+.fw-finance__quick-actions--deck {
+  grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+  margin-bottom: 0;
+}
+
+.fw-finance__quick-actions--deck .fw-finance__qa-tile {
+  padding: 14px 8px;
+}
+
+.fw-finance__quick-actions--deck .fw-finance__qa-icon {
+  font-size: 22px;
+}
+
+.fw-finance__quick-actions--deck .fw-finance__qa-label {
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.25;
+}
+
+@media (max-width: 480px) {
+  .fw-finance__quick-actions--deck {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+}
+
 /* ===== DATA TABLES (dashboard) ===== */
 .fw-finance__table-scroll {
   overflow-x: auto;

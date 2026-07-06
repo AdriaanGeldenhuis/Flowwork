@@ -26,7 +26,7 @@ $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
 // Check for period locks
-$stmt = $DB->prepare("SELECT MAX(lock_date) as latest_lock FROM gl_period_locks WHERE company_id = ?");
+$stmt = $DB->prepare("SELECT MAX(lock_date) as latest_lock FROM gl_period_locks WHERE company_id = ? AND is_active = 1");
 $stmt->execute([$companyId]);
 $lockInfo = $stmt->fetch();
 $latestLock = $lockInfo['latest_lock'] ?? null;

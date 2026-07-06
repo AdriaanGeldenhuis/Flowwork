@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_once __DIR__ . '/../../lib/Csrf.php';
+require_once __DIR__ . '/../../lib/http.php';
 Csrf::validate();
 
 $role = $_SESSION['role'] ?? 'member';
@@ -38,79 +39,140 @@ if (!$creditId || !$allocs || !is_array($allocs)) {
     exit;
 }
 
+// Aggregate requested allocation per bill (guards against the same bill
+// appearing more than once in a single request).
+$perBill = [];
+foreach ($allocs as $a) {
+    $bId = isset($a['bill_id']) ? (int)$a['bill_id'] : 0;
+    $amt = isset($a['amount']) ? (float)$a['amount'] : 0.0;
+    if ($bId <= 0 || $amt <= 0) {
+        continue;
+    }
+    $perBill[$bId] = ($perBill[$bId] ?? 0.0) + $amt;
+}
+$allocSum = array_sum($perBill);
+if (!$perBill || $allocSum <= 0) {
+    echo json_encode(['ok' => false, 'error' => 'No valid allocations supplied']);
+    exit;
+}
+
+$insertedAllocIds = [];
 try {
-    // Fetch vendor credit
-    $stmt = $DB->prepare("SELECT * FROM vendor_credits WHERE id = ? AND company_id = ? LIMIT 1");
+    $DB->beginTransaction();
+    // Fetch and lock the vendor credit so concurrent allocations serialise
+    $stmt = $DB->prepare("SELECT * FROM vendor_credits WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE");
     $stmt->execute([$creditId, $companyId]);
     $credit = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$credit) {
+        $DB->rollBack();
         echo json_encode(['ok' => false, 'error' => 'Vendor credit not found']);
         exit;
     }
     if ($credit['status'] === 'applied') {
+        $DB->rollBack();
         echo json_encode(['ok' => false, 'error' => 'Credit already applied']);
         exit;
     }
+    $creditSupplierId = (int)$credit['supplier_id'];
     $totalCredit = floatval($credit['total']);
-    // Sum allocations
-    $allocSum = 0.0;
-    foreach ($allocs as $a) {
-        $amt = isset($a['amount']) ? (float)$a['amount'] : 0.0;
-        if ($amt > 0) $allocSum += $amt;
-    }
-    if ($allocSum <= 0 || $allocSum > $totalCredit + 0.0001) {
-        echo json_encode(['ok' => false, 'error' => 'Allocations exceed credit total']);
+    // Validate against the UNALLOCATED remainder, not the full credit total
+    $stmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM vendor_credit_allocations WHERE credit_id = ?");
+    $stmt->execute([$creditId]);
+    $alreadyAllocated = floatval($stmt->fetchColumn());
+    $remainingCredit  = $totalCredit - $alreadyAllocated;
+    if ($allocSum > $remainingCredit + 0.01) {
+        $DB->rollBack();
+        echo json_encode(['ok' => false, 'error' => 'Allocations of R' . number_format($allocSum, 2) . ' exceed the unallocated credit remainder of R' . number_format($remainingCredit, 2)]);
         exit;
     }
-    // SARS: Validate credit allocations don't exceed outstanding balance per bill
-    foreach ($allocs as $a) {
-        $bId = isset($a['bill_id']) ? (int)$a['bill_id'] : 0;
-        $amt = isset($a['amount']) ? (float)$a['amount'] : 0.0;
-        if ($bId && $amt > 0) {
-            $stmtBal = $DB->prepare(
-                "SELECT b.total,
-                        COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?), 0) AS paid,
-                        COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = ?), 0) AS credited
-                 FROM ap_bills b WHERE b.id = ? AND b.company_id = ?"
-            );
-            $stmtBal->execute([$bId, $bId, $bId, $companyId]);
-            $row = $stmtBal->fetch(PDO::FETCH_ASSOC);
-            if ($row) {
-                $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
-                if ($amt > $remaining + 0.01) {
-                    echo json_encode(['ok' => false, 'error' => 'Credit allocation exceeds outstanding balance on bill #' . $bId]);
-                    exit;
-                }
-            }
+    // Validate each bill: must exist in this company, belong to the credit's
+    // supplier, and have enough remaining balance. Rows locked FOR UPDATE.
+    $stmtBal = $DB->prepare(
+        "SELECT b.total, b.supplier_id,
+                COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = b.id), 0) AS paid,
+                COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = b.id), 0) AS credited
+         FROM ap_bills b WHERE b.id = ? AND b.company_id = ? FOR UPDATE"
+    );
+    foreach ($perBill as $bId => $amt) {
+        $stmtBal->execute([$bId, $companyId]);
+        $row = $stmtBal->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Bill #' . $bId . ' was not found for this company']);
+            exit;
+        }
+        if ((int)$row['supplier_id'] !== $creditSupplierId) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Bill #' . $bId . ' belongs to a different supplier than this credit']);
+            exit;
+        }
+        $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
+        if ($amt > $remaining + 0.01) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Credit allocation of R' . number_format($amt, 2) . ' exceeds outstanding balance of R' . number_format($remaining, 2) . ' on bill #' . $bId]);
+            exit;
         }
     }
-
-    // Begin DB transaction
-    $DB->beginTransaction();
     // Insert allocations
     $insAlloc = $DB->prepare(
         "INSERT INTO vendor_credit_allocations (credit_id, bill_id, amount, created_at)
          VALUES (?, ?, ?, NOW())"
     );
-    foreach ($allocs as $a) {
-        $billId = isset($a['bill_id']) ? (int)$a['bill_id'] : 0;
-        $amt    = isset($a['amount']) ? (float)$a['amount'] : 0.0;
-        if ($billId && $amt > 0) {
-            $insAlloc->execute([$creditId, $billId, $amt]);
-        }
+    foreach ($perBill as $billId => $amt) {
+        $insAlloc->execute([$creditId, $billId, $amt]);
+        $insertedAllocIds[] = (int)$DB->lastInsertId();
     }
     $DB->commit();
-    // Post credit to GL
+} catch (Exception $e) {
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
+    error_log('Vendor credit post error: ' . $e->getMessage());
+    json_exception($e);
+    exit;
+}
+
+try {
+    // Post credit to GL. postVendorCredit() manages its own transaction so it
+    // must run after our commit; on failure we compensate by removing the
+    // allocations inserted above so state stays consistent.
+    // Note: by GL design the posting debits AP for the FULL credit total (a
+    // vendor credit note is a full AP reduction, mirroring Tieout.php which
+    // subtracts full vendor_credits.total from the AP subledger). Only the
+    // status/remainder tracking is adjusted below for partial allocation.
     $posting = new PostingService($DB, $companyId, $userId);
     $posting->postVendorCredit($creditId);
+} catch (Exception $e) {
+    error_log('Vendor credit GL post failed (credit #' . $creditId . '), rolling back allocations: ' . $e->getMessage());
+    try {
+        if ($insertedAllocIds) {
+            $ph  = implode(',', array_fill(0, count($insertedAllocIds), '?'));
+            $del = $DB->prepare("DELETE FROM vendor_credit_allocations WHERE id IN ($ph) AND credit_id = ?");
+            $del->execute(array_merge($insertedAllocIds, [$creditId]));
+        }
+    } catch (Exception $cleanupEx) {
+        error_log('Vendor credit compensating cleanup failed (credit #' . $creditId . '): ' . $cleanupEx->getMessage());
+    }
+    echo json_encode(['ok' => false, 'error' => 'GL posting failed, credit was not applied' . ($e instanceof PDOException ? '' : ': ' . $e->getMessage())]);
+    exit;
+}
+
+try {
+    // postVendorCredit() flips status to 'applied' unconditionally. 'applied'
+    // must mean fully allocated (the UI blocks further allocation once a
+    // credit is 'applied'), so when a remainder is left we revert the status
+    // to 'draft' - the only other non-cancelled status in use for
+    // vendor_credits - keeping the remainder allocatable. The journal_id set
+    // by posting is preserved either way.
+    $stmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM vendor_credit_allocations WHERE credit_id = ?");
+    $stmt->execute([$creditId]);
+    $allocatedNow = floatval($stmt->fetchColumn());
+    if ($totalCredit - $allocatedNow > 0.01) {
+        $stmt = $DB->prepare("UPDATE vendor_credits SET status = 'draft' WHERE id = ? AND company_id = ?");
+        $stmt->execute([$creditId, $companyId]);
+    }
     // After posting, update bill statuses if fully settled
-    // Fetch affected bill IDs
-    $stmtBillIds = $DB->prepare(
-        "SELECT DISTINCT bill_id FROM vendor_credit_allocations WHERE credit_id = ?"
-    );
-    $stmtBillIds->execute([$creditId]);
-    $billIds = $stmtBillIds->fetchAll(PDO::FETCH_COLUMN, 0);
-    foreach ($billIds as $bId) {
+    foreach (array_keys($perBill) as $bId) {
         $stmtBal = $DB->prepare(
             "SELECT total,
                     COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?),0) AS paid,
@@ -131,7 +193,8 @@ try {
     }
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
-    $DB->rollBack();
-    error_log('Vendor credit post error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    // Credit is posted and allocations recorded; status/bill flag updates are
+    // cosmetic - report success with a warning rather than fail the request.
+    error_log('Vendor credit post-posting status update failed (credit #' . $creditId . '): ' . $e->getMessage());
+    echo json_encode(['ok' => true, 'warning' => 'Credit applied, but the status refresh failed — reload the page']);
 }

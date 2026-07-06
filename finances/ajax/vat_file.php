@@ -75,7 +75,7 @@ try {
 
     // Insert a period lock if one does not already exist at or after this date
     $stmt = $DB->prepare(
-        "SELECT 1 FROM gl_period_locks WHERE company_id = ? AND lock_date >= ? LIMIT 1"
+        "SELECT 1 FROM gl_period_locks WHERE company_id = ? AND lock_date >= ? AND is_active = 1 LIMIT 1"
     );
     $stmt->execute([$companyId, $period['period_end']]);
     if (!$stmt->fetchColumn()) {

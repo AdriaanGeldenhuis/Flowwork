@@ -514,6 +514,17 @@
     reportContent.innerHTML = html;
   }
 
+  // Guard against CSV formula injection: prefix a single quote to any cell
+  // starting with =, +, -, @, tab or CR so spreadsheet apps treat it as text.
+  // Plain numeric values (e.g. "-123.45") are left intact.
+  function csvSafe(value) {
+    const s = String(value === null || value === undefined ? '' : value);
+    if (/^[=+\-@\t\r]/.test(s) && !/^[-+]?\d+(\.\d+)?$/.test(s)) {
+      return "'" + s;
+    }
+    return s;
+  }
+
   // Export to CSV
   function exportToCSV() {
     if (!reportData) return;
@@ -525,33 +536,33 @@
       case 'trial-balance':
         csv = 'Account Code,Account Name,Debit,Credit\n';
         (reportData.accounts || []).forEach(acc => {
-          csv += '"' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.debit_cents / 100).toFixed(2) + ',' + (acc.credit_cents / 100).toFixed(2) + '\n';
+          csv += '"' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.debit_cents / 100).toFixed(2) + ',' + (acc.credit_cents / 100).toFixed(2) + '\n';
         });
         break;
 
       case 'pl':
         csv = 'Section,Account Code,Account Name,Amount\n';
         (reportData.revenue || []).forEach(acc => {
-          csv += '"Revenue","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Revenue","' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","","Total Revenue",' + (reportData.total_revenue_cents / 100).toFixed(2) + '\n';
         (reportData.cost_of_sales || []).forEach(acc => {
-          csv += '"Cost of Sales","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Cost of Sales","' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","","Gross Profit",' + (reportData.gross_profit_cents / 100).toFixed(2) + '\n';
         (reportData.operating_expenses || []).forEach(acc => {
-          csv += '"Operating Expenses","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Operating Expenses","' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","","Operating Profit",' + (reportData.operating_profit_cents / 100).toFixed(2) + '\n';
         (reportData.other_income || []).forEach(acc => {
-          csv += '"Other Income","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Other Income","' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         (reportData.finance_costs || []).forEach(acc => {
-          csv += '"Finance Costs","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Finance Costs","' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","","Profit Before Tax",' + (reportData.profit_before_tax_cents / 100).toFixed(2) + '\n';
         (reportData.tax_expense || []).forEach(acc => {
-          csv += '"Tax Expense","' + (acc.account_code || '').replace(/"/g, '""') + '","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Tax Expense","' + csvSafe(acc.account_code || '').replace(/"/g, '""') + '","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","","Net Profit After Tax",' + (reportData.net_profit_after_tax_cents / 100).toFixed(2) + '\n';
         break;
@@ -559,24 +570,24 @@
       case 'balance-sheet':
         csv = 'Section,Account Name,Amount\n';
         (reportData.current_assets || []).forEach(acc => {
-          csv += '"Current Assets","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Current Assets","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","Total Current Assets",' + ((reportData.total_current_assets_cents || 0) / 100).toFixed(2) + '\n';
         (reportData.non_current_assets || []).forEach(acc => {
-          csv += '"Non-Current Assets","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Non-Current Assets","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","Total Non-Current Assets",' + ((reportData.total_non_current_assets_cents || 0) / 100).toFixed(2) + '\n';
         csv += '"","TOTAL ASSETS",' + ((reportData.total_assets_cents || 0) / 100).toFixed(2) + '\n';
         (reportData.current_liabilities || []).forEach(acc => {
-          csv += '"Current Liabilities","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Current Liabilities","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","Total Current Liabilities",' + ((reportData.total_current_liabilities_cents || 0) / 100).toFixed(2) + '\n';
         (reportData.non_current_liabilities || []).forEach(acc => {
-          csv += '"Non-Current Liabilities","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Non-Current Liabilities","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","Total Non-Current Liabilities",' + ((reportData.total_non_current_liabilities_cents || 0) / 100).toFixed(2) + '\n';
         (reportData.equity || []).forEach(acc => {
-          csv += '"Equity","' + (acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
+          csv += '"Equity","' + csvSafe(acc.account_name || '').replace(/"/g, '""') + '",' + (acc.balance_cents / 100).toFixed(2) + '\n';
         });
         csv += '"","TOTAL EQUITY",' + ((reportData.total_equity_cents || 0) / 100).toFixed(2) + '\n';
         break;
@@ -588,7 +599,7 @@
           const debit = parseInt(tx.debit_cents) || 0;
           const credit = parseInt(tx.credit_cents) || 0;
           balance += (debit - credit);
-          csv += '"' + (tx.entry_date || '') + '","' + (tx.description || tx.memo || '').replace(/"/g, '""') + '","' + (tx.reference || '').replace(/"/g, '""') + '",' + (debit / 100).toFixed(2) + ',' + (credit / 100).toFixed(2) + ',' + (balance / 100).toFixed(2) + '\n';
+          csv += '"' + (tx.entry_date || '') + '","' + csvSafe(tx.description || tx.memo || '').replace(/"/g, '""') + '","' + csvSafe(tx.reference || '').replace(/"/g, '""') + '",' + (debit / 100).toFixed(2) + ',' + (credit / 100).toFixed(2) + ',' + (balance / 100).toFixed(2) + '\n';
         });
         break;
     }

@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../lib/http.php';
 require_method('GET');
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../lib/AccountsMap.php';
 
 // Simple gaps report for AR invoices using doc_sequences prefixes
@@ -13,9 +15,17 @@ define('ASSET_VERSION', FIN_ASSET_VERSION);
 
 header('Content-Type: text/html; charset=utf-8');
 
-// Fetch sequence settings for current period
+// Period selectable via ?period=YYYYMM (defaults to the current month) so
+// historical months remain auditable — SARS expects sequential numbering
+// across the whole retention window, not just the current month.
 $now = new DateTimeImmutable('now');
-$periodKey = $now->format('Ym');
+$periodParam = (string)($_GET['period'] ?? '');
+if (preg_match('/^(20\d{2})(0[1-9]|1[0-2])$/', $periodParam)) {
+    $periodKey = $periodParam;
+    $now = new DateTimeImmutable($periodParam . '01');
+} else {
+    $periodKey = $now->format('Ym');
+}
 
 $stmt = $DB->prepare("SELECT prefix, pad, last_number FROM doc_sequences WHERE company_id = :cid AND doc_type = 'AR-INVOICE' AND period_key = :pk");
 $stmt->execute([':cid'=>$companyId, ':pk'=>$periodKey]);
@@ -74,7 +84,24 @@ for ($i=1; $i <= $max; $i++) {
   <main class="fw-finance__main">
   <div class="fw-finance__paper">
   <h1>AR Invoice sequence check</h1>
-  <p>Prefix: <code><?=htmlspecialchars($prefix)?></code> Pad: <code><?=$pad?></code> Last issued: <code><?=$max?></code></p>
+  <form method="get" style="margin-bottom:12px">
+    <label for="period">Period (month):</label>
+    <input type="month" id="period" name="period_month" value="<?= htmlspecialchars(substr($periodKey, 0, 4) . '-' . substr($periodKey, 4, 2)) ?>">
+    <button type="submit">View</button>
+  </form>
+  <script>
+    // <input type=month> posts YYYY-MM; the endpoint expects period=YYYYMM
+    document.querySelector('form').addEventListener('submit', function() {
+      var m = document.getElementById('period');
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'period';
+      hidden.value = (m.value || '').replace('-', '');
+      this.appendChild(hidden);
+      m.removeAttribute('name');
+    });
+  </script>
+  <p>Period: <code><?=htmlspecialchars($periodKey)?></code> Prefix: <code><?=htmlspecialchars($prefix)?></code> Pad: <code><?=$pad?></code> Last issued: <code><?=$max?></code></p>
   <?php if ($gaps): ?>
     <h3 class="bad">Gaps (<?=count($gaps)?>)</h3>
     <p><?=implode(', ', $gaps)?></p>

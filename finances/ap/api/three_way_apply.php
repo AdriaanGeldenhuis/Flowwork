@@ -3,6 +3,7 @@
 
 require_once __DIR__ . '/../../../init.php';
 require_once __DIR__ . '/../../../auth_gate.php';
+require_once __DIR__ . '/../../lib/http.php'; // provides json_error()
 
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -59,16 +60,87 @@ $errors = [];
 
 try {
     $DB->beginTransaction();
-    foreach ($matches as $m) {
+
+    // Validators: each referenced line must exist, belong to this company
+    // (and not be cancelled/blocked), and expose its supplier + total qty and
+    // the qty already matched. Line rows are locked FOR UPDATE so concurrent
+    // matching serialises.
+    $poStmt = $DB->prepare(
+        "SELECT po.supplier_id, pol.qty AS line_qty,
+                COALESCE((SELECT SUM(qty_matched) FROM ap_match_links WHERE po_line_id = pol.id), 0) AS matched_qty
+         FROM purchase_order_lines pol
+         JOIN purchase_orders po ON po.id = pol.po_id
+         WHERE pol.id = ? AND po.company_id = ? AND po.status != 'cancelled'
+         FOR UPDATE"
+    );
+    $grnStmt = $DB->prepare(
+        "SELECT po.supplier_id, gl.qty_received AS line_qty,
+                COALESCE((SELECT SUM(qty_matched) FROM ap_match_links WHERE grn_line_id = gl.id), 0) AS matched_qty
+         FROM grn_lines gl
+         JOIN goods_received_notes grn ON grn.id = gl.grn_id
+         JOIN purchase_orders po ON po.id = grn.po_id
+         WHERE gl.id = ? AND po.company_id = ? AND grn.status != 'cancelled'
+         FOR UPDATE"
+    );
+    $billStmt = $DB->prepare(
+        "SELECT b.supplier_id, bl.quantity AS line_qty,
+                COALESCE((SELECT SUM(qty_matched) FROM ap_match_links WHERE bill_line_id = bl.id), 0) AS matched_qty
+         FROM ap_bill_lines bl
+         JOIN ap_bills b ON b.id = bl.bill_id
+         WHERE bl.id = ? AND b.company_id = ? AND b.status NOT IN ('cancelled','blocked')
+         FOR UPDATE"
+    );
+
+    // Track quantity consumed per line within this request so a batch cannot
+    // exceed a line's available quantity across multiple match rows.
+    $usedQty = ['po' => [], 'grn' => [], 'bill' => []];
+
+    foreach ($matches as $idx => $m) {
+        $rowNo = $idx + 1;
         // Each match should be an associative array
         $poLineId  = isset($m['po_line_id']) && $m['po_line_id'] !== '' ? (int)$m['po_line_id'] : null;
         $grnLineId = isset($m['grn_line_id']) && $m['grn_line_id'] !== '' ? (int)$m['grn_line_id'] : null;
         $billLineId = isset($m['bill_line_id']) && $m['bill_line_id'] !== '' ? (int)$m['bill_line_id'] : null;
         $qty        = isset($m['qty']) ? (float)$m['qty'] : 0.0;
 
-        if ($qty <= 0 || ($poLineId === null && $grnLineId === null && $billLineId === null)) {
-            // Skip invalid matches (no quantity or no references)
-            continue;
+        if ($qty <= 0) {
+            $DB->rollBack();
+            json_error('Match #' . $rowNo . ': quantity must be greater than zero');
+        }
+        if ($poLineId === null && $grnLineId === null && $billLineId === null) {
+            $DB->rollBack();
+            json_error('Match #' . $rowNo . ': at least one of PO/GRN/Bill line is required');
+        }
+
+        // Resolve and validate each referenced line
+        $suppliers = [];
+        $checks = [
+            'po'   => [$poStmt,   $poLineId,   'PO line'],
+            'grn'  => [$grnStmt,  $grnLineId,  'GRN line'],
+            'bill' => [$billStmt, $billLineId, 'Bill line'],
+        ];
+        foreach ($checks as $kind => [$chkStmt, $lineId, $label]) {
+            if ($lineId === null) {
+                continue;
+            }
+            $chkStmt->execute([$lineId, $companyId]);
+            $row = $chkStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                $DB->rollBack();
+                json_error('Match #' . $rowNo . ': ' . $label . ' ' . $lineId . ' was not found for this company');
+            }
+            $suppliers[$kind] = (int)$row['supplier_id'];
+            $pending   = $usedQty[$kind][$lineId] ?? 0.0;
+            $available = (float)$row['line_qty'] - (float)$row['matched_qty'] - $pending;
+            if ($qty > $available + 0.0001) {
+                $DB->rollBack();
+                json_error('Match #' . $rowNo . ': quantity ' . $qty . ' exceeds available (unmatched) quantity ' . number_format(max($available, 0), 3) . ' on ' . $label . ' ' . $lineId);
+            }
+        }
+        // All referenced lines must share the same supplier
+        if (count(array_unique($suppliers)) > 1) {
+            $DB->rollBack();
+            json_error('Match #' . $rowNo . ': PO/GRN/Bill lines belong to different suppliers');
         }
 
         // Ownership checks: every referenced line must belong to this
@@ -97,12 +169,20 @@ try {
             $qty,
             $userId
         ]);
+        // Consume quantity for subsequent rows in this batch
+        foreach ($checks as $kind => [, $lineId, ]) {
+            if ($lineId !== null) {
+                $usedQty[$kind][$lineId] = ($usedQty[$kind][$lineId] ?? 0.0) + $qty;
+            }
+        }
         $inserted++;
     }
     $DB->commit();
     echo json_encode(['ok' => true, 'data' => ['inserted' => $inserted, 'errors' => $errors]]);
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'Failed to apply matches: ' . $e->getMessage()]);
 }

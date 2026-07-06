@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../../../init.php';
 require_once __DIR__ . '/../../../auth_gate.php';
+require_once __DIR__ . '/../../lib/http.php';
 
 header('Content-Type: application/json');
 
@@ -54,10 +55,50 @@ if ($dueDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueDate)) {
     exit;
 }
 $currency    = $header['currency'] ?? 'ZAR';
-$subtotal    = isset($header['subtotal']) ? (float)$header['subtotal'] : 0.0;
-$tax         = isset($header['tax']) ? (float)$header['tax'] : 0.0;
-$total       = (float)$header['total'];
 $notes       = $header['notes'] ?? null;
+
+// Recompute header totals from the lines server-side; never trust the
+// client-supplied subtotal/tax/total. Reject if they disagree by > 0.01.
+if (!is_array($lines) || count($lines) === 0) {
+    json_error('Bill must have at least one line');
+}
+// Default VAT rate from the company's STD tax code — never a hardcoded 15.
+// The same default is applied when the lines are inserted below, so the
+// recomputed totals always match the stored lines.
+require_once __DIR__ . '/../../lib/TaxCodes.php';
+$taxCodes = new TaxCodes($DB, (int)$companyId);
+$defaultRate = $taxCodes->standardRatePercent();
+$computedSubtotal = 0.0;
+$computedTax      = 0.0;
+foreach ($lines as $line) {
+    $qty      = isset($line['qty']) ? (float)$line['qty'] : 1.0;
+    $price    = isset($line['unit_price']) ? (float)$line['unit_price'] : 0.0;
+    $discount = isset($line['discount']) ? (float)$line['discount'] : 0.0;
+    $taxRate  = isset($line['tax_rate']) && $line['tax_rate'] !== '' ? (float)$line['tax_rate'] : $defaultRate;
+    $net      = ($qty * $price) - $discount;
+    $computedSubtotal += $net;
+    $computedTax      += ($taxRate > 0) ? $net * ($taxRate / 100.0) : 0.0;
+}
+$computedSubtotal = round($computedSubtotal, 2);
+$computedTax      = round($computedTax, 2);
+$computedTotal    = round($computedSubtotal + $computedTax, 2);
+
+$clientSubtotal = isset($header['subtotal']) ? (float)$header['subtotal'] : $computedSubtotal;
+$clientTax      = isset($header['tax']) ? (float)$header['tax'] : $computedTax;
+$clientTotal    = (float)$header['total'];
+if (abs($clientSubtotal - $computedSubtotal) > 0.01
+    || abs($clientTax - $computedTax) > 0.01
+    || abs($clientTotal - $computedTotal) > 0.01) {
+    json_error(sprintf(
+        'Header totals do not match bill lines. Submitted subtotal/tax/total: %.2f/%.2f/%.2f; computed from lines: %.2f/%.2f/%.2f',
+        $clientSubtotal, $clientTax, $clientTotal,
+        $computedSubtotal, $computedTax, $computedTotal
+    ));
+}
+// Store the server-computed values
+$subtotal = $computedSubtotal;
+$tax      = $computedTax;
+$total    = $computedTotal;
 
 // SARS: Capture and validate supplier VAT number
 $vendorVat   = isset($header['vendor_vat']) ? trim($header['vendor_vat']) : null;
@@ -106,11 +147,7 @@ try {
         $userId
     ]);
     $billId = (int)$DB->lastInsertId();
-    // Insert bill lines (default VAT rate from the company's STD tax code —
-    // never a hardcoded 15)
-    require_once __DIR__ . '/../../lib/TaxCodes.php';
-    $taxCodes = new TaxCodes($DB, (int)$companyId);
-    $defaultRate = $taxCodes->standardRatePercent();
+    // Insert bill lines ($defaultRate resolved above, before the totals check)
     $sort = 0;
     foreach ($lines as $line) {
         $desc       = trim($line['description'] ?? '');

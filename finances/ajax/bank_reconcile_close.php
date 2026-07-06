@@ -51,7 +51,7 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $statementDate)) {
 try {
     $DB->beginTransaction();
     // Verify the bank account exists for this company
-    $stmt = $DB->prepare("SELECT last_reconciled_date FROM gl_bank_accounts WHERE id = ? AND company_id = ? LIMIT 1");
+    $stmt = $DB->prepare("SELECT last_reconciled_date, opening_balance_cents FROM gl_bank_accounts WHERE id = ? AND company_id = ? LIMIT 1");
     $stmt->execute([$bankAccountId, $companyId]);
     $acct = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$acct) {
@@ -65,8 +65,34 @@ try {
     }
     // Update the bank account with the new reconciled date and optional closing balance
     if ($closingBalance !== null) {
-        // Update current_balance_cents to closing balance (converted to cents)
         $balanceCents = (int)round($closingBalance * 100);
+        // Verify the supplied closing balance against the expected balance:
+        // account opening balance + sum of all imported transactions up to
+        // and including the statement date. Reject on any mismatch (>= 1c)
+        // so reconciliation cannot silently overwrite the book balance.
+        $stmtSum = $DB->prepare(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM gl_bank_transactions
+             WHERE company_id = ? AND bank_account_id = ? AND tx_date <= ?"
+        );
+        $stmtSum->execute([$companyId, $bankAccountId, $newDate]);
+        $expectedCents = (int)$acct['opening_balance_cents'] + (int)$stmtSum->fetchColumn();
+        if ($balanceCents !== $expectedCents) {
+            $DB->rollBack();
+            echo json_encode([
+                'ok' => false,
+                'error' => sprintf(
+                    'Closing balance mismatch: you entered R%s but the imported transactions add up to R%s as at %s. Please find the difference of R%s before closing.',
+                    number_format($balanceCents / 100, 2, '.', ' '),
+                    number_format($expectedCents / 100, 2, '.', ' '),
+                    $newDate,
+                    number_format(abs($balanceCents - $expectedCents) / 100, 2, '.', ' ')
+                ),
+                'provided_balance' => round($balanceCents / 100, 2),
+                'expected_balance' => round($expectedCents / 100, 2)
+            ]);
+            exit;
+        }
+        // Verified: store the reconciled balance (equals the computed balance)
         $stmtUpd = $DB->prepare("UPDATE gl_bank_accounts SET last_reconciled_date = ?, current_balance_cents = ? WHERE id = ? AND company_id = ?");
         $stmtUpd->execute([$newDate, $balanceCents, $bankAccountId, $companyId]);
     } else {

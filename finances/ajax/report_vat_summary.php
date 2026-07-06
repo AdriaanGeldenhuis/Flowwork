@@ -35,12 +35,11 @@ try {
     if ($dtEnd < $dtStart) {
         throw new Exception('End date must be on or after start date');
     }
-    // Resolve VAT account codes
+    // Resolve VAT account codes (settings override; fall back to the seeded
+    // SARS chart defaults, consistent with the other VAT endpoints)
     $accountsMap = new AccountsMap($DB, $companyId);
-    $vatOutputId = $accountsMap->getAccountId('finance_vat_output_account_id');
-    $vatInputId  = $accountsMap->getAccountId('finance_vat_input_account_id');
-    $vatOutputCode = $accountsMap->getAccountCodeById($vatOutputId);
-    $vatInputCode  = $accountsMap->getAccountCodeById($vatInputId);
+    $vatOutputCode = $accountsMap->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accountsMap->get('finance_vat_input_account_id', '2120');
     if (!$vatOutputCode) {
         throw new Exception('VAT Output account not configured');
     }

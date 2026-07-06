@@ -2,6 +2,8 @@
 // /finances/ajax/dashboard_stats.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 // Include AccountsMap to resolve dynamic GL codes
 require_once __DIR__ . '/../lib/AccountsMap.php';
 
@@ -18,18 +20,26 @@ if (!$companyId) {
 try {
     // Resolve account codes from company settings (with sensible defaults)
     $accountsMap = new AccountsMap($DB, (int)$companyId);
-    $arCode       = $accountsMap->get('finance_ar_account_id', '1200');
-    $apCode       = $accountsMap->get('finance_ap_account_id', '2110');
-    $vatOutCode   = $accountsMap->get('finance_vat_output_account_id', '2120');
-    $vatInCode    = $accountsMap->get('finance_vat_input_account_id', '2130');
+    $arCode       = $accountsMap->get('finance_ar_account_id', '1100');
+    $apCode       = $accountsMap->get('finance_ap_account_id', '2010');
+    $vatOutCode   = $accountsMap->get('finance_vat_output_account_id', '2110');
+    $vatInCode    = $accountsMap->get('finance_vat_input_account_id', '2120');
 
     // 1. Cash & Bank: Sum current balances from active bank accounts
     $stmt = $DB->prepare("SELECT COALESCE(SUM(current_balance_cents),0) AS cash_cents FROM gl_bank_accounts WHERE company_id = ? AND is_active = 1");
     $stmt->execute([$companyId]);
     $cash_cents = (int)$stmt->fetchColumn();
 
-    // 2. Accounts Receivable: Sum outstanding balances on customer invoices (status not paid/cancelled)
-    $stmt = $DB->prepare("SELECT COALESCE(SUM(balance_due),0) FROM invoices WHERE company_id = ? AND status NOT IN ('paid','cancelled')");
+    // 2. Accounts Receivable: outstanding on OPEN invoices only (mirrors
+    // finances/index.php): not soft-deleted, status outside the draft/closed
+    // family, balance_due > 0, and converted to ZAR at the invoice's rate.
+    $stmt = $DB->prepare("
+        SELECT COALESCE(SUM(balance_due * exchange_rate), 0)
+        FROM invoices
+        WHERE company_id = ? AND deleted_at IS NULL
+          AND status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
+          AND balance_due > 0
+    ");
     $stmt->execute([$companyId]);
     $ar_open = (float)$stmt->fetchColumn();
     $ar_cents = (int)round($ar_open * 100);
@@ -50,7 +60,7 @@ try {
             JOIN vendor_credits vc ON vc.id = vca.credit_id AND vc.company_id = ?
             GROUP BY vca.bill_id
         ) vc ON vc.bill_id = b.id
-        WHERE b.company_id = ? AND b.status NOT IN ('paid','cancelled')
+        WHERE b.company_id = ? AND b.status NOT IN ('paid','draft','review','cancelled','void','blocked')
     ");
     $stmt->execute([$companyId, $companyId, $companyId]);
     $ap_open = (float)$stmt->fetchColumn();

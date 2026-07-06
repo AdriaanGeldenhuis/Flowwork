@@ -280,7 +280,10 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             try {
                 const response = await fetch('/finances/ajax/settings_save.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                    },
                     body: JSON.stringify(payload)
                 });
                 

@@ -26,16 +26,48 @@ if (!$dt || $dt->format('Y-m-d') !== $asOf) {
 
 try {
     $asOfDate = new DateTime($asOf);
-    // Fetch open invoices with balance due
-    $stmt = $DB->prepare("SELECT id, customer_id, due_date, balance_due FROM invoices WHERE company_id = ? AND status != 'paid' AND balance_due > 0");
-    $stmt->execute([$companyId]);
+    // As-at balances: invoice total minus payments/credit notes allocated on
+    // or before the as-of date (payments dated by payments.payment_date,
+    // credit note allocations by the credit note's issue_date — the allocation
+    // tables carry no date of their own). Invoices issued after the as-of
+    // date are excluded, real issued documents only (no drafts, cancellations,
+    // write-offs or soft deletes), and amounts are converted to ZAR at the
+    // invoice's captured exchange rate. Currently-paid invoices still appear
+    // when their settling payment falls after the as-of date.
+    $stmt = $DB->prepare("
+        SELECT i.id, i.customer_id, i.due_date,
+               (i.total - COALESCE(pay.paid_tot, 0) - COALESCE(cred.cred_tot, 0)) * i.exchange_rate AS balance_zar
+        FROM invoices i
+        LEFT JOIN (
+            SELECT pa.invoice_id, SUM(pa.amount) AS paid_tot
+            FROM payment_allocations pa
+            JOIN payments p ON p.id = pa.payment_id
+            WHERE p.company_id = ? AND p.payment_date <= ?
+            GROUP BY pa.invoice_id
+        ) pay ON pay.invoice_id = i.id
+        LEFT JOIN (
+            SELECT cna.invoice_id, SUM(cna.amount) AS cred_tot
+            FROM credit_note_allocations cna
+            JOIN credit_notes cn ON cn.id = cna.credit_note_id
+            WHERE cna.company_id = ? AND cn.issue_date <= ?
+            GROUP BY cna.invoice_id
+        ) cred ON cred.invoice_id = i.id
+        WHERE i.company_id = ?
+          AND i.deleted_at IS NULL
+          AND i.status NOT IN ('draft','cancelled','written_off','uncollectible','refunded')
+          AND i.issue_date <= ?
+    ");
+    $stmt->execute([$companyId, $asOf, $companyId, $asOf, $companyId, $asOf]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $customers = [];
     foreach ($rows as $inv) {
+        $balance = round((float)$inv['balance_zar'], 2);
+        if ($balance <= 0.005) {
+            continue; // settled on or before the as-of date
+        }
         $custId  = (int)$inv['customer_id'];
         $dueDate = $inv['due_date'] ? new DateTime($inv['due_date']) : null;
-        $balance = (float)$inv['balance_due'];
         // Initialise customer bucket
         if (!isset($customers[$custId])) {
             $customers[$custId] = [

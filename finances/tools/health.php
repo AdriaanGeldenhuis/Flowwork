@@ -196,13 +196,18 @@ try {
 }
 
 // 3.7 Orphaned journal lines
+// journal_lines carries no company_id, so scope via this company's account
+// codes — keeps the check per-tenant like the others instead of reporting
+// every company's orphans.
 try {
-    $stmt = $DB->query(
+    $stmt = $DB->prepare(
         "SELECT COUNT(*) FROM journal_lines jl
           LEFT JOIN journal_entries je ON je.id = jl.journal_id
          WHERE jl.journal_id IS NOT NULL
-           AND je.id IS NULL"
+           AND je.id IS NULL
+           AND jl.account_code IN (SELECT account_code FROM gl_accounts WHERE company_id = ?)"
     );
+    $stmt->execute([$companyId]);
     $cnt = (int)$stmt->fetchColumn();
     $checks[] = ['name'=>'Orphaned journal lines','status'=>$cnt?("$cnt lines"):'OK','count'=>$cnt];
 } catch (Exception $e) {

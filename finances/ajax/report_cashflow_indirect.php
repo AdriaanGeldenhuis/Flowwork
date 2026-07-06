@@ -58,7 +58,12 @@ try {
         $bankCodes = $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
-    // Helper to calculate balances for an account (asset) as debit-credit and for liability/equity as credit-debit
+    // Helper to calculate balances for an account (asset) as debit-credit and for liability/equity as credit-debit.
+    // Year-end closing journals (module = 'year_end') are excluded: they have no cash
+    // effect and only shuffle P&L balances into retained earnings. Since net income is
+    // computed excluding them, including their retained-earnings movement in the
+    // financing section would double-count the closed year's profit. The exclusion is a
+    // no-op for AR/AP/inventory/bank/asset accounts, which closing journals never touch.
     function calculateBalances(PDO $db, $companyId, $accountCodes, $accountIds, $startDate, $endDate, $isAsset) {
         if (!$accountCodes) return [0.0, 0.0];
         $placeholders = implode(',', array_fill(0, count($accountCodes), '?'));
@@ -68,7 +73,8 @@ try {
             COALESCE(SUM(CASE WHEN je.entry_date < ? THEN ($expr) ELSE 0 END), 0) AS start_bal
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_id = je.id
-        WHERE jl.account_code IN ($placeholders) AND je.company_id = ? AND je.status = 'posted'";
+        WHERE jl.account_code IN ($placeholders) AND je.company_id = ? AND je.status = 'posted'
+          AND (je.module IS NULL OR je.module <> 'year_end')";
         $stmt = $db->prepare($sql);
         $stmt->execute(array_merge([$endDate, $startDate], $accountCodes, [$companyId]));
         $res = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -83,7 +89,9 @@ try {
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_id = je.id
         JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
-        WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?";
+        WHERE je.company_id = ? AND je.status = 'posted'
+          AND (je.module IS NULL OR je.module <> 'year_end')
+          AND je.entry_date BETWEEN ? AND ?";
     $stmt = $DB->prepare($sqlNI);
     $stmt->execute([$companyId, $startDate, $endDate]);
     $netIncome = floatval($stmt->fetchColumn());
@@ -98,6 +106,7 @@ try {
             JOIN journal_entries je ON jl.journal_id = je.id
             JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
             WHERE je.company_id = ? AND je.status = 'posted'
+              AND (je.module IS NULL OR je.module <> 'year_end')
               AND je.entry_date BETWEEN ? AND ?
               AND ga.account_type = 'expense'
               AND (ga.account_subtype = 'depreciation' OR ga.account_name LIKE '%Depreciation%')");
@@ -107,6 +116,7 @@ try {
             JOIN journal_entries je ON jl.journal_id = je.id
             JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
             WHERE je.company_id = ? AND je.status = 'posted'
+              AND (je.module IS NULL OR je.module <> 'year_end')
               AND je.entry_date BETWEEN ? AND ?
               AND ga.account_type = 'expense'
               AND ga.account_name LIKE '%Depreciation%'");
@@ -129,9 +139,20 @@ try {
     // Operating Cash Flow
     $operating = $netIncome + $depreciation - $changeAR - $changeInv + $changeAP;
 
-    // Investing: changes in long-term asset accounts (excluding bank, AR and inventory)
-    // Find asset accounts
-    $sqlAssets = "SELECT account_id, account_code FROM gl_accounts WHERE company_id = ? AND account_type = 'asset'";
+    // Investing: changes in long-term asset accounts (excluding bank, AR and inventory).
+    // Also exclude accumulated-depreciation contra-asset accounts: the depreciation
+    // expense is already added back in operating activities, so including the
+    // accumulated-depreciation movement here would double-count it.
+    if ($hasSubtype) {
+        $sqlAssets = "SELECT account_id, account_code FROM gl_accounts
+            WHERE company_id = ? AND account_type = 'asset'
+            AND COALESCE(account_subtype, '') <> 'accumulated_depreciation'
+            AND account_name NOT LIKE '%Accum%Dep%'";
+    } else {
+        $sqlAssets = "SELECT account_id, account_code FROM gl_accounts
+            WHERE company_id = ? AND account_type = 'asset'
+            AND account_name NOT LIKE '%Accum%Dep%'";
+    }
     $stmt = $DB->prepare($sqlAssets);
     $stmt->execute([$companyId]);
     $assetRows = $stmt->fetchAll(PDO::FETCH_ASSOC);

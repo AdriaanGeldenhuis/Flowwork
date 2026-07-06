@@ -2,6 +2,8 @@
 // /finances/ar/reminders.php – List overdue invoices for reminder purposes
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['viewer', 'bookkeeper', 'admin']);
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
 
