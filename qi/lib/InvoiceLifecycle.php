@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/../../finances/lib/PostingService.php';
 require_once __DIR__ . '/../../finances/lib/Audit.php';
+require_once __DIR__ . '/../../finances/lib/TaxInvoiceValidator.php';
 
 class InvoiceLifecycle
 {
@@ -30,6 +31,29 @@ class InvoiceLifecycle
         $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$invoice) {
             throw new Exception('Invoice not found');
+        }
+
+        // SARS s20 gate: a VAT-registered company may only issue documents
+        // that qualify as tax invoices. This is the single choke point for
+        // every issue path (send, record-payment auto-issue, recurring runs,
+        // webhooks), so a non-compliant invoice can never leave draft.
+        // Warnings do not block — only errors do.
+        $stmt = $db->prepare("SELECT vat_number FROM companies WHERE id = ? LIMIT 1");
+        $stmt->execute([$companyId]);
+        $vatNumber = trim((string)$stmt->fetchColumn());
+        if ($vatNumber !== '') {
+            $validator = new TaxInvoiceValidator($db, $companyId);
+            $errors = array_values(array_filter(
+                $validator->validate($invoiceId),
+                static fn(array $i) => ($i['severity'] ?? '') === 'error'
+            ));
+            if ($errors) {
+                $msg = "Cannot issue: not a valid SARS tax invoice:";
+                foreach ($errors as $e) {
+                    $msg .= "\n- " . $e['message'];
+                }
+                throw new Exception($msg);
+            }
         }
 
         if (self::$issueValidator) {

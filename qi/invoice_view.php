@@ -33,8 +33,15 @@ try {
         exit;
     }
 
-    // Fetch line items
-    $stmt = $DB->prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
+    // Fetch line items (with the tax code so zero-rated vs exempt lines can
+    // be labelled correctly in the per-line VAT column and the VAT summary)
+    $stmt = $DB->prepare(
+        "SELECT il.*, tc.code AS tax_code
+           FROM invoice_lines il
+           LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = il.tax_code_id
+          WHERE il.invoice_id = ?
+          ORDER BY il.sort_order"
+    );
     $stmt->execute([$invoiceId]);
     $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -130,15 +137,51 @@ function format_currency($amount) {
     return $GLOBALS['qiDocSymbol'] . "\u{00A0}" . number_format((float)$amount, 2);
 }
 
-// VAT summary label reflects the invoice's effective tax rate (which may be 0%
-// or non-15% depending on the line items), instead of a hardcoded "15%".
-function qi_vat_label($invoice) {
-    $base = (float)($invoice['subtotal'] ?? 0) - (float)($invoice['discount'] ?? 0);
-    $rate = $base > 0 ? ((float)($invoice['tax'] ?? 0) / $base) * 100 : 0.0;
-    $rateStr = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
-    if ($rateStr === '' || $rateStr === '-0') { $rateStr = '0'; }
-    return 'VAT (' . $rateStr . '%)';
+// Per-line VAT rate label for the line-items table, e.g. "15%", "0%" or
+// "Exempt" (exempt supplies are identified by the joined gl_tax_codes.code).
+function qi_line_vat_label(array $line): string {
+    if (strcasecmp((string)($line['tax_code'] ?? ''), 'EXEMPT') === 0) {
+        return 'Exempt';
+    }
+    $r = rtrim(rtrim(number_format((float)($line['tax_rate'] ?? 0), 2, '.', ''), '0'), '.');
+    if ($r === '' || $r === '-0') { $r = '0'; }
+    return $r . '%';
 }
+
+// SARS s20 rate-split summary: one bucket per distinct VAT treatment/rate
+// across the lines (standard / zero-rated / exempt), with the consideration
+// excl. VAT and the VAT amount, computed per line in integer cents.
+function qi_vat_rate_split(array $lines): array {
+    $split = [];
+    foreach ($lines as $l) {
+        $netC = (int)round(((float)$l['quantity'] * (float)$l['unit_price'] - (float)($l['discount'] ?? 0)) * 100);
+        $rate = (float)($l['tax_rate'] ?? 0);
+        $vatC = (int)round($netC * $rate / 100);
+        // Classify by the tax code when the line carries one, else by rate.
+        $isExempt = strcasecmp((string)($l['tax_code'] ?? ''), 'EXEMPT') === 0;
+        if ($isExempt) {
+            $key   = 'EXEMPT';
+            $label = 'Exempt';
+        } elseif ($rate > 0) {
+            $rStr  = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
+            $key   = 'STD:' . $rStr;
+            $label = 'Standard rated (' . $rStr . '%)';
+        } else {
+            $key   = 'ZERO';
+            $label = 'Zero-rated (0%)';
+        }
+        if (!isset($split[$key])) {
+            $split[$key] = ['label' => $label, 'net_cents' => 0, 'vat_cents' => 0];
+        }
+        $split[$key]['net_cents'] += $netC;
+        $split[$key]['vat_cents'] += $vatC;
+    }
+    return array_values($split);
+}
+
+// Company VAT registration drives the s20 extras (rate-split summary table).
+$isVatRegistered = trim((string)($invoice['vat_number'] ?? '')) !== '';
+$vatSplit = $isVatRegistered ? qi_vat_rate_split($lines) : [];
 
 ?>
 <!DOCTYPE html>
@@ -497,8 +540,9 @@ function qi_vat_label($invoice) {
                         <tr>
                             <th>Description</th>
                             <th style="text-align:right;">Qty</th>
-                            <th style="text-align:right;">Unit Price</th>
-                            <th style="text-align:right;">Line Total</th>
+                            <th style="text-align:right;">Unit Price (excl. VAT)</th>
+                            <th style="text-align:right;">VAT</th>
+                            <th style="text-align:right;">Line Total (incl. VAT)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -507,6 +551,7 @@ function qi_vat_label($invoice) {
                                 <td><?= htmlspecialchars($line['item_description']) ?></td>
                                 <td style="text-align:right;"><?= number_format((float)$line['quantity'], 2) ?></td>
                                 <td style="text-align:right;"><?= format_currency($line['unit_price']) ?></td>
+                                <td style="text-align:right;"><?= htmlspecialchars(qi_line_vat_label($line)) ?></td>
                                 <td style="text-align:right;"><?= format_currency($line['line_total']) ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -527,7 +572,7 @@ function qi_vat_label($invoice) {
                         </div>
                     <?php endif; ?>
                     <div class="fw-qi__doc-total-row">
-                        <span><?= qi_vat_label($invoice) ?>:</span>
+                        <span>VAT:</span>
                         <span><?= format_currency($invoice['tax']) ?></span>
                     </div>
                     <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand">
@@ -539,6 +584,11 @@ function qi_vat_label($invoice) {
                             <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
                             <span>R&nbsp;<?= number_format((float)$invoice['total'] * $docRate, 2) ?></span>
                         </div>
+                        <?php // s20: the VAT amount must be expressed in Rand on a foreign-currency tax invoice ?>
+                        <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
+                            <span>VAT in ZAR at rate <?= number_format($docRate, 4) ?>:</span>
+                            <span>R&nbsp;<?= number_format((float)$invoice['tax'] * $docRate, 2) ?></span>
+                        </div>
                     <?php endif; ?>
                     <?php if ((float)$invoice['balance_due'] < (float)$invoice['total']): ?>
                         <div class="fw-qi__doc-total-row" style="margin-top:8px;">
@@ -547,6 +597,33 @@ function qi_vat_label($invoice) {
                         </div>
                     <?php endif; ?>
                 </div>
+
+                <!-- VAT rate-split summary (SARS s20: per-rate consideration + VAT) -->
+                <?php if ($isVatRegistered && !empty($vatSplit)): ?>
+                    <div class="fw-qi__doc-section fw-qi__vat-summary">
+                        <h3>VAT Summary</h3>
+                        <div class="fw-qi__doc-table-wrap">
+                        <table class="fw-qi__doc-table">
+                            <thead>
+                                <tr>
+                                    <th>Rate</th>
+                                    <th style="text-align:right;">Consideration (excl. VAT)</th>
+                                    <th style="text-align:right;">VAT</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($vatSplit as $bucket): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($bucket['label']) ?></td>
+                                        <td style="text-align:right;"><?= format_currency($bucket['net_cents'] / 100) ?></td>
+                                        <td style="text-align:right;"><?= format_currency($bucket['vat_cents'] / 100) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Payment Milestones -->
                 <?php if (!empty($milestones)): ?>

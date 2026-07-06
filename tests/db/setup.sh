@@ -67,6 +67,15 @@ done
 echo "==> Running finance_setup tool"
 DB_HOST=127.0.0.1 DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" php "$REPO_ROOT/finances/tools/finance_setup.php"
 
+echo "==> Normalising company VAT numbers for the s20 issue gate"
+# The base dump ships company 1 with vat_number '1234124' (not a valid SA VAT
+# number: 10 digits starting with 4). InvoiceLifecycle::issueInvoice refuses to
+# issue tax invoices for a VAT-registered company with a malformed VAT number,
+# so give seeded companies a valid one. (test_tax_invoice_validator sets its
+# own malformed value explicitly when testing the format check.)
+$MARIADB "$DB_NAME" -e "UPDATE companies SET vat_number = '4123456789'
+  WHERE vat_number IS NOT NULL AND vat_number <> '' AND vat_number NOT REGEXP '^4[0-9]{9}\$';"
+
 echo "==> Done. Test env:"
 echo "    DB_HOST=127.0.0.1 DB_NAME=${DB_NAME} DB_USER=${DB_USER} DB_PASS=${DB_PASS}"
 echo "    Run the suite with: php tests/run.php"

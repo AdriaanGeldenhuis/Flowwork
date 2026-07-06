@@ -231,9 +231,9 @@ $companyName = $company['name'] ?? 'Company';
               '<th>Description</th>' +
               '<th class="num">Qty</th>' +
               '<th>Unit</th>' +
-              '<th class="num">Unit Price</th>' +
+              '<th class="num">Unit Price (excl. VAT)</th>' +
               '<th class="num">VAT %</th>' +
-              '<th class="num">Line Total</th>' +
+              '<th class="num">Line Total (incl. VAT)</th>' +
             '</tr></thead>' +
             '<tbody>' + linesHtml + '</tbody>' +
           '</table>' +
@@ -243,7 +243,7 @@ $companyName = $company['name'] ?? 'Company';
             '<table class="fw-finance__invoice-totals-table">' +
               '<tr><td>Subtotal (excl. VAT)</td><td>R ' + fmt(d.subtotal) + '</td></tr>' +
               (parseFloat(d.discount) > 0 ? '<tr><td>Discount</td><td>R ' + fmt(d.discount) + '</td></tr>' : '') +
-              '<tr><td>VAT (15%)</td><td>R ' + fmt(d.tax) + '</td></tr>' +
+              '<tr><td>VAT</td><td>R ' + fmt(d.tax) + '</td></tr>' +
               '<tr class="total"><td>Total (incl. VAT)</td><td>R ' + fmt(d.total) + '</td></tr>' +
               '<tr class="balance"><td>Balance Due</td><td>R ' + fmt(d.balance_due) + '</td></tr>' +
             '</table>' +

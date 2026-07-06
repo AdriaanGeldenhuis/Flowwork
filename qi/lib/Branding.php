@@ -87,6 +87,29 @@ final class Branding
         $fontStack = self::FONT_STACKS[$fontKey] ?? self::FONT_STACKS['system-ui'];
         $pdfFont   = self::PDF_FONTS[$fontKey]   ?? self::PDF_FONTS['system-ui'];
 
+        // Is the supplier VAT-registered? (companies.vat_number on the joined
+        // row.) VAT registration triggers the SARS s20 tax-invoice gates below.
+        $vatRegistered = trim((string)($row['vat_number'] ?? '')) !== '';
+
+        $show = [
+            'address' => self::toggle($row['qi_show_company_address'] ?? null),
+            'phone'   => self::toggle($row['qi_show_company_phone']   ?? null),
+            'email'   => self::toggle($row['qi_show_company_email']   ?? null),
+            'website' => self::toggle($row['qi_show_company_website'] ?? null),
+            'vat'     => self::toggle($row['qi_show_vat_number']      ?? null),
+            'tax'     => self::toggle($row['qi_show_tax_number']      ?? null),
+            'reg'     => self::toggle($row['qi_show_reg_number']      ?? null),
+            'payment' => self::toggle($row['qi_show_payment_details'] ?? null),
+        ];
+        // SARS s20(4)(a)-(b): the supplier's name, ADDRESS and VAT registration
+        // number are mandatory content on a tax invoice (and on a credit note
+        // per s21). When the company is VAT-registered these must not be
+        // suppressible via the display toggles.
+        if ($vatRegistered && in_array($type, ['invoice', 'credit_note'], true)) {
+            $show['vat']     = 1;
+            $show['address'] = 1;
+        }
+
         $template = (string)($row['qi_template'] ?? 'modern');
         if (!in_array($template, self::TEMPLATES, true)) {
             $template = 'modern';
@@ -107,6 +130,13 @@ final class Branding
             $footer = (string)($row['invoice_footer_text'] ?? '');
         } else {
             $title  = (string)($row['qi_invoice_title'] ?? '') ?: 'INVOICE';
+            // SARS s20(4)(a): a tax invoice issued by a VAT vendor must contain
+            // the words "tax invoice". Honour a custom title only when it
+            // already carries the required wording; otherwise force it.
+            // Non-registered companies keep their custom/default 'INVOICE'.
+            if ($vatRegistered && stripos($title, 'tax invoice') === false) {
+                $title = 'TAX INVOICE';
+            }
             $footer = (string)($row['invoice_footer_text'] ?? '');
         }
 
@@ -131,16 +161,7 @@ final class Branding
             'custom_css'    => self::sanitizeCustomCss((string)($row['qi_custom_css'] ?? '')),
             'title'         => $title,
             'footer'        => $footer,
-            'show'          => [
-                'address' => self::toggle($row['qi_show_company_address'] ?? null),
-                'phone'   => self::toggle($row['qi_show_company_phone']   ?? null),
-                'email'   => self::toggle($row['qi_show_company_email']   ?? null),
-                'website' => self::toggle($row['qi_show_company_website'] ?? null),
-                'vat'     => self::toggle($row['qi_show_vat_number']      ?? null),
-                'tax'     => self::toggle($row['qi_show_tax_number']      ?? null),
-                'reg'     => self::toggle($row['qi_show_reg_number']      ?? null),
-                'payment' => self::toggle($row['qi_show_payment_details'] ?? null),
-            ],
+            'show'          => $show,
         ];
     }
 
