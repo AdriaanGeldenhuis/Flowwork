@@ -61,7 +61,7 @@ $detail = null;
 if ($selected) {
     $selStart = $selected['period_start'];
     $selEnd   = $selected['period_end'];
-    $selBasis = $selected['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId);
+    $selBasis = VatCalculator::periodBasis($DB, (int)$companyId, $selected);
 
     // GL control movements for the period (posted journals only).
     $stmt = $DB->prepare(

@@ -22,6 +22,22 @@ class VatCalculator
     }
 
     /**
+     * Basis to compute a specific VAT period on. An OPEN period has no
+     * snapshot yet and must follow the company's CURRENT basis election —
+     * gl_vat_periods.basis is NOT NULL DEFAULT 'invoice', so reading the
+     * stored value before prepare time silently showed accrual figures to a
+     * payments-basis vendor. The basis is stamped at prepare time
+     * (vat_save.php) and trusted from then on.
+     */
+    public static function periodBasis(PDO $db, int $companyId, array $period): string
+    {
+        if (($period['status'] ?? 'open') === 'open') {
+            return self::companyBasis($db, $companyId);
+        }
+        return ($period['basis'] ?? '') ?: self::companyBasis($db, $companyId);
+    }
+
+    /**
      * Full SARS VAT201 box set for a period — the ONE computation every
      * consumer (report page, prepare screen, CSV export, period snapshot)
      * must share. Supplies figures exclude manual adjustment journals, which

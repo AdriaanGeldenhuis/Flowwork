@@ -157,8 +157,14 @@ $periods = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             <div class="vat201-row">
                 <div class="box-num">Box 1</div>
-                <div class="box-desc">Standard rated supplies (excl. VAT)</div>
+                <div class="box-desc">Standard rated supplies (excl. VAT) — eFiling field 1 wants the
+                    VAT-<strong>INCLUSIVE</strong> consideration; capture the "incl. VAT" figure below</div>
                 <div class="box-val" id="box1">R 0.00</div>
+            </div>
+            <div class="vat201-row">
+                <div class="box-num">&nbsp;</div>
+                <div class="box-desc">Standard rated supplies incl. VAT (capture this in eFiling field 1)</div>
+                <div class="box-val" id="box1incl">R 0.00</div>
             </div>
             <div class="vat201-row">
                 <div class="box-num">Box 1A</div>
@@ -206,9 +212,14 @@ $periods = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <div class="box-desc">Other input tax (non-capital)</div>
                 <div class="box-val" id="box8">R 0.00</div>
             </div>
+            <div class="vat201-row">
+                <div class="box-num">&nbsp;</div>
+                <div class="box-desc">Bad debts written off — s22 relief (eFiling field 18, "Other" input adjustments)</div>
+                <div class="box-val" id="boxBadDebt">R 0.00</div>
+            </div>
             <div class="vat201-row vat201-total">
                 <div class="box-num">Box 9</div>
-                <div class="box-desc">Total input tax (Box 6 + Box 7 + Box 8)</div>
+                <div class="box-desc">Total input tax (Box 6 + Box 7 + Box 8 + bad debts)</div>
                 <div class="box-val" id="box9">R 0.00</div>
             </div>
         </div>
@@ -275,6 +286,11 @@ async function loadVAT201() {
 
         // Map to SARS boxes
         document.getElementById('box1').textContent = fmt(vatData.output_standard_base_cents);
+        // eFiling field 1 is the VAT-INCLUSIVE consideration (it derives the
+        // output tax as field1 × 15/115) — transcribing the exclusive base
+        // there understates the declared output tax.
+        document.getElementById('box1incl').textContent =
+            fmt((vatData.output_standard_base_cents || 0) + (vatData.output_standard_vat_cents || 0));
         document.getElementById('box1a').textContent = fmt(vatData.output_standard_vat_cents);
         document.getElementById('box2').textContent = fmt(vatData.output_zero_base_cents);
         document.getElementById('box3').textContent = fmt(vatData.output_exempt_base_cents);
@@ -286,6 +302,7 @@ async function loadVAT201() {
         document.getElementById('box6').textContent = fmt(vatData.change_in_use_input_cents || 0);
         document.getElementById('box7').textContent = fmt(vatData.input_capital_cents);
         document.getElementById('box8').textContent = fmt(vatData.input_other_cents);
+        document.getElementById('boxBadDebt').textContent = fmt(vatData.bad_debt_relief_input_cents || 0);
         document.getElementById('box9').textContent = fmt(vatData.box9_total_input_cents);
         document.getElementById('box10').textContent = fmt(vatData.box10_net_cents);
 
@@ -314,6 +331,8 @@ function exportCSV() {
     const rows = [
         ['Box', 'Description', 'Amount (ZAR)'],
         ['1', 'Standard rated supplies (excl. VAT)', (vatData.output_standard_base_cents / 100).toFixed(2)],
+        ['1 (incl.)', 'Standard rated supplies incl. VAT — capture in eFiling field 1',
+            (((vatData.output_standard_base_cents || 0) + (vatData.output_standard_vat_cents || 0)) / 100).toFixed(2)],
         ['1A', 'Output VAT on standard rated supplies', (vatData.output_standard_vat_cents / 100).toFixed(2)],
         ['2', 'Zero-rated supplies', (vatData.output_zero_base_cents / 100).toFixed(2)],
         ['3', 'Exempt supplies', (vatData.output_exempt_base_cents / 100).toFixed(2)],
@@ -322,7 +341,9 @@ function exportCSV() {
         ['6', 'Change in use adjustments', ((vatData.change_in_use_input_cents || 0) / 100).toFixed(2)],
         ['7', 'Input tax on capital goods', (vatData.input_capital_cents / 100).toFixed(2)],
         ['8', 'Other input tax', (vatData.input_other_cents / 100).toFixed(2)],
-        ['9', 'Total input tax (6 + 7 + 8)', (vatData.box9_total_input_cents / 100).toFixed(2)],
+        ['18', 'Bad debts written off — s22 relief (input adjustment)',
+            ((vatData.bad_debt_relief_input_cents || 0) / 100).toFixed(2)],
+        ['9', 'Total input tax (6 + 7 + 8 + bad debts)', (vatData.box9_total_input_cents / 100).toFixed(2)],
         ['10', 'VAT payable / refundable (5 - 9)', (vatData.box10_net_cents / 100).toFixed(2)]
     ];
     const csv = rows.map(r => r.map(c => '"' + c + '"').join(',')).join('\n');

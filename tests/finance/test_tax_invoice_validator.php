@@ -59,18 +59,38 @@ assert_true(!in_array('customer_vat', array_column($issues, 'field'), true),
     'abridged (<= R5000) invoice does not nag about missing customer VAT');
 assert_true($validator->isCompliant($invSmall), 'abridged invoice is compliant');
 
-// --- (c) > R5000 with missing customer VAT → warning, not error --------------
+// --- (c) > R5000: missing customer VAT → warning; missing address → ERROR ----
+// s20(4)(b): a full tax invoice (> R5,000) unconditionally requires the
+// recipient's name and address; only the VAT number is conditional on the
+// recipient being a registered vendor.
 $invBig = make_invoice($DB, $custNoVat, [[1, 10000.00, 15]]); // total R11,500
 $issues = $validator->validate($invBig);
 assert_true(!in_array('customer_vat', issue_fields($issues, 'error'), true),
     'missing customer VAT above R5000 is not an error');
 assert_true(in_array('customer_vat', issue_fields($issues, 'warning'), true),
     'missing customer VAT above R5000 is a warning');
-assert_true(in_array('customer_address', issue_fields($issues, 'warning'), true),
-    'missing customer address above R5000 is a warning (customer has no crm_addresses row)');
-assert_true($validator->isCompliant($invBig), 'warnings alone keep the invoice compliant');
+assert_true(in_array('customer_address', issue_fields($issues, 'error'), true),
+    'missing customer address above R5000 is an ERROR (s20(4)(b), full tax invoice)');
+assert_true(!$validator->isCompliant($invBig), 'missing recipient address breaks compliance above R5000');
 
-// Warnings must NOT block issue.
+// The address error must block issue.
+$threwAddr = false;
+try {
+    InvoiceLifecycle::issueInvoice($DB, TEST_COMPANY_ID, TEST_USER_ID, $invBig);
+} catch (Exception $e) {
+    $threwAddr = (stripos($e->getMessage(), 'address') !== false);
+}
+assert_true($threwAddr, 'issueInvoice blocks a >R5000 invoice whose customer has no address');
+
+// With an address on file the remaining VAT-number warning must NOT block.
+$DB->prepare("INSERT INTO crm_addresses (company_id, account_id, type, line1, city)
+              VALUES (?, ?, 'billing', '12 Test Street', 'Vereeniging')")
+   ->execute([TEST_COMPANY_ID, (int)$DB->query(
+        "SELECT customer_id FROM invoices WHERE id = " . (int)$invBig)->fetchColumn()]);
+$issues = $validator->validate($invBig);
+assert_true(in_array('customer_vat', issue_fields($issues, 'warning'), true),
+    'customer VAT warning remains after the address is added');
+assert_true($validator->isCompliant($invBig), 'warnings alone keep the invoice compliant');
 $posted = InvoiceLifecycle::issueInvoice($DB, TEST_COMPANY_ID, TEST_USER_ID, $invBig);
 assert_true($posted, 'issueInvoice succeeds (and posts) despite warnings');
 

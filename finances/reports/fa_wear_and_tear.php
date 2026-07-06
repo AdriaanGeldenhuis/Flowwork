@@ -67,10 +67,27 @@ function wtAllowance(array $asset, string $fyStart, PDO $DB, int $companyId): ar
     }
 
     // Fiscal year in which the asset was brought into use (purchase date).
+    // SIGNED difference: DateInterval->y alone is always non-negative, which
+    // made an asset purchased in a FUTURE fiscal year look years old and
+    // accrue allowances before being brought into use.
     $purchaseFyStart = CoaSchema::fiscalYearStartDate($DB, $companyId, $asset['purchase_date']);
-    $idx = (int)(new DateTime($purchaseFyStart))->diff(new DateTime($fyStart))->y + 1;
+    $diff = (new DateTime($purchaseFyStart))->diff(new DateTime($fyStart));
+    $idx = ($diff->invert ? -(int)$diff->y : (int)$diff->y) + 1;
     if ($idx < 1) {
         return ['current' => 0, 'accumulated' => 0, 'year_index' => $idx];
+    }
+
+    // Disposal stops the allowance: none in or after the fiscal year of
+    // disposal (recoupment under s8(4) applies instead — outside this
+    // register's scope). Accumulated allowances freeze at the prior year.
+    $capIdx = $idx;
+    if (strtolower((string)($asset['status'] ?? '')) === 'disposed' && !empty($asset['disposal_date'])) {
+        $dispFyStart = CoaSchema::fiscalYearStartDate($DB, $companyId, $asset['disposal_date']);
+        $d = (new DateTime($purchaseFyStart))->diff(new DateTime($dispFyStart));
+        $dispIdx = ($d->invert ? -(int)$d->y : (int)$d->y) + 1;
+        if ($dispIdx <= $idx) {
+            $capIdx = $dispIdx - 1;
+        }
     }
 
     // Per-year allowance schedule; the final year absorbs rounding so the
@@ -89,8 +106,8 @@ function wtAllowance(array $asset, string $fyStart, PDO $DB, int $companyId): ar
         $schedule[] = $cost - ($annual * ($years - 1));
     }
 
-    $current = ($idx <= count($schedule)) ? $schedule[$idx - 1] : 0;
-    $accumulated = array_sum(array_slice($schedule, 0, min($idx, count($schedule))));
+    $current = ($capIdx >= $idx && $idx <= count($schedule)) ? $schedule[$idx - 1] : 0;
+    $accumulated = array_sum(array_slice($schedule, 0, max(0, min($capIdx, count($schedule)))));
     return ['current' => $current, 'accumulated' => $accumulated, 'year_index' => $idx];
 }
 

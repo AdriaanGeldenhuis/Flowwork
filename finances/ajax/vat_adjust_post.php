@@ -140,7 +140,7 @@ try {
         $DB, (int)$companyId,
         $period['period_start'], $period['period_end'],
         $vatOutputCode, $vatInputCode,
-        $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId)
+        VatCalculator::periodBasis($DB, (int)$companyId, $period)
     );
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods

@@ -41,7 +41,7 @@ if (!$period) {
     exit;
 }
 
-$basis = $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId);
+$basis = VatCalculator::periodBasis($DB, (int)$companyId, $period);
 
 $accountsMap = new AccountsMap($DB, (int)$companyId);
 $vatOutCode = $accountsMap->code('finance_vat_output_account_id');

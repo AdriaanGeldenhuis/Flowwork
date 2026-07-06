@@ -150,9 +150,10 @@ class TaxInvoiceValidator
         // 7. Recipient details, full vs abridged tax invoice (s20(4)/(5)):
         //    total <= R5,000 qualifies as an ABRIDGED tax invoice — the
         //    recipient's VAT number and address are NOT required, so no noise.
-        //    Above R5,000 a FULL tax invoice needs the recipient's VAT number
-        //    (when the recipient is a vendor) and address; we cannot know
-        //    whether the customer is a vendor, so both stay warnings.
+        //    Above R5,000 a FULL tax invoice unconditionally requires the
+        //    recipient's name and ADDRESS (s20(4)(b)) — that's an ERROR. Only
+        //    the recipient's VAT number is conditional on the recipient being
+        //    a registered vendor, which we cannot know — that stays a warning.
         // The R5,000 threshold is in RAND: convert foreign-currency totals
         // at the invoice's captured rate before comparing.
         $fx = (float)($invoice['exchange_rate'] ?? 1);
@@ -169,7 +170,7 @@ class TaxInvoiceValidator
                 $issues[] = [
                     'field' => 'customer_address',
                     'message' => 'Customer address is required on a full tax invoice exceeding R5,000 (SARS Section 20(4)(b)) — add an address to the customer in CRM',
-                    'severity' => 'warning'
+                    'severity' => 'error'
                 ];
             }
         }
