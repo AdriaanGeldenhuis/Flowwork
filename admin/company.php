@@ -35,6 +35,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if (empty($name)) {
             throw new Exception('Company name is required');
         }
+
+        // SARS VAT registration numbers are 10 digits starting with 4.
+        // Optional field — only vendors registered for VAT have one.
+        if ($vatNumber !== '') {
+            $vatNumber = preg_replace('/\s+/', '', $vatNumber);
+            if (!preg_match('/^4\d{9}$/', $vatNumber)) {
+                throw new Exception('VAT number must be 10 digits starting with 4 (e.g. 4123456789), or left blank');
+            }
+        }
         
         $stmt = $DB->prepare("
             UPDATE companies 
@@ -133,7 +142,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <div class="fw-admin__form-group">
                             <label class="fw-admin__label">VAT Number</label>
                             <input type="text" name="vat_number" class="fw-admin__input" 
-                                   value="<?= htmlspecialchars($company['vat_number'] ?? '') ?>">
+                                   value="<?= htmlspecialchars($company['vat_number'] ?? '') ?>"
+                                   pattern="4[0-9]{9}" maxlength="10" inputmode="numeric"
+                                   title="10 digits starting with 4 (leave blank if not VAT registered)"
+                                   placeholder="4XXXXXXXXX">
                         </div>
 
                         <div class="fw-admin__form-group">

@@ -10,6 +10,7 @@ require_once __DIR__ . '/AccountsMap.php';
 require_once __DIR__ . '/PeriodService.php';
 require_once __DIR__ . '/InventoryService.php';
 require_once __DIR__ . '/ReversalService.php';
+require_once __DIR__ . '/CurrencyService.php';
 
 class PostingService
 {
@@ -452,24 +453,49 @@ class PostingService
             $bankCode = $this->accounts->get('finance_bank_account_id', '1110');
         }
         $arCode = $this->accounts->get('finance_ar_account_id', '1100');
-        // Payment amounts are recorded in the invoice's currency — convert each
-        // allocation to ZAR at the invoice's captured rate (1 unit = X ZAR).
-        // KNOWN LIMITATION: foreign-currency receipts are converted at the
-        // INVOICE's historical exchange_rate, not the rate on the payment date,
-        // so no realised FX gain/loss is recognised. There is currently no rate
-        // feed available at payment time; revisit when one exists.
-        $totalAmt = 0.0;
+        // Realised FX on foreign-currency receipts (seeded chart: 4950 Forex
+        // Gain — Realised, 8050 Forex Loss — Realised).
+        $fxGainCode = $this->accounts->get('finance_forex_gain_account_id', '4950');
+        $fxLossCode = $this->accounts->get('finance_forex_loss_account_id', '8050');
+        $currencySvc = new CurrencyService($this->db, $this->companyId);
+        // Payment amounts are recorded in the invoice's currency. AR is
+        // relieved at the invoice's captured historical rate; the bank leg is
+        // valued at the payment-date rate from gl_exchange_rates (SARS s25D:
+        // rate on the date of the transaction), and the difference posts as a
+        // realised forex gain/loss. When no rate is captured for the payment
+        // date the invoice rate is used and no FX line is raised.
+        $totalAmt = 0.0; // bank debit in ZAR
+        $fxNet = 0.0;    // positive = realised gain (credit), negative = loss (debit)
         foreach ($allocs as $idx => $al) {
-            $fxRate = (float)($al['exchange_rate'] ?? 1);
-            if (strtoupper(trim($al['currency'] ?? 'ZAR')) === 'ZAR' || $al['currency'] === null || $fxRate <= 0) {
-                $fxRate = 1.0;
+            $invRate = (float)($al['exchange_rate'] ?? 1);
+            $cur = strtoupper(trim((string)($al['currency'] ?? 'ZAR')));
+            if ($cur === '' || $cur === 'ZAR' || $invRate <= 0) {
+                $invRate = 1.0;
+                $cur = 'ZAR';
             }
+            $amountFc = floatval($al['amount']);
             // Round each AR credit line to 2dp; the balancing bank debit is the
             // sum of the ROUNDED lines so the journal always balances.
-            $allocs[$idx]['amount_zar'] = round(floatval($al['amount']) * $fxRate, 2);
-            $totalAmt += $allocs[$idx]['amount_zar'];
+            $arZar = round($amountFc * $invRate, 2);
+            $bankZar = $arZar;
+            if ($cur !== 'ZAR') {
+                $payRate = $currencySvc->getRate($cur, $entryDate);
+                if ($payRate !== null && $payRate > 0) {
+                    $bankZar = round($amountFc * $payRate, 2);
+                }
+            }
+            $allocs[$idx]['amount_zar'] = $arZar;
+            $totalAmt += $bankZar;
+            $fxNet += ($bankZar - $arZar);
         }
         $totalAmt = round($totalAmt, 2);
+        $fxNet = round($fxNet, 2);
+        if (abs($fxNet) < 0.005) {
+            // Sub-cent difference: no FX line is raised, so fold it back into
+            // the bank leg to keep the journal balanced to the cent.
+            $totalAmt = round($totalAmt - $fxNet, 2);
+            $fxNet = 0.0;
+        }
         // Post journal (old-journal delete shares this transaction)
         $this->db->beginTransaction();
         try {
@@ -477,12 +503,16 @@ class PostingService
             if (!empty($payment['journal_id'])) {
                 $this->deleteJournal((int)$payment['journal_id']);
             }
-            // Assert debits equal credits before writing any lines
+            // Assert debits equal credits before writing any lines.
+            // Debits: bank (+ forex loss when fxNet < 0); credits: AR reliefs
+            // (+ forex gain when fxNet > 0).
             $creditSum = 0.0;
             foreach ($allocs as $al) {
                 $creditSum += round(floatval($al['amount_zar'] ?? $al['amount']), 2);
             }
-            $this->assertBalanced($totalAmt, round($creditSum, 2), 'customer payment #' . $paymentId);
+            $debitSum = $totalAmt + ($fxNet < 0 ? -$fxNet : 0.0);
+            $creditSum = round($creditSum + ($fxNet > 0 ? $fxNet : 0.0), 2);
+            $this->assertBalanced(round($debitSum, 2), $creditSum, 'customer payment #' . $paymentId);
             $reference = $payment['reference'] ?: ('PAY' . $paymentId);
             $desc      = 'Payment';
             // Insert journal entry
@@ -532,6 +562,33 @@ class PostingService
                     number_format($amt, 2, '.', ''),
                     $cust,
                     $ref
+                ]);
+            }
+            // Realised forex difference between the payment-date bank value
+            // and the invoice-rate AR relief
+            if ($fxNet > 0.004) {
+                $stmtFx = $this->db->prepare(
+                    "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, customer_id, reference)
+                     VALUES (?, ?, ?, 0, ?, NULL, ?)"
+                );
+                $stmtFx->execute([
+                    $journalId,
+                    $fxGainCode,
+                    'Realised forex gain',
+                    number_format($fxNet, 2, '.', ''),
+                    $reference
+                ]);
+            } elseif ($fxNet < -0.004) {
+                $stmtFx = $this->db->prepare(
+                    "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, customer_id, reference)
+                     VALUES (?, ?, ?, ?, 0, NULL, ?)"
+                );
+                $stmtFx->execute([
+                    $journalId,
+                    $fxLossCode,
+                    'Realised forex loss',
+                    number_format(-$fxNet, 2, '.', ''),
+                    $reference
                 ]);
             }
             // Update payment with journal id
@@ -786,20 +843,22 @@ class PostingService
         }
         // Compute UIF total and total debit (wages expense)
         $uifTotal = $uifEmp + $uifEmpr;
-        // Total wages expense: gross + employer contributions + reimbursements - other deductions + SDL
-        // The formula ensures debits equal credits: see explanation in documentation.
-        // KNOWN LIMITATION: other_deductions (garnishees, loan repayments, etc.)
-        // are netted against wage expense instead of being credited to a payroll
-        // deductions liability account. payroll_settings only exposes GL codes
-        // for wages/PAYE/UIF/SDL, so there is no configured liability account to
-        // credit; understates wage expense until such a setting exists.
-        $wageDebit = round($gross + $uifEmpr + $sdl + $reimburse - $otherDed, 2);
+        // Total wages expense is the gross employer cost: gross + employer
+        // contributions + SDL + reimbursements. Employee-side withholdings
+        // (PAYE, UIF employee, other deductions) reduce the bank credit, not
+        // the expense.
+        // other_deductions (garnishees, loan repayments, medical aid, etc.)
+        // are credited to a payroll deductions liability until paid over —
+        // configurable via finance_payroll_deductions_account_id; seeded
+        // default 2210 Salaries & Wages Payable.
+        $otherDedCode = $this->accounts->get('finance_payroll_deductions_account_id', '2210');
+        $wageDebit = round($gross + $uifEmpr + $sdl + $reimburse, 2);
         // Compute credits breakdown (each line rounded to 2dp). Accumulate per
         // account code so that two categories configured to the same GL code
         // sum instead of silently overwriting each other (which would post an
         // unbalanced journal).
         $credits = [];
-        foreach ([[$bankCode, $bankTotal], [$payeCode, $paye], [$uifCode, $uifTotal], [$sdlCode, $sdl]] as $pair) {
+        foreach ([[$bankCode, $bankTotal], [$payeCode, $paye], [$uifCode, $uifTotal], [$sdlCode, $sdl], [$otherDedCode, $otherDed]] as $pair) {
             [$code, $amount] = $pair;
             $amount = round($amount, 2);
             if ($amount > 0.0001) {

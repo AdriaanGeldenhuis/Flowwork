@@ -47,6 +47,23 @@ try {
         throw new Exception('Period must be prepared or adjusted before filing');
     }
 
+    // File chronologically: the period lock below locks everything up to
+    // period_end, so filing a later period first would freeze earlier,
+    // still-unfiled periods (their journals and their returns).
+    $stmt = $DB->prepare(
+        "SELECT period_start, period_end FROM gl_vat_periods
+         WHERE company_id = ? AND period_end < ? AND status <> 'filed'
+         ORDER BY period_end ASC LIMIT 1"
+    );
+    $stmt->execute([$companyId, $period['period_end']]);
+    $earlier = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($earlier) {
+        throw new Exception(
+            'File earlier periods first: ' . $earlier['period_start'] . ' to '
+            . $earlier['period_end'] . ' is not filed yet'
+        );
+    }
+
     // Snapshot final figures at filing time (same computation as vat_prepare)
     // so the filed return is served from stored values and cannot silently
     // change if journals later move.
@@ -110,7 +127,7 @@ try {
 
     echo json_encode(['ok' => true]);
 
-} catch (Exception $e) {
+} catch (PDOException $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
@@ -118,5 +135,16 @@ try {
     echo json_encode([
         'ok' => false,
         'error' => 'Failed to file VAT return'
+    ]);
+} catch (Exception $e) {
+    // Business-rule rejections (not prepared, out-of-order filing) carry
+    // curated messages the bookkeeper needs to see.
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
+    error_log("VAT file error: " . $e->getMessage());
+    echo json_encode([
+        'ok' => false,
+        'error' => $e->getMessage()
     ]);
 }
