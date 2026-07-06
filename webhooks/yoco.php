@@ -106,12 +106,26 @@ try {
     $stmt->execute([$companyId]);
     $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
     $receivedBy = $userRow['id'] ?? 1;
-    // Insert payment
+    // Insert payment. The idempotency_key makes uq_payments_idem
+    // (company_id, idempotency_key) the DB-level backstop for CONCURRENT
+    // duplicate deliveries — the SELECT-based dedupe above only catches
+    // sequential retries.
     $stmt = $DB->prepare(
-        "INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by) " .
-        "VALUES (?, ?, ?, 'yoco', ?, ?, ?)"
+        "INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key) " .
+        "VALUES (?, ?, ?, 'yoco', ?, ?, ?, ?)"
     );
-    $stmt->execute([$companyId, $paymentDate, $balance, $yocoRef, json_encode($payload), $receivedBy]);
+    try {
+        $stmt->execute([$companyId, $paymentDate, $balance, $yocoRef, json_encode($payload), $receivedBy,
+            substr('yoco:' . $yocoRef, 0, 64)]);
+    } catch (PDOException $e) {
+        if (($e->errorInfo[1] ?? 0) == 1062 || $e->getCode() == '23000') {
+            $DB->rollBack();
+            http_response_code(200);
+            echo json_encode(['ignored' => true, 'reason' => 'duplicate delivery']);
+            exit;
+        }
+        throw $e;
+    }
     $paymentId = $DB->lastInsertId();
     // Allocate payment to invoice
     $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");

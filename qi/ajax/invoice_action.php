@@ -28,7 +28,9 @@ if (!$invoiceId || !in_array($action, $ALLOWED, true)) {
 try {
     $DB->beginTransaction();
 
-    $invoice = InvoiceDeleteHelper::fetchInvoice($DB, $invoiceId, $companyId);
+    // Row lock: balance/status checks below are check-then-act — concurrent
+    // actions on the same invoice (double-click write-off) must serialize.
+    $invoice = InvoiceDeleteHelper::fetchInvoice($DB, $invoiceId, $companyId, true);
     if (!$invoice) throw new Exception('Invoice not found');
 
     $status = $invoice['status'];
@@ -38,6 +40,14 @@ try {
         case 'cancel':
             if (in_array($status, ['cancelled','written_off','refunded'], true)) {
                 throw new Exception('Invoice is already closed (' . $status . ')');
+            }
+            // Voiding reverses the invoice journal; allocated payments' posted
+            // journals (Cr AR) would stay behind and drive the AR control
+            // negative. Same rule as revert_to_draft: detach payments first.
+            $paidStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = ?");
+            $paidStmt->execute([$invoiceId]);
+            if ((float)$paidStmt->fetchColumn() > 0) {
+                throw new Exception('Cannot void: payments have been allocated to this invoice. Unapply payments first.');
             }
             $stmt = $DB->prepare("
                 UPDATE invoices

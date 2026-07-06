@@ -5,9 +5,15 @@
 
 class InvoiceDeleteHelper
 {
-    public static function fetchInvoice(PDO $db, int $invoiceId, int $companyId): ?array
+    /**
+     * @param bool $forUpdate lock the row (caller must hold a transaction) —
+     *   status-change actions read balance/status and then act on them, so
+     *   concurrent requests must serialize on the invoice row.
+     */
+    public static function fetchInvoice(PDO $db, int $invoiceId, int $companyId, bool $forUpdate = false): ?array
     {
-        $stmt = $db->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ?");
+        $sql = "SELECT * FROM invoices WHERE id = ? AND company_id = ?" . ($forUpdate ? " FOR UPDATE" : "");
+        $stmt = $db->prepare($sql);
         $stmt->execute([$invoiceId, $companyId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;

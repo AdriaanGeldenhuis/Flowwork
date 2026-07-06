@@ -107,6 +107,9 @@ $input['subtotal'] = $subtotalC / 100;
 $input['discount'] = $discountC / 100;
 $input['tax'] = $taxC / 100;
 $input['total'] = ($subtotalC + $taxC) / 100;
+// Document total in currency units — balance_due preservation and milestone
+// percentage checks below depend on it.
+$totalCalc = ($subtotalC + $taxC) / 100;
 
 try {
     $DB->beginTransaction();

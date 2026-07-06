@@ -40,8 +40,14 @@ try {
         json_error('Segregation of duties: a journal must be approved by someone other than its preparer', 403);
     }
 
-    $stmt = $DB->prepare("UPDATE journal_entries SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE id = ? AND company_id = ?");
+    // Status predicate + rowCount guard: without it, approve raced against a
+    // concurrent post could downgrade an already-POSTED journal back to
+    // 'approved', silently pulling it out of every posted-only report.
+    $stmt = $DB->prepare("UPDATE journal_entries SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE id = ? AND company_id = ? AND status = 'draft'");
     $stmt->execute([$userId, $journalId, $companyId]);
+    if ($stmt->rowCount() === 0) {
+        json_error('Journal is no longer a draft — refresh and try again', 409);
+    }
 
     require_once __DIR__ . '/../lib/Audit.php';
     Audit::log('journal_approved', ['journal_id'=>$journalId]);

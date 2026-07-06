@@ -48,7 +48,7 @@ try {
         "SELECT bt.*, ba.gl_account_id AS bank_gl_account_id
          FROM gl_bank_transactions bt
          JOIN gl_bank_accounts ba ON bt.bank_account_id = ba.id
-         WHERE bt.bank_tx_id = ? AND bt.company_id = ?"
+         WHERE bt.bank_tx_id = ? AND bt.company_id = ? FOR UPDATE"
     );
     $stmt->execute([$bankTxId, $companyId]);
     $tx = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -150,11 +150,16 @@ try {
         }
         $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, $fmt($amountC), null, $reference]);
     }
-    // Mark the bank transaction as matched and store journal id
+    // Mark the bank transaction as matched and store journal id. The
+    // matched=0 predicate + rowCount guard backstops a double-click race:
+    // the loser must roll back its journal, not overwrite the winner's link.
     $stmt = $DB->prepare(
-        "UPDATE gl_bank_transactions SET matched = 1, journal_id = ? WHERE bank_tx_id = ? AND company_id = ?"
+        "UPDATE gl_bank_transactions SET matched = 1, journal_id = ? WHERE bank_tx_id = ? AND company_id = ? AND matched = 0"
     );
     $stmt->execute([$journalId, $bankTxId, $companyId]);
+    if ($stmt->rowCount() === 0) {
+        throw new Exception('Transaction already matched');
+    }
     // Audit log
     $audit = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp) VALUES (?, ?, 'bank_tx_matched', ?, ?, NOW())"

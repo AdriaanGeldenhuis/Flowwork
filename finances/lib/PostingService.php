@@ -201,7 +201,7 @@ class PostingService
             return;
         }
         $stmt = $this->db->prepare(
-            "SELECT entry_date, reversed_by_journal_id FROM journal_entries
+            "SELECT entry_date, status, reversed_by_journal_id FROM journal_entries
               WHERE id = ? AND company_id = ?"
         );
         $stmt->execute([$journalId, $this->companyId]);
@@ -211,6 +211,21 @@ class PostingService
         }
         if (!empty($row['reversed_by_journal_id'])) {
             return; // already reversed (e.g. a prior failed repost) — idempotent
+        }
+        if ($row['status'] !== 'posted') {
+            // Legacy engines left journals in 'draft' (the pre-status era never
+            // set status), so they were never IN the posted reports. Posting a
+            // reversal for one would SUBTRACT amounts that were never added —
+            // reposting such a document would net its history to zero in every
+            // posted-only report. Reverse only its linked stock movements (the
+            // movements were real regardless of journal status) and detach.
+            $this->inventory->reverseMovementsForJournal($journalId, null, $fallbackDate);
+            Audit::log('journal_superseded_unposted', [
+                'journal_id' => $journalId,
+                'status' => $row['status'],
+                'reason' => $reason,
+            ], 'journal', $journalId, $this->companyId, $this->userId);
+            return;
         }
         $reversalDate = $this->periodService->isLocked($row['entry_date'])
             ? $fallbackDate
@@ -245,6 +260,24 @@ class PostingService
             }
             throw $e;
         }
+    }
+
+    /**
+     * Public entry for system endpoints that must post a one-off journal
+     * (manual VAT adjustments, inventory returns) without a postX() document
+     * flow. Same choke-point guarantees as every engine posting: period lock,
+     * ≥2 lines, integer-cents balance assertion, account existence, audit
+     * trail, status 'posted', transaction (joins the caller's when open).
+     */
+    public function postAdHocJournal(array $header, array $lines): int
+    {
+        if (empty($header['entry_date'])) {
+            throw new Exception('Journal entry_date is required');
+        }
+        if ($this->periodService->isLocked($header['entry_date'])) {
+            throw new Exception('Cannot post into locked period (' . $header['entry_date'] . ')');
+        }
+        return $this->withTransaction(fn () => $this->insertJournal($header, $lines));
     }
 
     /** Resolve a gl_bank_accounts row to its GL account code (with fallback). */
@@ -362,7 +395,9 @@ class PostingService
                 }
 
                 $invItemId = !empty($li['inventory_item_id']) ? (int)$li['inventory_item_id'] : null;
-                if ($invItemId && $qty > 0) {
+                if ($invItemId && abs($qty) > 0.0001) {
+                    // qty < 0 = customer return netted on the invoice: it must
+                    // restock and credit COGS, not just reduce revenue.
                     $pendingIssues[] = ['item_id' => $invItemId, 'qty' => $qty];
                 }
             }
@@ -418,24 +453,33 @@ class PostingService
             // Issue stock (weighted average) and book COGS. Costs are ZAR.
             $movementIds = [];
             foreach ($pendingIssues as $pi) {
-                $cost = $this->inventory->issue($pi['item_id'], $pi['qty'], $entryDate, 'invoice', $invoiceId);
-                $movementIds[] = (int)$this->db->lastInsertId();
-                $cogsC += (int)round($cost * 100);
+                if ($pi['qty'] > 0) {
+                    $cost = $this->inventory->issue($pi['item_id'], $pi['qty'], $entryDate, 'invoice', $invoiceId);
+                    $movementIds[] = (int)$this->db->lastInsertId();
+                    $cogsC += (int)round($cost * 100);
+                } else {
+                    // Return line: receive back at current weighted average
+                    // cost and reverse COGS symmetrically.
+                    $unitCost = $this->inventory->getAverageCost($pi['item_id']);
+                    $cost = $this->inventory->receive($pi['item_id'], -$pi['qty'], $unitCost, $entryDate, 'invoice', $invoiceId);
+                    $movementIds[] = (int)$this->db->lastInsertId();
+                    $cogsC -= (int)round($cost * 100);
+                }
             }
-            if ($cogsC > 0) {
+            if ($cogsC !== 0) {
                 $journalLines[] = [
                     'account_code' => $cogsCode,
                     'description'  => 'Cost of Goods Sold',
-                    'debit'        => $cogsC / 100,
-                    'credit'       => 0,
+                    'debit'        => $cogsC > 0 ? $cogsC / 100 : 0,
+                    'credit'       => $cogsC < 0 ? -$cogsC / 100 : 0,
                     'customer_id'  => $customerId,
                     'project_id'   => $projectId,
                 ];
                 $journalLines[] = [
                     'account_code' => $invCode,
                     'description'  => 'Inventory',
-                    'debit'        => 0,
-                    'credit'       => $cogsC / 100,
+                    'debit'        => $cogsC < 0 ? -$cogsC / 100 : 0,
+                    'credit'       => $cogsC > 0 ? $cogsC / 100 : 0,
                     'customer_id'  => $customerId,
                     'project_id'   => $projectId,
                 ];
@@ -498,7 +542,7 @@ class PostingService
     {
         $this->withTransaction(function () use ($invoiceId, $amount, $reason) {
             $stmt = $this->db->prepare(
-                "SELECT invoice_number, customer_id, total, tax, issue_date
+                "SELECT invoice_number, customer_id, total, tax, issue_date, currency, exchange_rate
                    FROM invoices WHERE id = ? AND company_id = ? LIMIT 1"
             );
             $stmt->execute([$invoiceId, $this->companyId]);
@@ -510,6 +554,10 @@ class PostingService
             if ($this->periodService->isLocked($entryDate)) {
                 throw new Exception('Cannot post write-off to locked period (' . $entryDate . ')');
             }
+            // $amount arrives in DOCUMENT currency (it is capped against
+            // balance_due); the ledger is ZAR — translate at the invoice's
+            // captured rate (s25D), like every other posting of this document.
+            [$fxCurrency, $fxRate] = $this->resolveFx($invoice);
             $amountC = (int)round($amount * 100);
             if ($amountC <= 0) {
                 return;
@@ -518,24 +566,33 @@ class PostingService
             $taxRatio = $total > 0 ? ((float)$invoice['tax'] / $total) : 0.0;
             $vatC = (int)round($amountC * $taxRatio);
             $netC = $amountC - $vatC;
+            $toZar = fn(int $cents): float => round(($cents / 100) * $fxRate, 2);
+            $netZar = $toZar($netC);
+            $vatZar = $toZar($vatC);
 
             $lines = [];
-            if ($netC > 0) {
+            if ($netZar > 0) {
                 $lines[] = [
                     'account_code' => $this->accounts->code('finance_bad_debt_account_id'),
                     'description'  => 'Bad debt written off — ' . $invoice['invoice_number'],
-                    'debit'        => $netC / 100,
+                    'debit'        => $netZar,
                     'credit'       => 0,
                     'customer_id'  => $invoice['customer_id'] ?: null,
                 ];
             }
-            if ($vatC > 0) {
+            if ($vatZar > 0) {
+                // s22(1) relief is an INPUT TAX deduction on the VAT201 (the
+                // bad-debts adjustment field on the input side), NOT a
+                // reduction of Box 1A — eFiling derives field 4 from field 1,
+                // so netting output would break the form's own arithmetic.
+                // Posted to the VAT input account; measured separately via
+                // the journal's module (see VatCalculator).
                 $lines[] = [
-                    'account_code' => $this->accounts->code('finance_vat_output_account_id'),
+                    'account_code' => $this->accounts->code('finance_vat_input_account_id'),
                     'description'  => 'VAT relief on bad debt (s22) — ' . $invoice['invoice_number'],
-                    'debit'        => $vatC / 100,
+                    'debit'        => $vatZar,
                     'credit'       => 0,
-                    'tax_code_id'  => $this->resolveOutputTaxCodeId(15.0),
+                    'tax_code_id'  => $this->resolveInputTaxCodeId(15.0),
                     'customer_id'  => $invoice['customer_id'] ?: null,
                 ];
             }
@@ -543,14 +600,16 @@ class PostingService
                 'account_code' => $this->accounts->code('finance_ar_account_id'),
                 'description'  => 'Accounts Receivable written off',
                 'debit'        => 0,
-                'credit'       => $amountC / 100,
+                'credit'       => round($netZar + $vatZar, 2),
                 'customer_id'  => $invoice['customer_id'] ?: null,
             ];
 
             $this->insertJournal([
                 'entry_date'  => $entryDate,
                 'reference'   => 'WO-' . $invoice['invoice_number'],
-                'description' => 'Write-off ' . $invoice['invoice_number'] . ($reason ? ' — ' . $reason : ''),
+                'description' => 'Write-off ' . $invoice['invoice_number'] . ($reason ? ' — ' . $reason : '')
+                    . $this->fxNote($fxCurrency, $fxRate),
+                'module'      => 'bad_debt',
                 'ref_type'    => 'invoice_write_off',
                 'ref_id'      => $invoiceId,
                 'source_type' => 'invoice_write_off',
@@ -1055,8 +1114,11 @@ class PostingService
             $journalLines = [];
             $pendingReceipts = [];
             $totalNetC = 0;
-            $vatByCode = []; // tax_code_id => cents
-            $hasCapitalGoods = false;
+            // VAT grouped by (tax_code_id, capital flag): a bill mixing a
+            // fixed-asset line with consumables must split its input VAT
+            // between VAT201 capital (Box 7-side) and other goods — a single
+            // bill-level flag marked the WHOLE bill's VAT as capital.
+            $vatByCode = []; // "taxCodeId|capital" => cents
             foreach ($lines as $li) {
                 $qty = (float)$li['quantity'];
                 $price = (float)$li['unit_price'];
@@ -1081,9 +1143,6 @@ class PostingService
                 );
                 $stmtChk->execute([$acctCode, $this->companyId]);
                 $isCapital = ($stmtChk->fetchColumn() === 'fixed_asset');
-                if ($isCapital) {
-                    $hasCapitalGoods = true;
-                }
 
                 $lineTaxCodeId = $this->resolveInputTaxCodeId($taxRate);
                 $journalLines[] = [
@@ -1099,21 +1158,22 @@ class PostingService
                 ];
                 $totalNetC += $netC;
                 if ($vatC !== 0) {
-                    $key = $lineTaxCodeId ?? 0;
+                    $key = ($lineTaxCodeId ?? 0) . '|' . ($isCapital ? 1 : 0);
                     $vatByCode[$key] = ($vatByCode[$key] ?? 0) + $vatC;
                 }
             }
 
             $totalVatC = array_sum($vatByCode);
-            foreach ($vatByCode as $taxCodeId => $vatC) {
+            foreach ($vatByCode as $key => $vatC) {
+                [$taxCodeId, $capital] = explode('|', $key);
                 $journalLines[] = [
                     'account_code' => $vatInCode,
                     'description'  => 'VAT Input - ' . $reference,
                     'debit'        => $vatC / 100,
                     'credit'       => 0,
                     'supplier_id'  => $supplierId,
-                    'tax_code_id'  => $taxCodeId ?: null,
-                    'is_capital_goods' => $hasCapitalGoods ? 1 : 0,
+                    'tax_code_id'  => (int)$taxCodeId ?: null,
+                    'is_capital_goods' => (int)$capital,
                 ];
             }
             $journalLines[] = [
@@ -1302,13 +1362,22 @@ class PostingService
 
             $journalLines = [];
             $totalNetC = 0;
-            $vatByCode = [];
+            // Grouped by (tax_code_id, capital flag) like postApBill: a credit
+            // that reverses a capital purchase must reduce CAPITAL input VAT
+            // (Box 7 side), not "other goods" — otherwise the VAT201 7/8 split
+            // is wrong in both directions after a credit.
+            $vatByCode = []; // "taxCodeId|capital" => cents
             foreach ($lines as $li) {
                 $netC = (int)round(((float)$li['quantity'] * (float)$li['unit_price'] - (float)($li['discount'] ?? 0)) * 100);
                 $rate = (float)($li['tax_rate'] ?? 0);
                 $vatC = (int)round($netC * $rate / 100);
                 $acctCode = $this->accounts->getById(!empty($li['gl_account_id']) ? (int)$li['gl_account_id'] : null)
                     ?: $this->accounts->code('finance_expense_account_id');
+                $stmtChk = $this->db->prepare(
+                    "SELECT account_subtype FROM gl_accounts WHERE account_code = ? AND company_id = ? LIMIT 1"
+                );
+                $stmtChk->execute([$acctCode, $this->companyId]);
+                $isCapital = ($stmtChk->fetchColumn() === 'fixed_asset');
                 $lineTaxCodeId = $this->resolveInputTaxCodeId($rate);
                 $journalLines[] = [
                     'account_code' => $acctCode,
@@ -1318,15 +1387,17 @@ class PostingService
                     'supplier_id'  => $supplierId,
                     'reference'    => $reference,
                     'tax_code_id'  => $lineTaxCodeId,
+                    'is_capital_goods' => $isCapital ? 1 : 0,
                 ];
                 $totalNetC += $netC;
                 if ($vatC !== 0) {
-                    $key = $lineTaxCodeId ?? 0;
+                    $key = ($lineTaxCodeId ?? 0) . '|' . ($isCapital ? 1 : 0);
                     $vatByCode[$key] = ($vatByCode[$key] ?? 0) + $vatC;
                 }
             }
             $totalVatC = array_sum($vatByCode);
-            foreach ($vatByCode as $taxCodeId => $vatC) {
+            foreach ($vatByCode as $key => $vatC) {
+                [$taxCodeId, $capital] = explode('|', $key);
                 $journalLines[] = [
                     'account_code' => $vatInCode,
                     'description'  => 'VAT Input (Vendor Credit)',
@@ -1334,7 +1405,8 @@ class PostingService
                     'credit'       => $vatC / 100,
                     'supplier_id'  => $supplierId,
                     'reference'    => $reference,
-                    'tax_code_id'  => $taxCodeId ?: null,
+                    'tax_code_id'  => (int)$taxCodeId ?: null,
+                    'is_capital_goods' => (int)$capital,
                 ];
             }
             $journalLines[] = [
@@ -1402,10 +1474,15 @@ class PostingService
                     'debit' => abs($netVat), 'credit' => 0];
             }
 
+            // module 'vat_settle': this CLEARING journal (output/input →
+            // control) must be invisible to the VAT201 measurement — under
+            // the default module 'fin' it would subtract the whole prior
+            // period's output/input from whichever period contains its date.
             return $this->insertJournal([
                 'entry_date'  => $entryDate,
                 'reference'   => $reference ?: 'VAT-ADJ',
                 'description' => 'VAT Adjustment ' . $reference,
+                'module'      => 'vat_settle',
                 'ref_type'    => 'vat_adjustment',
                 'ref_id'      => null,
                 'source_type' => 'vat_adjustment',
