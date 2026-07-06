@@ -228,12 +228,18 @@
     csv += `Standard rated supplies (15%),${data.output_standard_base_cents/100},${data.output_standard_vat_cents/100}\n`;
     csv += `Zero rated supplies (0%),${data.output_zero_base_cents/100},0.00\n`;
     csv += `Exempt supplies,${data.output_exempt_base_cents/100},0.00\n`;
-    csv += `Total Output Tax,,${data.total_output_vat_cents/100}\n\n`;
+    csv += `Output tax adjustments (Box 4),,${(data.change_in_use_output_cents || 0)/100}\n`;
+    const box5 = data.box5_total_output_cents != null ? data.box5_total_output_cents : data.total_output_vat_cents;
+    csv += `Total Output Tax (Box 5),,${box5/100}\n\n`;
     csv += 'INPUT TAX\n';
-    csv += `Capital goods,${data.input_capital_cents/100}\n`;
-    csv += `Other goods and services,${data.input_other_cents/100}\n`;
-    csv += `Total Input Tax,,${data.total_input_vat_cents/100}\n\n`;
-    csv += `NET VAT ${data.net_vat_cents >= 0 ? 'PAYABLE' : 'REFUNDABLE'},,${Math.abs(data.net_vat_cents)/100}\n`;
+    csv += `Input tax adjustments (Box 6),${(data.change_in_use_input_cents || 0)/100}\n`;
+    csv += `Capital goods (Box 7),${data.input_capital_cents/100}\n`;
+    csv += `Other goods and services (Box 8),${data.input_other_cents/100}\n`;
+    const box9 = data.box9_total_input_cents != null ? data.box9_total_input_cents : data.total_input_vat_cents;
+    csv += `Total Input Tax (Box 9),,${box9/100}\n\n`;
+    const box10 = data.box10_net_cents != null ? data.box10_net_cents : data.net_vat_cents;
+    csv += `NET VAT ${box10 >= 0 ? 'PAYABLE' : 'REFUNDABLE'} (Box 10),,${Math.abs(box10)/100}\n`;
+    if (data.basis) { csv += `\nBasis:,${data.basis === 'payments' ? 'Payments (cash)' : 'Invoice (accrual)'}\n`; }
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);

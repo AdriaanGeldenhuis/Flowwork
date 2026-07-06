@@ -15,6 +15,7 @@ $tables = [
     'ap_match_links', 'vendor_credits', 'vendor_credit_allocations',
     'inventory_movements',
     'gl_vat_periods', 'gl_period_locks',
+    'pay_run_employees', 'pay_runs',
     'depreciation_lines', 'depreciation_runs',
     'fa_depreciation_lines', 'fa_depreciation_runs', 'gl_fixed_assets', 'fa_disposals',
     'bank_transactions', 'bank_import_batches',
