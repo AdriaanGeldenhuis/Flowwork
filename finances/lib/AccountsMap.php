@@ -38,8 +38,8 @@ class AccountsMap
         'finance_bad_debt_account_id'         => '6800', // Bad Debts Written Off
         'finance_fx_gain_account_id'          => '4950', // Forex Gain — Realised
         'finance_fx_loss_account_id'          => '8050', // Forex Loss — Realised
-        'finance_gain_disposal_account_id'    => '4960', // Profit on Disposal
-        'finance_loss_disposal_account_id'    => '8060', // Loss on Disposal
+        'finance_gain_on_disposal_account_id' => '4960', // Profit on Disposal
+        'finance_loss_on_disposal_account_id' => '8060', // Loss on Disposal
         'finance_retained_earnings_account_id'=> '3100', // Retained Earnings
     ];
 

@@ -84,15 +84,15 @@ try {
         throw new Exception('Asset missing GL account mappings');
     }
     // Bank account for proceeds; fallback to 1110
-    $bankCode = $accounts->get('finance_bank_account_id', '1110');
+    $bankCode = $accounts->code('finance_bank_account_id');
     // Gain and loss accounts; fallback to Other Income (4900) and General Expenses (6900)
-    $gainCode = $accounts->get('finance_gain_on_disposal_account_id', '4900');
-    $lossCode = $accounts->get('finance_loss_on_disposal_account_id', '6900');
+    $gainCode = $accounts->code('finance_gain_on_disposal_account_id');
+    $lossCode = $accounts->code('finance_loss_on_disposal_account_id');
     if (!$gainCode || !$lossCode) {
         throw new Exception('Missing gain/loss account mappings');
     }
     // VAT output account for disposal proceeds (SARS Section 8(13))
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
+    $vatOutputCode = $accounts->code('finance_vat_output_account_id');
     // Convert monetary amounts to decimals
     $costDec  = $asset['purchase_cost_cents'] / 100.0;
     $accumDec = $asset['accumulated_depreciation_cents'] / 100.0;

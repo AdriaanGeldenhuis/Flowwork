@@ -88,6 +88,9 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/fa_schedule.php'">
                         Fixed Asset Schedule
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/fa_wear_and_tear.php'">
+                        Wear-and-Tear Register
+                    </button>
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/budget_vs_actual.php'">
                         Budget vs Actual
                     </button>

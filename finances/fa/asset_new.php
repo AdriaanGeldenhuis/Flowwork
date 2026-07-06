@@ -119,6 +119,18 @@ foreach ($accounts as $acc) {
                     </select>
                 </label>
                 <label>
+                    Tax Write-off Method (SARS)
+                    <select id="taxMethod">
+                        <option value="none">None</option>
+                        <option value="s11e">s11(e) wear-and-tear</option>
+                        <option value="s12c">s12C manufacturing asset</option>
+                    </select>
+                </label>
+                <label>
+                    Tax Write-off Period (years)
+                    <input type="number" id="taxYears" min="1" max="50" step="1" disabled>
+                </label>
+                <label>
                     Asset Account
                     <select id="assetAccount" required>
                         <option value="">Select account</option>
@@ -162,7 +174,26 @@ foreach ($accounts as $acc) {
     </div>
 <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
 <script>
+// The years input only applies when a tax write-off method is chosen.
+// s12C is a fixed 40/20/20/20 four-year schedule.
+(function() {
+    var methodSel = document.getElementById('taxMethod');
+    var yearsInput = document.getElementById('taxYears');
+    methodSel.addEventListener('change', function() {
+        if (methodSel.value === 'none') {
+            yearsInput.value = '';
+            yearsInput.disabled = true;
+        } else if (methodSel.value === 's12c') {
+            yearsInput.value = '4';
+            yearsInput.disabled = true;
+        } else {
+            yearsInput.disabled = false;
+            if (!yearsInput.value) yearsInput.value = '5';
+        }
+    });
+})();
 document.getElementById('assetForm').addEventListener('submit', function() {
+    var taxMethod = document.getElementById('taxMethod').value;
     var payload = {
         asset_name: document.getElementById('assetName').value.trim(),
         category: document.getElementById('category').value.trim(),
@@ -171,6 +202,8 @@ document.getElementById('assetForm').addEventListener('submit', function() {
         salvage_value: parseFloat(document.getElementById('salvageValue').value || 0),
         useful_life_months: parseInt(document.getElementById('usefulLife').value, 10),
         depreciation_method: document.getElementById('deprMethod').value,
+        tax_method: taxMethod,
+        tax_writeoff_years: taxMethod === 'none' ? null : parseInt(document.getElementById('taxYears').value, 10),
         asset_account_id: parseInt(document.getElementById('assetAccount').value, 10),
         depreciation_expense_account_id: parseInt(document.getElementById('expenseAccount').value, 10),
         accumulated_depreciation_account_id: parseInt(document.getElementById('accumAccount').value, 10)
@@ -178,6 +211,10 @@ document.getElementById('assetForm').addEventListener('submit', function() {
     // Basic validation
     if (!payload.asset_name || !payload.purchase_date || isNaN(payload.purchase_cost) || isNaN(payload.useful_life_months) || !payload.depreciation_method || !payload.asset_account_id || !payload.depreciation_expense_account_id || !payload.accumulated_depreciation_account_id) {
         document.getElementById('formMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">Please fill in all required fields correctly.</div>';
+        return;
+    }
+    if (payload.tax_method !== 'none' && (!payload.tax_writeoff_years || payload.tax_writeoff_years < 1)) {
+        document.getElementById('formMessage').innerHTML = '<div class="fw-finance__alert fw-finance__alert--error">Please provide the tax write-off period in years.</div>';
         return;
     }
     fetch('/finances/fa/api/asset_create.php', {

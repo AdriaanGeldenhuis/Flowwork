@@ -19,14 +19,20 @@ class Tieout
     // Prefers the finance_* account mapping (always seeded per company by
     // finances/tools/finance_setup.php); falls back to the legacy
     // gl_report_map config where one exists.
+    //
+    // Returned in the account's NATURAL sign so it compares directly to the
+    // subledger: AR is debit-positive, AP is credit-positive. (AsOf sums
+    // debit-positive; a healthy AP control used to come back negative, so
+    // every non-zero AP tie-out reported a spurious difference.)
     public function glBalance(string $groupKey, string $asOf): float
     {
         require_once __DIR__ . '/AccountsMap.php';
         $map = new AccountsMap($this->db, $this->companyId);
         $settingKey = $groupKey === 'AR' ? 'finance_ar_account_id'
             : ($groupKey === 'AP' ? 'finance_ap_account_id' : null);
+        $sign = $groupKey === 'AP' ? -1.0 : 1.0;
         if ($settingKey && ($accountId = $map->getAccountId($settingKey))) {
-            return $this->asof->sumAccounts([$accountId], $asOf);
+            return $sign * $this->asof->sumAccounts([$accountId], $asOf);
         }
         $stmt = $this->db->prepare("
             SELECT account_id
@@ -35,7 +41,7 @@ class Tieout
         ");
         $stmt->execute([$this->companyId, $groupKey]);
         $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
-        return $this->asof->sumAccounts($ids, $asOf);
+        return $sign * $this->asof->sumAccounts($ids, $asOf);
     }
 
     // --- Accounts Receivable subledger total as of a date ---
