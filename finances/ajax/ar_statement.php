@@ -88,6 +88,7 @@ try {
                    0 AS credit
             FROM invoices i
             WHERE i.company_id = ? AND i.customer_id = ?
+              AND i.status NOT IN ('draft','cancelled') AND i.deleted_at IS NULL
             UNION ALL
             -- Payments
             SELECT p.payment_date AS t_date,
@@ -109,7 +110,8 @@ try {
                    0 AS debit,
                    cn.total AS credit
             FROM credit_notes cn
-            WHERE cn.company_id = ? AND cn.customer_id = ? AND cn.status != 'cancelled'
+            WHERE cn.company_id = ? AND cn.customer_id = ?
+              AND cn.status NOT IN ('draft','cancelled')
         ) AS all_txn
         WHERE 1=1 " . $dateFilterSql . "
         ORDER BY t_date, ref

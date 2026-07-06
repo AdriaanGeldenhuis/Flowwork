@@ -31,6 +31,9 @@ $userId    = (int)$_SESSION['user_id'];
 
 $input  = json_decode(file_get_contents('php://input'), true);
 $billId = isset($input['bill_id']) ? (int)$input['bill_id'] : 0;
+// Reposting a posted bill must be an explicit, deliberate act — the engine
+// rejects it otherwise (and always rejects reposting a PAID bill).
+$repost = !empty($input['repost']);
 
 if (!$billId) {
     echo json_encode(['ok' => false, 'error' => 'Missing bill_id']);
@@ -39,7 +42,7 @@ if (!$billId) {
 
 try {
     $posting = new PostingService($DB, $companyId, $userId);
-    $posting->postApBill($billId);
+    $posting->postApBill($billId, $repost);
     // Get journal id for the bill
     $stmt = $DB->prepare("SELECT journal_id FROM ap_bills WHERE id = ? AND company_id = ?");
     $stmt->execute([$billId, $companyId]);

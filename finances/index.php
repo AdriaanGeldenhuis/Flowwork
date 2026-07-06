@@ -639,6 +639,7 @@ $moduleLabels = ['qi' => 'QI', 'fin' => 'Finance', 'payroll' => 'Payroll', 'manu
                         <a href="/finances/ar/" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📄</span><span class="fw-finance__qa-label">Receivables</span></a>
                         <a href="/finances/ap/" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📑</span><span class="fw-finance__qa-label">Payables</span></a>
                         <a href="/finances/budgets/edit.php" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">📅</span><span class="fw-finance__qa-label">Budgets</span></a>
+                        <a href="/finances/fa/" class="fw-finance__qa-tile"><span class="fw-finance__qa-icon">🏭</span><span class="fw-finance__qa-label">Fixed Assets</span></a>
                     </div>
                 </div>
                 <div class="fw-finance__table-card">

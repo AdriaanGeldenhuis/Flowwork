@@ -19,6 +19,7 @@ if (is_array($inputData)) {
     $reference   = $inputData['reference'] ?? '';
     $notes       = $inputData['notes'] ?? '';
     $milestoneId = isset($inputData['milestone_id']) && $inputData['milestone_id'] !== '' ? (int)$inputData['milestone_id'] : null;
+    $idempotencyKey = isset($inputData['idempotency_key']) ? substr(trim((string)$inputData['idempotency_key']), 0, 64) : '';
 } else {
     // Fallback to standard form POST
     $invoiceId   = filter_input(INPUT_POST, 'invoice_id', FILTER_VALIDATE_INT);
@@ -28,6 +29,7 @@ if (is_array($inputData)) {
     $reference   = $_POST['reference'] ?? '';
     $notes       = $_POST['notes'] ?? '';
     $milestoneId = isset($_POST['milestone_id']) && $_POST['milestone_id'] !== '' ? (int)$_POST['milestone_id'] : null;
+    $idempotencyKey = isset($_POST['idempotency_key']) ? substr(trim((string)$_POST['idempotency_key']), 0, 64) : '';
 }
 
 if (!$invoiceId || $amount <= 0) {
@@ -37,6 +39,20 @@ if (!$invoiceId || $amount <= 0) {
 
 try {
     $DB->beginTransaction();
+
+    // Idempotency: a replayed request (double-click, network retry) with the
+    // same key returns the original payment instead of creating a second one.
+    // The unique index on (company_id, idempotency_key) is the backstop for
+    // concurrent replays.
+    if ($idempotencyKey !== '') {
+        $stmt = $DB->prepare("SELECT id FROM payments WHERE company_id = ? AND idempotency_key = ? LIMIT 1");
+        $stmt->execute([$companyId, $idempotencyKey]);
+        if ($existingId = $stmt->fetchColumn()) {
+            $DB->rollBack();
+            echo json_encode(['ok' => true, 'payment_id' => (int)$existingId, 'duplicate' => true]);
+            exit;
+        }
+    }
 
     // Fetch invoice (FOR UPDATE prevents concurrent overpayment)
     $stmt = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE");
@@ -60,10 +76,11 @@ try {
 
     // Create payment
     $stmt = $DB->prepare("
-        INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference, $notes, $userId]);
+    $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference, $notes, $userId,
+        $idempotencyKey !== '' ? $idempotencyKey : null]);
     $paymentId = $DB->lastInsertId();
 
     // Allocate to invoice

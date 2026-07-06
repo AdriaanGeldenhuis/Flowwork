@@ -487,6 +487,78 @@ class PostingService
         });
     }
 
+    /**
+     * Post a bad-debt write-off for an invoice: debit Bad Debts (net), debit
+     * VAT Output for the tax fraction (s22(1) VAT Act — output tax relief on
+     * consideration that has become irrecoverable, invoice basis), credit AR.
+     * The VAT portion uses the invoice's own tax-to-total ratio so partial
+     * write-offs relieve proportional VAT.
+     */
+    public function postInvoiceWriteOff(int $invoiceId, float $amount, string $reason): void
+    {
+        $this->withTransaction(function () use ($invoiceId, $amount, $reason) {
+            $stmt = $this->db->prepare(
+                "SELECT invoice_number, customer_id, total, tax, issue_date
+                   FROM invoices WHERE id = ? AND company_id = ? LIMIT 1"
+            );
+            $stmt->execute([$invoiceId, $this->companyId]);
+            $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$invoice) {
+                throw new Exception('Invoice not found');
+            }
+            $entryDate = date('Y-m-d');
+            if ($this->periodService->isLocked($entryDate)) {
+                throw new Exception('Cannot post write-off to locked period (' . $entryDate . ')');
+            }
+            $amountC = (int)round($amount * 100);
+            if ($amountC <= 0) {
+                return;
+            }
+            $total = (float)$invoice['total'];
+            $taxRatio = $total > 0 ? ((float)$invoice['tax'] / $total) : 0.0;
+            $vatC = (int)round($amountC * $taxRatio);
+            $netC = $amountC - $vatC;
+
+            $lines = [];
+            if ($netC > 0) {
+                $lines[] = [
+                    'account_code' => $this->accounts->code('finance_bad_debt_account_id'),
+                    'description'  => 'Bad debt written off — ' . $invoice['invoice_number'],
+                    'debit'        => $netC / 100,
+                    'credit'       => 0,
+                    'customer_id'  => $invoice['customer_id'] ?: null,
+                ];
+            }
+            if ($vatC > 0) {
+                $lines[] = [
+                    'account_code' => $this->accounts->code('finance_vat_output_account_id'),
+                    'description'  => 'VAT relief on bad debt (s22) — ' . $invoice['invoice_number'],
+                    'debit'        => $vatC / 100,
+                    'credit'       => 0,
+                    'tax_code_id'  => $this->resolveOutputTaxCodeId(15.0),
+                    'customer_id'  => $invoice['customer_id'] ?: null,
+                ];
+            }
+            $lines[] = [
+                'account_code' => $this->accounts->code('finance_ar_account_id'),
+                'description'  => 'Accounts Receivable written off',
+                'debit'        => 0,
+                'credit'       => $amountC / 100,
+                'customer_id'  => $invoice['customer_id'] ?: null,
+            ];
+
+            $this->insertJournal([
+                'entry_date'  => $entryDate,
+                'reference'   => 'WO-' . $invoice['invoice_number'],
+                'description' => 'Write-off ' . $invoice['invoice_number'] . ($reason ? ' — ' . $reason : ''),
+                'ref_type'    => 'invoice_write_off',
+                'ref_id'      => $invoiceId,
+                'source_type' => 'invoice_write_off',
+                'source_id'   => $invoiceId,
+            ], $lines);
+        });
+    }
+
     // ------------------------------------------------------------------
     // Customer payments (AR receipts)
     // ------------------------------------------------------------------

@@ -94,6 +94,27 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/retention.php'">
                         Record Retention
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/trial_balance.php'">
+                        Trial Balance (printable)
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/balance_sheet.php'">
+                        Balance Sheet (printable)
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/income_statement.php'">
+                        Income Statement (printable)
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/gl_detail.php'">
+                        GL Detail
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ar_tieout.php'">
+                        AR Tie-out
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ap_tieout.php'">
+                        AP Tie-out
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/sequence_gaps.php'">
+                        Sequence Gaps
+                    </button>
 
                     <!-- New: Exports tab -->
                     <button class="fw-finance__report-type-btn" data-report="exports">

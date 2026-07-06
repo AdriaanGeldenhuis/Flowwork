@@ -41,6 +41,7 @@ foreach ($companies as $company) {
     }
     echo "== Company {$cid} ({$company['name']}) ==\n";
     ensure_vat_control_account($DB, $cid);
+    ensure_bad_debt_account($DB, $cid);
     seed_finance_settings($DB, $cid);
 }
 echo "Done.\n";
@@ -77,6 +78,34 @@ function ensure_vat_control_account(PDO $db, int $cid): void
     echo "   VAT Control created at code $code\n";
 }
 
+function ensure_bad_debt_account(PDO $db, int $cid): void
+{
+    // Write-offs post here (bad debt expense + s22 VAT relief). Resolve by
+    // NAME — legacy charts reuse code 6800 for other things.
+    $stmt = $db->prepare(
+        "SELECT account_id, account_code FROM gl_accounts
+          WHERE company_id = ? AND is_active = 1
+            AND account_type = 'expense' AND account_name LIKE '%bad debt%'
+          ORDER BY account_code LIMIT 1"
+    );
+    $stmt->execute([$cid]);
+    if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo "   Bad Debts account present: {$row['account_code']}\n";
+        return;
+    }
+    $code = next_free_code($db, $cid, '6800', 6800, 6899);
+    $parent = account_id_by_code($db, $cid, '6000');
+    $db->prepare(
+        "INSERT INTO gl_accounts
+            (company_id, account_code, account_name, description, account_type,
+             normal_balance, account_subtype, parent_id, is_system, is_control,
+             is_locked, allow_manual_journal, is_active, currency, afs_line_code)
+         VALUES (?, ?, 'Bad Debts Written Off', 'Irrecoverable debts (s22 VAT relief)',
+                 'expense', 'debit', 'operating_expense', ?, 1, 0, 0, 1, 1, 'ZAR', 'IS-OpEx')"
+    )->execute([$cid, $code, $parent]);
+    echo "   Bad Debts account created at code $code\n";
+}
+
 function seed_finance_settings(PDO $db, int $cid): void
 {
     foreach (AccountsMap::DEFAULTS as $key => $defaultCode) {
@@ -95,6 +124,11 @@ function seed_finance_settings(PDO $db, int $cid): void
             $accountId = find_account($db, $cid,
                 "account_subtype = 'vat_control'
                  AND account_name NOT LIKE '%output%' AND account_name NOT LIKE '%input%'");
+        } elseif ($key === 'finance_bad_debt_account_id') {
+            // Resolve by NAME: legacy charts reuse code 6800 for other things
+            // (company 1 has 6800 = Depreciation).
+            $accountId = find_account($db, $cid,
+                "account_type = 'expense' AND account_name LIKE '%bad debt%'");
         } elseif (isset(AccountsMap::SUBTYPES[$key])) {
             $subtypes = "'" . implode("','", AccountsMap::SUBTYPES[$key]) . "'";
             $accountId = find_account($db, $cid, "account_subtype IN ($subtypes)");
@@ -102,8 +136,9 @@ function seed_finance_settings(PDO $db, int $cid): void
 
         // Fall back to the canonical seed code — but only when the account at
         // that code actually plays the expected role on this chart (guards
-        // against legacy charts where e.g. 1100 is a "Current Assets" header).
-        if (!$accountId) {
+        // against legacy charts where e.g. 1100 is a "Current Assets" header
+        // or 6800 is Depreciation instead of Bad Debts).
+        if (!$accountId && $key !== 'finance_bad_debt_account_id') {
             $accountId = account_id_by_code($db, $cid, $defaultCode);
             if ($accountId && isset(AccountsMap::SUBTYPES[$key])) {
                 $stmt = $db->prepare(

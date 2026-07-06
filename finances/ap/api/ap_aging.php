@@ -33,7 +33,7 @@ try {
                 FROM vendor_credit_allocations
                 GROUP BY bill_id
             ) vc ON vc.bill_id = b.id
-            WHERE b.company_id = ? AND b.status != 'cancelled'
+            WHERE b.company_id = ? AND b.status IN ('posted','part-paid','paid')
             HAVING balance > 0";
     $stmt = $DB->prepare($sql);
     $stmt->execute([$companyId]);

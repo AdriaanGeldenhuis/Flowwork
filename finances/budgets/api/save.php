@@ -28,7 +28,10 @@ if (!is_array($data)) {
     exit;
 }
 
-// Validate year
+// Validate year (accept numeric strings — JSON clients often send "2026")
+if (isset($data['year']) && is_numeric($data['year'])) {
+    $data['year'] = (int)$data['year'];
+}
 if (!isset($data['year']) || !is_int($data['year']) || $data['year'] < 2000 || $data['year'] > 2100) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Invalid or missing year']);

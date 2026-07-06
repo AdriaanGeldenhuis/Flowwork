@@ -40,7 +40,8 @@ try {
     if ($startDate) {
         // Sum of bills
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM ap_bills WHERE company_id = ? AND supplier_id = ? AND issue_date < ?"
+            "SELECT SUM(total) FROM ap_bills WHERE company_id = ? AND supplier_id = ? AND issue_date < ?
+              AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $supplierId, $startDate]);
         $openingDebit = floatval($stmt->fetchColumn());
@@ -83,6 +84,7 @@ try {
                    0 AS credit
             FROM ap_bills b
             WHERE b.company_id = ? AND b.supplier_id = ?
+              AND b.status NOT IN ('draft','cancelled')
             UNION ALL
             -- Payments (reduce payable)
             SELECT p.payment_date AS t_date,

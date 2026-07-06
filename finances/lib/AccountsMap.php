@@ -35,6 +35,7 @@ class AccountsMap
         'finance_sdl_account_id'              => '2150', // SDL Payable
         'finance_uif_expense_account_id'      => '6050', // UIF — Employer
         'finance_sdl_expense_account_id'      => '6060', // SDL — Employer
+        'finance_bad_debt_account_id'         => '6800', // Bad Debts Written Off
         'finance_fx_gain_account_id'          => '4950', // Forex Gain — Realised
         'finance_fx_loss_account_id'          => '8050', // Forex Loss — Realised
         'finance_gain_disposal_account_id'    => '4960', // Profit on Disposal

@@ -369,7 +369,10 @@ const InvoiceView = {
                     amount: amount,
                     method: method,
                     reference: reference,
-                    notes: notes
+                    notes: notes,
+                    // One key per form-open: retries/double-clicks replay
+                    // instead of creating a second payment.
+                    idempotency_key: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2))
                 })
             });
             if (data.ok) {

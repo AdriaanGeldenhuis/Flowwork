@@ -34,8 +34,9 @@ if (file_exists($csrfPath)) {
     Csrf::validate();
 }
 
-// Restrict access
-requireRoles(['admin','bookkeeper']);
+// Restrict access. Unlocking a period is a strong control override — admin
+// only (bookkeepers can create locks but must not be able to remove them).
+requireRoles(['admin']);
 
 $companyId = $_SESSION['company_id'] ?? null;
 $userId    = $_SESSION['user_id'] ?? null;

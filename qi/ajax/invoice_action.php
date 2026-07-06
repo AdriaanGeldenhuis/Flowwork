@@ -94,6 +94,12 @@ try {
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$newBalance, $newStatus, $writeAmount, $userId, $reason ?: null, $invoiceId, $companyId]);
+            // GL: DR Bad Debts (net) + DR VAT Output (s22 relief) / CR AR.
+            // Previously only balance_due changed — the AR control account,
+            // P&L and VAT201 never saw the write-off.
+            require_once __DIR__ . '/../../finances/lib/PostingService.php';
+            (new PostingService($DB, $companyId, $userId))
+                ->postInvoiceWriteOff($invoiceId, $writeAmount, $reason);
             InvoiceDeleteHelper::log($DB, $companyId, $userId, 'invoice_written_off',
                 ['invoice_id'=>$invoiceId, 'amount'=>$writeAmount, 'reason'=>$reason]);
             break;

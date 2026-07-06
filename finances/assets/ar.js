@@ -307,9 +307,41 @@
         document.getElementById('statementsPanel').classList.add('fw-finance__tab-panel--active');
       } else if (tab === 'reminders') {
         document.getElementById('remindersPanel').classList.add('fw-finance__tab-panel--active');
+        loadRemindersList();
       }
     });
   });
+
+  // Reminders tab: list overdue invoices ready for follow-up.
+  async function loadRemindersList() {
+    const box = document.getElementById('remindersList');
+    if (!box) return;
+    box.innerHTML = '<div class="fw-finance__empty-state">Loading overdue invoices…</div>';
+    try {
+      const result = await FinanceAPI.request('/finances/ajax/ar_invoices_list.php?status=overdue&limit=100', 'GET');
+      const rows = (result.data && (result.data.invoices || result.data.rows || result.data)) || [];
+      if (!Array.isArray(rows) || rows.length === 0) {
+        box.innerHTML = '<div class="fw-finance__empty-state">No overdue invoices — nothing to chase. 🎉</div>';
+        return;
+      }
+      let html = '<table class="fw-finance__table"><thead><tr>' +
+        '<th>Invoice</th><th>Customer</th><th>Due Date</th><th style="text-align:right;">Balance Due</th><th></th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (inv) {
+        html += '<tr>' +
+          '<td>' + escapeHtml(inv.invoice_number || '') + '</td>' +
+          '<td>' + escapeHtml(inv.customer_name || '') + '</td>' +
+          '<td>' + escapeHtml(inv.due_date || '') + '</td>' +
+          '<td style="text-align:right;">' + formatCurrency(Math.round(parseFloat(inv.balance_due || 0) * 100)) + '</td>' +
+          '<td><a class="fw-finance__btn fw-finance__btn--secondary" href="/qi/invoice_view.php?id=' + encodeURIComponent(inv.id) + '">Open</a></td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      box.innerHTML = html;
+    } catch (err) {
+      box.innerHTML = '<div class="fw-finance__empty-state">Could not load overdue invoices.</div>';
+    }
+  }
 
   // ─── Event Listeners ──────────────────────────────────────────────
 
