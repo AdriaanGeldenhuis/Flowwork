@@ -64,20 +64,23 @@ try {
     $vatOutputCode = $accounts->code('finance_vat_output_account_id');
     $vatInputCode  = $accounts->code('finance_vat_input_account_id');
 
-    $vatData = VatCalculator::calculate(
+    $basis = VatCalculator::companyBasis($DB, (int)$companyId);
+    $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        $basis
     );
 
-    $outputVatCents = $vatData['total_output_vat_cents'];
-    $inputVatCents  = $vatData['total_input_vat_cents'];
-    $netVatCents    = $vatData['net_vat_cents'];
+    // Snapshot the Box 5/9/10 totals (adjustment-inclusive) and stamp the
+    // basis the return was prepared on.
+    $outputVatCents = $vatData['box5_total_output_cents'];
+    $inputVatCents  = $vatData['box9_total_input_cents'];
+    $netVatCents    = $vatData['box10_net_cents'];
 
-    // Persist totals in gl_vat_periods
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
-         SET output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?,
+         SET output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?, basis = ?,
              status = 'prepared', prepared_by = ?, prepared_at = NOW()
          WHERE id = ?"
     );
@@ -85,6 +88,7 @@ try {
         $outputVatCents,
         $inputVatCents,
         $netVatCents,
+        $basis,
         $userId,
         $periodId
     ]);

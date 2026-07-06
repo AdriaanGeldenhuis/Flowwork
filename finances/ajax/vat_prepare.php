@@ -58,7 +58,8 @@ try {
     $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        VatCalculator::companyBasis($DB, (int)$companyId)
     );
 
     // Fetch company details for VAT201 header

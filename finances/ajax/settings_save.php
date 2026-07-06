@@ -51,6 +51,8 @@ if (!is_array($input)) {
 // Define the list of finance settings we allow to be updated
 $allowedKeys = [
     'fiscal_year_start',
+    'vat_basis',
+    'require_sod',
     'ar_account_id',
     'ap_account_id',
     'bank_account_id',
@@ -64,6 +66,16 @@ $allowedKeys = [
     'gain_on_disposal_account_id',
     'loss_on_disposal_account_id'
 ];
+
+// Validate enumerated settings
+if (isset($input['vat_basis']) && !in_array($input['vat_basis'], ['invoice', 'payments'], true)) {
+    echo json_encode(['ok' => false, 'error' => 'VAT basis must be invoice or payments']);
+    exit;
+}
+if (isset($input['require_sod']) && !in_array((string)$input['require_sod'], ['0', '1'], true)) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid segregation-of-duties value']);
+    exit;
+}
 
 // Prepare data for update
 $updates = [];

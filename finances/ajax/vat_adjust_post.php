@@ -195,10 +195,11 @@ try {
     // time predates any adjustments by definition — adjustments are only
     // allowed on prepared periods).
     require_once __DIR__ . '/../lib/VatCalculator.php';
-    $freshTotals = VatCalculator::calculate(
+    $freshTotals = VatCalculator::vat201Boxes(
         $DB, (int)$companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId)
     );
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
@@ -208,9 +209,9 @@ try {
           WHERE id = ? AND company_id = ?"
     );
     $stmt->execute([
-        $freshTotals['total_output_vat_cents'],
-        $freshTotals['total_input_vat_cents'],
-        $freshTotals['net_vat_cents'],
+        $freshTotals['box5_total_output_cents'],
+        $freshTotals['box9_total_input_cents'],
+        $freshTotals['box10_net_cents'],
         $periodId, $companyId,
     ]);
 

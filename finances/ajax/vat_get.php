@@ -39,11 +39,12 @@ try {
         throw new Exception('Please configure VAT accounts in Finance Settings');
     }
 
-    // Calculate VAT breakdown using centralised helper
-    $vatData = VatCalculator::calculate(
+    // Full basis-aware VAT201 box set via the centralised helper
+    $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId)
     );
 
     // Fetch company details for VAT201 header

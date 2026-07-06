@@ -9,6 +9,18 @@
 
 class VatCalculator
 {
+    /** The company's elected VAT accounting basis: 'invoice' or 'payments'. */
+    public static function companyBasis(PDO $db, int $companyId): string
+    {
+        $stmt = $db->prepare(
+            "SELECT setting_value FROM company_settings
+              WHERE company_id = ? AND setting_key = 'finance_vat_basis' LIMIT 1"
+        );
+        $stmt->execute([$companyId]);
+        $v = strtolower(trim((string)$stmt->fetchColumn()));
+        return $v === 'payments' ? 'payments' : 'invoice';
+    }
+
     /**
      * Full SARS VAT201 box set for a period — the ONE computation every
      * consumer (report page, prepare screen, CSV export, period snapshot)
@@ -23,10 +35,14 @@ class VatCalculator
         string $startDate,
         string $endDate,
         string $vatOutputCode,
-        string $vatInputCode
+        string $vatInputCode,
+        string $basis = 'invoice'
     ): array {
-        $data = self::calculate($db, $companyId, $startDate, $endDate,
-            $vatOutputCode, $vatInputCode, true);
+        $data = $basis === 'payments'
+            ? self::calculatePaymentsBasis($db, $companyId, $startDate, $endDate)
+            : self::calculate($db, $companyId, $startDate, $endDate,
+                $vatOutputCode, $vatInputCode, true);
+        $data['basis'] = $basis;
 
         // Manual adjustments (module 'vat_adjust') post INTO the VAT output
         // and input accounts — measure them there. Output increases are
@@ -59,6 +75,268 @@ class VatCalculator
         $data['box9_total_input_cents']     = $data['total_input_vat_cents'] + $adjInputC;
         $data['box10_net_cents']            = $data['box5_total_output_cents'] - $data['box9_total_input_cents'];
         return $data;
+    }
+
+    /**
+     * VAT201 aggregates on the PAYMENTS (cash) basis — s15(2)/s16 VAT Act:
+     * output tax is accounted for to the extent CONSIDERATION IS RECEIVED,
+     * input tax to the extent payment is made. The GL stays accrual; only
+     * VAT201 reporting changes.
+     *
+     * Method: each receipt/payment allocation dated in the period is
+     * apportioned across the source document's per-tax-code profile
+     * (fraction = allocation ÷ document total, applied to each tax code's
+     * base and VAT in document-currency cents, translated at the document's
+     * captured rate — consistent with the GL's s25D treatment). Credit notes
+     * and vendor credits are recognised in full at ISSUE date (s21 applies
+     * on both bases). Bank-matched transactions are inherently cash-dated
+     * and are included at their transaction date.
+     *
+     * Known limitation (documented): unallocated receipts/customer deposits
+     * have no document profile and are NOT included — the health check
+     * warns when such receipts exist in a payments-basis period.
+     */
+    public static function calculatePaymentsBasis(
+        PDO $db,
+        int $companyId,
+        string $startDate,
+        string $endDate
+    ): array {
+        $agg = [
+            'STD_BASE' => 0, 'STD_VAT' => 0, 'ZERO_BASE' => 0, 'EXEMPT_BASE' => 0,
+            'UNTAGGED_BASE' => 0,
+            'IN_CAPITAL' => 0, 'IN_OTHER' => 0,
+        ];
+
+        // Per-tax-code profile of an invoice/credit-note/bill line set:
+        // ['<code>' => ['base' => cents, 'vat' => cents, 'capital' => bool]]
+        $profile = function (array $lines, PDO $db, int $companyId): array {
+            $p = [];
+            foreach ($lines as $l) {
+                $netC = (int)round(((float)$l['quantity'] * (float)$l['unit_price'] - (float)($l['discount'] ?? 0)) * 100);
+                $rate = (float)($l['tax_rate'] ?? 0);
+                $vatC = (int)round($netC * $rate / 100);
+                $code = $l['tax_code'] ?? ($rate > 0.005 ? 'STD' : 'ZERO');
+                $code = strtoupper($code ?: ($rate > 0.005 ? 'STD' : 'ZERO'));
+                if (!isset($p[$code])) {
+                    $p[$code] = ['base' => 0, 'vat' => 0, 'capital' => false];
+                }
+                $p[$code]['base'] += $netC;
+                $p[$code]['vat'] += $vatC;
+                if (!empty($l['is_capital'])) {
+                    $p[$code]['capital'] = true;
+                }
+            }
+            return $p;
+        };
+
+        // ---- OUTPUT: customer receipts apportioned over invoice profiles ----
+        $stmt = $db->prepare(
+            "SELECT pa.amount AS alloc, i.id AS invoice_id, i.total, i.exchange_rate, i.currency
+               FROM payment_allocations pa
+               JOIN payments p ON p.id = pa.payment_id
+               JOIN invoices i ON i.id = pa.invoice_id
+              WHERE p.company_id = ? AND p.payment_date BETWEEN ? AND ?"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate]);
+        $allocs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $invoiceProfiles = [];
+        foreach ($allocs as $al) {
+            $invId = (int)$al['invoice_id'];
+            if (!isset($invoiceProfiles[$invId])) {
+                $ls = $db->prepare(
+                    "SELECT il.quantity, il.unit_price, il.discount, il.tax_rate, tc.code AS tax_code
+                       FROM invoice_lines il
+                       LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = il.tax_code_id
+                      WHERE il.invoice_id = ?"
+                );
+                $ls->execute([$invId]);
+                $invoiceProfiles[$invId] = $profile($ls->fetchAll(PDO::FETCH_ASSOC), $db, $companyId);
+            }
+            $total = (float)$al['total'];
+            if ($total == 0.0) {
+                continue;
+            }
+            $fraction = (float)$al['alloc'] / $total;
+            $fx = (strtoupper($al['currency'] ?? 'ZAR') === 'ZAR' || (float)$al['exchange_rate'] <= 0)
+                ? 1.0 : (float)$al['exchange_rate'];
+            foreach ($invoiceProfiles[$invId] as $code => $amounts) {
+                $baseC = (int)round($amounts['base'] * $fraction * $fx);
+                $vatC  = (int)round($amounts['vat'] * $fraction * $fx);
+                self::accumulateOutput($agg, $code, $baseC, $vatC);
+            }
+        }
+
+        // Credit notes at issue date (s21) — full reversal of the credit.
+        $stmt = $db->prepare(
+            "SELECT cn.id, cn.exchange_rate, cn.currency
+               FROM credit_notes cn
+              WHERE cn.company_id = ? AND cn.issue_date BETWEEN ? AND ?
+                AND cn.journal_id IS NOT NULL"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $cn) {
+            $ls = $db->prepare(
+                "SELECT cl.quantity, cl.unit_price, cl.discount, cl.tax_rate, tc.code AS tax_code
+                   FROM credit_note_lines cl
+                   LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = cl.tax_code_id
+                  WHERE cl.credit_note_id = ?"
+            );
+            $ls->execute([(int)$cn['id']]);
+            $fx = (strtoupper($cn['currency'] ?? 'ZAR') === 'ZAR' || (float)$cn['exchange_rate'] <= 0)
+                ? 1.0 : (float)$cn['exchange_rate'];
+            foreach ($profile($ls->fetchAll(PDO::FETCH_ASSOC), $db, $companyId) as $code => $amounts) {
+                self::accumulateOutput($agg, $code, -(int)round($amounts['base'] * $fx), -(int)round($amounts['vat'] * $fx));
+            }
+        }
+
+        // ---- INPUT: supplier payments apportioned over bill profiles --------
+        $stmt = $db->prepare(
+            "SELECT apa.amount AS alloc, b.id AS bill_id, b.total
+               FROM ap_payment_allocations apa
+               JOIN ap_payments p ON p.id = apa.ap_payment_id
+               JOIN ap_bills b ON b.id = apa.bill_id
+              WHERE p.company_id = ? AND p.payment_date BETWEEN ? AND ?"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate]);
+        $billProfiles = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $al) {
+            $billId = (int)$al['bill_id'];
+            if (!isset($billProfiles[$billId])) {
+                $ls = $db->prepare(
+                    "SELECT bl.quantity, bl.unit_price, bl.discount, bl.tax_rate,
+                            'INPUT' AS tax_code,
+                            (ga.account_subtype = 'fixed_asset') AS is_capital
+                       FROM ap_bill_lines bl
+                       LEFT JOIN gl_accounts ga ON ga.account_id = bl.gl_account_id
+                      WHERE bl.bill_id = ?"
+                );
+                $ls->execute([$billId]);
+                // Split capital and other input per line
+                $capVat = 0;
+                $otherVat = 0;
+                foreach ($ls->fetchAll(PDO::FETCH_ASSOC) as $l) {
+                    $netC = (int)round(((float)$l['quantity'] * (float)$l['unit_price'] - (float)($l['discount'] ?? 0)) * 100);
+                    $vatC = (int)round($netC * (float)($l['tax_rate'] ?? 0) / 100);
+                    if (!empty($l['is_capital'])) {
+                        $capVat += $vatC;
+                    } else {
+                        $otherVat += $vatC;
+                    }
+                }
+                $billProfiles[$billId] = ['capital' => $capVat, 'other' => $otherVat];
+            }
+            $total = (float)$al['total'];
+            if ($total == 0.0) {
+                continue;
+            }
+            $fraction = (float)$al['alloc'] / $total;
+            $agg['IN_CAPITAL'] += (int)round($billProfiles[$billId]['capital'] * $fraction);
+            $agg['IN_OTHER']   += (int)round($billProfiles[$billId]['other'] * $fraction);
+        }
+
+        // Vendor credits at issue date — full reversal.
+        $stmt = $db->prepare(
+            "SELECT vc.id FROM vendor_credits vc
+              WHERE vc.company_id = ? AND vc.issue_date BETWEEN ? AND ?
+                AND vc.journal_id IS NOT NULL"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate]);
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $vcId) {
+            $ls = $db->prepare(
+                "SELECT quantity, unit_price, discount, tax_rate FROM vendor_credit_lines WHERE credit_id = ?"
+            );
+            $ls->execute([(int)$vcId]);
+            foreach ($ls->fetchAll(PDO::FETCH_ASSOC) as $l) {
+                $netC = (int)round(((float)$l['quantity'] * (float)$l['unit_price'] - (float)($l['discount'] ?? 0)) * 100);
+                $vatC = (int)round($netC * (float)($l['tax_rate'] ?? 0) / 100);
+                $agg['IN_OTHER'] -= $vatC;
+            }
+        }
+
+        // ---- Bank-matched items: inherently cash-dated ----------------------
+        // Revenue lines on bank journals feed the output BASE figures.
+        $stmt = $db->prepare(
+            "SELECT COALESCE(tc.code, 'UNTAGGED') AS tax_code,
+                    SUM(jl.credit - jl.debit) AS credit_net
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_id
+               JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+               LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = jl.tax_code_id
+              WHERE je.company_id = ? AND je.status = 'posted'
+                AND je.ref_type = 'bank_tx'
+                AND je.entry_date BETWEEN ? AND ?
+                AND ga.account_type = 'revenue'
+              GROUP BY COALESCE(tc.code, 'UNTAGGED')"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $code = strtoupper($row['tax_code']) ?: 'UNTAGGED';
+            self::accumulateOutput($agg, $code, (int)round(((float)$row['credit_net']) * 100), 0);
+        }
+        // Bank VAT legs: output VAT credited / input VAT debited on bank journals
+        $stmt = $db->prepare(
+            "SELECT jl.account_code, jl.is_capital_goods,
+                    SUM(jl.credit - jl.debit) AS credit_net,
+                    SUM(jl.debit - jl.credit) AS debit_net
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_id
+              WHERE je.company_id = ? AND je.status = 'posted'
+                AND je.ref_type = 'bank_tx'
+                AND je.entry_date BETWEEN ? AND ?
+              GROUP BY jl.account_code, jl.is_capital_goods"
+        );
+        // Resolve the VAT account codes once for the bank leg attribution.
+        require_once __DIR__ . '/AccountsMap.php';
+        $map = new AccountsMap($db, $companyId);
+        $outCode = $map->code('finance_vat_output_account_id');
+        $inCode = $map->code('finance_vat_input_account_id');
+        $stmt->execute([$companyId, $startDate, $endDate]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if ($row['account_code'] === $outCode) {
+                $agg['STD_VAT'] += (int)round(((float)$row['credit_net']) * 100);
+            } elseif ($row['account_code'] === $inCode) {
+                if (!empty($row['is_capital_goods'])) {
+                    $agg['IN_CAPITAL'] += (int)round(((float)$row['debit_net']) * 100);
+                } else {
+                    $agg['IN_OTHER'] += (int)round(((float)$row['debit_net']) * 100);
+                }
+            }
+        }
+
+        $totalOutputVat = $agg['STD_VAT'];
+        $totalInputVat = $agg['IN_CAPITAL'] + $agg['IN_OTHER'];
+        return [
+            'output_standard_base_cents' => $agg['STD_BASE'],
+            'output_standard_vat_cents'  => $agg['STD_VAT'],
+            'output_zero_base_cents'     => $agg['ZERO_BASE'],
+            'output_exempt_base_cents'   => $agg['EXEMPT_BASE'],
+            'untagged_revenue_base_cents'=> $agg['UNTAGGED_BASE'],
+            'total_output_vat_cents'     => $totalOutputVat,
+            'input_capital_cents'        => $agg['IN_CAPITAL'],
+            'input_other_cents'          => $agg['IN_OTHER'],
+            'total_input_vat_cents'      => $totalInputVat,
+            'net_vat_cents'              => $totalOutputVat - $totalInputVat,
+        ];
+    }
+
+    /** Accumulate an output-side (base, VAT) pair into the aggregate by code. */
+    private static function accumulateOutput(array &$agg, string $code, int $baseC, int $vatC): void
+    {
+        switch ($code) {
+            case 'ZERO':
+                $agg['ZERO_BASE'] += $baseC;
+                break;
+            case 'EXEMPT':
+                $agg['EXEMPT_BASE'] += $baseC;
+                break;
+            case 'UNTAGGED':
+                $agg['UNTAGGED_BASE'] += $baseC;
+                break;
+            default: // STD / STANDARD / other rated codes
+                $agg['STD_BASE'] += $baseC;
+                $agg['STD_VAT'] += $vatC;
+        }
     }
 
     /**

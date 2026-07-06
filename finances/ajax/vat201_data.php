@@ -66,7 +66,8 @@ try {
     $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId)
     );
 
     echo json_encode(['ok' => true, 'data' => $vatData]);

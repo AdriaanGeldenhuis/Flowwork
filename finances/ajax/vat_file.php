@@ -50,11 +50,12 @@ try {
     require_once __DIR__ . '/../lib/AccountsMap.php';
     require_once __DIR__ . '/../lib/VatCalculator.php';
     $accounts = new AccountsMap($DB, (int)$companyId);
-    $filedTotals = VatCalculator::calculate(
+    $filedTotals = VatCalculator::vat201Boxes(
         $DB, (int)$companyId,
         $period['period_start'], $period['period_end'],
         $accounts->code('finance_vat_output_account_id'),
-        $accounts->code('finance_vat_input_account_id')
+        $accounts->code('finance_vat_input_account_id'),
+        $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId)
     );
 
     // Update period status to filed
@@ -66,9 +67,9 @@ try {
     );
     $stmt->execute([
         $userId,
-        $filedTotals['total_output_vat_cents'],
-        $filedTotals['total_input_vat_cents'],
-        $filedTotals['net_vat_cents'],
+        $filedTotals['box5_total_output_cents'],
+        $filedTotals['box9_total_input_cents'],
+        $filedTotals['box10_net_cents'],
         $periodId, $companyId,
     ]);
 

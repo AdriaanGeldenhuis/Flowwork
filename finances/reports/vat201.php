@@ -294,7 +294,8 @@ async function loadVAT201() {
         row.className = 'vat201-row ' + (vatData.box10_net_cents >= 0 ? 'vat201-grand-total' : 'vat201-refund');
 
         // Period info
-        document.getElementById('v_period').textContent = periodStart + ' to ' + periodEnd;
+        document.getElementById('v_period').textContent = periodStart + ' to ' + periodEnd
+            + (vatData.basis ? ' — ' + (vatData.basis === 'payments' ? 'Payments (cash) basis' : 'Invoice (accrual) basis') : '');
         document.getElementById('genDate').textContent = new Date().toISOString().slice(0, 10);
 
         document.getElementById('vat201Form').style.display = 'block';
