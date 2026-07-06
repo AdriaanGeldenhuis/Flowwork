@@ -93,6 +93,84 @@ $svc->postCreditNote($cnId);
 
 $pb4 = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn, 'payments');
 assert_eq($pb2['box5_total_output_cents'] - 1500, $pb4['box5_total_output_cents'],
-    'credit note reduces output tax by 15.00 at issue date');
+    'credit note reduces output tax by 15.00 at issue date (fully-paid invoice)');
+
+// ---------------------------------------------------------------------------
+// REGRESSION (review): s21 clawback — a credit note against a NEVER-PAID
+// invoice must not manufacture an output-tax refund, and crediting the unpaid
+// half of an invoice must not double-count against the receipt of the other
+// half. Previously credit notes were recognised in FULL at issue while
+// receipts still apportioned by the original total.
+// ---------------------------------------------------------------------------
+function make_credit_note(PDO $db, int $invId, int $cust, float $net, float $vat, PostingService $svc): int
+{
+    $db->prepare("INSERT INTO credit_notes (company_id, credit_note_number, invoice_id, customer_id, issue_date,
+                  status, subtotal, tax, total, currency, reason, reason_code, created_by, journal_id)
+                  VALUES (?, CONCAT('CN-', UUID_SHORT()), ?, ?, CURDATE(), 'draft', ?, ?, ?, 'ZAR', 'test', 'return', ?, NULL)")
+       ->execute([TEST_COMPANY_ID, $invId, $cust, $net, $vat, $net + $vat, TEST_USER_ID]);
+    $cnId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO credit_note_lines (credit_note_id, item_description, quantity, unit, unit_price, discount, tax_rate, tax_code_id, line_total, sort_order)
+                  VALUES (?, 'Return', 1, 'ea', ?, 0, 15, ?, ?, 0)")
+       ->execute([$cnId, $net, tax_code_id_by_code($db, 'STD'), $net + $vat]);
+    $svc->postCreditNote($cnId);
+    return $cnId;
+}
+
+$before = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn, 'payments');
+
+// (1) Full credit of a never-paid invoice: zero payments-basis effect.
+$invUnpaid = make_invoice($DB, $cust, [[1, 1000.00, 15, 'Std']]); // 1150 incl.
+$svc->postInvoice($invUnpaid);
+make_credit_note($DB, $invUnpaid, $cust, 1000.00, 150.00, $svc);
+$after1 = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn, 'payments');
+assert_eq($before['box5_total_output_cents'], $after1['box5_total_output_cents'],
+    'crediting a never-paid invoice claims no output-tax refund (payments basis)');
+
+// (2) Credit half, customer pays the remaining half: net output = VAT on the
+// R575 actually received (75.00), not 75 - 75 = 0.
+$invHalf = make_invoice($DB, $cust, [[1, 1000.00, 15, 'Std']]); // 1150 incl.
+$svc->postInvoice($invHalf);
+make_credit_note($DB, $invHalf, $cust, 500.00, 75.00, $svc); // cancels the unpaid half
+$pHalf = receive_payment($DB, $invHalf, 575.00, date('Y-m-d'));
+$svc->postCustomerPayment($pHalf);
+$after2 = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn, 'payments');
+assert_eq($after1['box5_total_output_cents'] + 7500, $after2['box5_total_output_cents'],
+    'credit-then-pay-remainder recognises exactly the VAT on the consideration received (75.00)');
+
+// (3) Running-total rounding: R33.33 @ 15% (VAT exactly 5.00) received in
+// three ragged instalments must recognise exactly 500c in total — the old
+// per-allocation rounding drifted to 5.01.
+$invRound = make_invoice($DB, $cust, [[1, 33.33, 15, 'Rounding']]); // total 38.33
+$svc->postInvoice($invRound);
+foreach ([12.78, 12.78, 12.77] as $amt) {
+    $p = receive_payment($DB, $invRound, $amt, date('Y-m-d'));
+    $svc->postCustomerPayment($p);
+}
+$after3 = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn, 'payments');
+assert_eq($after2['box5_total_output_cents'] + 500, $after3['box5_total_output_cents'],
+    'three ragged instalments recognise exactly the invoice VAT (running-total rounding)');
+
+// (4) The VAT audit file must still FOOT to the boxes after all of the above.
+require_once FLOWWORK_ROOT . '/finances/lib/VatAuditFile.php';
+$rows = VatAuditFile::rows($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn, 'payments');
+$totals = VatAuditFile::totals($rows);
+assert_eq($after3['box5_total_output_cents'], $totals['output_vat_cents'],
+    'audit file output rows foot to Box 5 (payments basis, incl. clawback + rounding)');
+assert_eq($after3['box9_total_input_cents'], $totals['input_vat_cents'],
+    'audit file input rows foot to Box 9 (payments basis)');
+
+// (5) periodBasis(): an OPEN period follows the company's CURRENT election;
+// a prepared period trusts its stamped snapshot.
+$DB->prepare("INSERT INTO company_settings (company_id, setting_key, setting_value)
+              VALUES (?, 'finance_vat_basis', 'payments')
+              ON DUPLICATE KEY UPDATE setting_value = 'payments'")->execute([TEST_COMPANY_ID]);
+assert_eq('payments', VatCalculator::periodBasis($DB, TEST_COMPANY_ID,
+    ['status' => 'open', 'basis' => 'invoice']),
+    'open period ignores the un-stamped default basis and follows the company election');
+assert_eq('invoice', VatCalculator::periodBasis($DB, TEST_COMPANY_ID,
+    ['status' => 'prepared', 'basis' => 'invoice']),
+    'prepared period trusts the basis stamped at prepare time');
+$DB->prepare("UPDATE company_settings SET setting_value = 'invoice'
+              WHERE company_id = ? AND setting_key = 'finance_vat_basis'")->execute([TEST_COMPANY_ID]);
 
 test_done('vat_payments_basis');

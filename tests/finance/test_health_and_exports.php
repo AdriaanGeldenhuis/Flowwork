@@ -130,4 +130,33 @@ assert_cents(825.00, $tieout->glBalance('AR', $asOf), 'GL AR control after recei
 assert_cents(230.00, $tieout->apSubledger($asOf), 'AP subledger after part-payment');
 assert_cents(230.00, $tieout->glBalance('AP', $asOf), 'GL AP control after part-payment');
 
+// ---------------------------------------------------------------------------
+// REGRESSION (review): the AR tie-out must survive a write-off (the write-off
+// journal credits GL AR; the subledger used to keep the full face value and
+// show a permanent spurious difference) and an UNAPPLIED receipt (allocations
+// deleted after posting — the posted Cr AR must still be counted).
+// ---------------------------------------------------------------------------
+$invWo = make_invoice($DB, $cust, [[1, 400.00, 15, 'To write off']], ['status' => 'sent']); // 460
+$svc->postInvoice($invWo);
+$svc->postInvoiceWriteOff($invWo, 460.00, 'gone under');
+$DB->prepare("UPDATE invoices SET balance_due = 0, status = 'written_off',
+              write_off_amount = 460.00 WHERE id = ?")->execute([$invWo]);
+
+assert_cents($tieout->glBalance('AR', $asOf), $tieout->arSubledger($asOf),
+    'AR subledger still ties to the GL control after a full write-off');
+
+// Unapplied receipt: pay 100 against the mixed invoice, post it, then delete
+// the allocation (what invoice_action unapply_payments does).
+$DB->prepare("INSERT INTO payments (company_id, amount, payment_date, method, reference, received_by, created_at)
+              VALUES (?, 100.00, ?, 'eft', 'UNAPPLIED-1', ?, NOW())")
+   ->execute([TEST_COMPANY_ID, $asOf, TEST_USER_ID]);
+$unapPid = (int)$DB->lastInsertId();
+$DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?,?,100.00)")
+   ->execute([$unapPid, $inv]);
+$svc->postCustomerPayment($unapPid);
+$DB->prepare("DELETE FROM payment_allocations WHERE payment_id = ?")->execute([$unapPid]);
+
+assert_cents($tieout->glBalance('AR', $asOf), $tieout->arSubledger($asOf),
+    'AR subledger counts the unapplied receipt as a customer credit (ties to GL)');
+
 test_done('health_and_exports');

@@ -114,3 +114,113 @@ and can be deleted).
   they work but should eventually converge on the `Audit` helper.
 - 5-year record retention is satisfied by the immutable GL + audit file
   exports, but there is no automated archival policy.
+
+---
+
+# PR #55 complete review (2026-07-06) — findings and fixes
+
+Before merge, the full diff was re-reviewed by five independent specialist
+passes (accounting integrity, VAT/SARS domain, endpoint security, frontend
+wiring, migrations/runbook). 52 findings were reported; each was verified
+against the code before acceptance, and every confirmed defect was fixed in
+commits `ee92bed`, `1a172d6`, `9937522`, `7cfc1a3` with regression tests
+(suite grew 190 → 228 assertions, 11/11 files green).
+
+## Criticals found and fixed
+
+- **`save_invoice.php` lost `$totalCalc`** in the integer-cents rewrite while
+  five uses remained: every draft edit zeroed `balance_due` (payments then
+  rejected as "exceeds balance due") and milestone invoices could not be
+  saved. Restored. (Found independently by two review passes.)
+- **`supersedeJournal` posted reversals for never-posted legacy journals.**
+  The pre-2026 engines left journals in `draft`; reposting such a document
+  created a POSTED reversal for amounts that were never in the posted
+  reports — running `repost_all.php` against the production dump netted all
+  pre-remediation trading history to zero in the trial balance, tie-outs and
+  VAT201. Reversals are now skipped (and audit-logged) for non-posted
+  journals; `repost_all` also neutralises legacy stock movements
+  (`journal_id IS NULL`) before reposting, which previously double-issued
+  inventory.
+
+## Highs found and fixed (selection)
+
+- **Payments-basis s21 credit notes double-counted**: recognised in full at
+  issue while receipts still apportioned by the original invoice total — a
+  credit against a never-paid invoice manufactured an output-tax refund.
+  Recognition is now clawback-capped to output tax previously accounted for
+  on receipts; per-document running-total rounding also guarantees lifetime
+  cash-basis VAT equals invoice-basis VAT exactly (the old per-allocation
+  rounding drifted ±1c per partial payment). `VatAuditFile` mirrors both, so
+  the audit file still foots to the boxes.
+- **Bill-level capital-goods flag**: one fixed-asset line marked a whole
+  bill's input VAT as capital (VAT201 Box 7/8 misallocation). VAT is now
+  grouped per (tax code, capital flag) on bills AND vendor credits, on both
+  bases.
+- **Write-off (s22) fixes**: relief moved from netting Box 1A to an explicit
+  input-side bad-debts adjustment inside Box 9 (eFiling derives field 4 from
+  field 1, so netting output broke the form's arithmetic); FX write-offs now
+  convert to ZAR at the invoice's captured rate (face-value posting stranded
+  17/18ths of a USD invoice's AR).
+- **Open VAT periods showed accrual figures to payments-basis vendors**
+  (`gl_vat_periods.basis` is NOT NULL DEFAULT 'invoice' and only stamped at
+  prepare time). New `periodBasis()` helper: open → company election,
+  prepared/filed → stamped snapshot.
+- **`vat_adjust_post` could post a 1-cent-unbalanced journal** (float contra
+  threshold `> 0.01`) with no period-lock check; `return_issue` committed
+  stock before its transaction and left its journal in invisible `draft`;
+  `receipts/post_to_gl` hand-rolled journals with hardcoded account
+  fallbacks, no locks and no discounts. All three now post through the new
+  public engine choke point `PostingService::postAdHocJournal` /
+  `postApBill`.
+- **Void/unapply asymmetries**: voiding a PAID invoice reversed the invoice
+  journal but left the payment journals (AR control went negative) — void
+  now requires unapplying payments first; the AR tie-out counts unapplied
+  receipts as customer credits and subtracts write-offs, in ZAR.
+- **Race conditions** closed with row locks + predicate/rowCount guards and
+  DB backstops: journal approve/reverse, bank match, asset disposal,
+  depreciation run (new unique index, migration 06), recurring generation
+  (cron vs manual), Yoco webhook duplicate deliveries (idempotency key),
+  three-way-match batch quantity tracker.
+- **Exempt lines stored as zero-rated**: the invoice editor never submitted
+  the per-line tax CODE, so both 0% options resolved to ZERO (Box 2/3
+  misstatement) and edits reset custom revenue accounts. The editor now
+  round-trips `tax_code` and `gl_account_id`.
+- **s20 recipient address** on a full tax invoice (> R5,000) upgraded from
+  warning to blocking error (s20(4)(b) requires it unconditionally; only the
+  recipient VAT number is vendor-dependent).
+- **Error-message hygiene**: 14 endpoints echoed raw exception text
+  (including SQL detail) to clients; all now pass through business messages
+  only.
+
+## Production-runbook corrections from the review
+
+Two steps are REQUIRED in addition to the runbook above (verified against
+the production schema shape):
+
+1. **Before `finance_setup.php`**: run `CALL seed_sars_chart_of_accounts(<company_id>);`
+   for every company. On the legacy chart, nine mappings (bank, expense,
+   wage/UIF/SDL expense, FX gain/loss, disposal gain/loss) otherwise stay
+   unresolved and postings that need them hard-fail with "Unknown GL account
+   code".
+2. **After `finance_setup.php`**: open Finance Settings and resolve any
+   mapping still flagged UNRESOLVED, and create at least one GL-linked bank
+   account (Banking → Accounts) — customer receipts fall back to the seeded
+   bank account and refuse to post if none exists.
+
+Also note: migration 06 (review fixes) joins the ordered migration list, and
+`fa_depreciation_runs` gains a unique month index.
+
+## Review items documented, not changed
+
+- qi financial endpoints (record payment, write-off, credit) require
+  authentication + CSRF but no admin/bookkeeper role — unchanged from main;
+  tightening it is a product decision about who may capture payments.
+- A Yoco payment against a draft invoice that fails s20 validation rolls
+  back and returns 500 (Yoco retries until the draft is fixed) — safe and
+  visible, but worth knowing.
+- Vendor credits have no payments-basis clawback (unlike customer credit
+  notes); early recognition only OVERSTATES VAT payable — conservative.
+- Standalone credit notes (no linked invoice) are recognised in full at
+  issue under the payments basis; they represent actual refunds.
+- `repost_all.php` reposts unconditionally (reversal + replacement per run);
+  reruns are financially safe but grow `journal_entries` — run it once.

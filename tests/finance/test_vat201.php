@@ -90,4 +90,75 @@ assert_eq($boxes2['box5_total_output_cents'], -gl_balance_cents($DB, $vatOut),
 assert_eq($boxes2['box9_total_input_cents'], gl_balance_cents($DB, $vatIn),
     'Box 9 ties to the VAT input GL account');
 
+// ---------------------------------------------------------------------------
+// REGRESSION (review): a MIXED bill (fixed-asset + consumables) must split its
+// input VAT between Box 7 and Box 8 per line — the bill-level capital flag
+// used to mark the WHOLE bill's VAT as capital goods.
+// ---------------------------------------------------------------------------
+$mixedVat = round(10000 * 0.15 + 1000 * 0.15, 2);
+$DB->prepare("INSERT INTO ap_bills (company_id, supplier_id, issue_date, due_date, vendor_invoice_number,
+              subtotal, tax, total, status, created_by, created_at)
+              VALUES (?, ?, CURDATE(), CURDATE(), CONCAT('V-', UUID_SHORT()), 11000, ?, ?, 'draft', ?, NOW())")
+   ->execute([TEST_COMPANY_ID, $sup, $mixedVat, 11000 + $mixedVat, TEST_USER_ID]);
+$mixedBill = (int)$DB->lastInsertId();
+$insLine = $DB->prepare("INSERT INTO ap_bill_lines (bill_id, item_description, quantity, unit_price, tax_rate, line_total, sort_order, gl_account_id)
+              VALUES (?, ?, 1, ?, 15, ?, ?, ?)");
+$insLine->execute([$mixedBill, 'Laptop (capital)', 10000, 11500, 0, $faAccount]);
+$insLine->execute([$mixedBill, 'Stationery', 1000, 1150, 1, null]);
+$svc->postApBill($mixedBill);
+
+$boxes3 = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn);
+assert_eq($boxes2['input_capital_cents'] + 150000, $boxes3['input_capital_cents'],
+    'mixed bill: only the fixed-asset line\'s VAT (1500) lands in Box 7');
+assert_eq($boxes2['input_other_cents'] + 15000, $boxes3['input_other_cents'],
+    'mixed bill: the consumables line\'s VAT (150) stays in Box 8');
+
+// ---------------------------------------------------------------------------
+// REGRESSION (review): s22 bad-debt write-off relief is an INPUT-side
+// adjustment inside Box 9 — it must NOT reduce Box 1A (eFiling derives
+// field 4 from field 1, so netting the output side breaks the form).
+// ---------------------------------------------------------------------------
+$invWo = make_invoice($DB, $cust, [[1, 800.00, 15, 'ToWriteOff']], ['status' => 'sent']); // 920 incl.
+$svc->postInvoice($invWo);
+$svc->postInvoiceWriteOff($invWo, 920.00, 'debtor liquidated');
+
+$boxes4 = VatCalculator::vat201Boxes($DB, TEST_COMPANY_ID, $start, $end, $vatOut, $vatIn);
+assert_eq($boxes3['output_standard_vat_cents'] + 12000, $boxes4['output_standard_vat_cents'],
+    'Box 1A carries the written-off invoice\'s output VAT undiminished');
+assert_eq(12000, $boxes4['bad_debt_relief_input_cents'],
+    's22 relief (120.00) reported as the bad-debts input adjustment');
+assert_eq($boxes3['box9_total_input_cents'] + 12000, $boxes4['box9_total_input_cents'],
+    'Box 9 includes the s22 relief');
+// The relief journal debits the VAT INPUT account under module bad_debt
+$woRelief = $DB->query("SELECT COALESCE(SUM(jl.debit - jl.credit),0)
+    FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_id
+    WHERE je.company_id = " . TEST_COMPANY_ID . " AND je.module = 'bad_debt'
+      AND jl.account_code = '" . $vatIn . "'")->fetchColumn();
+assert_cents(12000, (float)$woRelief * 100 / 100 * 100, 'relief debit sits on the VAT input account');
+
+// GL tie-outs must still hold after the mixed bill and the write-off.
+assert_eq($boxes4['box5_total_output_cents'], -gl_balance_cents($DB, $vatOut),
+    'Box 5 still ties to the VAT output GL account after the write-off');
+assert_eq($boxes4['box9_total_input_cents'], gl_balance_cents($DB, $vatIn),
+    'Box 9 still ties to the VAT input GL account after the write-off');
+
+// ---------------------------------------------------------------------------
+// REGRESSION (review): FX write-off posts in ZAR at the invoice's captured
+// rate (s25D) — the face-value posting stranded 17/18ths of a USD invoice's
+// AR and mis-sized the s22 relief.
+// ---------------------------------------------------------------------------
+$invFx = make_invoice($DB, $cust, [[1, 100.00, 15, 'USD services']],
+    ['status' => 'sent', 'currency' => 'USD']); // USD 115.00
+$DB->prepare("UPDATE invoices SET exchange_rate = 18.0 WHERE id = ?")->execute([$invFx]);
+$svc->postInvoice($invFx);
+$svc->postInvoiceWriteOff($invFx, 115.00, 'foreign debtor defaulted');
+$woJournal = (int)$DB->query("SELECT id FROM journal_entries
+    WHERE company_id = " . TEST_COMPANY_ID . " AND ref_type = 'invoice_write_off' AND ref_id = " . (int)$invFx)->fetchColumn();
+assert_true($woJournal > 0, 'FX write-off journal exists');
+assert_balanced_journal($DB, $woJournal, 'FX write-off');
+$arCode = $map->code('finance_ar_account_id');
+$woAr = (float)$DB->query("SELECT COALESCE(SUM(credit),0) FROM journal_lines
+    WHERE journal_id = $woJournal AND account_code = '$arCode'")->fetchColumn();
+assert_cents(207000, $woAr * 100, 'FX write-off credits AR with the full ZAR value (115 x 18 = 2070)');
+
 test_done('vat201');

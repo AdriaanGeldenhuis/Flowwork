@@ -77,4 +77,79 @@ assert_eq(-46000, gl_balance_cents($DB, $apCode), 'AP credit 460.00');
 assert_eq(6000, gl_balance_cents($DB, $vatIn), 'VAT input debit 60.00');
 assert_eq('posted', $DB->query("SELECT status FROM ap_bills WHERE id = $billId")->fetchColumn(), 'bill posted');
 
+// ---------------------------------------------------------------------------
+// REGRESSION (review): postAdHocJournal is the public choke-point entry for
+// system endpoints (VAT adjustments, inventory returns) — it must enforce the
+// same guarantees as every engine posting.
+// ---------------------------------------------------------------------------
+$salesCode = $map->code('finance_sales_account_id');
+$bankCode  = $map->code('finance_bank_account_id');
+$threw = false;
+try {
+    $svc->postAdHocJournal(
+        ['entry_date' => date('Y-m-d'), 'reference' => 'ADHOC-BAD'],
+        [
+            ['account_code' => $bankCode, 'description' => 'x', 'debit' => 100.00, 'credit' => 0],
+            ['account_code' => $salesCode, 'description' => 'x', 'debit' => 0, 'credit' => 99.99],
+        ]
+    );
+} catch (Exception $e) {
+    $threw = true;
+}
+assert_true($threw, 'postAdHocJournal rejects an unbalanced journal (1c off)');
+
+$DB->prepare("INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at, is_active)
+              VALUES (?, ?, 'test lock', 1, NOW(), 1)")->execute([TEST_COMPANY_ID, date('Y-m-d')]);
+$threw = false;
+try {
+    $svc->postAdHocJournal(
+        ['entry_date' => date('Y-m-d'), 'reference' => 'ADHOC-LOCKED'],
+        [
+            ['account_code' => $bankCode, 'description' => 'x', 'debit' => 100.00, 'credit' => 0],
+            ['account_code' => $salesCode, 'description' => 'x', 'debit' => 0, 'credit' => 100.00],
+        ]
+    );
+} catch (Exception $e) {
+    $threw = true;
+}
+assert_true($threw, 'postAdHocJournal rejects a locked period');
+$DB->exec("DELETE FROM gl_period_locks WHERE company_id = " . TEST_COMPANY_ID);
+
+$adhocId = $svc->postAdHocJournal(
+    ['entry_date' => date('Y-m-d'), 'reference' => 'ADHOC-OK', 'module' => 'fin'],
+    [
+        ['account_code' => $bankCode, 'description' => 'x', 'debit' => 100.00, 'credit' => 0],
+        ['account_code' => $salesCode, 'description' => 'x', 'debit' => 0, 'credit' => 100.00],
+    ]
+);
+assert_true($adhocId > 0, 'postAdHocJournal posts a valid journal');
+assert_eq('posted', $DB->query("SELECT status FROM journal_entries WHERE id = $adhocId")->fetchColumn(),
+    'ad-hoc journal is status posted (not invisible draft)');
+assert_balanced_journal($DB, $adhocId, '(ad hoc)');
+
+// ---------------------------------------------------------------------------
+// REGRESSION (review): a NEGATIVE-quantity inventory line (customer return
+// netted on the invoice) must restock and credit COGS — it used to adjust
+// revenue only, leaving stock short and COGS overstated.
+// ---------------------------------------------------------------------------
+$DB->prepare("INSERT INTO inventory_items (company_id, sku, name, uom, is_stocked)
+              VALUES (?, CONCAT('SKU-', UUID_SHORT()), 'Return widget', 'ea', 1)")->execute([TEST_COMPANY_ID]);
+$retItem = (int)$DB->lastInsertId();
+$DB->prepare("INSERT INTO inventory_movements (company_id, item_id, movement_date, qty, unit_cost, ref_type)
+              VALUES (?, ?, CURDATE(), 10, 50.00, 'opening')")->execute([TEST_COMPANY_ID, $retItem]);
+
+$cogsCode = $map->code('finance_cogs_account_id');
+$cogsBefore = gl_balance_cents($DB, $cogsCode);
+$invRet = make_invoice($DB, $cust, [[3, 100.00, 15, 'Widgets'], [-1, 100.00, 15, 'Widget returned']], ['status' => 'sent']);
+$DB->prepare("UPDATE invoice_lines SET inventory_item_id = ? WHERE invoice_id = ?")->execute([$retItem, $invRet]);
+$svc->postInvoice($invRet);
+
+$onHand = (float)$DB->query("SELECT COALESCE(SUM(qty),0) FROM inventory_movements
+    WHERE company_id = " . TEST_COMPANY_ID . " AND item_id = $retItem")->fetchColumn();
+assert_eq(8.0, $onHand, 'on-hand = 10 - 3 sold + 1 returned');
+assert_eq($cogsBefore + 10000, gl_balance_cents($DB, $cogsCode),
+    'COGS = 3 out - 1 back at R50 avg cost (net 100.00)');
+assert_balanced_journal($DB, (int)$DB->query("SELECT journal_id FROM invoices WHERE id = $invRet")->fetchColumn(),
+    '(invoice with return line)');
+
 test_done('posting_engine');

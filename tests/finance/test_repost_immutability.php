@@ -84,4 +84,35 @@ assert_eq($jid2, $jid3, 'blocked repost leaves the existing journal untouched');
 $rev2 = $DB->query("SELECT reversed_by_journal_id FROM journal_entries WHERE id = $jid2")->fetch();
 assert_true(empty($rev2['reversed_by_journal_id']), 'blocked repost did not reverse anything (atomic rollback)');
 
+// ---------------------------------------------------------------------------
+// REGRESSION (review): superseding a journal the LEGACY engines left in
+// 'draft' (the pre-status era never set journal status) must NOT create a
+// posted reversal — that would subtract amounts that were never in the
+// posted reports, netting the document's history to zero on repost.
+// ---------------------------------------------------------------------------
+$DB->exec("DELETE FROM gl_period_locks WHERE company_id = " . TEST_COMPANY_ID); // undo the lock above
+
+$cust2 = make_customer($DB);
+$invLegacy = make_invoice($DB, $cust2, [[1, 600.00, 15, 'Legacy era']], ['status' => 'sent']);
+$svc->postInvoice($invLegacy);
+$legacyJid = (int)$DB->query("SELECT journal_id FROM invoices WHERE id = $invLegacy")->fetchColumn();
+// Simulate the legacy engine: the journal exists but was never marked posted.
+$DB->prepare("UPDATE journal_entries SET status = 'draft' WHERE id = ?")->execute([$legacyJid]);
+
+$arCode = $map->code('finance_ar_account_id');
+$arBefore = gl_balance_cents($DB, $arCode); // posted-only — excludes the draft journal
+
+$svc->postInvoice($invLegacy); // repost through the new engine
+
+$newJid = (int)$DB->query("SELECT journal_id FROM invoices WHERE id = $invLegacy")->fetchColumn();
+assert_true($newJid > 0 && $newJid !== $legacyJid, 'repost produced a replacement journal');
+$reversals = (int)$DB->query("SELECT COUNT(*) FROM journal_entries
+    WHERE company_id = " . TEST_COMPANY_ID . " AND reverses_journal_id = $legacyJid")->fetchColumn();
+assert_eq(0, $reversals, 'NO posted reversal was created for the never-posted legacy journal');
+assert_eq($arBefore + 69000, gl_balance_cents($DB, $arCode),
+    'posted AR carries the invoice exactly once after the legacy repost (600 + VAT = 690)');
+$skipAudit = (int)$DB->query("SELECT COUNT(*) FROM audit_log
+    WHERE action = 'journal_superseded_unposted' AND entity_id = $legacyJid")->fetchColumn();
+assert_eq(1, $skipAudit, 'the skipped reversal is audit-logged');
+
 test_done('repost_immutability');
