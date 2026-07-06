@@ -18,6 +18,20 @@ JOIN gl_tax_codes tc     ON tc.company_id = cn.company_id
 SET cl.tax_code_id = tc.tax_code_id
 WHERE cl.tax_code_id IS NULL;
 
+UPDATE quote_lines ql
+JOIN quotes q            ON q.id = ql.quote_id
+JOIN gl_tax_codes tc     ON tc.company_id = q.company_id
+                        AND tc.code = IF(ql.tax_rate > 0, 'STD', 'ZERO')
+SET ql.tax_code_id = tc.tax_code_id
+WHERE ql.tax_code_id IS NULL;
+
+UPDATE recurring_invoice_lines rl
+JOIN recurring_invoices r ON r.id = rl.recurring_invoice_id
+JOIN gl_tax_codes tc      ON tc.company_id = r.company_id
+                         AND tc.code = IF(rl.tax_rate > 0, 'STD', 'ZERO')
+SET rl.tax_code_id = tc.tax_code_id
+WHERE rl.tax_code_id IS NULL;
+
 -- Seed the manual-journal sequence from the highest existing JNL-#### number
 -- so the new FOR UPDATE-locked Sequence continues (not restarts) numbering.
 INSERT INTO doc_sequences (company_id, doc_type, period_key, prefix, pad, last_number, updated_at)

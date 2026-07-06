@@ -102,14 +102,24 @@ try {
 
     $quoteId = $DB->lastInsertId();
 
-    // Insert line items
+    // Insert line items (tax code kept per line — quotes convert to invoices
+    // whose GL/VAT derives from these columns)
+    require_once __DIR__ . '/../../finances/lib/TaxCodes.php';
+    $taxCodes = new TaxCodes($DB, (int)$companyId);
     $sortOrder = 0;
     foreach ($lines as $line) {
         $qty = floatval($line['quantity'] ?? 1);
         $unitPrice = floatval($line['unit_price'] ?? 0);
         $lineDiscount = floatval($line['discount'] ?? 0);
-        $taxRate = floatval($line['tax_rate'] ?? 15);
-        
+        $taxRate = isset($line['tax_rate']) && $line['tax_rate'] !== ''
+            ? floatval($line['tax_rate'])
+            : $taxCodes->standardRatePercent();
+        $taxCodeId = $taxCodes->resolveOutputForLine(
+            isset($line['tax_code_id']) && $line['tax_code_id'] !== '' ? (int)$line['tax_code_id'] : null,
+            $line['tax_code'] ?? null,
+            $taxRate
+        );
+
         $lineSubtotal = $qty * $unitPrice;
         $lineNet = $lineSubtotal - $lineDiscount;
         $lineTax = $lineNet * ($taxRate / 100);
@@ -118,8 +128,8 @@ try {
         $stmt = $DB->prepare("
             INSERT INTO quote_lines (
                 quote_id, item_description, quantity, unit, unit_price,
-                discount, tax_rate, line_total, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                discount, tax_rate, tax_code_id, line_total, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $quoteId,
@@ -129,6 +139,7 @@ try {
             $unitPrice,
             $lineDiscount,
             $taxRate,
+            $taxCodeId,
             $lineTotal,
             $sortOrder++
         ]);

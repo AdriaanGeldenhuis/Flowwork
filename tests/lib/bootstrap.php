@@ -152,14 +152,26 @@ function make_invoice(PDO $db, int $customerId, array $lines, array $overrides =
     foreach ($lines as $i => $l) {
         $netC = (int)round($l[0] * $l[1] * 100);
         $lineTotalC = $netC + (int)round($netC * $l[2] / 100);
+        $taxCodeId = isset($l['tax_code'])
+            ? tax_code_id_by_code($db, $l['tax_code'])
+            : ($codeByRate[(string)(float)$l[2]] ?? null);
         $stmt->execute([
             $invoiceId, $l[3] ?? "Line " . ($i + 1), $l[0], $l[1], $l[2],
             $lineTotalC / 100, $i, $l['gl_account_id'] ?? null,
-            $codeByRate[(string)(float)$l[2]] ?? null,
+            $taxCodeId,
             $l['inventory_item_id'] ?? null,
         ]);
     }
     return $invoiceId;
+}
+
+function tax_code_id_by_code(PDO $db, string $code): ?int
+{
+    $stmt = $db->prepare("SELECT tax_code_id FROM gl_tax_codes
+        WHERE company_id = ? AND code = ? AND is_active = 1 LIMIT 1");
+    $stmt->execute([TEST_COMPANY_ID, $code]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int)$id : null;
 }
 
 /** Map of output tax rates to tax_code_id, e.g. ['15' => 1, '0' => 2]. */

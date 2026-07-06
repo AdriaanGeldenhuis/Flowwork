@@ -45,13 +45,32 @@ try {
         throw new Exception('Period must be prepared or adjusted before filing');
     }
 
+    // Recompute totals at filing time so the stored figures are exactly what
+    // was filed — including any adjustments posted after prepare.
+    require_once __DIR__ . '/../lib/AccountsMap.php';
+    require_once __DIR__ . '/../lib/VatCalculator.php';
+    $accounts = new AccountsMap($DB, (int)$companyId);
+    $filedTotals = VatCalculator::calculate(
+        $DB, (int)$companyId,
+        $period['period_start'], $period['period_end'],
+        $accounts->code('finance_vat_output_account_id'),
+        $accounts->code('finance_vat_input_account_id')
+    );
+
     // Update period status to filed
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
-         SET status = 'filed', filed_by = ?, filed_at = NOW()
+         SET status = 'filed', filed_by = ?, filed_at = NOW(),
+             output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?
          WHERE id = ? AND company_id = ?"
     );
-    $stmt->execute([$userId, $periodId, $companyId]);
+    $stmt->execute([
+        $userId,
+        $filedTotals['total_output_vat_cents'],
+        $filedTotals['total_input_vat_cents'],
+        $filedTotals['net_vat_cents'],
+        $periodId, $companyId,
+    ]);
 
     // Insert a period lock if one does not already exist at or after this date
     $stmt = $DB->prepare(

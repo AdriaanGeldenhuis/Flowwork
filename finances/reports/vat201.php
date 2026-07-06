@@ -279,16 +279,19 @@ async function loadVAT201() {
         document.getElementById('box2').textContent = fmt(vatData.output_zero_base_cents);
         document.getElementById('box3').textContent = fmt(vatData.output_exempt_base_cents);
         document.getElementById('box4').textContent = fmt(vatData.change_in_use_output_cents || 0);
-        document.getElementById('box5').textContent = fmt(vatData.total_output_vat_cents);
+        // Box 5/9/10 come computed from the server (vat201_data.php) and
+        // INCLUDE the Box 4 / Box 6 adjustments — the raw supplies totals
+        // used previously meant manual adjustments never reached the net.
+        document.getElementById('box5').textContent = fmt(vatData.box5_total_output_cents);
         document.getElementById('box6').textContent = fmt(vatData.change_in_use_input_cents || 0);
         document.getElementById('box7').textContent = fmt(vatData.input_capital_cents);
         document.getElementById('box8').textContent = fmt(vatData.input_other_cents);
-        document.getElementById('box9').textContent = fmt(vatData.total_input_vat_cents);
-        document.getElementById('box10').textContent = fmt(vatData.net_vat_cents);
+        document.getElementById('box9').textContent = fmt(vatData.box9_total_input_cents);
+        document.getElementById('box10').textContent = fmt(vatData.box10_net_cents);
 
         // Style box 10 based on payable/refundable
         const row = document.getElementById('box10row');
-        row.className = 'vat201-row ' + (vatData.net_vat_cents >= 0 ? 'vat201-grand-total' : 'vat201-refund');
+        row.className = 'vat201-row ' + (vatData.box10_net_cents >= 0 ? 'vat201-grand-total' : 'vat201-refund');
 
         // Period info
         document.getElementById('v_period').textContent = periodStart + ' to ' + periodEnd;
@@ -314,12 +317,12 @@ function exportCSV() {
         ['2', 'Zero-rated supplies', (vatData.output_zero_base_cents / 100).toFixed(2)],
         ['3', 'Exempt supplies', (vatData.output_exempt_base_cents / 100).toFixed(2)],
         ['4', 'Other output tax adjustments', ((vatData.change_in_use_output_cents || 0) / 100).toFixed(2)],
-        ['5', 'Total output tax', (vatData.total_output_vat_cents / 100).toFixed(2)],
+        ['5', 'Total output tax (1A + 4)', (vatData.box5_total_output_cents / 100).toFixed(2)],
         ['6', 'Change in use adjustments', ((vatData.change_in_use_input_cents || 0) / 100).toFixed(2)],
         ['7', 'Input tax on capital goods', (vatData.input_capital_cents / 100).toFixed(2)],
         ['8', 'Other input tax', (vatData.input_other_cents / 100).toFixed(2)],
-        ['9', 'Total input tax', (vatData.total_input_vat_cents / 100).toFixed(2)],
-        ['10', 'VAT payable / refundable', (vatData.net_vat_cents / 100).toFixed(2)]
+        ['9', 'Total input tax (6 + 7 + 8)', (vatData.box9_total_input_cents / 100).toFixed(2)],
+        ['10', 'VAT payable / refundable (5 - 9)', (vatData.box10_net_cents / 100).toFixed(2)]
     ];
     const csv = rows.map(r => r.map(c => '"' + c + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

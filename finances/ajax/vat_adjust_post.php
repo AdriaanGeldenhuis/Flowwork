@@ -190,11 +190,29 @@ try {
         ]);
     }
 
-    // Update period status to adjusted
-    $stmt = $DB->prepare(
-        "UPDATE gl_vat_periods SET status = 'adjusted', updated_at = NOW() WHERE id = ? AND company_id = ?"
+    // Update period status to adjusted and refresh the stored totals so the
+    // filed figures include this adjustment (the snapshot taken at prepare
+    // time predates any adjustments by definition — adjustments are only
+    // allowed on prepared periods).
+    require_once __DIR__ . '/../lib/VatCalculator.php';
+    $freshTotals = VatCalculator::calculate(
+        $DB, (int)$companyId,
+        $period['period_start'], $period['period_end'],
+        $vatOutputCode, $vatInputCode
     );
-    $stmt->execute([$periodId, $companyId]);
+    $stmt = $DB->prepare(
+        "UPDATE gl_vat_periods
+            SET status = 'adjusted',
+                output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?,
+                updated_at = NOW()
+          WHERE id = ? AND company_id = ?"
+    );
+    $stmt->execute([
+        $freshTotals['total_output_vat_cents'],
+        $freshTotals['total_input_vat_cents'],
+        $freshTotals['net_vat_cents'],
+        $periodId, $companyId,
+    ]);
 
     // Audit log
     $stmt = $DB->prepare(

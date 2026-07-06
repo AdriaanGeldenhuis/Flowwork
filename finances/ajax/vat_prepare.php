@@ -53,8 +53,9 @@ try {
         throw new Exception('Please configure VAT accounts in Finance Settings');
     }
 
-    // Calculate VAT breakdown using centralised helper
-    $vatData = VatCalculator::calculate(
+    // Full VAT201 box set via the single shared computation (includes
+    // Box 4/6 adjustments and the Box 5/9/10 arithmetic).
+    $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
         $vatOutputCode, $vatInputCode

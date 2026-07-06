@@ -7,6 +7,10 @@ ALTER TABLE invoice_lines
   ADD COLUMN IF NOT EXISTS tax_code_id INT UNSIGNED NULL AFTER tax_rate;
 ALTER TABLE credit_note_lines
   ADD COLUMN IF NOT EXISTS tax_code_id INT UNSIGNED NULL AFTER tax_rate;
+ALTER TABLE quote_lines
+  ADD COLUMN IF NOT EXISTS tax_code_id INT UNSIGNED NULL AFTER tax_rate;
+ALTER TABLE recurring_invoice_lines
+  ADD COLUMN IF NOT EXISTS tax_code_id INT UNSIGNED NULL AFTER tax_rate;
 
 -- Customer receipts: bank account selection, safe double-submit protection,
 -- and the payment-date FX rate for realised gain/loss.

@@ -104,12 +104,12 @@ try {
 
                 $stmt = $DB->prepare("
                     INSERT INTO invoice_lines (
-                        invoice_id, item_description, quantity, unit, unit_price, discount, tax_rate, line_total, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        invoice_id, item_description, quantity, unit, unit_price, discount, tax_rate, tax_code_id, line_total, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $invoiceId, $line['item_description'], $qty, $line['unit'],
-                    $price, $disc, $taxRate, $lineTotal, $sortOrder++
+                    $price, $disc, $taxRate, $line['tax_code_id'] ?? null, $lineTotal, $sortOrder++
                 ]);
             }
 

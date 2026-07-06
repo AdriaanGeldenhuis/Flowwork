@@ -67,15 +67,25 @@ class QuoteConverter {
             $stmt->execute([$quoteId]);
             $quoteLines = $stmt->fetchAll();
 
+            // Carry the full tax profile onto the invoice lines — the GL
+            // journal and VAT201 are derived from these columns, and the
+            // invoice_lines.tax_rate default (15%) must never override what
+            // was quoted (zero-rated quotes were posting 15% output VAT).
             $insertLine = $DB->prepare("INSERT INTO invoice_lines (
-                    invoice_id, item_description, quantity, unit_price, line_total, sort_order
-                ) VALUES (?, ?, ?, ?, ?, ?)");
+                    invoice_id, item_description, quantity, unit, unit_price,
+                    discount, tax_rate, tax_code_id, gl_account_id, line_total, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             foreach ($quoteLines as $line) {
                 $insertLine->execute([
                     $invoiceId,
                     $line['item_description'],
                     $line['quantity'],
+                    $line['unit'] ?? 'ea',
                     $line['unit_price'],
+                    $line['discount'] ?? 0,
+                    $line['tax_rate'] ?? 0,
+                    $line['tax_code_id'] ?? null,
+                    $line['gl_account_id'] ?? null,
                     $line['line_total'],
                     $line['sort_order'],
                 ]);
