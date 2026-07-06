@@ -64,6 +64,9 @@ for cid in $($MARIADB -N "$DB_NAME" -e "SELECT id FROM companies"); do
   $MARIADB "$DB_NAME" -e "CALL seed_sars_chart_of_accounts(${cid});"
 done
 
+echo "==> Running finance_setup tool"
+DB_HOST=127.0.0.1 DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" php "$REPO_ROOT/finances/tools/finance_setup.php"
+
 echo "==> Done. Test env:"
 echo "    DB_HOST=127.0.0.1 DB_NAME=${DB_NAME} DB_USER=${DB_USER} DB_PASS=${DB_PASS}"
 echo "    Run the suite with: php tests/run.php"

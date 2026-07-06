@@ -28,9 +28,12 @@ class PeriodService
      */
     public function isLocked(string $date): bool
     {
-        // Fetch the latest lock date for the company
+        // Fetch the latest ACTIVE lock date for the company. Unlocking is a
+        // soft delete (is_active = 0), so inactive rows must not keep a
+        // period locked.
         $stmt = $this->db->prepare(
-            "SELECT MAX(lock_date) AS latest_lock FROM gl_period_locks WHERE company_id = ?"
+            "SELECT MAX(lock_date) AS latest_lock FROM gl_period_locks
+              WHERE company_id = ? AND is_active = 1"
         );
         $stmt->execute([$this->companyId]);
         $latestLock = $stmt->fetchColumn();

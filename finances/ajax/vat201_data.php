@@ -55,8 +55,8 @@ try {
 
     // Resolve VAT account codes
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->code('finance_vat_output_account_id');
+    $vatInputCode  = $accounts->code('finance_vat_input_account_id');
 
     // Calculate VAT breakdown
     $vatData = VatCalculator::calculate(
@@ -67,7 +67,7 @@ try {
 
     // Add change-in-use adjustments (Box 4 output, Box 6 input)
     // These come from VAT adjustment journals posted via vat_adjust_post.php
-    $vatCtrlCode = $accounts->get('finance_vat_control_account_id', '2140');
+    $vatCtrlCode = $accounts->code('finance_vat_control_account_id');
 
     $stmt = $DB->prepare(
         "SELECT SUM(jl.debit) AS adj_debit, SUM(jl.credit) AS adj_credit

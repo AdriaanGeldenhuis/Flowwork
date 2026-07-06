@@ -22,13 +22,8 @@ WHERE NOT EXISTS (
     WHERE s.company_id = c.id AND s.setting_key = 'finance_require_sod'
 );
 
--- Payroll GL codes: correct legacy defaults that pointed at VAT-control-band
--- codes (2100/2101/2102 — wrong or non-existent in the SARS chart).
-UPDATE payroll_settings SET default_wage_gl_code = '6010'
- WHERE default_wage_gl_code IS NULL OR default_wage_gl_code IN ('', '5100');
-UPDATE payroll_settings SET default_paye_gl_code = '2130'
- WHERE default_paye_gl_code IS NULL OR default_paye_gl_code IN ('', '2100');
-UPDATE payroll_settings SET default_uif_gl_code = '2140'
- WHERE default_uif_gl_code IS NULL OR default_uif_gl_code IN ('', '2101');
-UPDATE payroll_settings SET default_sdl_gl_code = '2150'
- WHERE default_sdl_gl_code IS NULL OR default_sdl_gl_code IN ('', '2102');
+-- NOTE: payroll GL accounts are NOT corrected here with code literals —
+-- account codes mean different things on legacy vs seeded charts (on some
+-- charts 2130 is VAT Input; on the SARS seed it is PAYE). Payroll postings
+-- resolve through the finance_* account mappings seeded per company by
+-- finances/tools/finance_setup.php (subtype-based), which is chart-safe.

@@ -22,8 +22,8 @@ try {
     $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
     $rawOutput = $settings['finance_vat_output_account_id'] ?? null;
     $rawInput  = $settings['finance_vat_input_account_id'] ?? null;
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->code('finance_vat_output_account_id');
+    $vatInputCode  = $accounts->code('finance_vat_input_account_id');
     $vatOutputId = (is_numeric($rawOutput) ? (int)$rawOutput : null);
     $vatInputId  = (is_numeric($rawInput) ? (int)$rawInput : null);
 

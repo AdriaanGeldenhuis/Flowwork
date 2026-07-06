@@ -25,8 +25,8 @@ $startDate = $_GET['start_date'] ?? null;
 $endDate   = $_GET['end_date'] ?? null;
 
 $accountsMap = new AccountsMap($DB, (int)$companyId);
-$vatOutCode = $accountsMap->get('finance_vat_output_account_id', '2120');
-$vatInCode  = $accountsMap->get('finance_vat_input_account_id', '2130');
+$vatOutCode = $accountsMap->code('finance_vat_output_account_id');
+$vatInCode  = $accountsMap->code('finance_vat_input_account_id');
 
 // Aggregate VAT balances, optionally filtered by date range
 $sql = "SELECT

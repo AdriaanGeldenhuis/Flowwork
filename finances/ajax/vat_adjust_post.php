@@ -58,8 +58,8 @@ try {
 
     // Resolve VAT output and input account codes
     $accountsMap = new AccountsMap($DB, (int)$companyId);
-    $vatOutputCode = $accountsMap->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accountsMap->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accountsMap->code('finance_vat_output_account_id');
+    $vatInputCode  = $accountsMap->code('finance_vat_input_account_id');
 
     // Build journal lines arrays
     $journalLines = [];
@@ -125,7 +125,7 @@ try {
     // Auto-balance: if a single-sided adjustment, add contra to VAT Control (2100)
     $imbalance = round($totalDebit - $totalCredit, 2);
     if (abs($imbalance) > 0.01) {
-        $vatControlCode = $accountsMap->get('finance_vat_control_account_id', '2100');
+        $vatControlCode = $accountsMap->code('finance_vat_control_account_id');
         if ($imbalance > 0) {
             $journalLines[] = [
                 'account_code' => $vatControlCode,

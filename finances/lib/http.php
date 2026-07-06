@@ -19,3 +19,19 @@ if (!function_exists('json_error')) {
         exit;
     }
 }
+if (!function_exists('json_exception')) {
+    /**
+     * JSON error for a caught exception without leaking internals: plain
+     * (business-rule) Exception messages pass through; PDO/engine failures
+     * are logged and replaced with a generic message.
+     */
+    function json_exception(Throwable $e, int $defaultStatus = 400): void {
+        if ($e instanceof PDOException || $e instanceof Error) {
+            error_log('API exception: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            json_error('Internal server error', 500);
+        }
+        $code = $e->getCode();
+        if (!is_int($code) || $code < 400 || $code > 599) $code = $defaultStatus;
+        json_error($e->getMessage(), $code);
+    }
+}

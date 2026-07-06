@@ -168,5 +168,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Journal save error: " . $e->getMessage());
-    json_error($e->getMessage());
+    json_exception($e);
 }
