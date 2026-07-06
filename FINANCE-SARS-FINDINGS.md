@@ -10,8 +10,13 @@ the accounting behaviour. Severity reflects the state **before** this branch.
 Commits: WS0 `524ab06` (test infra + migrations) · WS1 `c8b1857` (foundations)
 · WS2 `fd9e8f6` (posting engine) · WS3 `371b93c` (VAT correctness) · WS4
 `351a500` (payments basis) · WS5 `de961d9` (s20 tax invoices) · WS6+7
-`8d8c231` (controls + subledgers) · WS8+9 (exports/health/wear-and-tear —
-final commit on this branch).
+`8d8c231` (controls + subledgers) · `97a2858` (payroll test, VAT CSV) ·
+WS8+9 `00e8f32` (exports/health/wear-and-tear/repost tool) · `6b383e0`
+(merge of the parallel `finance-quick-actions-sars` branch: its dashboard
+quick-actions deck, SARS navigation and unique endpoint/report fixes were
+adopted; its independent edits to the ~50 core engine files were superseded
+by this branch's tested rewrite — that branch is now fully contained here
+and can be deleted).
 
 ---
 
