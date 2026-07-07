@@ -79,6 +79,23 @@ try {
         throw new Exception('Period was already filed — refresh and try again');
     }
 
+    // Post the VAT settlement journal: clear the period's output/input VAT to
+    // the VAT control account (net payable/refundable). This is what actually
+    // moves the filed liability onto the GL — without it the output/input VAT
+    // accounts carried the filed balances forever and the GL never reconciled
+    // to the VAT201. It joins this transaction (PostingService::withTransaction
+    // is re-entrant) and MUST run before the period lock is inserted below, or
+    // postVatAdjustment's own isLocked() check would reject its period_end date.
+    // Skipped for a nil return (no VAT on either side → would be a 0-line
+    // journal, which the posting engine rejects).
+    require_once __DIR__ . '/../lib/PostingService.php';
+    $outputRand = (int)$filedTotals['box5_total_output_cents'] / 100;
+    $inputRand  = (int)$filedTotals['box9_total_input_cents'] / 100;
+    if (abs($outputRand) > 0.0001 || abs($inputRand) > 0.0001) {
+        $posting = new PostingService($DB, (int)$companyId, (int)$userId);
+        $posting->postVatAdjustment($outputRand, $inputRand, $period['period_end'], 'VAT-' . $periodId);
+    }
+
     // Insert a period lock if one does not already exist at or after this date
     $stmt = $DB->prepare(
         "SELECT 1 FROM gl_period_locks WHERE company_id = ? AND lock_date >= ? AND is_active = 1 LIMIT 1"
@@ -113,8 +130,8 @@ try {
         $DB->rollBack();
     }
     error_log("VAT file error: " . $e->getMessage());
-    echo json_encode([
-        'ok' => false,
-        'error' => 'Failed to file VAT return'
-    ]);
+    // Surface business-rule reasons (e.g. locked-period refusal) so the user
+    // knows why; hide raw DB/engine detail.
+    $msg = ($e instanceof PDOException) ? 'Failed to file VAT return' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

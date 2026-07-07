@@ -109,18 +109,19 @@ try {
     );
     $stmt->execute([$companyId, $period['period_start'], $period['period_end']]);
 
-    // Insert a period lock using gl_period_locks so the posting service respects it
-    // We lock up to the period_end date inclusive
-    $stmt = $DB->prepare(
-        "INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at)
-         VALUES (?, ?, 'vat_period_locked', ?, NOW())"
-    );
-    $stmt->execute([$companyId, $period['period_end'], $userId]);
+    // The period is intentionally NOT locked at prepare time. Locking here
+    // (the previous behaviour) sealed period_end and made it impossible to post
+    // the VAT adjustments — and the settlement journal — that must land on
+    // period_end between prepare and file, so every adjustment threw "Cannot
+    // post into locked period". The period is now sealed only on FILE
+    // (vat_file.php posts the settlement journal, then inserts the gl_period_locks
+    // row). File recomputes the box totals, so any adjustment posted in the
+    // meantime is captured in the filed figures.
 
     // Audit log
     $stmt = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-         VALUES (?, ?, 'vat_period_locked', ?, ?, NOW())"
+         VALUES (?, ?, 'vat_period_prepared', ?, ?, NOW())"
     );
     $stmt->execute([
         $companyId,

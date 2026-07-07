@@ -1461,13 +1461,20 @@ class PostingService
             $netVat = round($vatOutputTotal - $vatInputTotal, 2);
 
             $lines = [];
-            if ($vatOutputTotal > 0.0001) {
+            // Clear the VAT OUTPUT account to zero for the period. Normally a
+            // credit balance (VAT owed) → debit to clear; a credit-note-heavy
+            // period nets to a debit balance (negative total) → credit to clear.
+            // Handling both signs keeps the journal balanced so such periods
+            // remain fileable.
+            if (abs($vatOutputTotal) > 0.0001) {
                 $lines[] = ['account_code' => $vatOutCode, 'description' => 'VAT Output Cleared',
-                    'debit' => $vatOutputTotal, 'credit' => 0];
+                    'debit' => max(0.0, $vatOutputTotal), 'credit' => max(0.0, -$vatOutputTotal)];
             }
-            if ($vatInputTotal > 0.0001) {
+            // Clear the VAT INPUT account (normally a debit balance → credit to
+            // clear; the reverse when vendor credits dominate).
+            if (abs($vatInputTotal) > 0.0001) {
                 $lines[] = ['account_code' => $vatInCode, 'description' => 'VAT Input Cleared',
-                    'debit' => 0, 'credit' => $vatInputTotal];
+                    'debit' => max(0.0, -$vatInputTotal), 'credit' => max(0.0, $vatInputTotal)];
             }
             if ($netVat > 0.0001) {
                 $lines[] = ['account_code' => $vatCtrlCode, 'description' => 'VAT Payable',

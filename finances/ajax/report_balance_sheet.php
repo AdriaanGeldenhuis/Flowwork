@@ -112,7 +112,14 @@ try {
         }
     }
 
-    // Calculate net income (Current Year Earnings) from P&L accounts
+    // Net income that has NOT been closed to an equity account, from inception.
+    // The balance sheet only balances if this whole amount appears in equity:
+    // the double-entry identity gives Assets = Liabilities + Equity +
+    // (Revenue − Expense) over all time. Years already closed via a year-end
+    // journal net to zero here (that journal reversed their P&L into the
+    // retained-earnings account, which is already in Equity above), so this is
+    // exactly the still-open P&L. We only SPLIT it for presentation below — the
+    // total is unchanged, so the sheet balances identically.
     $stmt = $DB->prepare("SELECT
             COALESCE(SUM(CASE WHEN a.account_type = 'revenue' AND je.entry_date <= ? THEN jl.credit - jl.debit ELSE 0 END), 0) AS revenue,
             COALESCE(SUM(CASE WHEN a.account_type = 'expense' AND je.entry_date <= ? THEN jl.debit - jl.credit ELSE 0 END), 0) AS expenses
@@ -122,17 +129,43 @@ try {
         WHERE a.company_id = ? AND a.account_type IN ('revenue','expense')");
     $stmt->execute([$date, $date, $companyId, $companyId]);
     $plData = $stmt->fetch(PDO::FETCH_ASSOC);
-    $netIncomeCents = (int) round((floatval($plData['revenue']) - floatval($plData['expenses'])) * 100);
+    $totalPlCents = (int) round((floatval($plData['revenue']) - floatval($plData['expenses'])) * 100);
 
-    if ($netIncomeCents != 0) {
-        // Resolve current-year-earnings account code from company settings (fallback 3300)
-        $accountsMap = new AccountsMap($DB, $companyId);
+    // Current-year portion: same window (fiscal-year-to-date) and year_end
+    // exclusion as report_pl.php, so the "Current Year Earnings" line equals the
+    // Income Statement's net profit for the period. Whatever remains is P&L
+    // brought forward from prior periods that were never closed to retained
+    // earnings — surfaced as its own line so CYE ties to the Income Statement.
+    $fiscalStart = getFiscalYearStart($DB, $companyId, $date);
+    $stmt = $DB->prepare("SELECT
+            COALESCE(SUM(CASE WHEN a.account_type = 'revenue' AND je.entry_date BETWEEN ? AND ? AND (je.module IS NULL OR je.module <> 'year_end') THEN jl.credit - jl.debit ELSE 0 END), 0) AS revenue,
+            COALESCE(SUM(CASE WHEN a.account_type = 'expense' AND je.entry_date BETWEEN ? AND ? AND (je.module IS NULL OR je.module <> 'year_end') THEN jl.debit - jl.credit ELSE 0 END), 0) AS expenses
+        FROM gl_accounts a
+        LEFT JOIN journal_lines jl ON a.account_code = jl.account_code
+        LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+        WHERE a.company_id = ? AND a.account_type IN ('revenue','expense')");
+    $stmt->execute([$fiscalStart, $date, $fiscalStart, $date, $companyId, $companyId]);
+    $cyData = $stmt->fetch(PDO::FETCH_ASSOC);
+    $currentYearCents   = (int) round((floatval($cyData['revenue']) - floatval($cyData['expenses'])) * 100);
+    $priorRetainedCents = $totalPlCents - $currentYearCents;
+
+    $accountsMap = new AccountsMap($DB, $companyId);
+    if ($priorRetainedCents != 0) {
+        $reCode = $accountsMap->get('finance_retained_earnings_account_id', '3200');
+        $equity[] = [
+            'account_id'    => null,
+            'account_code'  => $reCode,
+            'account_name'  => 'Retained Earnings (prior periods, unclosed)',
+            'balance_cents' => $priorRetainedCents
+        ];
+    }
+    if ($currentYearCents != 0) {
         $cyeCode = $accountsMap->get('finance_current_year_earnings_account_id', '3300');
         $equity[] = [
-            'account_id'   => null,
-            'account_code' => $cyeCode,
-            'account_name' => 'Current Year Earnings',
-            'balance_cents' => $netIncomeCents
+            'account_id'    => null,
+            'account_code'  => $cyeCode,
+            'account_name'  => 'Current Year Earnings',
+            'balance_cents' => $currentYearCents
         ];
     }
 
