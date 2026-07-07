@@ -250,6 +250,11 @@
           <div class="fw-finance__view-label">Module</div>
           <div class="fw-finance__view-value">${escapeHtml(j.module) || '-'}</div>
         </div>
+        ${j.source_link ? `
+        <div class="fw-finance__view-field">
+          <div class="fw-finance__view-label">Source Document</div>
+          <div class="fw-finance__view-value"><a href="${escapeHtml(j.source_link.url)}">${escapeHtml(j.source_link.label)}</a></div>
+        </div>` : ''}
         <div class="fw-finance__view-field" style="grid-column: 1 / -1">
           <div class="fw-finance__view-label">Memo</div>
           <div class="fw-finance__view-value">${escapeHtml(j.memo) || '-'}</div>
@@ -323,6 +328,7 @@
       `;
     } else if (j.status === 'approved') {
       buttons += `
+        <button type="button" class="fw-finance__btn fw-finance__btn--secondary" id="viewUnapproveBtn" data-id="${j.journal_id}">Unapprove</button>
         <button type="button" class="fw-finance__btn fw-finance__btn--primary" id="viewPostBtn" data-id="${j.journal_id}">Post to GL</button>
       `;
     } else if (j.status === 'posted' && !j.reversed_by_journal_id) {
@@ -344,6 +350,9 @@
 
     const approveBtn = document.getElementById('viewApproveBtn');
     if (approveBtn) approveBtn.addEventListener('click', () => approveJournal(approveBtn.dataset.id));
+
+    const unapproveBtn = document.getElementById('viewUnapproveBtn');
+    if (unapproveBtn) unapproveBtn.addEventListener('click', () => unapproveJournal(unapproveBtn.dataset.id));
 
     const postBtn = document.getElementById('viewPostBtn');
     if (postBtn) postBtn.addEventListener('click', () => postJournal(postBtn.dataset.id));
@@ -385,6 +394,22 @@
     } else {
       reEnableActionButtons();
       showMessage('viewMessage', result?.error || 'Failed to approve', 'error');
+    }
+  }
+
+  async function unapproveJournal(journalId) {
+    if (!confirm('Send this approved journal back to draft for editing?')) return;
+    disableActionButtons();
+    const result = await FinanceAPI.request('/finances/ajax/journal_unapprove.php', 'POST', { journal_id: parseInt(journalId, 10) });
+    if (result && result.ok) {
+      showMessage('viewMessage', 'Journal returned to draft', 'success');
+      setTimeout(() => {
+        FinanceModal.close('viewModal');
+        loadJournals();
+      }, 800);
+    } else {
+      reEnableActionButtons();
+      showMessage('viewMessage', result?.error || 'Failed to unapprove', 'error');
     }
   }
 
