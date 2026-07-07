@@ -100,7 +100,10 @@ try {
         $sql .= " AND jl.project_id = ?";
         $params[] = $projectId;
     }
-    $sql .= " ORDER BY je.entry_date ASC, je.id ASC";
+    // jl.id is the final tiebreaker so multiple lines of one journal to the same
+    // account render in a stable order (keeps the running-balance display
+    // deterministic; the closing balance is order-independent).
+    $sql .= " ORDER BY je.entry_date ASC, je.id ASC, jl.id ASC";
 
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);

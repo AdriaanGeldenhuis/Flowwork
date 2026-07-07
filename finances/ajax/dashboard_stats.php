@@ -34,7 +34,7 @@ try {
     // finances/index.php): not soft-deleted, status outside the draft/closed
     // family, balance_due > 0, and converted to ZAR at the invoice's rate.
     $stmt = $DB->prepare("
-        SELECT COALESCE(SUM(balance_due * exchange_rate), 0)
+        SELECT COALESCE(SUM(balance_due * COALESCE(NULLIF(exchange_rate,0),1)), 0)
         FROM invoices
         WHERE company_id = ? AND deleted_at IS NULL
           AND status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')

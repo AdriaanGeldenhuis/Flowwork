@@ -7,6 +7,8 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../finances/permissions.php';
+requireRoles(['admin', 'bookkeeper']); // payroll detail: finance staff only, not viewers
 
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) {
