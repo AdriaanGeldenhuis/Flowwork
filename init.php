@@ -19,7 +19,7 @@ if (!defined('QI_ASSET_VERSION')) {
 
 // Centralized Finances asset version for cache busting
 if (!defined('FIN_ASSET_VERSION')) {
-    define('FIN_ASSET_VERSION', '2026-07-05-fin-qa-deck');
+    define('FIN_ASSET_VERSION', '2026-07-07-report-tabs');
 }
 
 // Helper function to get CRM settings

@@ -1,0 +1,71 @@
+/* /finances/assets/report_print.css
+ * Shared styles for the standalone (printable) finance report pages.
+ * Provides the filter/action toolbar layout and print-friendly rules so the
+ * on-screen chrome (header, footer, filters, buttons) drops away when printed
+ * and only the report itself remains on the page. */
+
+.fw-report-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.fw-report-toolbar .fw-finance__filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+}
+
+.fw-report-toolbar .fw-report-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+@media (max-width: 640px) {
+    .fw-report-toolbar .fw-report-actions {
+        margin-left: 0;
+        width: 100%;
+    }
+}
+
+/* Print: keep only the report body, drop all interactive chrome. */
+@media print {
+    body.fw-finance,
+    .fw-finance__container,
+    .fw-finance__main {
+        background: #fff !important;
+        color: #000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .fw-print-hide,
+    .fw-finance__header,
+    .fw-finance__footer {
+        display: none !important;
+    }
+
+    .fw-finance__report-content,
+    .fw-finance__paper {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+    }
+
+    .fw-finance__report-table th,
+    .fw-finance__report-table td {
+        color: #000 !important;
+    }
+
+    /* Avoid breaking a row across pages. */
+    tr {
+        page-break-inside: avoid;
+    }
+}

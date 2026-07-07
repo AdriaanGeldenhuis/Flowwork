@@ -97,25 +97,25 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/retention.php'">
                         Record Retention
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/trial_balance.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/trial_balance.php?v=<?= ASSET_VERSION ?>'">
                         Trial Balance (printable)
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/balance_sheet.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/balance_sheet.php?v=<?= ASSET_VERSION ?>'">
                         Balance Sheet (printable)
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/income_statement.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/income_statement.php?v=<?= ASSET_VERSION ?>'">
                         Income Statement (printable)
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/gl_detail.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/gl_detail.php?v=<?= ASSET_VERSION ?>'">
                         GL Detail
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ar_tieout.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ar_tieout.php?v=<?= ASSET_VERSION ?>'">
                         AR Tie-out
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ap_tieout.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ap_tieout.php?v=<?= ASSET_VERSION ?>'">
                         AP Tie-out
                     </button>
-                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/sequence_gaps.php'">
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/sequence_gaps.php?v=<?= ASSET_VERSION ?>'">
                         Sequence Gaps
                     </button>
 
