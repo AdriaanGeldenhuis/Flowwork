@@ -21,7 +21,7 @@ try {
             a.account_code,
             a.account_name
         FROM gl_bank_rules r
-        JOIN gl_accounts a ON r.gl_account_id = a.account_id
+        LEFT JOIN gl_accounts a ON r.gl_account_id = a.account_id AND a.company_id = r.company_id
         WHERE r.company_id = ?
         ORDER BY r.priority ASC, r.id DESC
     ");

@@ -38,6 +38,21 @@ if (!$ruleName || !$matchValue || !$glAccountId) {
     exit;
 }
 
+// Only allow match field/operator combinations the apply engine actually
+// implements (bank_apply_rules.php). The DB enum is wider (ends_with, regex,
+// amount) but those are unimplemented, so a rule using them would save yet
+// silently never match — reject them at creation instead.
+$allowedFields    = ['description', 'reference'];
+$allowedOperators = ['contains', 'starts_with', 'equals'];
+if (!in_array($matchField, $allowedFields, true)) {
+    echo json_encode(['ok' => false, 'error' => 'Unsupported match field']);
+    exit;
+}
+if (!in_array($matchOperator, $allowedOperators, true)) {
+    echo json_encode(['ok' => false, 'error' => 'Unsupported match operator']);
+    exit;
+}
+
 // Validate GL account belongs to this company
 $stmt = $DB->prepare("SELECT account_id FROM gl_accounts WHERE account_id = ? AND company_id = ?");
 $stmt->execute([$glAccountId, $companyId]);

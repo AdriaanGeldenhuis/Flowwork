@@ -203,6 +203,11 @@
           + '<svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/></svg>'
           + '</button>';
       } else {
+        if (tx.journal_id) {
+          row += '<a class="fw-finance__bank-transaction-btn" href="/finances/gl/journal_view.php?id=' + escapeHtml(tx.journal_id) + '" title="View Journal">'
+            + '<svg viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            + '</a>';
+        }
         row += '<button class="fw-finance__bank-transaction-btn undo-match-btn" data-id="' + escapeHtml(tx.bank_tx_id) + '" title="Undo Match">'
           + '<svg viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
           + '</button>';
@@ -759,10 +764,14 @@
   async function handleReconcile(e) {
     e.preventDefault();
 
+    // Distinguish an empty field (no tie-out requested → null) from a genuine
+    // 0.00 closing balance (which must still be validated), so `0` isn't
+    // silently coerced to null by `|| null`.
+    var reconBalRaw = document.getElementById('reconcileBalance').value;
     var data = {
       bank_account_id: document.getElementById('reconcileBankAccount').value,
       statement_date: document.getElementById('reconcileDate').value,
-      closing_balance: parseFloat(document.getElementById('reconcileBalance').value) || null
+      closing_balance: reconBalRaw.trim() === '' ? null : parseFloat(reconBalRaw)
     };
 
     if (!data.bank_account_id || !data.statement_date) {

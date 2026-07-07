@@ -41,6 +41,14 @@ if (empty($transactions)) {
     exit;
 }
 
+// Bound the payload: a single bank statement never has tens of thousands of
+// lines, and an unbounded array is a memory/DoS vector on this authenticated
+// endpoint.
+if (!is_array($transactions) || count($transactions) > 5000) {
+    echo json_encode(['ok' => false, 'error' => 'Too many transactions in one import (max 5000)']);
+    exit;
+}
+
 try {
     $DB->beginTransaction();
 
