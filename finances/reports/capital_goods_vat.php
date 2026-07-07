@@ -75,7 +75,7 @@ $stmt = $DB->prepare(
            AND ga2.account_subtype = 'fixed_asset' AND (jl2.debit > 0 OR jl2.credit > 0)
          LIMIT 1) AS asset_cost,
         -- Get supplier name
-        (SELECT s.name FROM crm_accounts s WHERE s.id = jl.supplier_id LIMIT 1) AS supplier_name
+        (SELECT s.name FROM crm_accounts s WHERE s.id = jl.supplier_id AND s.company_id = je.company_id LIMIT 1) AS supplier_name
      FROM journal_lines jl
      JOIN journal_entries je ON je.id = jl.journal_id
      WHERE je.company_id = ? AND je.status = 'posted'

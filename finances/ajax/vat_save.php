@@ -78,11 +78,14 @@ try {
     $inputVatCents  = $vatData['box9_total_input_cents'];
     $netVatCents    = $vatData['box10_net_cents'];
 
+    // Atomic + company-scoped transition: the status='open' predicate and
+    // rowCount guard stop two concurrent prepares from both snapshotting and
+    // inserting duplicate period locks / audit rows.
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
          SET output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?, basis = ?,
              status = 'prepared', prepared_by = ?, prepared_at = NOW()
-         WHERE id = ?"
+         WHERE id = ? AND company_id = ? AND status = 'open'"
     );
     $stmt->execute([
         $outputVatCents,
@@ -90,8 +93,12 @@ try {
         $netVatCents,
         $basis,
         $userId,
-        $periodId
+        $periodId,
+        $companyId
     ]);
+    if ($stmt->rowCount() !== 1) {
+        throw new Exception('Period is no longer open — refresh and try again');
+    }
 
     // Lock journal entries in this period (legacy flag for backward compatibility)
     $stmt = $DB->prepare(

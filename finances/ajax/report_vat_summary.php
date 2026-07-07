@@ -53,6 +53,7 @@ try {
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_id = je.id
         WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?
+          AND COALESCE(je.module,'') NOT IN ('vat_settle','bad_debt','vat_adjust')
         GROUP BY period
         ORDER BY period";
     $params = [$vatOutputCode, $vatInputCode, $companyId, $startDate, $endDate];

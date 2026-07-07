@@ -58,12 +58,15 @@ try {
         $period['basis'] ?: VatCalculator::companyBasis($DB, (int)$companyId)
     );
 
-    // Update period status to filed
+    // Update period status to filed. The status predicate + rowCount guard
+    // makes the transition atomic: two concurrent file requests can't both
+    // pass the read-check above and file the same period (which would, once a
+    // settlement journal is posted at file time, double-post it).
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
          SET status = 'filed', filed_by = ?, filed_at = NOW(),
              output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?
-         WHERE id = ? AND company_id = ?"
+         WHERE id = ? AND company_id = ? AND status IN ('prepared','adjusted')"
     );
     $stmt->execute([
         $userId,
@@ -72,6 +75,9 @@ try {
         $filedTotals['box10_net_cents'],
         $periodId, $companyId,
     ]);
+    if ($stmt->rowCount() !== 1) {
+        throw new Exception('Period was already filed — refresh and try again');
+    }
 
     // Insert a period lock if one does not already exist at or after this date
     $stmt = $DB->prepare(

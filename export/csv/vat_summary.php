@@ -9,6 +9,8 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../finances/permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']); // gate like every other VAT surface
 require_once __DIR__ . '/../../finances/lib/AccountsMap.php';
 
 $companyId = $_SESSION['company_id'] ?? null;
