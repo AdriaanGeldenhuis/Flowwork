@@ -121,7 +121,7 @@ $companyName = $company['name'] ?? 'Company';
     <div class="fw-finance__container">
         <?php
         $finTitle = 'Vendor Credit Detail';
-        $finBack = '/finances/ap/bills_list.php';
+        $finBack = '/finances/ap/';
         $finCompanyName = $companyName;
         $finFirstName = $firstName;
         include __DIR__ . '/../partials/header.php';

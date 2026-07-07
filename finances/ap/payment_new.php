@@ -89,7 +89,7 @@ $bankAccounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="fw-finance__container">
         <?php
         $finTitle = 'Record Supplier Payment';
-        $finBack = '/finances/ap/bills_list.php';
+        $finBack = '/finances/ap/';
         $finCompanyName = $companyName;
         $finFirstName = $firstName;
         include __DIR__ . '/../partials/header.php';
