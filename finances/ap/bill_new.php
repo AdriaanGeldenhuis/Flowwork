@@ -2,6 +2,7 @@
 // /finances/ap/bill_new.php – Create a new supplier bill
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['bookkeeper','admin']);
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);

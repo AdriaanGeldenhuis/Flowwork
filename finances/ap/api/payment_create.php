@@ -80,12 +80,20 @@ try {
     // INSIDE the transaction, with the bill rows locked, so two concurrent
     // payments cannot both pass the check (the old check-then-act ran before
     // the transaction started).
+    // Aggregate per bill_id first so multiple lines for the same bill are
+    // checked against its remaining balance in aggregate — otherwise a crafted
+    // payload repeating a bill (each line ≤ remaining, sum > remaining) could
+    // over-pay it. Mirrors ap/api/vendor_credit_post.php.
+    $perBill = [];
     foreach ($allocations as $al) {
         $bId = isset($al['bill_id']) ? (int)$al['bill_id'] : 0;
         $amt = isset($al['amount']) ? (float)$al['amount'] : 0.0;
         if (!$bId || $amt <= 0) {
             continue;
         }
+        $perBill[$bId] = ($perBill[$bId] ?? 0.0) + $amt;
+    }
+    foreach ($perBill as $bId => $amt) {
         $stmtBal = $DB->prepare(
             "SELECT b.total, b.supplier_id,
                     COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?), 0) AS paid,

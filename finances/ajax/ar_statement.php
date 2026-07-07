@@ -103,6 +103,7 @@ try {
             JOIN payments p ON pa.payment_id = p.id
             JOIN invoices i ON pa.invoice_id = i.id
             WHERE i.company_id = ? AND i.customer_id = ?
+              AND i.status NOT IN ('draft','cancelled') AND i.deleted_at IS NULL
             UNION ALL
             -- Credit notes
             SELECT cn.issue_date AS t_date,

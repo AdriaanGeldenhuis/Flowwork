@@ -87,9 +87,13 @@ try {
     $creditId = (int)$DB->lastInsertId();
     // Insert lines
     $sort = 0;
+    // vendor_credit_lines carries no project analytic columns (unlike
+    // ap_bill_lines); inserting project_board_id/project_item_id here threw
+    // "Unknown column" and broke vendor-credit creation. The UI never sends
+    // them, so they are simply not persisted.
     $lineStmt = $DB->prepare(
-        "INSERT INTO vendor_credit_lines (credit_id, item_description, quantity, unit, unit_price, discount, tax_rate, line_total, gl_account_id, sort_order, project_board_id, project_item_id)\n"
-        . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vendor_credit_lines (credit_id, item_description, quantity, unit, unit_price, discount, tax_rate, line_total, gl_account_id, sort_order)\n"
+        . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     foreach ($lines as $ln) {
         $desc      = trim($ln['description'] ?? '');
@@ -100,8 +104,6 @@ try {
         $taxRate   = isset($ln['tax_rate']) ? (float)$ln['tax_rate'] : 15.0;
         $lineTotal = $qty * $price - $discount;
         $glAcc     = isset($ln['gl_account_id']) && $ln['gl_account_id'] ? (int)$ln['gl_account_id'] : null;
-        $boardId   = isset($ln['project_board_id']) && $ln['project_board_id'] ? (int)$ln['project_board_id'] : null;
-        $itemId    = isset($ln['project_item_id']) && $ln['project_item_id'] ? (int)$ln['project_item_id'] : null;
         $lineStmt->execute([
             $creditId,
             $desc,
@@ -112,9 +114,7 @@ try {
             $taxRate,
             $lineTotal,
             $glAcc,
-            $sort,
-            $boardId,
-            $itemId
+            $sort
         ]);
         $sort++;
     }

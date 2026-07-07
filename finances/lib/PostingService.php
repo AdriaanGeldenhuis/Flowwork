@@ -1083,6 +1083,9 @@ class PostingService
             if ($bill['status'] === 'paid') {
                 throw new Exception('Bill is already paid — reposting a paid bill is not allowed');
             }
+            if ($bill['status'] === 'blocked') {
+                throw new Exception('Bill is blocked and cannot be posted — unblock it first');
+            }
             if ($bill['status'] === 'posted' && !$allowRepost) {
                 throw new Exception('Bill is already posted — pass repost=true to supersede the existing journal');
             }

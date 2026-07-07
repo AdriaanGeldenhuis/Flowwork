@@ -5,6 +5,7 @@ require_method('GET');
 // /finances/ap/bill_view.php – View a supplier bill
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
@@ -108,13 +109,16 @@ $companyName = $company['name'] ?? 'Company';
         ?>
         <main class="fw-finance__main">
             <div class="fw-finance__toolbar">
-                <?php if (!in_array($bill['status'], ['posted', 'paid'])): ?>
+                <?php if (!in_array($bill['status'], ['posted', 'paid', 'blocked'])): ?>
                 <button class="fw-finance__btn fw-finance__btn--primary" id="postBtn">Post to GL</button>
                 <?php endif; ?>
                 <?php if ($balance > 0): ?>
                 <a href="/finances/ap/payment_new.php?supplier_id=<?= (int)$bill['supplier_id'] ?>&bill_id=<?= $billId ?>" class="fw-finance__btn">Record Payment</a>
                 <?php endif; ?>
                 <a href="/finances/ap/vendor_credit_new.php?supplier_id=<?= (int)$bill['supplier_id'] ?>&bill_id=<?= $billId ?>" class="fw-finance__btn">New Vendor Credit</a>
+                <?php if (!empty($bill['journal_id'])): ?>
+                <a href="/finances/gl/journal_view.php?id=<?= (int)$bill['journal_id'] ?>" class="fw-finance__btn fw-finance__btn--secondary">View Journal</a>
+                <?php endif; ?>
             </div>
             <h2>Bill: <?= htmlspecialchars($bill['vendor_invoice_number'] ?: ('BILL'.$billId)) ?></h2>
             <table class="bill-summary">
@@ -158,7 +162,7 @@ $companyName = $company['name'] ?? 'Company';
         </footer>
     </div>
 <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
-<?php if (!in_array($bill['status'], ['posted', 'paid'])): ?>
+<?php if (!in_array($bill['status'], ['posted', 'paid', 'blocked'])): ?>
 <script>
 document.getElementById('postBtn').addEventListener('click', async function() {
     if (!confirm('Post this bill to the general ledger?')) return;
