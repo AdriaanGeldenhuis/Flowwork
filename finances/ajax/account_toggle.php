@@ -2,6 +2,7 @@
 // /finances/ajax/account_toggle.php — SARS bookkeeping-grade
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 require_once __DIR__ . '/../lib/CoaSchema.php';
 require_once __DIR__ . '/../permissions.php';
@@ -88,8 +89,10 @@ try {
     $DB->commit();
     echo json_encode(['ok' => true]);
 
-} catch (Exception $e) {
-    $DB->rollBack();
+} catch (Throwable $e) {
+    if ($DB->inTransaction()) { $DB->rollBack(); }
     error_log("Account toggle error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    // Route through json_exception so PDO/engine detail isn't leaked to the
+    // client (business-rule messages still pass through).
+    json_exception($e);
 }
