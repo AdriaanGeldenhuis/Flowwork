@@ -91,9 +91,21 @@ try {
     $stmt->execute($params);
     $journals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Distinct module values actually present for this company. The UI uses
+    // this to populate the module filter dynamically, so it only ever offers
+    // buckets that exist in the data (manual, fin, payroll, bad_debt,
+    // vat_settle, vat_adjust, year_end, …) instead of hard-coded options that
+    // match no rows and silently return an empty state.
+    $modStmt = $DB->prepare("SELECT DISTINCT module FROM journal_entries
+                              WHERE company_id = ? AND module IS NOT NULL AND module <> ''
+                              ORDER BY module");
+    $modStmt->execute([$companyId]);
+    $modules = $modStmt->fetchAll(PDO::FETCH_COLUMN);
+
     echo json_encode([
         'ok'          => true,
         'data'        => $journals,
+        'modules'     => $modules,
         'page'        => $page,
         'per_page'    => $perPage,
         'total'       => $total,

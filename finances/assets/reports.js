@@ -498,7 +498,11 @@
       runningBalance += (debitCents - creditCents);
 
       html += '<tr>';
-      html += '<td>' + escapeHtml(formatDate(tx.entry_date)) + '</td>';
+      // Drill-through: link the date into the source journal when we have its id.
+      const dateCell = escapeHtml(formatDate(tx.entry_date));
+      html += '<td>' + (tx.journal_id
+        ? '<a href="/finances/gl/journal_view.php?id=' + encodeURIComponent(tx.journal_id) + '">' + dateCell + '</a>'
+        : dateCell) + '</td>';
       html += '<td>' + escapeHtml(tx.description || tx.memo || '-') + '</td>';
       html += '<td>' + escapeHtml(tx.reference || '-') + '</td>';
       html += '<td class="fw-finance__report-table-number">' + (debitCents > 0 ? formatCurrency(debitCents) : '-') + '</td>';

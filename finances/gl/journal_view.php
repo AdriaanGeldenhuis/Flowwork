@@ -107,12 +107,12 @@ $companyName = $company['name'] ?? 'Company';
       }
 
       function statusLabel(s) {
-        var map = { draft: 'Draft', prepared: 'Prepared', approved: 'Approved', posted: 'Posted' };
+        var map = { draft: 'Draft', approved: 'Approved', posted: 'Posted' };
         return map[s] || s || 'Unknown';
       }
 
       function statusClass(s) {
-        var map = { draft: 'draft', prepared: 'prepared', approved: 'approved', posted: 'posted' };
+        var map = { draft: 'draft', approved: 'approved', posted: 'posted' };
         return map[s] || 'draft';
       }
 

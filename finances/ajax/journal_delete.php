@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 require_once __DIR__ . '/../permissions.php';
+require_once __DIR__ . '/../lib/PeriodService.php';
 
 require_method('POST');
 Csrf::validate();
@@ -27,6 +28,13 @@ try {
 
     if (!$row) { json_error('Journal not found', 404); }
     if ($row['status'] !== 'draft') { json_error('Only draft journals can be deleted', 409); }
+
+    // A draft dated inside a locked period cannot be deleted (the notice on
+    // journals.php promises entries before the lock cannot be modified).
+    $periods = new PeriodService($DB, $companyId);
+    if ($periods->isLocked($row['entry_date'])) {
+        json_error('This draft is dated in a locked period and cannot be deleted', 409);
+    }
 
     // Capture line details before deletion for SARS audit trail
     $stmt = $DB->prepare("SELECT account_code, debit, credit FROM journal_lines WHERE journal_id = ?");

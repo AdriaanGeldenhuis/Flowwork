@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 require_once __DIR__ . '/../permissions.php';
+require_once __DIR__ . '/../lib/PeriodService.php';
 
 require_method('POST');
 Csrf::validate();
@@ -83,6 +84,15 @@ if (!empty($invalidCodes)) {
     json_error('Invalid or restricted account code(s): ' . implode(', ', $invalidCodes));
 }
 
+// Period locks: an entry may not be created in — nor moved into — a locked
+// period (mirrors journal_post.php and the notice shown on journals.php).
+// The existing entry_date of a draft being edited is checked in the update
+// branch below so a draft already sitting in a locked period cannot be touched.
+$periods = new PeriodService($DB, $companyId);
+if ($periods->isLocked($entryDate)) {
+    json_error('Entry date ' . $entryDate . ' falls in a locked period and cannot be saved', 409);
+}
+
 try {
     $DB->beginTransaction();
 
@@ -94,6 +104,10 @@ try {
         if (!$existing) { throw new Exception('Journal not found'); }
         if ($existing['status'] !== 'draft') {
             throw new Exception('Only draft journals can be edited');
+        }
+        // A draft currently dated inside a locked period cannot be edited.
+        if ($periods->isLocked($existing['entry_date'])) {
+            throw new Exception('This draft is dated in a locked period and can no longer be edited', 409);
         }
 
         $stmt = $DB->prepare("
