@@ -9,7 +9,16 @@
 
 $finTitle = $finTitle ?? 'Finances';
 $finBack = $finBack ?? '/finances/';
-$finKebab = $finKebab ?? null;
+if (!isset($finKebab)) {
+    // Default: full role-aware finance menu so every section is reachable
+    // from any finance page. Pass an explicit array to customise, or [] to hide.
+    require_once __DIR__ . '/nav.php';
+    try {
+        $finKebab = fw_finance_nav_items($DB);
+    } catch (Throwable $e) {
+        $finKebab = null; // Header must never take a page down.
+    }
+}
 
 if (!isset($finCompanyName) || !isset($finFirstName)) {
     static $finHeaderCtx = null;

@@ -16,8 +16,8 @@ class VatCalculator
      * @param int    $companyId
      * @param string $startDate  YYYY-MM-DD
      * @param string $endDate    YYYY-MM-DD
-     * @param string $vatOutputCode  GL account code for output VAT (e.g. '2120')
-     * @param string $vatInputCode   GL account code for input VAT (e.g. '2130')
+     * @param string $vatOutputCode  GL account code for output VAT (e.g. '2110')
+     * @param string $vatInputCode   GL account code for input VAT (e.g. '2120')
      * @return array
      */
     public static function calculate(
@@ -66,7 +66,7 @@ class VatCalculator
         // hardcoded '4%' code prefix (not all charts use 4xxx for revenue).
         $stmt = $db->prepare(
             "SELECT
-                COALESCE(tc.code, 'STD') AS tax_code,
+                tc.code AS tax_code,
                 SUM(jl.credit - jl.debit) AS base_amount
              FROM journal_lines jl
              JOIN journal_entries je ON jl.journal_id = je.id
@@ -75,7 +75,7 @@ class VatCalculator
              WHERE je.company_id = ? AND je.status = 'posted'
                AND je.entry_date BETWEEN ? AND ?
                AND ga.account_type = 'revenue'
-             GROUP BY COALESCE(tc.code, 'STD')"
+             GROUP BY tc.code"
         );
         $stmt->execute([$companyId, $startDate, $endDate]);
         $baseRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -85,36 +85,58 @@ class VatCalculator
         $outputExemptBase = 0.0;
         foreach ($baseRows as $row) {
             $amt = (float)$row['base_amount'];
-            $code = strtoupper($row['tax_code']);
+            $code = strtoupper((string)($row['tax_code'] ?? ''));
             if ($code === 'ZERO') {
                 $outputZeroBase += $amt;
-            } elseif ($code === 'EXEMPT') {
-                $outputExemptBase += $amt;
-            } else {
+            } elseif ($code === 'STD' || $code === 'STANDARD') {
+                // Only revenue explicitly tagged standard-rated belongs in
+                // VAT201 field 1 (standard rated supplies)
                 $outputStandardBase += $amt;
+            } else {
+                // EXEMPT, untagged and other non-VAT revenue (interest,
+                // dividends, sundry income) belongs in the exempt /
+                // non-supplies bucket, not the standard-rated base
+                $outputExemptBase += $amt;
             }
         }
 
-        // If no revenue lines had tax codes but we have output VAT,
-        // reverse-engineer the standard base from VAT at 15%
+        // If no revenue lines were tagged standard-rated but we do have
+        // standard output VAT, reverse-engineer the standard base from VAT
+        // at 15% and move it out of the exempt/non-supplies bucket so the
+        // same revenue is not counted twice.
         if ($outputStandardBase == 0.0 && $outputStandardVat > 0.0) {
             $outputStandardBase = $outputStandardVat / 0.15;
+            $outputExemptBase = max(0.0, $outputExemptBase - $outputStandardBase);
         }
 
         // --- Input VAT: split capital goods vs other ---
-        // Capital goods = journal lines on VAT input account where a sibling
-        // line on the same journal debits a fixed asset account (account_subtype='fixed_asset')
+        // Prefer the explicit journal_lines.is_capital_goods flag (added by the
+        // capital-goods-tracking migration). Only when the company has never
+        // used the flag do we fall back to the legacy heuristic: a sibling
+        // line on the same journal hits a fixed asset account
+        // (account_subtype='fixed_asset').
+        $stmt = $db->prepare(
+            "SELECT EXISTS (
+                SELECT 1 FROM journal_lines jl
+                JOIN journal_entries je ON jl.journal_id = je.id
+                WHERE je.company_id = ? AND jl.is_capital_goods = 1
+             )"
+        );
+        $stmt->execute([$companyId]);
+        $usesCapitalFlag = (int)$stmt->fetchColumn();
+
         $stmt = $db->prepare(
             "SELECT
                 CASE
-                    WHEN EXISTS (
+                    WHEN jl.is_capital_goods = 1 THEN 'capital'
+                    WHEN ? = 0 AND EXISTS (
                         SELECT 1 FROM journal_lines sibling
                         JOIN gl_accounts ga ON ga.account_code = sibling.account_code
                             AND ga.company_id = je.company_id
                         WHERE sibling.journal_id = jl.journal_id
                           AND sibling.id != jl.id
                           AND ga.account_subtype = 'fixed_asset'
-                          AND sibling.debit > 0
+                          AND (sibling.debit > 0 OR sibling.credit > 0)
                     ) THEN 'capital'
                     ELSE 'other'
                 END AS input_category,
@@ -126,7 +148,7 @@ class VatCalculator
                AND jl.account_code = ?
              GROUP BY input_category"
         );
-        $stmt->execute([$companyId, $startDate, $endDate, $vatInputCode]);
+        $stmt->execute([$usesCapitalFlag, $companyId, $startDate, $endDate, $vatInputCode]);
         $inputRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $inputCapital = 0.0;

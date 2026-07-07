@@ -61,8 +61,8 @@ try {
 
     // Compute VAT totals using centralised helper
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
 
     $vatData = VatCalculator::calculate(
         $DB, $companyId,
@@ -89,27 +89,17 @@ try {
         $periodId
     ]);
 
-    // Lock journal entries in this period (legacy flag for backward compatibility)
-    $stmt = $DB->prepare(
-        "UPDATE journal_entries
-         SET is_locked = 1
-         WHERE company_id = ?
-           AND entry_date BETWEEN ? AND ?"
-    );
-    $stmt->execute([$companyId, $period['period_start'], $period['period_end']]);
-
-    // Insert a period lock using gl_period_locks so the posting service respects it
-    // We lock up to the period_end date inclusive
-    $stmt = $DB->prepare(
-        "INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at)
-         VALUES (?, ?, 'vat_period_locked', ?, NOW())"
-    );
-    $stmt->execute([$companyId, $period['period_end'], $userId]);
+    // NOTE: preparing no longer inserts a gl_period_locks row. Preparation is
+    // a draft computation — the displayed figures recompute live until filing
+    // (vat_get.php), adjustments remain postable, and locking here at
+    // period_end used to over-lock earlier, still-open periods when periods
+    // were prepared out of order. The hard lock (and figure snapshot) happens
+    // at filing time in vat_file.php, which enforces chronological filing.
 
     // Audit log
     $stmt = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-         VALUES (?, ?, 'vat_period_locked', ?, ?, NOW())"
+         VALUES (?, ?, 'vat_period_prepared', ?, ?, NOW())"
     );
     $stmt->execute([
         $companyId,

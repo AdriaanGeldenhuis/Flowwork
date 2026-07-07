@@ -46,8 +46,8 @@ try {
 
     // Resolve VAT account codes via AccountsMap
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
 
     if (!$vatOutputCode || !$vatInputCode) {
         throw new Exception('Please configure VAT accounts in Finance Settings');

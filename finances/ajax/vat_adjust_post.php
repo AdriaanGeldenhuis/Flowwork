@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
+require_once __DIR__ . '/../lib/VatCalculator.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 
 header('Content-Type: application/json');
@@ -58,8 +59,8 @@ try {
 
     // Resolve VAT output and input account codes
     $accountsMap = new AccountsMap($DB, (int)$companyId);
-    $vatOutputCode = $accountsMap->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accountsMap->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accountsMap->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accountsMap->get('finance_vat_input_account_id', '2120');
 
     // Build journal lines arrays
     $journalLines = [];
@@ -190,11 +191,31 @@ try {
         ]);
     }
 
-    // Update period status to adjusted
-    $stmt = $DB->prepare(
-        "UPDATE gl_vat_periods SET status = 'adjusted', updated_at = NOW() WHERE id = ? AND company_id = ?"
+    // Recompute the period's stored figures so gl_vat_periods reflects the
+    // adjustment journal just posted (same computation as vat_prepare/vat_save).
+    // The journal was inserted on this connection inside the transaction, so
+    // the calculator sees it. Only unfiled periods may be updated.
+    $vatData = VatCalculator::calculate(
+        $DB, (int)$companyId,
+        $period['period_start'], $period['period_end'],
+        $vatOutputCode, $vatInputCode
     );
-    $stmt->execute([$periodId, $companyId]);
+
+    // Update period status to adjusted and store recomputed figures
+    $stmt = $DB->prepare(
+        "UPDATE gl_vat_periods
+         SET status = 'adjusted',
+             output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?,
+             updated_at = NOW()
+         WHERE id = ? AND company_id = ? AND status != 'filed'"
+    );
+    $stmt->execute([
+        $vatData['total_output_vat_cents'],
+        $vatData['total_input_vat_cents'],
+        $vatData['net_vat_cents'],
+        $periodId,
+        $companyId
+    ]);
 
     // Audit log
     $stmt = $DB->prepare(

@@ -92,7 +92,7 @@ try {
         throw new Exception('Missing gain/loss account mappings');
     }
     // VAT output account for disposal proceeds (SARS Section 8(13))
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
     // Convert monetary amounts to decimals
     $costDec  = $asset['purchase_cost_cents'] / 100.0;
     $accumDec = $asset['accumulated_depreciation_cents'] / 100.0;

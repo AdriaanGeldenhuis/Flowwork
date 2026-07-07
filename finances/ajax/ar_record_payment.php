@@ -69,6 +69,10 @@ if (!$dtP || $dtP->format('Y-m-d') !== $paymentDate) {
 $reference   = isset($data['reference']) ? trim((string)$data['reference']) : '';
 $notes       = isset($data['notes']) ? trim((string)$data['notes']) : '';
 $idempotencyKey = isset($data['idempotency_key']) ? trim((string)$data['idempotency_key']) : '';
+// Optional bank account the money was received into (payments.bank_account_id
+// references gl_bank_accounts.id; PostingService::postCustomerPayment reads it
+// off the payment row to debit the right bank GL account).
+$bankAccountId = isset($data['bank_account_id']) && $data['bank_account_id'] ? (int)$data['bank_account_id'] : null;
 
 // Basic validation
 if ($amount <= 0 && empty($allocations)) {
@@ -102,6 +106,16 @@ try {
         exit;
     }
 
+    // Validate the bank account belongs to this company before persisting it
+    if ($bankAccountId !== null) {
+        $stmt = $DB->prepare("SELECT id FROM gl_bank_accounts WHERE id = ? AND company_id = ? LIMIT 1");
+        $stmt->execute([$bankAccountId, $companyId]);
+        if (!$stmt->fetchColumn()) {
+            echo json_encode(['ok' => false, 'error' => 'Invalid bank_account_id']);
+            exit;
+        }
+    }
+
     // Idempotency: If idempotency_key provided, treat as unique reference. Prevent duplicate record.
     if ($idempotencyKey !== '') {
         $stmt = $DB->prepare("SELECT id FROM payments WHERE company_id = ? AND reference = ? LIMIT 1");
@@ -130,26 +144,49 @@ try {
         $amount = $totalAlloc;
     }
 
-    // Insert payment record
-    $stmt = $DB->prepare("INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference ?: null, $notes ?: null, $userId]);
+    // Insert payment record (persist bank_account_id only when provided so the
+    // legacy insert path is unchanged for callers that don't send it)
+    if ($bankAccountId !== null) {
+        $stmt = $DB->prepare("INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, bank_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference ?: null, $notes ?: null, $userId, $bankAccountId]);
+    } else {
+        $stmt = $DB->prepare("INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference ?: null, $notes ?: null, $userId]);
+    }
     $paymentId = (int)$DB->lastInsertId();
 
-    // Allocate amounts to invoices and update invoice balances/statuses
+    // Allocate amounts to invoices and update invoice balances/statuses.
+    // The invoice row is locked (FOR UPDATE) and the allocation is REJECTED if
+    // it exceeds the remaining balance — never clamped, since the full
+    // allocation amount is what lands in payment_allocations and the GL.
     foreach ($allocations as $alloc) {
         $invId  = (int)$alloc['invoice_id'];
         $allocAmt = floatval($alloc['amount']);
-        // Insert allocation
-        $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
-        $stmt->execute([$paymentId, $invId, $allocAmt]);
-        // Fetch invoice to compute new balance
-        $stmtInv = $DB->prepare("SELECT balance_due, status, total, paid_at FROM invoices WHERE id = ? AND company_id = ? LIMIT 1");
+        // Lock invoice and validate remaining balance before allocating
+        $stmtInv = $DB->prepare("SELECT balance_due, status, total, paid_at FROM invoices WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE");
         $stmtInv->execute([$invId, $companyId]);
         $inv = $stmtInv->fetch(PDO::FETCH_ASSOC);
         if (!$inv) {
             throw new Exception('Invoice not found (ID ' . $invId . ')');
         }
-        $newBalance = floatval($inv['balance_due']) - $allocAmt;
+        $remaining = floatval($inv['balance_due']);
+        if ($allocAmt > $remaining + 0.005) {
+            $DB->rollBack();
+            echo json_encode([
+                'ok' => false,
+                'error' => sprintf(
+                    'Allocation of %.2f exceeds the remaining balance of %.2f on invoice ID %d',
+                    $allocAmt,
+                    $remaining,
+                    $invId
+                )
+            ]);
+            exit;
+        }
+        // Insert allocation
+        $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
+        $stmt->execute([$paymentId, $invId, $allocAmt]);
+        $newBalance = round($remaining - $allocAmt, 2);
         if ($newBalance < 0) {
             $newBalance = 0.0;
         }
@@ -174,18 +211,36 @@ try {
 
     $DB->commit();
 
-    // Post to GL using ArService
+    // Post to GL using ArService. This cannot join the transaction above:
+    // PostingService::postCustomerPayment opens its own PDO transaction, and
+    // nesting beginTransaction() on the same connection throws. So the post
+    // runs after commit — but a failure is surfaced to the caller as a
+    // warning instead of silent success, and logged loudly for follow-up.
+    $glPosted = true;
+    $glError  = null;
     try {
         $arService = new ArService($DB, $companyId, $userId);
         $arService->postCustomerPayment($paymentId);
     } catch (Exception $ex) {
-        error_log('AR payment posting failed: ' . $ex->getMessage());
+        $glPosted = false;
+        $glError  = $ex->getMessage();
+        error_log(sprintf(
+            'CRITICAL: AR payment %d (company %d) recorded but GL posting FAILED — no journal exists for this payment until it is re-posted: %s',
+            $paymentId,
+            $companyId,
+            $glError
+        ));
     }
 
-    echo json_encode([
+    $response = [
         'ok' => true,
-        'payment_id' => $paymentId
-    ]);
+        'payment_id' => $paymentId,
+        'gl_posted' => $glPosted
+    ];
+    if (!$glPosted) {
+        $response['warning'] = 'Payment recorded, but the GL journal could not be created (' . $glError . '). Re-post the payment to update the ledger.';
+    }
+    echo json_encode($response);
     exit;
 
 } catch (Exception $e) {

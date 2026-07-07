@@ -52,6 +52,7 @@ try {
             FROM gl_accounts a
             LEFT JOIN journal_lines jl ON a.account_code = jl.account_code
             LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                AND (je.module IS NULL OR je.module <> 'year_end')
             WHERE a.company_id = ?
             AND a.account_type IN ('revenue', 'expense')
             AND a.is_active = 1
@@ -72,6 +73,7 @@ try {
             FROM gl_accounts a
             LEFT JOIN journal_lines jl ON a.account_code = jl.account_code
             LEFT JOIN journal_entries je ON jl.journal_id = je.id AND je.company_id = ? AND je.status = 'posted'
+                AND (je.module IS NULL OR je.module <> 'year_end')
             WHERE a.company_id = ?
             AND a.account_type IN ('revenue', 'expense')
             AND a.is_active = 1

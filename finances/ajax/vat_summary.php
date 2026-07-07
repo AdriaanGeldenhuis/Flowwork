@@ -2,18 +2,21 @@
 // /finances/ajax/vat_summary.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 // Include AccountsMap to resolve VAT account codes
 require_once __DIR__ . '/../lib/AccountsMap.php';
 
 header('Content-Type: application/json');
+
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 $companyId = $_SESSION['company_id'];
 
 try {
     // Resolve VAT account codes via AccountsMap
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
 
     // Compute balances for VAT accounts. Output VAT is credit minus debit.
     $outputVat = 0.0;

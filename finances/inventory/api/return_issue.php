@@ -4,8 +4,8 @@
 // stock at the current weighted average cost and posts a reversing COGS/Inventory
 // journal entry.
 
-require_once __DIR__ . '/../../../../init.php';
-require_once __DIR__ . '/../../../../auth_gate.php';
+require_once __DIR__ . '/../../../init.php';
+require_once __DIR__ . '/../../../auth_gate.php';
 
 // HTTP method guard
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {

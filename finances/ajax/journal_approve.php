@@ -2,12 +2,13 @@
 // /finances/ajax/journal_approve.php
 // Approve a draft/prepared journal for posting.
 
+// permissions.php must load first: it bootstraps the app session
+// (FLOWWORKSESSID) that Csrf::validate() reads the token from.
+require_once __DIR__ . '/../permissions.php';
 require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/Csrf.php';
 require_method('POST');
 Csrf::validate();
-
-require_once __DIR__ . '/../permissions.php';
 requireRoles(['bookkeeper','admin']);
 
 header('Content-Type: application/json');
@@ -28,8 +29,13 @@ try {
     if (!$st) { json_error('Journal not found', 404); }
     if ($st !== 'draft') { json_error('Only draft journals can be approved (current status: ' . $st . ')', 409); }
 
-    $stmt = $DB->prepare("UPDATE journal_entries SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE id = ? AND company_id = ?");
+    // Atomic transition: the status predicate guards against a concurrent
+    // approve/post/delete racing between the check above and this UPDATE.
+    $stmt = $DB->prepare("UPDATE journal_entries SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE id = ? AND company_id = ? AND status = 'draft'");
     $stmt->execute([$userId, $journalId, $companyId]);
+    if ($stmt->rowCount() === 0) {
+        json_error('Journal status changed concurrently — reload and try again', 409);
+    }
 
     require_once __DIR__ . '/../lib/Audit.php';
     Audit::log('journal_approved', ['journal_id'=>$journalId]);

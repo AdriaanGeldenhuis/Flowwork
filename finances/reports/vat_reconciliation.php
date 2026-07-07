@@ -30,8 +30,9 @@ $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
 $accounts = new AccountsMap($DB, $companyId);
-$vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-$vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+// Seeded SARS chart: 2110 = VAT Output, 2120 = VAT Input
+$vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+$vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
 
 // Load VAT periods
 $stmt = $DB->prepare(
@@ -76,9 +77,11 @@ foreach ($periods as $p) {
     $returnOutputCents = (int)($p['output_vat_cents'] ?? 0);
     $returnInputCents  = (int)($p['input_vat_cents'] ?? 0);
 
-    // 3. Source document totals - invoices VAT
+    // 3. Source document totals. The GL side is posted in ZAR, so invoice
+    //    VAT is converted at the invoice exchange rate; posted credit notes
+    //    reduce output VAT exactly as their journals reduce the GL balance.
     $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(i.tax), 0) AS invoice_vat
+        "SELECT COALESCE(SUM(i.tax * COALESCE(i.exchange_rate, 1)), 0) AS invoice_vat
          FROM invoices i
          WHERE i.company_id = ? AND i.issue_date BETWEEN ? AND ?
            AND i.journal_id IS NOT NULL"
@@ -86,7 +89,17 @@ foreach ($periods as $p) {
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
     $invoiceVatCents = (int)round((float)$stmt->fetchColumn() * 100);
 
-    // Source doc: bills VAT
+    $stmt = $DB->prepare(
+        "SELECT COALESCE(SUM(cn.tax * COALESCE(cn.exchange_rate, 1)), 0) AS credit_vat
+         FROM credit_notes cn
+         WHERE cn.company_id = ? AND cn.issue_date BETWEEN ? AND ?
+           AND cn.journal_id IS NOT NULL"
+    );
+    $stmt->execute([$companyId, $periodStart, $periodEnd]);
+    $invoiceVatCents -= (int)round((float)$stmt->fetchColumn() * 100);
+
+    // Source doc: bills VAT net of posted vendor credits (ap_bills and
+    // vendor_credits are captured in rands; no exchange_rate column).
     $stmt = $DB->prepare(
         "SELECT COALESCE(SUM(b.tax), 0) AS bill_vat
          FROM ap_bills b
@@ -95,6 +108,15 @@ foreach ($periods as $p) {
     );
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
     $billVatCents = (int)round((float)$stmt->fetchColumn() * 100);
+
+    $stmt = $DB->prepare(
+        "SELECT COALESCE(SUM(vc.tax), 0) AS vendor_credit_vat
+         FROM vendor_credits vc
+         WHERE vc.company_id = ? AND vc.issue_date BETWEEN ? AND ?
+           AND vc.journal_id IS NOT NULL"
+    );
+    $stmt->execute([$companyId, $periodStart, $periodEnd]);
+    $billVatCents -= (int)round((float)$stmt->fetchColumn() * 100);
 
     // Calculate variances
     $outputVariance = $glOutputCents - $returnOutputCents;
@@ -185,10 +207,10 @@ function varClass($cents) {
                 <th></th>
                 <th>GL Balance</th>
                 <th>VAT Return</th>
-                <th>Invoices</th>
+                <th>Docs (AR)</th>
                 <th>GL Balance</th>
                 <th>VAT Return</th>
-                <th>Bills</th>
+                <th>Docs (AP)</th>
                 <th>Output</th>
                 <th>Input</th>
                 <th>Output</th>

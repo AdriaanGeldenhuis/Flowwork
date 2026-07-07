@@ -94,6 +94,9 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/retention.php'">
                         Record Retention
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/sequence_gaps.php'">
+                        Invoice Sequence Gaps
+                    </button>
 
                     <!-- New: Exports tab -->
                     <button class="fw-finance__report-type-btn" data-report="exports">

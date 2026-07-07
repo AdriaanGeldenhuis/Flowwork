@@ -10,17 +10,45 @@ class Audit {
 
             $payload = json_encode($data, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $pdo = self::pdo();
-            $stmt = $pdo->prepare("INSERT INTO audit_log
-                (company_id, user_id, action, details_json, ip_address, user_agent)
-                VALUES (:cid, :uid, :action, :details, :ip, :ua)");
-            $stmt->execute([
-                ':cid' => $companyId,
-                ':uid' => $userId,
-                ':action' => $action,
-                ':details' => $payload,
-                ':ip' => $ip,
-                ':ua' => $ua
-            ]);
+            // The audit_log column set varies across this codebase's history:
+            // most direct INSERTs use (details, ip, timestamp) — the finance
+            // convention — auth flows use (details, ip, created_at), and this
+            // class historically used (details_json, ip_address, user_agent).
+            // Try each in turn (remembering the winner) so the entry lands on
+            // whichever schema the deployment has, instead of silently writing
+            // nothing when the first column set does not match. Safe mid-
+            // transaction on MySQL: a failed statement does not poison the
+            // enclosing transaction.
+            static $workingVariant = null;
+            $variants = [
+                ["INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
+                  VALUES (:cid, :uid, :action, :details, :ip, NOW())",
+                 [':cid' => $companyId, ':uid' => $userId, ':action' => $action, ':details' => $payload, ':ip' => $ip]],
+                ["INSERT INTO audit_log (company_id, user_id, action, details, ip, created_at)
+                  VALUES (:cid, :uid, :action, :details, :ip, NOW())",
+                 [':cid' => $companyId, ':uid' => $userId, ':action' => $action, ':details' => $payload, ':ip' => $ip]],
+                ["INSERT INTO audit_log (company_id, user_id, action, details_json, ip_address, user_agent)
+                  VALUES (:cid, :uid, :action, :details, :ip, :ua)",
+                 [':cid' => $companyId, ':uid' => $userId, ':action' => $action, ':details' => $payload, ':ip' => $ip, ':ua' => $ua]],
+            ];
+            $order = ($workingVariant === null)
+                ? array_keys($variants)
+                : array_unique(array_merge([$workingVariant], array_keys($variants)));
+            $lastError = null;
+            foreach ($order as $i) {
+                [$sql, $params] = $variants[$i];
+                try {
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($params);
+                    $workingVariant = $i;
+                    return;
+                } catch (\Throwable $e) {
+                    $lastError = $e;
+                }
+            }
+            if ($lastError !== null) {
+                error_log('Audit::log failed on all column variants: ' . $lastError->getMessage());
+            }
         } catch (\Throwable $e) {
             // Never break user flow due to audit logging
         }

@@ -43,8 +43,13 @@ if ($year < 2000 || $year > 2100) {
     $year = intval(date('Y'));
 }
 $type = isset($_GET['type']) ? strtolower(trim($_GET['type'])) : '';
-if (!in_array($type, ['income','expense','all',''])) {
+if (!in_array($type, ['income','revenue','expense','all',''])) {
     $type = '';
+}
+// gl_accounts.account_type is ENUM('asset','liability','equity','revenue','expense');
+// the client-facing 'income' filter maps to the stored 'revenue' value.
+if ($type === 'income') {
+    $type = 'revenue';
 }
 $projectId = isset($_GET['project_id']) && $_GET['project_id'] !== '' ? intval($_GET['project_id']) : null;
 
@@ -53,12 +58,12 @@ try {
     $accSql = "SELECT account_id, account_code, account_name, account_type\n" .
               "FROM gl_accounts WHERE company_id = ? AND is_active = 1";
     $params = [$companyId];
-    if ($type === 'income' || $type === 'expense') {
+    if ($type === 'revenue' || $type === 'expense') {
         $accSql .= " AND account_type = ?";
         $params[] = $type;
     } else {
-        // Limit to income and expense accounts when type empty or 'all'
-        $accSql .= " AND account_type IN ('income','expense')";
+        // Limit to revenue and expense accounts when type empty or 'all'
+        $accSql .= " AND account_type IN ('revenue','expense')";
     }
     $accSql .= " ORDER BY account_code";
     $stmtAcc = $DB->prepare($accSql);
@@ -102,7 +107,7 @@ try {
         // Determine project filtering for journal lines
         $sql = "SELECT ga.account_id, MONTH(je.entry_date) AS m,\n" .
                "SUM( CASE\n" .
-               "      WHEN ga.account_type = 'income' THEN (jl.credit - jl.debit) * 100\n" .
+               "      WHEN ga.account_type = 'revenue' THEN (jl.credit - jl.debit) * 100\n" .
                "      WHEN ga.account_type = 'expense' THEN (jl.debit - jl.credit) * 100\n" .
                "      ELSE (jl.debit - jl.credit) * 100\n" .
                "    END ) AS actual_cents\n" .

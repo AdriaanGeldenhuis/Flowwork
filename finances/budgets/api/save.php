@@ -56,9 +56,11 @@ if ($periodService->isLocked($year . '-12-31')) {
     exit;
 }
 
-// Fetch valid account IDs for this company to prevent cross-company writes
+// Fetch valid account IDs for this company to prevent cross-company writes.
+// NOTE: gl_accounts.account_type is ENUM('asset','liability','equity','revenue','expense')
+// — the value is 'revenue', not 'income'.
 $validAccStmt = $DB->prepare(
-    "SELECT account_id FROM gl_accounts WHERE company_id = ? AND is_active = 1 AND account_type IN ('income','expense')"
+    "SELECT account_id FROM gl_accounts WHERE company_id = ? AND is_active = 1 AND account_type IN ('revenue','expense')"
 );
 $validAccStmt->execute([$companyId]);
 $validAccountIds = array_column($validAccStmt->fetchAll(PDO::FETCH_ASSOC), 'account_id');

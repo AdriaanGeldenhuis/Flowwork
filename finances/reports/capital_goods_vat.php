@@ -28,7 +28,7 @@ $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) { header('Location: /login.php'); exit; }
 
 $accounts = new AccountsMap($DB, $companyId);
-$vatInputCode = $accounts->get('finance_vat_input_account_id', '2130');
+$vatInputCode = $accounts->get('finance_vat_input_account_id', '2120');
 
 // Date range filter (validate format strictly to avoid DateTime exceptions in SQL)
 $startDate = $_GET['start'] ?? date('Y-01-01');
@@ -38,8 +38,19 @@ $dtE = DateTime::createFromFormat('Y-m-d', $endDate);
 if (!$dtS || $dtS->format('Y-m-d') !== $startDate) { $startDate = date('Y-01-01'); }
 if (!$dtE || $dtE->format('Y-m-d') !== $endDate)   { $endDate   = date('Y-m-d'); }
 
-// Method 1: Use is_capital_goods flag (for new records)
-// Method 2: Heuristic detection (for historical records) - sibling line debits fixed asset
+// Method 1: Use is_capital_goods flag (preferred whenever the company uses it)
+// Method 2: Heuristic detection (legacy records only, when the flag has never
+//           been set) - sibling line on a fixed asset account
+$stmt = $DB->prepare(
+    "SELECT EXISTS (
+        SELECT 1 FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_id = je.id
+        WHERE je.company_id = ? AND jl.is_capital_goods = 1
+     )"
+);
+$stmt->execute([$companyId]);
+$usesCapitalFlag = (int)$stmt->fetchColumn();
+
 $stmt = $DB->prepare(
     "SELECT
         je.id AS journal_id,
@@ -47,21 +58,21 @@ $stmt = $DB->prepare(
         je.reference,
         je.description AS journal_desc,
         jl.description AS line_desc,
-        jl.debit AS vat_amount,
+        jl.debit - jl.credit AS vat_amount,
         jl.is_capital_goods,
         -- Get the asset account line from same journal
         (SELECT CONCAT(ga2.account_code, ' - ', ga2.account_name)
          FROM journal_lines jl2
          JOIN gl_accounts ga2 ON ga2.account_code = jl2.account_code AND ga2.company_id = je.company_id
          WHERE jl2.journal_id = je.id AND jl2.id != jl.id
-           AND ga2.account_subtype = 'fixed_asset' AND jl2.debit > 0
+           AND ga2.account_subtype = 'fixed_asset' AND (jl2.debit > 0 OR jl2.credit > 0)
          LIMIT 1) AS asset_account,
-        -- Get asset cost from sibling line
-        (SELECT jl2.debit
+        -- Get asset cost from sibling line (net, so reversals show negative)
+        (SELECT jl2.debit - jl2.credit
          FROM journal_lines jl2
          JOIN gl_accounts ga2 ON ga2.account_code = jl2.account_code AND ga2.company_id = je.company_id
          WHERE jl2.journal_id = je.id AND jl2.id != jl.id
-           AND ga2.account_subtype = 'fixed_asset' AND jl2.debit > 0
+           AND ga2.account_subtype = 'fixed_asset' AND (jl2.debit > 0 OR jl2.credit > 0)
          LIMIT 1) AS asset_cost,
         -- Get supplier name
         (SELECT s.name FROM crm_accounts s WHERE s.id = jl.supplier_id LIMIT 1) AS supplier_name
@@ -70,19 +81,19 @@ $stmt = $DB->prepare(
      WHERE je.company_id = ? AND je.status = 'posted'
        AND je.entry_date BETWEEN ? AND ?
        AND jl.account_code = ?
-       AND jl.debit > 0
+       AND (jl.debit > 0 OR jl.credit > 0)
        AND (
            jl.is_capital_goods = 1
-           OR EXISTS (
+           OR (? = 0 AND EXISTS (
                SELECT 1 FROM journal_lines jl2
                JOIN gl_accounts ga ON ga.account_code = jl2.account_code AND ga.company_id = je.company_id
                WHERE jl2.journal_id = je.id AND jl2.id != jl.id
-                 AND ga.account_subtype = 'fixed_asset' AND jl2.debit > 0
-           )
+                 AND ga.account_subtype = 'fixed_asset' AND (jl2.debit > 0 OR jl2.credit > 0)
+           ))
        )
      ORDER BY je.entry_date DESC"
 );
-$stmt->execute([$companyId, $startDate, $endDate, $vatInputCode]);
+$stmt->execute([$companyId, $startDate, $endDate, $vatInputCode, $usesCapitalFlag]);
 $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $totalVat = 0;

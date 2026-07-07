@@ -50,9 +50,22 @@ class TaxInvoiceValidator
         }
 
         // Fetch company details
-        $stmt = $this->db->prepare("SELECT name, vat_number, reg_number FROM companies WHERE id = ?");
+        $stmt = $this->db->prepare("SELECT name, vat_number, reg_number, address_line1 FROM companies WHERE id = ?");
         $stmt->execute([$this->companyId]);
         $company = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Section 20 thresholds are in ZAR: convert foreign-currency invoice
+        // totals using the exchange rate captured on the invoice (1 unit = X ZAR).
+        $rate = (float)($invoice['exchange_rate'] ?? 1);
+        if ($rate <= 0) {
+            $rate = 1.0;
+        }
+        $totalZar = floatval($invoice['total'] ?? 0) * $rate;
+
+        // Note: the VAT Act also requires the words "Tax Invoice" on the
+        // document. The invoices schema stores no document-title field (the
+        // wording is applied by the print/PDF templates), so it cannot be
+        // validated here.
 
         // 1. Seller VAT number
         if (empty($company['vat_number'])) {
@@ -81,6 +94,15 @@ class TaxInvoiceValidator
             ];
         }
 
+        // 1b. Seller address (required on a full tax invoice)
+        if (empty($company['address_line1'])) {
+            $issues[] = [
+                'field' => 'company_address',
+                'message' => 'Company address not configured (SARS Section 20(4)(a)). Set this in company settings.',
+                'severity' => 'warning'
+            ];
+        }
+
         // 4. Customer name
         if (empty($invoice['customer_name'])) {
             $issues[] = [
@@ -90,12 +112,36 @@ class TaxInvoiceValidator
             ];
         }
 
-        // 5. Customer VAT number required for invoices > R5,000 (Section 20(5))
-        $total = floatval($invoice['total'] ?? 0);
-        if ($total > 5000 && empty($invoice['customer_vat'])) {
+        // 5. Customer VAT number required for invoices > R5,000 ZAR (Section 20(4)/20(5))
+        if ($totalZar > 5000 && empty($invoice['customer_vat'])) {
             $issues[] = [
                 'field' => 'customer_vat',
                 'message' => 'Customer VAT number required for invoices exceeding R5,000 (SARS Section 20(5))',
+                'severity' => 'warning'
+            ];
+        }
+
+        // 5b. Customer address required for full tax invoices (> R5,000 ZAR)
+        if ($totalZar > 5000 && !empty($invoice['customer_id'])) {
+            $stmt = $this->db->prepare(
+                "SELECT COUNT(*) FROM crm_addresses WHERE account_id = ? AND company_id = ?"
+            );
+            $stmt->execute([(int)$invoice['customer_id'], $this->companyId]);
+            if ((int)$stmt->fetchColumn() === 0) {
+                $issues[] = [
+                    'field' => 'customer_address',
+                    'message' => 'Customer address required for invoices exceeding R5,000 (SARS Section 20(4)(b)). Add an address to the customer account.',
+                    'severity' => 'warning'
+                ];
+            }
+        }
+
+        // 5c. R50 floor: no tax invoice is required at all for supplies of
+        // R50 or less (Section 20(6)) - informational only
+        if ($totalZar > 0 && $totalZar <= 50) {
+            $issues[] = [
+                'field' => 'total',
+                'message' => 'Invoice total is R50 or less - a tax invoice is not required for this supply (SARS Section 20(6))',
                 'severity' => 'warning'
             ];
         }

@@ -30,6 +30,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// CSRF validation (session already bootstrapped via init.php above; Csrf is
+// loaded globally by init.php — the class_exists guard covers the /app layout)
+if (!class_exists('Csrf')) {
+    require_once $__fin_root . '/finances/lib/Csrf.php';
+}
+Csrf::validate();
+
 requireRoles(['admin']);
 
 $companyId = $_SESSION['company_id'] ?? null;
@@ -62,6 +69,17 @@ if (!$fyStart || !$fyEnd) {
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fyStart) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fyEnd)) {
     echo json_encode(['ok' => false, 'error' => 'Invalid date format']);
     exit;
+}
+
+// Period lock check: the closing journal is dated fy_end, so posting must be
+// rejected if that date falls in a locked period (same rule as PostingService).
+require_once __DIR__ . '/../lib/PeriodService.php';
+if ($action === 'execute') {
+    $periodService = new PeriodService($DB, (int)$companyId);
+    if ($periodService->isLocked($fyEnd)) {
+        echo json_encode(['ok' => false, 'error' => 'Cannot post the year-end closing journal to a locked period (' . $fyEnd . '). Remove the period lock first.']);
+        exit;
+    }
 }
 
 $closingRef = 'YE-CLOSE-' . substr($fyStart, 0, 4) . '-' . substr($fyEnd, 0, 4);

@@ -87,17 +87,17 @@ $apAccountCode = null;
 if ($apAccountId !== '') {
     $apAccountCode = resolveAccountCode($DB, $companyId, (int)$apAccountId);
 }
-// Default AP to 2110 if not resolved
+// Default AP to the seeded AP Control (2010) if not resolved
 if (!$apAccountCode) {
-    $apAccountCode = '2110';
+    $apAccountCode = '2010';
 }
 $vatAccountCode = null;
 if ($vatAccountId !== '') {
     $vatAccountCode = resolveAccountCode($DB, $companyId, (int)$vatAccountId);
 }
-// Default VAT Input to 2130 if not resolved
+// Default VAT Input to the seeded VAT Input account (2120) if not resolved
 if (!$vatAccountCode) {
-    $vatAccountCode = '2130';
+    $vatAccountCode = '2120';
 }
 
 // Fetch bill lines

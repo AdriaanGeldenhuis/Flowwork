@@ -123,8 +123,7 @@ $firstName = $stmt->fetchColumn() ?: 'User';
             // totals row
             const t = reportData.totals;
             rows.push(['Total',(t.output_vat_cents/100).toFixed(2),(t.input_vat_cents/100).toFixed(2),(t.net_vat_cents/100).toFixed(2)]);
-            const csv = rows.map(r => r.join(',')).join('
-');
+            const csv = rows.map(r => r.join(',')).join('\n');
             const blob= new Blob([csv], { type:'text/csv' });
             const url = URL.createObjectURL(blob);
             const a   = document.createElement('a');

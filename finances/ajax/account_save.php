@@ -115,6 +115,28 @@ try {
             $details = json_encode(['account_id' => $accountId, 'code' => $existing['account_code'], 'locked' => true, 'changes' => $changes]);
 
         } else {
+            // System accounts: structural fields are immutable — only the name,
+            // description, parent, tax code and (guarded below) active flag may
+            // change. Deactivation is blocked separately below.
+            if ($existing['is_system']) {
+                if ($existing['account_code'] !== $accountCode
+                    || $existing['account_type'] !== $accountType
+                    || (string)$existing['account_subtype'] !== $accountSubtype
+                    || $existing['normal_balance'] !== $normalBalance) {
+                    throw new Exception('Cannot change the code, type, subtype or normal balance of a system account');
+                }
+            }
+
+            // Duplicate account_code check (company-scoped, excluding this account) —
+            // mirrors the INSERT path so a rename cannot collide with an existing code
+            if ($existing['account_code'] !== $accountCode) {
+                $stmt = $DB->prepare("SELECT COUNT(*) FROM gl_accounts WHERE company_id = ? AND account_code = ? AND account_id <> ?");
+                $stmt->execute([$companyId, $accountCode, $accountId]);
+                if ($stmt->fetchColumn() > 0) {
+                    throw new Exception('Account code already exists');
+                }
+            }
+
             // Prevent changing account_code or account_type if journals reference it
             if ($existing['account_code'] !== $accountCode || $existing['account_type'] !== $accountType) {
                 $lineCount = CoaSchema::postedLineCount($DB, $companyId, $existing['account_code']);

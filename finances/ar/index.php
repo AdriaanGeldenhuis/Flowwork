@@ -2,6 +2,8 @@
 // /finances/ar/index.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
+requireRoles(['viewer', 'bookkeeper', 'admin']);
 require_once __DIR__ . '/../lib/Csrf.php';
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
@@ -21,15 +23,26 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Get AR stats
+// Get AR stats.
+// Conventions (mirrors finances/index.php): a status of 'overdue' is never
+// written, so overdue is DERIVED from due_date < CURDATE() over open invoices
+// (deleted_at IS NULL, status not in the closed/never-posted family,
+// balance_due > 0). Outstanding is in ZAR: balance_due × exchange_rate.
 $stmt = $DB->prepare("
-    SELECT 
+    SELECT
         COUNT(*) as total_invoices,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_invoices,
-        SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdue_invoices,
-        SUM(balance_due) as total_outstanding
+        COALESCE(SUM(status = 'paid'), 0) as paid_invoices,
+        COALESCE(SUM(
+            status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
+            AND balance_due > 0
+            AND due_date < CURDATE()
+        ), 0) as overdue_invoices,
+        COALESCE(SUM(CASE
+            WHEN status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
+                 AND balance_due > 0
+            THEN balance_due * exchange_rate END), 0) as total_outstanding
     FROM invoices
-    WHERE company_id = ?
+    WHERE company_id = ? AND deleted_at IS NULL
 ");
 $stmt->execute([$companyId]);
 $stats = $stmt->fetch();

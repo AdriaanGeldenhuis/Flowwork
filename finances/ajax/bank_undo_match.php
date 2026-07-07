@@ -68,9 +68,15 @@ try {
     if ($entryDate && $periodService->isLocked($entryDate)) {
         throw new Exception('Cannot undo journal in locked period (' . $entryDate . ')');
     }
-    // Reverse journal instead of deleting lines
+    // Reverse journal instead of deleting lines. ReversalService participates
+    // in the transaction we opened above (it does not begin its own).
     $rev = new ReversalService($DB, $companyId);
-    $rev->reverseJournal((int)$journalId, $userId, 'Bank undo match');
+    $reversalId = $rev->reverseJournal((int)$journalId, $userId, 'Bank undo match');
+    if (!$reversalId) {
+        // Null means the journal is missing, not posted, already reversed, or
+        // dated in a locked period — do not unmatch the bank transaction.
+        throw new Exception('Journal #' . $journalId . ' could not be reversed (missing, not posted, already reversed, or in a locked period)');
+    }
     // Reset the bank transaction matched flag and journal_id
     $stmt = $DB->prepare(
         "UPDATE gl_bank_transactions SET matched = 0, journal_id = NULL WHERE bank_tx_id = ? AND company_id = ?"
@@ -83,13 +89,17 @@ try {
     $audit->execute([
         $companyId,
         $userId,
-        json_encode(['bank_tx_id' => $bankTxId, 'journal_id' => $journalId]),
+        json_encode(['bank_tx_id' => $bankTxId, 'journal_id' => $journalId, 'reversal_journal_id' => $reversalId]),
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
     $DB->commit();
-    echo json_encode(['ok' => true]);
+    echo json_encode(['ok' => true, 'data' => ['reversal_journal_id' => $reversalId]]);
 } catch (Exception $e) {
-    $DB->rollBack();
+    if ($DB->inTransaction()) {
+        $DB->rollBack();
+    }
     error_log('Bank undo match error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'Failed to undo match']);
+    // Surface our own validation/business messages; keep DB driver errors generic.
+    $msg = ($e instanceof PDOException) ? 'Failed to undo match' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

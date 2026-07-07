@@ -49,6 +49,9 @@ if (!$companyId || !$userId) {
 $input = json_decode(file_get_contents('php://input'), true);
 $creditNoteId    = isset($input['credit_note_id']) ? (int)$input['credit_note_id'] : 0;
 $idempotencyKey  = isset($input['idempotency_key']) ? trim((string)$input['idempotency_key']) : '';
+// Callers may classify at post time; matches the credit_notes.reason_code ENUM
+$reasonCodeIn    = isset($input['reason_code']) ? strtolower(trim((string)$input['reason_code'])) : '';
+$validReasonCodes = ['return', 'discount', 'correction', 'damaged', 'cancellation', 'vat_adjustment', 'other'];
 
 if ($creditNoteId <= 0) {
     echo json_encode(['ok' => false, 'error' => 'Credit note ID required']);
@@ -58,7 +61,7 @@ if ($creditNoteId <= 0) {
 try {
     // Fetch credit note details
     $stmt = $DB->prepare(
-        "SELECT id, issue_date, status, journal_id FROM credit_notes WHERE id = ? AND company_id = ? LIMIT 1"
+        "SELECT id, issue_date, status, journal_id, reason_code, invoice_id FROM credit_notes WHERE id = ? AND company_id = ? LIMIT 1"
     );
     $stmt->execute([$creditNoteId, $companyId]);
     $cn = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -72,6 +75,28 @@ try {
         echo json_encode(['ok' => false, 'error' => 'Credit note not approved or applied']);
         exit;
     }
+    // SARS s21 compliance: a credit note may not post without a classified
+    // reason code. The code may already be stored on the record, or supplied
+    // in this request (the QI capture flows predate the reason_code column,
+    // so posting must be able to classify in-flight and persist it).
+    if (empty($cn['reason_code'])) {
+        if ($reasonCodeIn === '' || !in_array($reasonCodeIn, $validReasonCodes, true)) {
+            echo json_encode([
+                'ok' => false,
+                'error' => 'Credit note reason code is required before posting (SARS s21). Supply reason_code as one of: ' . implode(', ', $validReasonCodes),
+            ]);
+            exit;
+        }
+        $stmtRc = $DB->prepare("UPDATE credit_notes SET reason_code = ? WHERE id = ? AND company_id = ?");
+        $stmtRc->execute([$reasonCodeIn, $creditNoteId, $companyId]);
+        $cn['reason_code'] = $reasonCodeIn;
+    }
+    // A link to the original tax invoice is required where the note corrects
+    // a specific invoice; standalone notes are permitted but flagged so the
+    // bookkeeper can attach the reference (SARS s21(3)).
+    $s21Warning = empty($cn['invoice_id'])
+        ? 'Credit note is not linked to an original invoice — attach the reference if it corrects a specific tax invoice (SARS s21)'
+        : null;
     // Duplicate check: if journal_id already set, treat as duplicate
     if (!empty($cn['journal_id'])) {
         echo json_encode([
@@ -112,7 +137,11 @@ try {
         json_encode(['credit_note_id' => $creditNoteId, 'journal_id' => $journalId]),
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
-    echo json_encode(['ok' => true, 'data' => ['journal_id' => $journalId]]);
+    $resp = ['ok' => true, 'data' => ['journal_id' => $journalId]];
+    if ($s21Warning !== null) {
+        $resp['warning'] = $s21Warning;
+    }
+    echo json_encode($resp);
     exit;
 } catch (Exception $e) {
     error_log('AR post credit note error: ' . $e->getMessage());

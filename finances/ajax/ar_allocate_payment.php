@@ -96,16 +96,29 @@ try {
     foreach ($oldAllocs as $oa) {
         $invId = (int)$oa['invoice_id'];
         $amt   = floatval($oa['amount']);
-        // Fetch invoice
-        $stmtInv = $DB->prepare("SELECT balance_due, total, status, paid_at FROM invoices WHERE id = ? AND company_id = ? LIMIT 1");
+        // Fetch and lock invoice
+        $stmtInv = $DB->prepare("SELECT balance_due, total, status, paid_at FROM invoices WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE");
         $stmtInv->execute([$invId, $companyId]);
         $invoice = $stmtInv->fetch(PDO::FETCH_ASSOC);
         if ($invoice) {
+            $invTotal   = floatval($invoice['total']);
             $newBalance = floatval($invoice['balance_due']) + $amt;
-            if ($newBalance > floatval($invoice['total'])) {
-                $newBalance = floatval($invoice['total']);
+            if ($newBalance > $invTotal) {
+                $newBalance = $invTotal;
             }
-            $newStatus  = $newBalance <= 0.001 ? 'paid' : 'part-paid';
+            // Recompute status from the restored balance: fully settled stays
+            // 'paid'; partially paid is 'part-paid'; fully unpaid reverts the
+            // paid-family statuses to 'sent' (issued, unpaid — mirrors
+            // qi/ajax/invoice_action.php), leaving other statuses untouched.
+            if ($newBalance <= 0.001) {
+                $newStatus = 'paid';
+            } elseif ($newBalance >= $invTotal - 0.001) {
+                $newStatus = in_array($invoice['status'], ['paid', 'part-paid'], true)
+                    ? 'sent'
+                    : $invoice['status'];
+            } else {
+                $newStatus = 'part-paid';
+            }
             // If it becomes unpaid (newBalance > 0) reset paid_at
             $paidAt = $invoice['paid_at'];
             if ($newBalance > 0.001) {
@@ -133,17 +146,33 @@ try {
     foreach ($allocations as $na) {
         $invId  = (int)$na['invoice_id'];
         $amt    = floatval($na['amount']);
-        // Insert allocation
-        $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
-        $stmt->execute([$paymentId, $invId, $amt]);
-        // Fetch invoice
-        $stmtInv = $DB->prepare("SELECT balance_due, total, paid_at FROM invoices WHERE id = ? AND company_id = ? LIMIT 1");
+        // Lock invoice and validate the remaining balance before allocating —
+        // over-allocations are rejected, not clamped, because the full amount
+        // is what lands in payment_allocations and the GL.
+        $stmtInv = $DB->prepare("SELECT balance_due, total, paid_at FROM invoices WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE");
         $stmtInv->execute([$invId, $companyId]);
         $invoice = $stmtInv->fetch(PDO::FETCH_ASSOC);
         if (!$invoice) {
             throw new Exception('Invoice not found (ID ' . $invId . ')');
         }
-        $newBalance = floatval($invoice['balance_due']) - $amt;
+        $remaining = floatval($invoice['balance_due']);
+        if ($amt > $remaining + 0.005) {
+            $DB->rollBack();
+            echo json_encode([
+                'ok' => false,
+                'error' => sprintf(
+                    'Allocation of %.2f exceeds the remaining balance of %.2f on invoice ID %d',
+                    $amt,
+                    $remaining,
+                    $invId
+                )
+            ]);
+            exit;
+        }
+        // Insert allocation
+        $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
+        $stmt->execute([$paymentId, $invId, $amt]);
+        $newBalance = round($remaining - $amt, 2);
         if ($newBalance < 0) {
             $newBalance = 0.0;
         }

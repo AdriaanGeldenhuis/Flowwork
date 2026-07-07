@@ -2,10 +2,13 @@
 // /finances/ajax/vat_current_position.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 // Include AccountsMap for resolving VAT account codes
 require_once __DIR__ . '/../lib/AccountsMap.php';
 
 header('Content-Type: application/json');
+
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 $companyId = $_SESSION['company_id'];
 
@@ -22,8 +25,8 @@ try {
     $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
     $rawOutput = $settings['finance_vat_output_account_id'] ?? null;
     $rawInput  = $settings['finance_vat_input_account_id'] ?? null;
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2120');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2130');
+    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
+    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
     $vatOutputId = (is_numeric($rawOutput) ? (int)$rawOutput : null);
     $vatInputId  = (is_numeric($rawInput) ? (int)$rawInput : null);
 

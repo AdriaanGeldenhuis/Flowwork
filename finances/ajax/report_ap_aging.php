@@ -26,15 +26,40 @@ if (!$dt || $dt->format('Y-m-d') !== $asOf) {
 
 try {
     $asOfDate = new DateTime($asOf);
-    // Compute remaining balance per bill (total minus payments minus credits)
-    $sql = "SELECT b.id, b.supplier_id, b.due_date, (b.total - IFNULL(pa.paid_tot,0) - IFNULL(vc.cred_tot,0)) AS balance\n            FROM ap_bills b\n            LEFT JOIN (SELECT bill_id, SUM(amount) AS paid_tot FROM ap_payment_allocations GROUP BY bill_id) pa ON pa.bill_id = b.id\n            LEFT JOIN (SELECT bill_id, SUM(amount) AS cred_tot FROM vendor_credit_allocations GROUP BY bill_id) vc ON vc.bill_id = b.id\n            WHERE b.company_id = ? AND b.status != 'cancelled'";
+    // As-at balance per bill: total minus payments made on or before the
+    // as-of date (ap_payments.payment_date) minus vendor credits issued on or
+    // before it (vendor_credits.issue_date — the allocation tables carry no
+    // date of their own). Bills issued after the as-of date are excluded, as
+    // are never-posted/cancelled statuses (draft/review are pre-posting,
+    // cancelled/void/blocked never owe anything). Currently-settled bills
+    // still appear when their settling payment falls after the as-of date.
+    $sql = "SELECT b.id, b.supplier_id, b.due_date,
+                   (b.total - IFNULL(pa.paid_tot,0) - IFNULL(vc.cred_tot,0)) AS balance
+            FROM ap_bills b
+            LEFT JOIN (
+                SELECT apa.bill_id, SUM(apa.amount) AS paid_tot
+                FROM ap_payment_allocations apa
+                JOIN ap_payments p ON p.id = apa.ap_payment_id
+                WHERE p.company_id = ? AND p.payment_date <= ?
+                GROUP BY apa.bill_id
+            ) pa ON pa.bill_id = b.id
+            LEFT JOIN (
+                SELECT vca.bill_id, SUM(vca.amount) AS cred_tot
+                FROM vendor_credit_allocations vca
+                JOIN vendor_credits vcn ON vcn.id = vca.credit_id
+                WHERE vcn.company_id = ? AND vcn.issue_date <= ?
+                GROUP BY vca.bill_id
+            ) vc ON vc.bill_id = b.id
+            WHERE b.company_id = ?
+              AND b.status NOT IN ('draft','review','cancelled','void','blocked')
+              AND b.issue_date <= ?";
     $stmt = $DB->prepare($sql);
-    $stmt->execute([$companyId]);
+    $stmt->execute([$companyId, $asOf, $companyId, $asOf, $companyId, $asOf]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $suppliers = [];
     foreach ($rows as $row) {
-        $balance = (float)$row['balance'];
-        if ($balance <= 0) continue;
+        $balance = round((float)$row['balance'], 2);
+        if ($balance <= 0.005) continue; // settled on or before the as-of date
         $supId   = (int)$row['supplier_id'];
         $dueDate = $row['due_date'] ? new DateTime($row['due_date']) : null;
         if (!isset($suppliers[$supId])) {

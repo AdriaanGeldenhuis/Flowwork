@@ -51,9 +51,10 @@ class CoaSchema {
             'liability' => [[2000, 2999]],
             'equity'    => [[3000, 3999]],
             'revenue'   => [[4000, 4999]],
-            // Expenses span COGS (5xxx), operating (6xxx), finance costs (8xxx)
+            // Expenses span COGS (5xxx), operating (6xxx-7xxx — the COA migration
+            // backfills 7000-7999 as operating_expense), finance costs (8xxx)
             // and tax expense (9xxx) — all the debit-normal P&L bands.
-            'expense'   => [[5000, 6999], [8000, 9999]],
+            'expense'   => [[5000, 9999]],
         ];
     }
 

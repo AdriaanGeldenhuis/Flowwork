@@ -17,7 +17,12 @@ class ReversalService
 
     /**
      * Create a reversing journal for an existing journal id.
-     * Returns new reversing journal id, or null if original not found or locked.
+     * Returns new reversing journal id, or null if the original is not found,
+     * not posted, already reversed, or dated in a locked period.
+     *
+     * Transaction-aware: if the caller already has an open transaction on the
+     * shared PDO connection this method participates in it (and never commits
+     * or rolls it back itself); otherwise it manages its own transaction.
      */
     public function reverseJournal(int $journalId, int $userId, ?string $reason = null, ?string $reversalDate = null): ?int
     {
@@ -26,11 +31,15 @@ class ReversalService
             throw new \InvalidArgumentException('A reason is required for journal reversals (SARS compliance)');
         }
 
-        // Fetch original header
-        $stmt = $this->db->prepare("SELECT id, entry_date, description FROM journal_entries WHERE id = ? AND company_id = ?");
+        // Fetch original header (including status / reversal link for guards)
+        $stmt = $this->db->prepare("SELECT id, entry_date, description, status, reversed_by_journal_id FROM journal_entries WHERE id = ? AND company_id = ?");
         $stmt->execute([$journalId, $this->companyId]);
         $hdr = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$hdr) { return null; }
+
+        // Guard: only posted, not-yet-reversed journals may be reversed
+        if (($hdr['status'] ?? '') !== 'posted') { return null; }
+        if (!empty($hdr['reversed_by_journal_id'])) { return null; }
 
         $date = $reversalDate ?: $hdr['entry_date'];
         if ($this->periods->isLocked($date)) {
@@ -43,8 +52,13 @@ class ReversalService
         $rows = $lines->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) { return null; }
 
-        // Atomic reversal: insert reversal + link original must succeed together
-        $this->db->beginTransaction();
+        // Atomic reversal: insert reversal + link original must succeed together.
+        // Only start (and later commit/rollback) a transaction if the caller
+        // hasn't already opened one on this connection.
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
         try {
             // Create reversing header (with reference for SARS audit trail)
             $desc = 'Reversal of #' . $journalId . ' - ' . $reason;
@@ -69,14 +83,27 @@ class ReversalService
                 ]);
             }
 
-            // Link original journal to the reversal
-            $up1 = $this->db->prepare("UPDATE journal_entries SET reversed_by_journal_id = ? WHERE id = ? AND company_id = ?");
+            // Link original journal to the reversal. The IS NULL predicate plus
+            // rowCount check guard against a concurrent reversal of the same
+            // journal: if another process linked a reversal first, abort so we
+            // never double-post the reversing entry.
+            $up1 = $this->db->prepare("UPDATE journal_entries SET reversed_by_journal_id = ? WHERE id = ? AND company_id = ? AND reversed_by_journal_id IS NULL");
             $up1->execute([$revId, $journalId, $this->companyId]);
+            if ($up1->rowCount() !== 1) {
+                throw new RuntimeException('Journal #' . $journalId . ' has already been reversed by another process');
+            }
 
-            $this->db->commit();
+            if ($ownsTransaction) {
+                $this->db->commit();
+            }
             return $revId;
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            // Only roll back a transaction we started; if the caller owns the
+            // transaction, rethrow and let the caller decide (rolling back the
+            // caller's transaction here would break its error handling).
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             error_log('Journal reversal failed: ' . $e->getMessage());
             throw $e;
         }

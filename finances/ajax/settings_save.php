@@ -31,6 +31,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// CSRF validation (session already bootstrapped via init.php above; Csrf is
+// loaded globally by init.php — the class_exists guard covers the /app layout)
+if (!class_exists('Csrf')) {
+    require_once $__fin_root . '/finances/lib/Csrf.php';
+}
+Csrf::validate();
+
 // Only admin can save finance settings
 requireRoles(['admin']);
 
@@ -82,6 +89,42 @@ if (empty($updates)) {
     exit;
 }
 
+// --- Server-side validation ---
+
+// fiscal_year_start: the settings form posts a month NAME (January..December),
+// consumed by year_end.php via strtotime(). Reject anything else.
+if (array_key_exists('fiscal_year_start', $updates)) {
+    $validMonths = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    if (!is_string($updates['fiscal_year_start']) || !in_array($updates['fiscal_year_start'], $validMonths, true)) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid fiscal year start month']);
+        exit;
+    }
+}
+
+// *_account_id settings: must be positive integers referencing a gl_accounts
+// row owned by this company. Null/empty clears the mapping and is allowed.
+$accCheckStmt = $DB->prepare(
+    "SELECT COUNT(*) FROM gl_accounts WHERE company_id = ? AND account_id = ?"
+);
+foreach ($updates as $key => $value) {
+    if (substr($key, -11) !== '_account_id' || $value === null) {
+        continue;
+    }
+    $isIntLike = is_int($value) || (is_string($value) && ctype_digit($value));
+    $accId = $isIntLike ? (int)$value : 0;
+    if ($accId <= 0) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid account id for ' . $key]);
+        exit;
+    }
+    $accCheckStmt->execute([$companyId, $accId]);
+    if ((int)$accCheckStmt->fetchColumn() === 0) {
+        echo json_encode(['ok' => false, 'error' => 'Account for ' . $key . ' does not exist for this company']);
+        exit;
+    }
+    $updates[$key] = $accId;
+}
+
 try {
     $DB->beginTransaction();
     // Upsert each setting key
@@ -101,10 +144,10 @@ try {
             );
             $stmt->execute([$value, $companyId, $settingKey]);
         } else {
-            // Insert new
+            // Insert new (company_settings has no created_at column)
             $stmt = $DB->prepare(
-                "INSERT INTO company_settings (company_id, setting_key, setting_value, created_at, updated_at)
-                 VALUES (?, ?, ?, NOW(), NOW())"
+                "INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+                 VALUES (?, ?, ?, NOW())"
             );
             $stmt->execute([$companyId, $settingKey, $value]);
         }

@@ -33,7 +33,41 @@ class Sequence
             '{MM}'   => $now->format('m'),
         ]);
 
-        $this->db->beginTransaction();
+        // First issuance in a new period is racy without a unique constraint:
+        // SELECT ... FOR UPDATE on a nonexistent row does not serialize two
+        // concurrent INSERTs. With the UNIQUE KEY on (company_id, doc_type,
+        // period_key) (see Migrations/2026-07-05-doc-sequences-unique.sql) the
+        // losing INSERT fails with a duplicate-key error; we catch it and retry
+        // once — by then the row exists, so SELECT ... FOR UPDATE serializes.
+        $next = null;
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $next = $this->allocateNext($docType, $periodKey, $prefixFmt, $pad);
+                break;
+            } catch (PDOException $e) {
+                $isDuplicate = ($e->errorInfo[1] ?? null) == 1062 || $e->getCode() == '23000';
+                if (!$isDuplicate || $attempt > 0) {
+                    throw $e;
+                }
+                // Lost the first-insert race; loop and take the locked-SELECT path.
+            }
+        }
+
+        $num = str_pad((string)$next, $pad, '0', STR_PAD_LEFT);
+        return $prefixFmt . $num;
+    }
+
+    /**
+     * Allocate the next number inside a transaction. Transaction-aware: if the
+     * caller already opened a transaction on this connection we participate in
+     * it instead of calling beginTransaction() again (which would throw).
+     */
+    private function allocateNext(string $docType, string $periodKey, string $prefixFmt, int $pad): int
+    {
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
         try {
             // Upsert the sequence row
             $sel = $this->db->prepare("SELECT id, last_number FROM doc_sequences WHERE company_id = :cid AND doc_type = :dt AND period_key = :pk FOR UPDATE");
@@ -48,13 +82,15 @@ class Sequence
                 $ins = $this->db->prepare("INSERT INTO doc_sequences (company_id, doc_type, period_key, prefix, pad, last_number, updated_at) VALUES (:cid,:dt,:pk,:p,:pad,:n,NOW())");
                 $ins->execute([':cid'=>$this->companyId, ':dt'=>$docType, ':pk'=>$periodKey, ':p'=>$prefixFmt, ':pad'=>$pad, ':n'=>$next]);
             }
-            $this->db->commit();
+            if ($ownsTransaction) {
+                $this->db->commit();
+            }
+            return $next;
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
-
-        $num = str_pad((string)$next, $pad, '0', STR_PAD_LEFT);
-        return $prefixFmt . $num;
     }
 }

@@ -37,6 +37,68 @@ if ($_FILES['csv_file']['size'] > 10 * 1024 * 1024) {
     exit;
 }
 
+/**
+ * Normalize a South African bank statement amount string to a float.
+ * Handles '1,250.00', '1 250.00', 'R1 250.00', '(1 250.00)' (negative),
+ * trailing minus '1250.00-' and decimal comma '1250,00'.
+ * Returns null when the value is genuinely non-numeric.
+ */
+function fw_bank_normalize_amount(string $raw): ?float
+{
+    $s = trim($raw);
+    if ($s === '') {
+        return null;
+    }
+    $negative = false;
+    // Parentheses denote a negative amount: (1 250.00)
+    if (preg_match('/^\((.+)\)$/', $s, $m)) {
+        $negative = true;
+        $s = trim($m[1]);
+    }
+    // Strip a leading currency indicator (R / ZAR)
+    $s = preg_replace('/^(?:ZAR|R)\s*/i', '', $s, 1);
+    // Trailing minus: 1250.00-
+    if (substr($s, -1) === '-') {
+        $negative = true;
+        $s = rtrim(substr($s, 0, -1));
+    }
+    // Leading minus
+    if ($s !== '' && $s[0] === '-') {
+        $negative = true;
+        $s = ltrim(substr($s, 1));
+    }
+    // Remove spaces (incl. non-breaking) used as thousands separators
+    $s = str_replace(["\xC2\xA0", ' '], '', $s);
+    // Decimal comma with no dot present: 1250,00 -> 1250.00
+    if (strpos($s, '.') === false && preg_match('/^\d+,\d{1,2}$/', $s)) {
+        $s = str_replace(',', '.', $s);
+    } else {
+        // Comma thousands separators: 1,250.00 -> 1250.00
+        $s = str_replace(',', '', $s);
+    }
+    if ($s === '' || !is_numeric($s)) {
+        return null;
+    }
+    $v = (float)$s;
+    return $negative ? -$v : $v;
+}
+
+/**
+ * Parse a statement date (YYYY-MM-DD, DD/MM/YYYY or MM/DD/YYYY) to Y-m-d, or null.
+ */
+function fw_bank_parse_date(string $rawDate): ?string
+{
+    $dateObj = DateTime::createFromFormat('Y-m-d', $rawDate);
+    if ($dateObj && $dateObj->format('Y-m-d') === $rawDate) {
+        return $rawDate;
+    }
+    $dateObj = DateTime::createFromFormat('d/m/Y', $rawDate);
+    if (!$dateObj) {
+        $dateObj = DateTime::createFromFormat('m/d/Y', $rawDate);
+    }
+    return $dateObj ? $dateObj->format('Y-m-d') : null;
+}
+
 try {
     $DB->beginTransaction();
 
@@ -66,83 +128,106 @@ try {
     ]);
     $batchId = (string)$DB->lastInsertId();
 
-    // Parse CSV
+    // ── Pass 1: parse and validate every CSV row (no inserts yet) ──
+    // The first row is only treated as a header when its date column does
+    // NOT parse as a date or its amount column does NOT parse as a number.
     $file = fopen($_FILES['csv_file']['tmp_name'], 'r');
-    $importCount = 0;
-    $skippedCount = 0;
-
-    // Skip header row
-    fgetcsv($file);
+    $rows = [];
+    $skippedInvalid = 0;
+    $isFirstRow = true;
 
     while (($row = fgetcsv($file)) !== false) {
-        if (count($row) < 3) { $skippedCount++; continue; }
+        $wasFirstRow = $isFirstRow;
+        $isFirstRow = false;
 
-        $rawDate = trim($row[0]);
-        $description = trim($row[1]);
-        $rawAmount = trim($row[2]);
-        $reference = isset($row[3]) ? trim($row[3]) : null;
-
-        // Validate and normalize date (accept YYYY-MM-DD, DD/MM/YYYY, D/M/YYYY)
-        $txDate = null;
-        $dateObj = DateTime::createFromFormat('Y-m-d', $rawDate);
-        if ($dateObj && $dateObj->format('Y-m-d') === $rawDate) {
-            $txDate = $rawDate;
-        } else {
-            $dateObj = DateTime::createFromFormat('d/m/Y', $rawDate);
-            if (!$dateObj) {
-                $dateObj = DateTime::createFromFormat('m/d/Y', $rawDate);
-            }
-            if ($dateObj) {
-                $txDate = $dateObj->format('Y-m-d');
-            }
+        if (count($row) < 3) {
+            if (!$wasFirstRow) { $skippedInvalid++; }
+            continue;
         }
 
-        if (!$txDate) { $skippedCount++; continue; }
+        $rawDate = trim((string)$row[0]);
+        $description = trim((string)$row[1]);
+        $rawAmount = trim((string)$row[2]);
+        $reference = isset($row[3]) ? trim((string)$row[3]) : null;
 
-        // Validate amount is numeric
-        if (!is_numeric($rawAmount)) { $skippedCount++; continue; }
-        $amount = floatval($rawAmount);
+        // Validate and normalize date (accept YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
+        $txDate = fw_bank_parse_date($rawDate);
+        // Normalize SA bank amount formats (R prefix, space/comma thousands, parentheses)
+        $amount = fw_bank_normalize_amount($rawAmount);
 
-        // Convert amount to cents
-        $amountCents = round($amount * 100);
+        if ($txDate === null || $amount === null) {
+            if ($wasFirstRow) {
+                continue; // Header row — discard without counting as skipped
+            }
+            $skippedInvalid++;
+            continue;
+        }
 
-        // Check for duplicates
+        $rows[] = [
+            'tx_date'      => $txDate,
+            'description'  => $description,
+            'amount_cents' => (int)round($amount * 100),
+            'reference'    => $reference,
+        ];
+    }
+
+    fclose($file);
+
+    // ── Snapshot existing DB rows BEFORE inserting ──
+    // Duplicates are detected against this pre-import snapshot only, so
+    // identical rows WITHIN the file (e.g. two equal card payments) are
+    // imported. Each existing DB row absorbs at most one file row.
+    $importCount = 0;
+    $skippedExisting = 0;
+
+    if (!empty($rows)) {
+        $dates = array_column($rows, 'tx_date');
+        $minDate = min($dates);
+        $maxDate = max($dates);
+
         $stmt = $DB->prepare("
-            SELECT COUNT(*) FROM gl_bank_transactions
+            SELECT tx_date, description, amount_cents, COUNT(*) AS cnt
+            FROM gl_bank_transactions
             WHERE company_id = ?
-            AND bank_account_id = ?
-            AND tx_date = ?
-            AND description = ?
-            AND amount_cents = ?
+              AND bank_account_id = ?
+              AND tx_date BETWEEN ? AND ?
+            GROUP BY tx_date, description, amount_cents
         ");
-        $stmt->execute([$companyId, $bankAccountId, $txDate, $description, $amountCents]);
+        $stmt->execute([$companyId, $bankAccountId, $minDate, $maxDate]);
 
-        if ($stmt->fetchColumn() > 0) {
-            $skippedCount++;
-            continue; // Skip duplicate
+        $existing = [];
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $existing[$r['tx_date'] . '|' . $r['description'] . '|' . $r['amount_cents']] = (int)$r['cnt'];
         }
 
-        // Insert transaction
-        $stmt = $DB->prepare("
+        $insert = $DB->prepare("
             INSERT INTO gl_bank_transactions (
                 company_id, bank_account_id, tx_date, description,
                 amount_cents, reference, matched, import_batch_id, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, NOW())
         ");
-        $stmt->execute([
-            $companyId,
-            $bankAccountId,
-            $txDate,
-            $description,
-            $amountCents,
-            $reference,
-            $batchId
-        ]);
 
-        $importCount++;
+        foreach ($rows as $r) {
+            $key = $r['tx_date'] . '|' . $r['description'] . '|' . $r['amount_cents'];
+            if (!empty($existing[$key])) {
+                $existing[$key]--;
+                $skippedExisting++;
+                continue; // Already in the DB from a previous import
+            }
+            $insert->execute([
+                $companyId,
+                $bankAccountId,
+                $r['tx_date'],
+                $r['description'],
+                $r['amount_cents'],
+                $r['reference'],
+                $batchId
+            ]);
+            $importCount++;
+        }
     }
 
-    fclose($file);
+    $skippedCount = $skippedInvalid + $skippedExisting;
 
     // Update bank account balance
     $stmt = $DB->prepare("
@@ -172,7 +257,13 @@ try {
 
     echo json_encode([
         'ok' => true,
-        'data' => ['count' => $importCount, 'skipped' => $skippedCount]
+        'data' => [
+            'count'            => $importCount,
+            'imported'         => $importCount,
+            'skipped'          => $skippedCount,
+            'skipped_existing' => $skippedExisting,
+            'skipped_invalid'  => $skippedInvalid
+        ]
     ]);
 
 } catch (Exception $e) {

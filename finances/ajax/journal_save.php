@@ -111,6 +111,9 @@ try {
         // --- INSERT new journal ---
         // Auto-generate reference if not provided (SARS sequential numbering)
         if (!$reference) {
+            // NOTE: MAX()+1 can race under concurrent saves and journal_entries has no
+            // unique index on (company_id, reference), so a duplicate JNL-xxxx is possible;
+            // Sequence.php is not usable here (own transaction + unseeded counter).
             $stmt = $DB->prepare("SELECT MAX(CAST(SUBSTRING(reference, 5) AS UNSIGNED)) FROM journal_entries WHERE company_id = ? AND reference LIKE 'JNL-%'");
             $stmt->execute([$companyId]);
             $maxNum = (int)$stmt->fetchColumn();
@@ -127,10 +130,15 @@ try {
     }
 
     // --- Insert lines ---
+    // The journals UI (journals.js) only posts account_code/description/debit/credit
+    // per line, but API callers may also send tax_code_id/project_id/board_id/item_id.
+    // Persist those when supplied instead of silently dropping them (a draft edit
+    // deletes and re-inserts all lines, so dropped columns would be lost for good).
     $lineStmt = $DB->prepare("
         INSERT INTO journal_lines
-            (journal_id, account_code, description, debit, credit)
-        VALUES (?, ?, ?, ?, ?)
+            (journal_id, account_code, description, debit, credit,
+             tax_code_id, project_id, board_id, item_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     foreach ($lines as $line) {
         $lineStmt->execute([
@@ -138,7 +146,11 @@ try {
             trim($line['account_code']),
             trim($line['description'] ?? ''),
             round((float)($line['debit'] ?? 0), 2),
-            round((float)($line['credit'] ?? 0), 2)
+            round((float)($line['credit'] ?? 0), 2),
+            !empty($line['tax_code_id']) ? (int)$line['tax_code_id'] : null,
+            !empty($line['project_id'])  ? (int)$line['project_id']  : null,
+            !empty($line['board_id'])    ? (int)$line['board_id']    : null,
+            !empty($line['item_id'])     ? (int)$line['item_id']     : null
         ]);
     }
 
