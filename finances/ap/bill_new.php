@@ -78,7 +78,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="fw-finance__container">
         <?php
         $finTitle = 'New Supplier Bill';
-        $finBack = '/finances/ap/bills_list.php';
+        $finBack = '/finances/ap/';
         $finCompanyName = $companyName;
         $finFirstName = $firstName;
         include __DIR__ . '/../partials/header.php';

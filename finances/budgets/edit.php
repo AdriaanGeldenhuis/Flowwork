@@ -34,7 +34,7 @@ $companyName = $stmt->fetchColumn() ?: 'Company';
 $stmt = $DB->prepare(
     "SELECT account_id, account_code, account_name, account_type
      FROM gl_accounts
-     WHERE company_id = ? AND is_active = 1 AND account_type IN ('income','expense')
+     WHERE company_id = ? AND is_active = 1 AND account_type IN ('revenue','expense')
      ORDER BY account_code"
 );
 $stmt->execute([$companyId]);
