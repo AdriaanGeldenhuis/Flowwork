@@ -57,13 +57,13 @@ try {
     $ins = $DB->prepare("
         INSERT INTO invoice_lines (
             invoice_id, item_description, quantity, unit, unit_price,
-            discount, tax_rate, line_total, sort_order, gl_account_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            discount, tax_rate, tax_code_id, line_total, sort_order, gl_account_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     foreach ($lines as $l) {
         $ins->execute([
             $newId, $l['item_description'], $l['quantity'], $l['unit'], $l['unit_price'],
-            $l['discount'], $l['tax_rate'], $l['line_total'], $l['sort_order'], $l['gl_account_id'],
+            $l['discount'], $l['tax_rate'], $l['tax_code_id'] ?? null, $l['line_total'], $l['sort_order'], $l['gl_account_id'],
         ]);
     }
 

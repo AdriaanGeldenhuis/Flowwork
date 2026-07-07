@@ -1,11 +1,8 @@
 <?php
 // /finances/reports/vat201.php
 //
-// SARS VAT201 form display. Maps VatCalculator output to the official SARS
-// VAT201 field numbering (1, 2, 3, 4, 12, 13 output; 14, 15, 16, 19 input;
-// 20 net) for review, print, and CSV export. Fields whose data points are
-// not tracked (1A/4A capital goods supplied, 2A exports, 17 bad debts,
-// 18 other input adjustments) are omitted rather than faked.
+// SARS VAT201 form display. Maps VatCalculator output to official SARS
+// VAT201 boxes (1-10) for review, print, and CSV export.
 
 $__fin_root = realpath(__DIR__ . '/../..');
 if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
@@ -156,73 +153,84 @@ $periods = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         <!-- OUTPUT SECTION -->
         <div class="vat201-section">
-            <div class="vat201-section-title">CALCULATION OF OUTPUT TAX (SUPPLIES MADE)</div>
+            <div class="vat201-section-title">OUTPUT TAX (SUPPLIES MADE)</div>
 
             <div class="vat201-row">
-                <div class="box-num">Field 1</div>
-                <div class="box-desc">Standard rated supplies (excl. capital goods, excl. VAT)</div>
-                <div class="box-val" id="field1">R 0.00</div>
+                <div class="box-num">Box 1</div>
+                <div class="box-desc">Standard rated supplies (excl. VAT) — eFiling field 1 wants the
+                    VAT-<strong>INCLUSIVE</strong> consideration; capture the "incl. VAT" figure below</div>
+                <div class="box-val" id="box1">R 0.00</div>
             </div>
             <div class="vat201-row">
-                <div class="box-num">Field 2</div>
-                <div class="box-desc">Zero-rated supplies (incl. exported)</div>
-                <div class="box-val" id="field2">R 0.00</div>
+                <div class="box-num">&nbsp;</div>
+                <div class="box-desc">Standard rated supplies incl. VAT (capture this in eFiling field 1)</div>
+                <div class="box-val" id="box1incl">R 0.00</div>
             </div>
             <div class="vat201-row">
-                <div class="box-num">Field 3</div>
-                <div class="box-desc">Exempt supplies and non-supplies</div>
-                <div class="box-val" id="field3">R 0.00</div>
+                <div class="box-num">Box 1A</div>
+                <div class="box-desc">Output VAT on standard rated supplies</div>
+                <div class="box-val" id="box1a">R 0.00</div>
             </div>
             <div class="vat201-row">
-                <div class="box-num">Field 4</div>
-                <div class="box-desc">Output tax on standard rated supplies (Field 1)</div>
-                <div class="box-val" id="field4">R 0.00</div>
+                <div class="box-num">Box 2</div>
+                <div class="box-desc">Zero-rated supplies</div>
+                <div class="box-val" id="box2">R 0.00</div>
             </div>
             <div class="vat201-row">
-                <div class="box-num">Field 12</div>
-                <div class="box-desc">Other and change-in-use output tax adjustments</div>
-                <div class="box-val" id="field12">R 0.00</div>
+                <div class="box-num">Box 3</div>
+                <div class="box-desc">Exempt supplies</div>
+                <div class="box-val" id="box3">R 0.00</div>
+            </div>
+            <div class="vat201-row">
+                <div class="box-num">Box 4</div>
+                <div class="box-desc">Other output tax adjustments</div>
+                <div class="box-val" id="box4">R 0.00</div>
             </div>
             <div class="vat201-row vat201-total">
-                <div class="box-num">Field 13</div>
-                <div class="box-desc">TOTAL OUTPUT TAX (Field 4 + Field 12)</div>
-                <div class="box-val" id="field13">R 0.00</div>
+                <div class="box-num">Box 5</div>
+                <div class="box-desc">Total output tax (Box 1A + Box 4)</div>
+                <div class="box-val" id="box5">R 0.00</div>
             </div>
         </div>
 
         <!-- INPUT SECTION -->
         <div class="vat201-section">
-            <div class="vat201-section-title">CALCULATION OF INPUT TAX (SUPPLIES RECEIVED)</div>
+            <div class="vat201-section-title">INPUT TAX (ACQUISITIONS)</div>
 
             <div class="vat201-row">
-                <div class="box-num">Field 14</div>
-                <div class="box-desc">Input tax on capital goods and/or services</div>
-                <div class="box-val" id="field14">R 0.00</div>
+                <div class="box-num">Box 6</div>
+                <div class="box-desc">Change in use adjustments</div>
+                <div class="box-val" id="box6">R 0.00</div>
             </div>
             <div class="vat201-row">
-                <div class="box-num">Field 15</div>
-                <div class="box-desc">Input tax on other goods and/or services (not capital goods)</div>
-                <div class="box-val" id="field15">R 0.00</div>
+                <div class="box-num">Box 7</div>
+                <div class="box-desc">Input tax on capital goods</div>
+                <div class="box-val" id="box7">R 0.00</div>
             </div>
             <div class="vat201-row">
-                <div class="box-num">Field 16</div>
-                <div class="box-desc">Input tax adjustments: change in use</div>
-                <div class="box-val" id="field16">R 0.00</div>
+                <div class="box-num">Box 8</div>
+                <div class="box-desc">Other input tax (non-capital)</div>
+                <div class="box-val" id="box8">R 0.00</div>
+            </div>
+            <div class="vat201-row">
+                <div class="box-num">&nbsp;</div>
+                <div class="box-desc">Bad debts written off — s22 relief (eFiling field 18, "Other" input adjustments)</div>
+                <div class="box-val" id="boxBadDebt">R 0.00</div>
             </div>
             <div class="vat201-row vat201-total">
-                <div class="box-num">Field 19</div>
-                <div class="box-desc">TOTAL INPUT TAX (Field 14 + Field 15 + Field 16)</div>
-                <div class="box-val" id="field19">R 0.00</div>
+                <div class="box-num">Box 9</div>
+                <div class="box-desc">Total input tax (Box 6 + Box 7 + Box 8 + bad debts)</div>
+                <div class="box-val" id="box9">R 0.00</div>
             </div>
         </div>
 
         <!-- NET VAT -->
         <div class="vat201-section">
-            <div class="vat201-section-title">NET VAT PAYABLE / REFUNDABLE</div>
-            <div class="vat201-row vat201-grand-total" id="field20row">
-                <div class="box-num">Field 20</div>
-                <div class="box-desc">Net VAT (Field 13 − Field 19): payable if positive, refundable if negative</div>
-                <div class="box-val" id="field20">R 0.00</div>
+            <div class="vat201-section-title">TAX PAYABLE / REFUNDABLE</div>
+            <div class="vat201-row vat201-grand-total" id="box10row">
+                <div class="box-num">Box 10</div>
+                <div class="box-desc">VAT payable (positive) or refundable (negative)</div>
+                <div class="box-val" id="box10">R 0.00</div>
             </div>
         </div>
 
@@ -276,25 +284,35 @@ async function loadVAT201() {
 
         vatData = data.data;
 
-        // Map to official SARS VAT201 fields
-        document.getElementById('field1').textContent = fmt(vatData.output_standard_base_cents);
-        document.getElementById('field2').textContent = fmt(vatData.output_zero_base_cents);
-        document.getElementById('field3').textContent = fmt(vatData.output_exempt_base_cents);
-        document.getElementById('field4').textContent = fmt(vatData.output_standard_vat_cents);
-        document.getElementById('field12').textContent = fmt(vatData.change_in_use_output_cents || 0);
-        document.getElementById('field13').textContent = fmt(vatData.total_output_vat_cents);
-        document.getElementById('field14').textContent = fmt(vatData.input_capital_cents);
-        document.getElementById('field15').textContent = fmt(vatData.input_other_cents);
-        document.getElementById('field16').textContent = fmt(vatData.change_in_use_input_cents || 0);
-        document.getElementById('field19').textContent = fmt(vatData.total_input_vat_cents);
-        document.getElementById('field20').textContent = fmt(vatData.net_vat_cents);
+        // Map to SARS boxes
+        document.getElementById('box1').textContent = fmt(vatData.output_standard_base_cents);
+        // eFiling field 1 is the VAT-INCLUSIVE consideration (it derives the
+        // output tax as field1 × 15/115) — transcribing the exclusive base
+        // there understates the declared output tax.
+        document.getElementById('box1incl').textContent =
+            fmt((vatData.output_standard_base_cents || 0) + (vatData.output_standard_vat_cents || 0));
+        document.getElementById('box1a').textContent = fmt(vatData.output_standard_vat_cents);
+        document.getElementById('box2').textContent = fmt(vatData.output_zero_base_cents);
+        document.getElementById('box3').textContent = fmt(vatData.output_exempt_base_cents);
+        document.getElementById('box4').textContent = fmt(vatData.change_in_use_output_cents || 0);
+        // Box 5/9/10 come computed from the server (vat201_data.php) and
+        // INCLUDE the Box 4 / Box 6 adjustments — the raw supplies totals
+        // used previously meant manual adjustments never reached the net.
+        document.getElementById('box5').textContent = fmt(vatData.box5_total_output_cents);
+        document.getElementById('box6').textContent = fmt(vatData.change_in_use_input_cents || 0);
+        document.getElementById('box7').textContent = fmt(vatData.input_capital_cents);
+        document.getElementById('box8').textContent = fmt(vatData.input_other_cents);
+        document.getElementById('boxBadDebt').textContent = fmt(vatData.bad_debt_relief_input_cents || 0);
+        document.getElementById('box9').textContent = fmt(vatData.box9_total_input_cents);
+        document.getElementById('box10').textContent = fmt(vatData.box10_net_cents);
 
-        // Style field 20 based on payable/refundable
-        const row = document.getElementById('field20row');
-        row.className = 'vat201-row ' + (vatData.net_vat_cents >= 0 ? 'vat201-grand-total' : 'vat201-refund');
+        // Style box 10 based on payable/refundable
+        const row = document.getElementById('box10row');
+        row.className = 'vat201-row ' + (vatData.box10_net_cents >= 0 ? 'vat201-grand-total' : 'vat201-refund');
 
         // Period info
-        document.getElementById('v_period').textContent = periodStart + ' to ' + periodEnd;
+        document.getElementById('v_period').textContent = periodStart + ' to ' + periodEnd
+            + (vatData.basis ? ' — ' + (vatData.basis === 'payments' ? 'Payments (cash) basis' : 'Invoice (accrual) basis') : '');
         document.getElementById('genDate').textContent = new Date().toISOString().slice(0, 10);
 
         document.getElementById('vat201Form').style.display = 'block';
@@ -311,18 +329,22 @@ async function loadVAT201() {
 function exportCSV() {
     if (!vatData) return;
     const rows = [
-        ['Field', 'Description', 'Amount (ZAR)'],
-        ['1', 'Standard rated supplies (excl. capital goods, excl. VAT)', (vatData.output_standard_base_cents / 100).toFixed(2)],
-        ['2', 'Zero-rated supplies (incl. exported)', (vatData.output_zero_base_cents / 100).toFixed(2)],
-        ['3', 'Exempt supplies and non-supplies', (vatData.output_exempt_base_cents / 100).toFixed(2)],
-        ['4', 'Output tax on standard rated supplies (Field 1)', (vatData.output_standard_vat_cents / 100).toFixed(2)],
-        ['12', 'Other and change-in-use output tax adjustments', ((vatData.change_in_use_output_cents || 0) / 100).toFixed(2)],
-        ['13', 'TOTAL OUTPUT TAX (Field 4 + Field 12)', (vatData.total_output_vat_cents / 100).toFixed(2)],
-        ['14', 'Input tax on capital goods and/or services', (vatData.input_capital_cents / 100).toFixed(2)],
-        ['15', 'Input tax on other goods and/or services (not capital goods)', (vatData.input_other_cents / 100).toFixed(2)],
-        ['16', 'Input tax adjustments: change in use', ((vatData.change_in_use_input_cents || 0) / 100).toFixed(2)],
-        ['19', 'TOTAL INPUT TAX (Field 14 + Field 15 + Field 16)', (vatData.total_input_vat_cents / 100).toFixed(2)],
-        ['20', 'Net VAT payable / refundable (Field 13 - Field 19)', (vatData.net_vat_cents / 100).toFixed(2)]
+        ['Box', 'Description', 'Amount (ZAR)'],
+        ['1', 'Standard rated supplies (excl. VAT)', (vatData.output_standard_base_cents / 100).toFixed(2)],
+        ['1 (incl.)', 'Standard rated supplies incl. VAT — capture in eFiling field 1',
+            (((vatData.output_standard_base_cents || 0) + (vatData.output_standard_vat_cents || 0)) / 100).toFixed(2)],
+        ['1A', 'Output VAT on standard rated supplies', (vatData.output_standard_vat_cents / 100).toFixed(2)],
+        ['2', 'Zero-rated supplies', (vatData.output_zero_base_cents / 100).toFixed(2)],
+        ['3', 'Exempt supplies', (vatData.output_exempt_base_cents / 100).toFixed(2)],
+        ['4', 'Other output tax adjustments', ((vatData.change_in_use_output_cents || 0) / 100).toFixed(2)],
+        ['5', 'Total output tax (1A + 4)', (vatData.box5_total_output_cents / 100).toFixed(2)],
+        ['6', 'Change in use adjustments', ((vatData.change_in_use_input_cents || 0) / 100).toFixed(2)],
+        ['7', 'Input tax on capital goods', (vatData.input_capital_cents / 100).toFixed(2)],
+        ['8', 'Other input tax', (vatData.input_other_cents / 100).toFixed(2)],
+        ['18', 'Bad debts written off — s22 relief (input adjustment)',
+            ((vatData.bad_debt_relief_input_cents || 0) / 100).toFixed(2)],
+        ['9', 'Total input tax (6 + 7 + 8 + bad debts)', (vatData.box9_total_input_cents / 100).toFixed(2)],
+        ['10', 'VAT payable / refundable (5 - 9)', (vatData.box10_net_cents / 100).toFixed(2)]
     ];
     const csv = rows.map(r => r.map(c => '"' + c + '"').join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });

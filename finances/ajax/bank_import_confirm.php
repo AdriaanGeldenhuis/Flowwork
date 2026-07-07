@@ -62,6 +62,7 @@ try {
 
     $importCount = 0;
     $skippedCount = 0;
+    $dupSeen = [];
 
     foreach ($transactions as $tx) {
         $txDate = $tx['tx_date'] ?? null;
@@ -81,13 +82,20 @@ try {
             continue;
         }
 
-        // Check for duplicates
+        // De-duplicate on a hash that INCLUDES the occurrence index of this
+        // exact line within the file: re-importing the same statement skips
+        // every line, but two genuinely identical same-day transactions (two
+        // equal card fees) both import. The unique index on
+        // (company, bank account, import_hash) is the concurrent backstop.
+        $dupKey = $txDate . '|' . $description . '|' . $amountCents . '|' . ($reference ?? '');
+        $dupSeen[$dupKey] = ($dupSeen[$dupKey] ?? 0) + 1;
+        $importHash = sha1($dupKey . '|#' . $dupSeen[$dupKey]);
+
         $stmt = $DB->prepare("
             SELECT COUNT(*) FROM gl_bank_transactions
-            WHERE company_id = ? AND bank_account_id = ?
-            AND tx_date = ? AND description = ? AND amount_cents = ?
+            WHERE company_id = ? AND bank_account_id = ? AND import_hash = ?
         ");
-        $stmt->execute([$companyId, $bankAccountId, $txDate, $description, $amountCents]);
+        $stmt->execute([$companyId, $bankAccountId, $importHash]);
         if ($stmt->fetchColumn() > 0) {
             $skippedCount++;
             continue;
@@ -97,8 +105,8 @@ try {
         $stmt = $DB->prepare("
             INSERT INTO gl_bank_transactions (
                 company_id, bank_account_id, tx_date, description,
-                amount_cents, reference, matched, import_batch_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, NOW())
+                amount_cents, reference, matched, import_batch_id, import_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NOW())
         ");
         $stmt->execute([
             $companyId,
@@ -107,7 +115,8 @@ try {
             $description,
             $amountCents,
             $reference,
-            $batchId
+            $batchId,
+            $importHash
         ]);
         $importCount++;
     }

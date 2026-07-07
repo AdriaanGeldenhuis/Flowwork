@@ -7,6 +7,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
 require_once __DIR__ . '/lib/Currencies.php';
+require_once __DIR__ . '/../includes/company_validation.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -33,9 +34,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     if ($_POST['action'] === 'update_company') {
         try {
+            $profileErrors = validate_company_profile([
+                'vat_number'    => $_POST['vat_number'] ?? '',
+                'tax_reference' => $_POST['tax_reference'] ?? '',
+            ]);
+            if ($profileErrors) {
+                throw new Exception(implode('. ', $profileErrors));
+            }
+
             $stmt = $DB->prepare("
                 UPDATE companies
-                SET name = ?, vat_number = ?, tax_number = ?, reg_number = ?,
+                SET name = ?, vat_number = ?, tax_number = ?, reg_number = ?, tax_reference = ?,
                     phone = ?, email = ?, website = ?,
                     address_line1 = ?, address_line2 = ?, city = ?, region = ?, postal = ?,
                     updated_at = NOW()
@@ -43,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ");
             $stmt->execute([
                 $_POST['name'], $_POST['vat_number'], $_POST['tax_number'], $_POST['reg_number'],
+                trim($_POST['tax_reference'] ?? ''),
                 $_POST['phone'], $_POST['email'], $_POST['website'],
                 $_POST['address_line1'], $_POST['address_line2'], $_POST['city'], $_POST['region'], $_POST['postal'],
                 $companyId
@@ -301,9 +311,15 @@ $currentDefaultCurrency = Currencies::isValid($qiDefaults['default_currency'] ??
                                 <input type="text" name="tax_number" class="fw-qi__input" value="<?= htmlspecialchars($company['tax_number'] ?? '') ?>">
                             </div>
                         </div>
-                        <div class="fw-qi__form-group">
-                            <label class="fw-qi__label">Registration Number</label>
-                            <input type="text" name="reg_number" class="fw-qi__input" value="<?= htmlspecialchars($company['reg_number'] ?? '') ?>">
+                        <div class="fw-qi__form-row">
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">Registration Number</label>
+                                <input type="text" name="reg_number" class="fw-qi__input" value="<?= htmlspecialchars($company['reg_number'] ?? '') ?>">
+                            </div>
+                            <div class="fw-qi__form-group">
+                                <label class="fw-qi__label">SARS Income Tax Reference</label>
+                                <input type="text" name="tax_reference" class="fw-qi__input" value="<?= htmlspecialchars($company['tax_reference'] ?? '') ?>" placeholder="10 digits">
+                            </div>
                         </div>
                     </div>
 

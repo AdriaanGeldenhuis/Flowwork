@@ -46,8 +46,8 @@ try {
     $stmt = $DB->prepare("
         INSERT INTO credit_notes (
             company_id, credit_note_number, invoice_id, customer_id,
-            issue_date, status, subtotal, tax, total, currency, exchange_rate, reason, created_by
-        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+            issue_date, status, subtotal, tax, total, currency, exchange_rate, reason, reason_code, created_by
+        ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, 'cancellation', ?)
     ");
     $stmt->execute([
         $companyId, $cnNumber, $invoiceId, $inv['customer_id'],
@@ -57,16 +57,18 @@ try {
     ]);
     $cnId = (int)$DB->lastInsertId();
 
+    // Full credit mirrors the invoice lines exactly, tax codes included, so
+    // the VAT reversal is classified identically to the original supply.
     $ins = $DB->prepare("
         INSERT INTO credit_note_lines (
             credit_note_id, item_description, quantity, unit, unit_price,
-            discount, tax_rate, line_total, sort_order
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            discount, tax_rate, tax_code_id, line_total, sort_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     foreach ($lines as $l) {
         $ins->execute([
             $cnId, $l['item_description'], $l['quantity'], $l['unit'], $l['unit_price'],
-            $l['discount'], $l['tax_rate'], $l['line_total'], $l['sort_order'],
+            $l['discount'], $l['tax_rate'], $l['tax_code_id'] ?? null, $l['line_total'], $l['sort_order'],
         ]);
     }
 
@@ -86,5 +88,6 @@ try {
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();
     error_log('Issue full credit error: '.$e->getMessage());
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to issue credit note' : $e->getMessage();
+    echo json_encode(['ok'=>false, 'error'=>$msg]);
 }

@@ -1,82 +1,92 @@
 <?php
-class Audit {
-    public static function log(string $action, array $data = []): void {
+// finances/lib/Audit.php
+//
+// Central audit-trail writer for the finance module. Writes to the shared
+// audit_log table using its actual columns:
+//   (company_id, user_id, action, entity_type, entity_id, details, ip, timestamp)
+//
+// Context (PDO, company, user) can be passed explicitly so that non-web
+// callers (webhooks, cron, CLI tools) audit correctly; when omitted it falls
+// back to the session and the global $DB connection.
+//
+// A failed audit write never breaks the business flow, but it is ALWAYS
+// reported to the error log — a silently dead audit trail is itself a
+// compliance defect (see FINANCE-SARS-FINDINGS.md).
+
+class Audit
+{
+    /** @var PDO|null explicit connection for non-web contexts */
+    private static ?PDO $pdo = null;
+
+    /** Set an explicit PDO (webhooks/cron/CLI). Optional for web requests. */
+    public static function setPdo(PDO $pdo): void
+    {
+        self::$pdo = $pdo;
+    }
+
+    /**
+     * Write an audit event.
+     *
+     * @param string      $action     e.g. 'journal_posted', 'vat_period_filed'
+     * @param array       $details    structured payload, stored as JSON
+     * @param string|null $entityType e.g. 'journal', 'invoice', 'vat_period'
+     * @param int|null    $entityId
+     * @param int|null    $companyId  defaults to the session company
+     * @param int|null    $userId     defaults to the session user
+     */
+    public static function log(
+        string $action,
+        array $details = [],
+        ?string $entityType = null,
+        ?int $entityId = null,
+        ?int $companyId = null,
+        ?int $userId = null
+    ): void {
         try {
-            if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
-            $companyId = $_SESSION['company_id'] ?? null;
-            $userId    = $_SESSION['user_id'] ?? null;
-            $ip        = $_SERVER['REMOTE_ADDR'] ?? null;
-            $ua        = $_SERVER['HTTP_USER_AGENT'] ?? null;
-
-            $payload = json_encode($data, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-            $pdo = self::pdo();
-            // The audit_log column set varies across this codebase's history:
-            // most direct INSERTs use (details, ip, timestamp) — the finance
-            // convention — auth flows use (details, ip, created_at), and this
-            // class historically used (details_json, ip_address, user_agent).
-            // Try each in turn (remembering the winner) so the entry lands on
-            // whichever schema the deployment has, instead of silently writing
-            // nothing when the first column set does not match. Safe mid-
-            // transaction on MySQL: a failed statement does not poison the
-            // enclosing transaction.
-            static $workingVariant = null;
-            $variants = [
-                ["INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-                  VALUES (:cid, :uid, :action, :details, :ip, NOW())",
-                 [':cid' => $companyId, ':uid' => $userId, ':action' => $action, ':details' => $payload, ':ip' => $ip]],
-                ["INSERT INTO audit_log (company_id, user_id, action, details, ip, created_at)
-                  VALUES (:cid, :uid, :action, :details, :ip, NOW())",
-                 [':cid' => $companyId, ':uid' => $userId, ':action' => $action, ':details' => $payload, ':ip' => $ip]],
-                ["INSERT INTO audit_log (company_id, user_id, action, details_json, ip_address, user_agent)
-                  VALUES (:cid, :uid, :action, :details, :ip, :ua)",
-                 [':cid' => $companyId, ':uid' => $userId, ':action' => $action, ':details' => $payload, ':ip' => $ip, ':ua' => $ua]],
-            ];
-            $order = ($workingVariant === null)
-                ? array_keys($variants)
-                : array_unique(array_merge([$workingVariant], array_keys($variants)));
-            $lastError = null;
-            foreach ($order as $i) {
-                [$sql, $params] = $variants[$i];
-                try {
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute($params);
-                    $workingVariant = $i;
-                    return;
-                } catch (\Throwable $e) {
-                    $lastError = $e;
+            if ($companyId === null || $userId === null) {
+                if (session_status() !== PHP_SESSION_ACTIVE && PHP_SAPI !== 'cli') {
+                    @session_start();
                 }
+                $companyId = $companyId ?? ($_SESSION['company_id'] ?? null);
+                $userId    = $userId ?? ($_SESSION['user_id'] ?? null);
             }
-            if ($lastError !== null) {
-                error_log('Audit::log failed on all column variants: ' . $lastError->getMessage());
-            }
+            $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+
+            $pdo = self::pdo();
+            $stmt = $pdo->prepare(
+                "INSERT INTO audit_log
+                    (company_id, user_id, action, entity_type, entity_id, details, ip, timestamp)
+                 VALUES (:cid, :uid, :action, :etype, :eid, :details, :ip, NOW())"
+            );
+            $stmt->execute([
+                ':cid'     => $companyId,
+                ':uid'     => $userId,
+                ':action'  => $action,
+                ':etype'   => $entityType,
+                ':eid'     => $entityId,
+                ':details' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ':ip'      => $ip,
+            ]);
         } catch (\Throwable $e) {
-            // Never break user flow due to audit logging
+            // Never break the user flow — but never fail silently either.
+            error_log('AUDIT WRITE FAILED (' . $action . '): ' . $e->getMessage());
         }
     }
 
-    public static function logSql(string $sql, $params = null): void {
-        // Only record mutating statements
-        $s = ltrim($sql);
-        if (!preg_match('/^(INSERT|UPDATE|DELETE|REPLACE|ALTER|DROP|CREATE)\b/i', $s)) {
-            return;
+    private static function pdo(): PDO
+    {
+        if (self::$pdo instanceof PDO) {
+            return self::$pdo;
         }
-        $paramArr = is_array($params) ? $params : [];
-        self::log('sql', ['sql' => $sql, 'params' => $paramArr]);
-    }
-
-    private static function pdo(): \PDO {
-        // Try common globals in this codebase
-        if (isset($GLOBALS['DB']) && $GLOBALS['DB'] instanceof \PDO) {
-            return $GLOBALS['DB'];
+        if (isset($GLOBALS['DB']) && $GLOBALS['DB'] instanceof PDO) {
+            self::$pdo = $GLOBALS['DB'];
+            return self::$pdo;
         }
-        if (isset($GLOBALS['db']) && $GLOBALS['db'] instanceof \PDO) {
-            return $GLOBALS['db'];
+        require_once dirname(__DIR__, 2) . '/db.php';
+        if (isset($GLOBALS['DB']) && $GLOBALS['DB'] instanceof PDO) {
+            self::$pdo = $GLOBALS['DB'];
+            return self::$pdo;
         }
-        // Fallback: attempt to include db bootstrap if present
-        $candidates = [__DIR__.'/db.php', __DIR__.'/pdo.php', __DIR__.'/bootstrap.php'];
-        foreach ($candidates as $c) { if (file_exists($c)) { require_once $c; } }
-        if (isset($GLOBALS['DB']) && $GLOBALS['DB'] instanceof \PDO) { return $GLOBALS['DB']; }
-        if (isset($GLOBALS['db']) && $GLOBALS['db'] instanceof \PDO) { return $GLOBALS['db']; }
-        throw new \RuntimeException('PDO handle not found for audit logging');
+        throw new RuntimeException('PDO handle not found for audit logging');
     }
 }

@@ -145,6 +145,27 @@ try {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$doc) { throw new Exception('Invoice not found'); }
 
+        // SARS s20 gate: never produce a PDF of a DRAFT that fails the
+        // tax-invoice checks for a VAT-registered company. Issued invoices
+        // always render — history must stay accessible.
+        if ($doc['status'] === 'draft' && trim((string)($doc['vat_number'] ?? '')) !== '') {
+            require_once __DIR__ . '/../../finances/lib/TaxInvoiceValidator.php';
+            $validator = new TaxInvoiceValidator($DB, (int)$companyId);
+            $s20Errors = array_values(array_filter(
+                $validator->validate((int)$id),
+                static fn(array $i) => ($i['severity'] ?? '') === 'error'
+            ));
+            if ($s20Errors) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'ok' => false,
+                    'error' => 'This draft is not a valid SARS tax invoice and cannot be downloaded. Fix the issues below, then try again.',
+                    'issues' => $s20Errors,
+                ]);
+                exit;
+            }
+        }
+
         $doc['_doc_type'] = $doc['qi_invoice_title'] ?? 'INVOICE';
         $doc['_doc_title'] = 'Invoice #: ' . $doc['invoice_number'];
         $doc['_dates'] = [

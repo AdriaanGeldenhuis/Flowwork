@@ -35,8 +35,11 @@ $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND
 $stmt->execute([$companyId]);
 $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch bank accounts
-$stmt = $DB->prepare("SELECT id, account_name, account_number FROM gl_bank_accounts WHERE company_id = ? ORDER BY account_name");
+// Fetch bank accounts (columns are name / account_no — the previous query
+// referenced non-existent account_name / account_number and fatalled,
+// breaking the Record Supplier Payment page entirely)
+$stmt = $DB->prepare("SELECT id, name AS account_name, account_no AS account_number
+                        FROM gl_bank_accounts WHERE company_id = ? AND is_active = 1 ORDER BY name");
 $stmt->execute([$companyId]);
 $bankAccounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -235,8 +238,14 @@ document.getElementById('paymentForm').addEventListener('submit', async function
         method: method,
         reference: ref || null,
         notes: notes || null,
-        allocations: allocations
+        allocations: allocations,
+        // One key per submit attempt series: double-clicks/retries replay
+        // instead of paying the bill twice.
+        idempotency_key: window.__apPayIdemKey || (window.__apPayIdemKey =
+            (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)))
     };
+    const submitBtn = document.querySelector('#paymentForm button[type="submit"], #savePaymentBtn');
+    if (submitBtn) submitBtn.disabled = true;
     try {
         var hdrs = { 'Content-Type': 'application/json' };
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');

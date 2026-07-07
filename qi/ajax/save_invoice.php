@@ -33,13 +33,14 @@ if (empty($lineItems) || !is_array($lineItems)) {
     exit;
 }
 
-// Fetch default tax rate and currency from qi_settings
+// Fetch default currency from qi_settings; the default VAT rate is the
+// company's STD tax code (finances/lib/TaxCodes — single source of truth).
 $stmtTax = $DB->prepare("SELECT default_tax_rate, default_currency FROM qi_settings WHERE company_id = ?");
 $stmtTax->execute([$companyId]);
 $qiSettings = $stmtTax->fetch();
-$defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
-    ? floatval($qiSettings['default_tax_rate']) / 100
-    : 0.15;
+require_once __DIR__ . '/../../finances/lib/TaxCodes.php';
+$taxCodes = new TaxCodes($DB, (int)$companyId);
+$defaultTaxRatePercent = $taxCodes->standardRatePercent();
 
 // Resolve document currency + exchange rate (1 unit = X ZAR, used for GL conversion)
 $currency = strtoupper(trim($input['currency'] ?? ''));
@@ -62,28 +63,54 @@ if ($exchangeRate <= 0) {
     exit;
 }
 
-// Recalculate subtotal, tax and total to prevent tampering
-$subtotalCalc = 0;
-$discountCalc = 0;
-$taxCalc = 0;
-foreach ($lineItems as $item) {
-    $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0;
-    $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0;
-    $lineDiscount = isset($item['discount']) ? floatval($item['discount']) : 0;
-    $lineSubtotal = $qty * $price;
-    $lineNet = $lineSubtotal - $lineDiscount;
-    $subtotalCalc += $lineNet;
-    $discountCalc += $lineDiscount;
-    $lineTaxRate = isset($item['tax_rate']) ? floatval($item['tax_rate']) / 100 : $defaultTaxRate;
-    $taxCalc += $lineNet * $lineTaxRate;
+// Recalculate subtotal, tax and total to prevent tampering. Amounts are
+// computed per line in INTEGER CENTS with the same rounding the posting
+// engine uses (PostingService::postInvoice), so the customer-facing header
+// always equals the GL to the cent. Each line's VAT rate is validated
+// against the company's tax codes and the resolved tax_code_id is kept for
+// persistence — zero-rated/exempt classification survives to the VAT201.
+$subtotalC = 0;
+$discountC = 0;
+$taxC = 0;
+try {
+    foreach ($lineItems as $idx => $item) {
+        $qty = isset($item['quantity']) ? floatval($item['quantity']) : 0;
+        $price = isset($item['unit_price']) ? floatval($item['unit_price']) : 0;
+        $lineDiscount = isset($item['discount']) ? floatval($item['discount']) : 0;
+        $lineTaxRate = isset($item['tax_rate']) && $item['tax_rate'] !== ''
+            ? floatval($item['tax_rate'])
+            : $defaultTaxRatePercent;
+        $lineNetC = (int)round(($qty * $price - $lineDiscount) * 100);
+        $lineVatC = (int)round($lineNetC * $lineTaxRate / 100);
+
+        $taxCodeId = $taxCodes->resolveOutputForLine(
+            isset($item['tax_code_id']) && $item['tax_code_id'] !== '' ? (int)$item['tax_code_id'] : null,
+            isset($item['tax_code']) ? (string)$item['tax_code'] : null,
+            $lineTaxRate
+        );
+
+        $lineItems[$idx]['tax_rate'] = $lineTaxRate;
+        $lineItems[$idx]['tax_code_id'] = $taxCodeId;
+        $lineItems[$idx]['line_total_c'] = $lineNetC + $lineVatC;
+
+        $subtotalC += $lineNetC;
+        $discountC += (int)round($lineDiscount * 100);
+        $taxC += $lineVatC;
+    }
+} catch (Exception $e) {
+    $msg = ($e instanceof PDOException) ? 'Invalid line data' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
+    exit;
 }
-$totalCalc = $subtotalCalc + $taxCalc;
 
 // Override incoming totals with calculated values
-$input['subtotal'] = $subtotalCalc;
-$input['discount'] = $discountCalc;
-$input['tax'] = $taxCalc;
-$input['total'] = $totalCalc;
+$input['subtotal'] = $subtotalC / 100;
+$input['discount'] = $discountC / 100;
+$input['tax'] = $taxC / 100;
+$input['total'] = ($subtotalC + $taxC) / 100;
+// Document total in currency units — balance_due preservation and milestone
+// percentage checks below depend on it.
+$totalCalc = ($subtotalC + $taxC) / 100;
 
 try {
     $DB->beginTransaction();
@@ -202,25 +229,36 @@ try {
         $message = 'Invoice created successfully';
     }
     
-    // Insert line items
-    if (!empty($input['line_items'])) {
+    // Insert line items. discount / tax_rate / tax_code_id / gl_account_id
+    // MUST be persisted: the posting engine derives the GL journal and the
+    // VAT201 from these columns. (They were previously dropped, so the DB
+    // default of 15% overrode whatever the user chose — zero-rated sales
+    // posted 15% output VAT to the ledger.)
+    if (!empty($lineItems)) {
         $stmt = $DB->prepare(
             "INSERT INTO invoice_lines (
-                invoice_id, item_description, quantity, unit_price, line_total, sort_order, inventory_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                invoice_id, item_description, quantity, unit_price, discount,
+                tax_rate, tax_code_id, gl_account_id, line_total, sort_order, inventory_item_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
 
-        foreach ($input['line_items'] as $index => $item) {
+        foreach ($lineItems as $index => $item) {
             $invId = null;
             if (isset($item['inventory_item_id']) && $item['inventory_item_id'] !== '' && $item['inventory_item_id'] !== null) {
                 $invId = $item['inventory_item_id'];
             }
+            $glAccountId = isset($item['gl_account_id']) && $item['gl_account_id'] !== ''
+                ? (int)$item['gl_account_id'] : null;
             $stmt->execute([
                 $invoiceId,
                 $item['description'] ?? '',
                 $item['quantity'] ?? 0,
                 $item['unit_price'] ?? 0,
-                $item['line_total'] ?? 0,
+                $item['discount'] ?? 0,
+                $item['tax_rate'],
+                $item['tax_code_id'],
+                $glAccountId,
+                ($item['line_total_c'] ?? 0) / 100,
                 $index,
                 $invId
             ]);
@@ -283,16 +321,9 @@ try {
 
     $DB->commit();
 
-    // After invoice is saved, post journal entry to general ledger (Section 11).
-    try {
-        // JournalPoster is located under qi/services; relative to this file go two levels up
-        require_once __DIR__ . '/../services/JournalPoster.php';
-        $poster = new JournalPoster($DB, $companyId, $userId);
-        $poster->postInvoice($invoiceId);
-    } catch (Exception $e) {
-        // Log but do not interrupt response
-        error_log('Invoice journal posting failed: ' . $e->getMessage());
-    }
+    // Draft invoices do NOT post to the general ledger — a draft is not a tax
+    // invoice. Posting happens when the invoice is issued (send_invoice.php /
+    // invoice_action.php via InvoiceLifecycle::issueInvoice).
 
     echo json_encode([
         'ok' => true,

@@ -40,12 +40,26 @@ try {
     $salvageVal  = $data['salvage_value'] ?? null;
     $lifeMonths  = $data['useful_life_months'] ?? null;
     $method      = $data['depreciation_method'] ?? '';
+    $taxMethod   = $data['tax_method'] ?? 'none';
+    $taxYears    = $data['tax_writeoff_years'] ?? null;
     $assetAccId  = $data['asset_account_id'] ?? null;
     $expAccId    = $data['depreciation_expense_account_id'] ?? null;
     $accumAccId  = $data['accumulated_depreciation_account_id'] ?? null;
     // Validate
     if (!$assetName || !$purchaseDate || !is_numeric($purchaseCost) || !is_numeric($salvageVal) || !is_numeric($lifeMonths) || !$method || !$assetAccId || !$expAccId || !$accumAccId) {
         throw new Exception('Missing or invalid fields');
+    }
+    // Tax write-off method (SARS wear-and-tear register)
+    $taxMethod = in_array($taxMethod, ['none','s11e','s12c'], true) ? $taxMethod : 'none';
+    if ($taxMethod === 'none') {
+        $taxYears = null;
+    } elseif ($taxMethod === 's12c') {
+        $taxYears = 4; // fixed 40/20/20/20 schedule
+    } else {
+        $taxYears = (int)$taxYears;
+        if ($taxYears < 1 || $taxYears > 50) {
+            throw new Exception('Missing or invalid fields');
+        }
     }
     // Convert monetary values to cents
     $costCents   = (int)round(floatval($purchaseCost) * 100);
@@ -80,9 +94,10 @@ try {
         "INSERT INTO gl_fixed_assets (
             company_id, asset_name, category, purchase_date,
             purchase_cost_cents, salvage_value_cents, useful_life_months,
-            depreciation_method, asset_account_id, depreciation_expense_account_id,
+            depreciation_method, tax_method, tax_writeoff_years,
+            asset_account_id, depreciation_expense_account_id,
             accumulated_depreciation_account_id, accumulated_depreciation_cents, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active')"
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active')"
     );
     $stmt->execute([
         $companyId,
@@ -93,6 +108,8 @@ try {
         $salvageCents,
         $lifeMonths,
         $method,
+        $taxMethod,
+        $taxYears,
         (int)$assetAccId,
         (int)$expAccId,
         (int)$accumAccId

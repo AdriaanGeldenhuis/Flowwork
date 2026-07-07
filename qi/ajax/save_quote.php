@@ -33,13 +33,14 @@ if (empty($lineItems) || !is_array($lineItems)) {
     exit;
 }
 
-// Fetch default tax rate and currency from qi_settings
+// Fetch default currency from qi_settings; the default VAT rate is the
+// company's STD tax code (finances/lib/TaxCodes — single source of truth).
 $stmtTax = $DB->prepare("SELECT default_tax_rate, default_currency FROM qi_settings WHERE company_id = ?");
 $stmtTax->execute([$companyId]);
 $qiSettings = $stmtTax->fetch();
-$defaultTaxRate = ($qiSettings && isset($qiSettings['default_tax_rate']))
-    ? floatval($qiSettings['default_tax_rate']) / 100
-    : 0.15;
+require_once __DIR__ . '/../../finances/lib/TaxCodes.php';
+$taxCodes = new TaxCodes($DB, (int)$companyId);
+$defaultTaxRate = $taxCodes->standardRatePercent() / 100;
 
 // Resolve document currency + exchange rate (1 unit = X ZAR, used for GL conversion)
 $currency = strtoupper(trim($input['currency'] ?? ''));
@@ -199,18 +200,34 @@ try {
     
     // Insert line items
     if (!empty($input['line_items'])) {
+        // Persist the tax profile per line — quotes convert to invoices, and
+        // the converted invoice's GL/VAT derives from these columns.
         $stmt = $DB->prepare("
             INSERT INTO quote_lines (
-                quote_id, item_description, quantity, unit_price, line_total, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                quote_id, item_description, quantity, unit, unit_price,
+                discount, tax_rate, tax_code_id, gl_account_id, line_total, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
         foreach ($input['line_items'] as $index => $item) {
+            $lineTaxRate = isset($item['tax_rate']) && $item['tax_rate'] !== ''
+                ? floatval($item['tax_rate'])
+                : $defaultTaxRate * 100;
+            $taxCodeId = $taxCodes->resolveOutputForLine(
+                isset($item['tax_code_id']) && $item['tax_code_id'] !== '' ? (int)$item['tax_code_id'] : null,
+                $item['tax_code'] ?? null,
+                $lineTaxRate
+            );
             $stmt->execute([
                 $quoteId,
                 $item['description'],
                 $item['quantity'],
+                $item['unit'] ?? 'ea',
                 $item['unit_price'],
+                $item['discount'] ?? 0,
+                $lineTaxRate,
+                $taxCodeId,
+                isset($item['gl_account_id']) && $item['gl_account_id'] !== '' ? (int)$item['gl_account_id'] : null,
                 $item['line_total'],
                 $index
             ]);

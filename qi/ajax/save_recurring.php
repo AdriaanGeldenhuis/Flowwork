@@ -40,13 +40,24 @@ try {
 
     $recurringId = $DB->lastInsertId();
 
-    // Insert line items
+    // Insert line items (tax code kept per line — generated invoices'
+    // GL/VAT derives from these columns)
+    require_once __DIR__ . '/../../finances/lib/TaxCodes.php';
+    $taxCodes = new TaxCodes($DB, (int)$companyId);
     $sortOrder = 0;
     foreach ($lines as $line) {
+        $taxRate = isset($line['tax_rate']) && $line['tax_rate'] !== ''
+            ? floatval($line['tax_rate'])
+            : $taxCodes->standardRatePercent();
+        $taxCodeId = $taxCodes->resolveOutputForLine(
+            isset($line['tax_code_id']) && $line['tax_code_id'] !== '' ? (int)$line['tax_code_id'] : null,
+            $line['tax_code'] ?? null,
+            $taxRate
+        );
         $stmt = $DB->prepare("
             INSERT INTO recurring_invoice_lines (
-                recurring_invoice_id, item_description, quantity, unit, unit_price, discount, tax_rate, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                recurring_invoice_id, item_description, quantity, unit, unit_price, discount, tax_rate, tax_code_id, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $recurringId,
@@ -55,7 +66,8 @@ try {
             $line['unit'] ?? 'unit',
             floatval($line['unit_price'] ?? 0),
             floatval($line['discount'] ?? 0),
-            floatval($line['tax_rate'] ?? 15),
+            $taxRate,
+            $taxCodeId,
             $sortOrder++
         ]);
     }

@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/Csrf.php';
+require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/CoaSchema.php';
 require_once __DIR__ . '/../permissions.php';
 requireRoles(['admin', 'bookkeeper']);
@@ -238,5 +239,5 @@ try {
 } catch (Exception $e) {
     $DB->rollBack();
     error_log("Account save error: " . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    json_exception($e);
 }

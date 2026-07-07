@@ -65,6 +65,9 @@ try {
         'finance_bank_account_id',
         'finance_vat_control_account_id',
         'finance_expense_account_id',
+        // Keys as AccountsMap::DEFAULTS spells them — the previous
+        // '..._on_disposal_...' names matched nothing and reported the
+        // disposal mappings as permanently missing.
         'finance_gain_on_disposal_account_id',
         'finance_loss_on_disposal_account_id'
     ];
@@ -97,7 +100,7 @@ try {
     $stmt = $DB->prepare(
         "SELECT COUNT(*) FROM invoices
           WHERE company_id = ?
-            AND status IN ('sent','viewed','paid','overdue')
+            AND status IN ('sent','viewed','part-paid','paid','overdue')
             AND (journal_id IS NULL OR journal_id = 0)"
     );
     $stmt->execute([$companyId]);
@@ -192,23 +195,22 @@ try {
     $checks[] = ['name'=>'Unreconciled bank transactions','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
 }
 
-// 3.7 Orphaned journal lines
-// journal_lines carries no company_id, so scope via this company's account
-// codes — keeps the check per-tenant like the others instead of reporting
-// every company's orphans.
+// 3.7 Orphaned journal lines (SYSTEM-WIDE)
+// journal_lines carries no company_id and an orphan has no header row left
+// to scope by — every company shares the seeded code set, so an
+// account-code filter only pretended to be per-tenant. Reported honestly as
+// a system-wide data-integrity count.
 try {
-    $stmt = $DB->prepare(
+    $stmt = $DB->query(
         "SELECT COUNT(*) FROM journal_lines jl
           LEFT JOIN journal_entries je ON je.id = jl.journal_id
          WHERE jl.journal_id IS NOT NULL
-           AND je.id IS NULL
-           AND jl.account_code IN (SELECT account_code FROM gl_accounts WHERE company_id = ?)"
+           AND je.id IS NULL"
     );
-    $stmt->execute([$companyId]);
     $cnt = (int)$stmt->fetchColumn();
-    $checks[] = ['name'=>'Orphaned journal lines','status'=>$cnt?("$cnt lines"):'OK','count'=>$cnt];
+    $checks[] = ['name'=>'Orphaned journal lines (system-wide)','status'=>$cnt?("$cnt lines"):'OK','count'=>$cnt];
 } catch (Exception $e) {
-    $checks[] = ['name'=>'Orphaned journal lines','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+    $checks[] = ['name'=>'Orphaned journal lines (system-wide)','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
 }
 
 // 3.8 Payroll runs – “locked maar nie gepos nie”
@@ -237,6 +239,196 @@ try {
     $checks[] = ['name'=>'Open VAT periods','status'=>$cnt?("$cnt pending"):'OK','count'=>$cnt];
 } catch (Exception $e) {
     $checks[] = ['name'=>'Open VAT periods','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+require_once __DIR__ . '/../lib/AccountsMap.php';
+require_once __DIR__ . '/../lib/Tieout.php';
+require_once __DIR__ . '/../lib/VatCalculator.php';
+
+// 3.10 Unbalanced journals — debits must equal credits to the cent.
+// Posted ones corrupt reports (count as failures); draft/approved ones are
+// legacy-era artefacts that journal_post.php would reject — reported as
+// informational so the operator knows the legacy ledger holds them.
+try {
+    $stmt = $DB->prepare(
+        "SELECT je.id, je.status
+           FROM journal_entries je
+           JOIN journal_lines jl ON jl.journal_id = je.id
+          WHERE je.company_id = ?
+          GROUP BY je.id, je.status
+         HAVING SUM(ROUND(jl.debit*100)) <> SUM(ROUND(jl.credit*100))"
+    );
+    $stmt->execute([$companyId]);
+    $postedIds = [];
+    $otherCnt = 0;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        if ($r['status'] === 'posted') { $postedIds[] = (int)$r['id']; } else { $otherCnt++; }
+    }
+    $cnt = count($postedIds);
+    $status = $cnt
+        ? ("$cnt unbalanced POSTED journal(s), ids: " . implode(', ', array_slice($postedIds, 0, 10)) . ($cnt > 10 ? ', …' : ''))
+        : 'OK';
+    if ($otherCnt) {
+        $status .= " ($otherCnt unbalanced non-posted legacy journal(s) — excluded from reports, blocked from posting)";
+    }
+    $checks[] = ['name'=>'Unbalanced posted journals','status'=>$status,'count'=>$cnt];
+} catch (Exception $e) {
+    $checks[] = ['name'=>'Unbalanced posted journals','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+// 3.11 / 3.12 AR & AP tie-out: subledger vs GL control account
+try {
+    $tieout = new Tieout($DB, (int)$companyId);
+    $asOf = date('Y-m-d');
+    foreach (['AR' => 'arSubledger', 'AP' => 'apSubledger'] as $side => $method) {
+        $sub = $tieout->$method($asOf);
+        $gl  = $tieout->glBalance($side, $asOf);
+        $diff = round($sub - $gl, 2);
+        $ok = abs($diff) < 0.01;
+        $checks[] = [
+            'name'   => "$side tie-out (subledger vs GL control)",
+            'status' => $ok ? 'OK'
+                : sprintf('Subledger %.2f vs GL %.2f — difference %.2f', $sub, $gl, $diff),
+            'count'  => $ok ? 0 : 1,
+        ];
+    }
+} catch (Exception $e) {
+    $checks[] = ['name'=>'AR/AP tie-out','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+// 3.13 Journal lines on account codes missing from the company chart
+// (journal_lines has no company_id — scope via journal_entries)
+try {
+    $stmt = $DB->prepare(
+        "SELECT DISTINCT jl.account_code
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.journal_id
+           LEFT JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+          WHERE je.company_id = ? AND ga.account_id IS NULL"
+    );
+    $stmt->execute([$companyId]);
+    $codes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $cnt = count($codes);
+    $checks[] = [
+        'name'   => 'Journal lines on unknown account codes',
+        'status' => $cnt ? ("$cnt code(s): " . implode(', ', array_slice($codes, 0, 10)) . ($cnt > 10 ? ', …' : '')) : 'OK',
+        'count'  => $cnt,
+    ];
+} catch (Exception $e) {
+    $checks[] = ['name'=>'Journal lines on unknown account codes','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+// 3.14 Posted revenue lines without a tax code (breaks VAT201 classification)
+try {
+    $stmt = $DB->prepare(
+        "SELECT COUNT(*)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.journal_id
+           JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+          WHERE je.company_id = ? AND je.status = 'posted'
+            AND ga.account_type = 'revenue'
+            AND jl.tax_code_id IS NULL"
+    );
+    $stmt->execute([$companyId]);
+    $cnt = (int)$stmt->fetchColumn();
+    $checks[] = [
+        'name'   => 'Untagged revenue lines (no tax code)',
+        'status' => $cnt ? "$cnt posted revenue line(s) have no tax_code_id — VAT201 cannot classify them" : 'OK',
+        'count'  => $cnt,
+    ];
+} catch (Exception $e) {
+    $checks[] = ['name'=>'Untagged revenue lines (no tax code)','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+// 3.15 Inventory: movement on-hand value vs GL inventory account balance
+try {
+    $map = new AccountsMap($DB, (int)$companyId);
+    $invCode = $map->code('finance_inventory_account_id');
+
+    $stmt = $DB->prepare(
+        "SELECT COALESCE(SUM(qty * unit_cost), 0) FROM inventory_movements WHERE company_id = ?"
+    );
+    $stmt->execute([$companyId]);
+    $onHand = round((float)$stmt->fetchColumn(), 2);
+
+    $stmt = $DB->prepare(
+        "SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.journal_id
+          WHERE je.company_id = ? AND je.status = 'posted' AND jl.account_code = ?"
+    );
+    $stmt->execute([$companyId, $invCode]);
+    $glBal = round((float)$stmt->fetchColumn(), 2);
+
+    $diff = round($onHand - $glBal, 2);
+    $ok = abs($diff) < 0.01;
+    $checks[] = [
+        'name'   => 'Inventory on-hand value vs GL',
+        'status' => $ok ? 'OK'
+            : sprintf('Movements %.2f vs GL account %s %.2f — difference %.2f', $onHand, $invCode, $glBal, $diff),
+        'count'  => $ok ? 0 : 1,
+    ];
+} catch (Exception $e) {
+    $checks[] = ['name'=>'Inventory on-hand value vs GL','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+// 3.16 Payments basis only: unallocated customer receipts carry VAT that the
+// payments-basis VAT201 cannot see (no document profile to apportion over).
+try {
+    if (VatCalculator::companyBasis($DB, (int)$companyId) === 'payments') {
+        $stmt = $DB->prepare(
+            "SELECT COUNT(*) FROM (
+                SELECT p.id
+                  FROM payments p
+                  LEFT JOIN payment_allocations pa ON pa.payment_id = p.id
+                 WHERE p.company_id = ?
+                 GROUP BY p.id, p.amount
+                HAVING COALESCE(SUM(pa.amount), 0) < p.amount - 0.005
+             ) AS unalloc"
+        );
+        $stmt->execute([$companyId]);
+        $cnt = (int)$stmt->fetchColumn();
+        $checks[] = [
+            'name'   => 'Unallocated receipts (payments basis)',
+            'status' => $cnt ? "$cnt receipt(s) not fully allocated — their VAT is missing from the payments-basis VAT201" : 'OK',
+            'count'  => $cnt,
+        ];
+    } else {
+        $checks[] = ['name'=>'Unallocated receipts (payments basis)','status'=>'OK (company is on the invoice basis)','count'=>0];
+    }
+} catch (Exception $e) {
+    $checks[] = ['name'=>'Unallocated receipts (payments basis)','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
+}
+
+// 3.17 finance_* mappings whose account subtype contradicts the role
+try {
+    $map = $map ?? new AccountsMap($DB, (int)$companyId);
+    $wrong = [];
+    foreach (AccountsMap::SUBTYPES as $settingKey => $expectedSubtypes) {
+        $accountId = $map->getAccountId($settingKey);
+        if (!$accountId) {
+            continue; // unset/unresolvable — covered by check 3.1
+        }
+        $stmt = $DB->prepare(
+            "SELECT account_code, account_subtype FROM gl_accounts
+              WHERE account_id = ? AND company_id = ? LIMIT 1"
+        );
+        $stmt->execute([$accountId, $companyId]);
+        $acc = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($acc && !in_array((string)$acc['account_subtype'], $expectedSubtypes, true)) {
+            $wrong[] = sprintf('%s -> %s (subtype %s, expected %s)',
+                $settingKey, $acc['account_code'],
+                $acc['account_subtype'] ?: 'none', implode('/', $expectedSubtypes));
+        }
+    }
+    $cnt = count($wrong);
+    $checks[] = [
+        'name'   => 'Finance mappings vs account subtypes',
+        'status' => $cnt ? implode('; ', $wrong) : 'OK',
+        'count'  => $cnt,
+    ];
+} catch (Exception $e) {
+    $checks[] = ['name'=>'Finance mappings vs account subtypes','status'=>'Error: '.h($e->getMessage()),'count'=>-1];
 }
 
 /* -----------------------

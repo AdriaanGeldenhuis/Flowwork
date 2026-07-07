@@ -269,8 +269,8 @@ $vatPeriodStmt = $DB->prepare("
 $vatPeriodStmt->execute([$companyId]);
 $nextVatPeriod = $vatPeriodStmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
-// Locked through (mirrors PeriodService enforcement, which ignores soft deletes)
-$lockStmt = $DB->prepare("SELECT MAX(lock_date) FROM gl_period_locks WHERE company_id = ?");
+// Locked through (mirrors PeriodService enforcement, which honours soft deletes)
+$lockStmt = $DB->prepare("SELECT MAX(lock_date) FROM gl_period_locks WHERE company_id = ? AND is_active = 1");
 $lockStmt->execute([$companyId]);
 $lockedThrough = $lockStmt->fetchColumn() ?: null;
 

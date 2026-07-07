@@ -158,4 +158,83 @@ class InventoryService
         ]);
         return $qty * $avgCost;
     }
+
+    /**
+     * Reverse the inventory movements created by a specific journal by
+     * inserting contra movements (same unit cost, opposite quantity), each
+     * linked to its original via reversal_of_movement_id. Idempotent: a
+     * movement that already has a contra is skipped, and contra movements
+     * themselves are never re-reversed.
+     *
+     * Movements posted before journal linkage existed (journal_id IS NULL)
+     * cannot be matched here; reverseLegacyMovementsFor() covers those by
+     * document reference (used by finances/tools/repost_all.php).
+     *
+     * @param int      $journalId          journal whose movements to reverse
+     * @param int|null $reversalJournalId  journal the contras belong to
+     * @param string   $date               movement date for the contras
+     */
+    public function reverseMovementsForJournal(int $journalId, ?int $reversalJournalId, string $date): void
+    {
+        $this->reverseMovements(
+            "m.journal_id = ?",
+            [$journalId],
+            $reversalJournalId,
+            $date
+        );
+    }
+
+    /**
+     * Reverse UNLINKED legacy movements (journal_id IS NULL) belonging to a
+     * document, matched by (ref_type, ref_id). The legacy engines never
+     * stamped journal_id on movements, so a repost through the new engine
+     * would issue/receive the stock a SECOND time on top of the legacy
+     * movement. Same idempotent contra pattern as the journal-linked variant.
+     */
+    public function reverseLegacyMovementsFor(string $refType, int $refId, string $date): void
+    {
+        $this->reverseMovements(
+            "m.journal_id IS NULL AND m.ref_type = ? AND m.ref_id = ?",
+            [$refType, $refId],
+            null,
+            $date
+        );
+    }
+
+    private function reverseMovements(string $where, array $params, ?int $reversalJournalId, string $date): void
+    {
+        $stmt = $this->db->prepare(
+            "SELECT id, item_id, qty, unit_cost, ref_type, ref_id
+               FROM inventory_movements m
+              WHERE m.company_id = ? AND $where
+                AND m.reversal_of_movement_id IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM inventory_movements r WHERE r.reversal_of_movement_id = m.id
+                )"
+        );
+        $stmt->execute(array_merge([$this->companyId], $params));
+        $movements = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$movements) {
+            return;
+        }
+        $ins = $this->db->prepare(
+            "INSERT INTO inventory_movements
+                (company_id, item_id, movement_date, qty, unit_cost, ref_type, ref_id,
+                 journal_id, reversal_of_movement_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        foreach ($movements as $m) {
+            $ins->execute([
+                $this->companyId,
+                $m['item_id'],
+                $date,
+                -(float)$m['qty'],
+                $m['unit_cost'],
+                $m['ref_type'],
+                $m['ref_id'],
+                $reversalJournalId,
+                $m['id'],
+            ]);
+        }
+    }
 }

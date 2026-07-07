@@ -28,7 +28,9 @@ if (!$invoiceId || !in_array($action, $ALLOWED, true)) {
 try {
     $DB->beginTransaction();
 
-    $invoice = InvoiceDeleteHelper::fetchInvoice($DB, $invoiceId, $companyId);
+    // Row lock: balance/status checks below are check-then-act — concurrent
+    // actions on the same invoice (double-click write-off) must serialize.
+    $invoice = InvoiceDeleteHelper::fetchInvoice($DB, $invoiceId, $companyId, true);
     if (!$invoice) throw new Exception('Invoice not found');
 
     $status = $invoice['status'];
@@ -39,13 +41,25 @@ try {
             if (in_array($status, ['cancelled','written_off','refunded'], true)) {
                 throw new Exception('Invoice is already closed (' . $status . ')');
             }
+            // Voiding reverses the invoice journal; allocated payments' posted
+            // journals (Cr AR) would stay behind and drive the AR control
+            // negative. Same rule as revert_to_draft: detach payments first.
+            $paidStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = ?");
+            $paidStmt->execute([$invoiceId]);
+            if ((float)$paidStmt->fetchColumn() > 0) {
+                throw new Exception('Cannot void: payments have been allocated to this invoice. Unapply payments first.');
+            }
             $stmt = $DB->prepare("
                 UPDATE invoices
                    SET status='cancelled', cancellation_reason = ?, updated_at = NOW()
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$reason ?: null, $invoiceId, $companyId]);
-            InvoiceDeleteHelper::reverseJournal($DB, $companyId, $userId, $invoiceId);
+            // Reverse the GL journal (throws on locked period, rolling back
+            // the void — a cancelled invoice must not keep revenue/VAT posted)
+            require_once __DIR__ . '/../../finances/lib/PostingService.php';
+            (new PostingService($DB, $companyId, $userId))
+                ->unpostInvoice($invoiceId, 'Invoice voided' . ($reason ? ': ' . $reason : ''));
             InvoiceDeleteHelper::log($DB, $companyId, $userId, 'invoice_voided',
                 ['invoice_id'=>$invoiceId, 'prior_status'=>$status, 'reason'=>$reason]);
             break;
@@ -62,6 +76,10 @@ try {
             }
             $stmt = $DB->prepare("UPDATE invoices SET status='draft', updated_at=NOW() WHERE id=? AND company_id=?");
             $stmt->execute([$invoiceId, $companyId]);
+            // A draft is not a tax invoice — its journal must leave the GL.
+            require_once __DIR__ . '/../../finances/lib/PostingService.php';
+            (new PostingService($DB, $companyId, $userId))
+                ->unpostInvoice($invoiceId, 'Invoice reverted to draft');
             InvoiceDeleteHelper::log($DB, $companyId, $userId, 'invoice_reverted_to_draft',
                 ['invoice_id'=>$invoiceId, 'prior_status'=>$status]);
             break;
@@ -86,6 +104,12 @@ try {
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$newBalance, $newStatus, $writeAmount, $userId, $reason ?: null, $invoiceId, $companyId]);
+            // GL: DR Bad Debts (net) + DR VAT Input (s22 relief) / CR AR.
+            // Previously only balance_due changed — the AR control account,
+            // P&L and VAT201 never saw the write-off.
+            require_once __DIR__ . '/../../finances/lib/PostingService.php';
+            (new PostingService($DB, $companyId, $userId))
+                ->postInvoiceWriteOff($invoiceId, $writeAmount, $reason);
             InvoiceDeleteHelper::log($DB, $companyId, $userId, 'invoice_written_off',
                 ['invoice_id'=>$invoiceId, 'amount'=>$writeAmount, 'reason'=>$reason]);
             break;
@@ -167,5 +191,6 @@ try {
 } catch (Exception $e) {
     if ($DB->inTransaction()) $DB->rollBack();
     error_log('Invoice action error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'The action failed — please try again' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

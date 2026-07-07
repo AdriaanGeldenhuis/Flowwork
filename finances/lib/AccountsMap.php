@@ -10,6 +10,55 @@
 
 class AccountsMap
 {
+    /**
+     * Single authority for fallback account codes, aligned with the seeded
+     * SARS chart (Migrations/2026-04-08-coa-sars-upgrade.sql). These are the
+     * LAST resort — explicit company_settings mappings always win, and
+     * finances/tools/finance_setup.php seeds those settings per company by
+     * account subtype (legacy charts may use different codes for the same
+     * role, e.g. company charts where 1200 is Accounts Receivable).
+     */
+    public const DEFAULTS = [
+        'finance_ar_account_id'               => '1100', // Accounts Receivable Control
+        'finance_ap_account_id'               => '2010', // Accounts Payable Control
+        'finance_bank_account_id'             => '1020', // Primary Bank Account
+        'finance_sales_account_id'            => '4010', // Sales — Standard Rated
+        'finance_vat_output_account_id'       => '2110', // VAT Output
+        'finance_vat_input_account_id'        => '2120', // VAT Input
+        'finance_vat_control_account_id'      => '2100', // VAT Control (net, SARS)
+        'finance_inventory_account_id'        => '1200', // Stock on Hand
+        'finance_cogs_account_id'             => '5150', // Cost of Goods Sold
+        'finance_expense_account_id'          => '5020', // Purchases
+        'finance_wage_expense_account_id'     => '6010', // Salaries & Wages
+        'finance_paye_account_id'             => '2130', // PAYE Payable
+        'finance_uif_account_id'              => '2140', // UIF Payable
+        'finance_sdl_account_id'              => '2150', // SDL Payable
+        'finance_uif_expense_account_id'      => '6050', // UIF — Employer
+        'finance_sdl_expense_account_id'      => '6060', // SDL — Employer
+        'finance_bad_debt_account_id'         => '6800', // Bad Debts Written Off
+        'finance_fx_gain_account_id'          => '4950', // Forex Gain — Realised
+        'finance_fx_loss_account_id'          => '8050', // Forex Loss — Realised
+        'finance_gain_on_disposal_account_id' => '4960', // Profit on Disposal
+        'finance_loss_on_disposal_account_id' => '8060', // Loss on Disposal
+        'finance_retained_earnings_account_id'=> '3100', // Retained Earnings
+    ];
+
+    /**
+     * Account subtype(s) that identify each mapping role in a company chart,
+     * used to resolve mappings on charts whose codes differ from the seed.
+     * Listed in preference order; is_control accounts win within a subtype.
+     */
+    public const SUBTYPES = [
+        'finance_ar_account_id'          => ['accounts_receivable'],
+        'finance_ap_account_id'          => ['accounts_payable'],
+        'finance_bank_account_id'        => ['bank'],
+        'finance_inventory_account_id'   => ['inventory'],
+        'finance_paye_account_id'        => ['paye_liability'],
+        'finance_uif_account_id'         => ['uif_liability'],
+        'finance_sdl_account_id'         => ['sdl_liability'],
+        'finance_retained_earnings_account_id' => ['retained_earnings'],
+    ];
+
     private $db;
     private $companyId;
 
@@ -23,6 +72,19 @@ class AccountsMap
     {
         $this->db = $db;
         $this->companyId = $companyId;
+    }
+
+    /**
+     * Resolve a mapping key to an account code using the canonical fallback
+     * from self::DEFAULTS. Prefer this over get() with an ad-hoc literal so
+     * every caller shares one authority.
+     */
+    public function code(string $settingKey): string
+    {
+        if (!isset(self::DEFAULTS[$settingKey])) {
+            throw new InvalidArgumentException("Unknown finance account mapping key: $settingKey");
+        }
+        return $this->get($settingKey, self::DEFAULTS[$settingKey]);
     }
 
     /**

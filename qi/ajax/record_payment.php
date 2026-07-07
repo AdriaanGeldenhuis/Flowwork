@@ -19,6 +19,8 @@ if (is_array($inputData)) {
     $reference   = $inputData['reference'] ?? '';
     $notes       = $inputData['notes'] ?? '';
     $milestoneId = isset($inputData['milestone_id']) && $inputData['milestone_id'] !== '' ? (int)$inputData['milestone_id'] : null;
+    $idempotencyKey = isset($inputData['idempotency_key']) ? substr(trim((string)$inputData['idempotency_key']), 0, 64) : '';
+    $exchangeRateIn = isset($inputData['exchange_rate']) && $inputData['exchange_rate'] !== '' ? (float)$inputData['exchange_rate'] : null;
 } else {
     // Fallback to standard form POST
     $invoiceId   = filter_input(INPUT_POST, 'invoice_id', FILTER_VALIDATE_INT);
@@ -28,6 +30,8 @@ if (is_array($inputData)) {
     $reference   = $_POST['reference'] ?? '';
     $notes       = $_POST['notes'] ?? '';
     $milestoneId = isset($_POST['milestone_id']) && $_POST['milestone_id'] !== '' ? (int)$_POST['milestone_id'] : null;
+    $idempotencyKey = isset($_POST['idempotency_key']) ? substr(trim((string)$_POST['idempotency_key']), 0, 64) : '';
+    $exchangeRateIn = isset($_POST['exchange_rate']) && $_POST['exchange_rate'] !== '' ? (float)$_POST['exchange_rate'] : null;
 }
 
 if (!$invoiceId || $amount <= 0) {
@@ -37,6 +41,25 @@ if (!$invoiceId || $amount <= 0) {
 
 try {
     $DB->beginTransaction();
+
+    // Idempotency: a replayed request (double-click, network retry) with the
+    // same key returns the original payment instead of creating a second one.
+    // The unique index on (company_id, idempotency_key) is the backstop for
+    // concurrent replays.
+    if ($idempotencyKey !== '') {
+        $stmt = $DB->prepare("SELECT id FROM payments WHERE company_id = ? AND idempotency_key = ? LIMIT 1");
+        $stmt->execute([$companyId, $idempotencyKey]);
+        if ($existingId = $stmt->fetchColumn()) {
+            $DB->rollBack();
+            // Include the invoice's current balance — the success toast reads
+            // new_balance and printed "R NaN" on replayed requests without it.
+            $bal = $DB->prepare("SELECT balance_due FROM invoices WHERE id = ? AND company_id = ?");
+            $bal->execute([$invoiceId, $companyId]);
+            echo json_encode(['ok' => true, 'payment_id' => (int)$existingId, 'duplicate' => true,
+                'new_balance' => round((float)$bal->fetchColumn(), 2)]);
+            exit;
+        }
+    }
 
     // Fetch invoice (FOR UPDATE prevents concurrent overpayment)
     $stmt = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE");
@@ -51,12 +74,27 @@ try {
         throw new Exception('Payment amount exceeds balance due');
     }
 
-    // Create payment
+    // Paying a draft implicitly issues it: transition to sent and post it to
+    // the GL so the receipt below has an invoice journal to settle against.
+    if ($invoice['status'] === 'draft') {
+        require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
+        InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, $invoiceId);
+    }
+
+    // Create payment. exchange_rate is the payment-date ZAR rate for foreign-
+    // currency invoices: PostingService.postCustomerPayment books the bank
+    // leg at THIS rate and the AR relief at the invoice's historic rate, with
+    // the difference to realised FX gain/loss (s24I). Default = the invoice's
+    // own rate (no FX difference) when the caller doesn't supply one.
+    $exchangeRate = $exchangeRateIn && $exchangeRateIn > 0
+        ? $exchangeRateIn
+        : ((float)($invoice['exchange_rate'] ?? 1) ?: 1.0);
     $stmt = $DB->prepare("
-        INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key, exchange_rate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference, $notes, $userId]);
+    $stmt->execute([$companyId, $paymentDate, $amount, $method, $reference, $notes, $userId,
+        $idempotencyKey !== '' ? $idempotencyKey : null, $exchangeRate]);
     $paymentId = $DB->lastInsertId();
 
     // Allocate to invoice
@@ -104,16 +142,15 @@ try {
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
 
-    $DB->commit();
+    // Post the receipt to the GL INSIDE this transaction: if posting fails
+    // (locked period, broken account mapping) the payment must not exist
+    // either — a payment with no ledger entry silently breaks the AR
+    // subledger-to-GL tie-out.
+    require_once __DIR__ . '/../../finances/lib/PostingService.php';
+    $posting = new PostingService($DB, $companyId, $userId);
+    $posting->postCustomerPayment((int)$paymentId);
 
-    // Post journal entry for this payment via PostingService
-    try {
-        require_once __DIR__ . '/../../finances/lib/PostingService.php';
-        $posting = new PostingService($DB, $companyId, $userId);
-        $posting->postCustomerPayment((int)$paymentId);
-    } catch (Exception $e) {
-        error_log('Payment journal posting failed: ' . $e->getMessage());
-    }
+    $DB->commit();
 
     echo json_encode(['ok' => true, 'payment_id' => $paymentId, 'new_balance' => $newBalance]);
 

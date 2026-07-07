@@ -80,8 +80,5 @@ try {
 
 } catch (Exception $e) {
     error_log("Journal get error: " . $e->getMessage());
-    echo json_encode([
-        'ok' => false,
-        'error' => $e->getMessage()
-    ]);
+    json_exception($e);
 }

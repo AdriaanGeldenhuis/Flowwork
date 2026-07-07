@@ -58,9 +58,10 @@ try {
         }
     }
 
-    // Post the bill using the central PostingService
+    // Post the bill using the central PostingService. Reposting a posted
+    // bill requires an explicit flag (paid bills are always rejected).
     $posting = new PostingService($DB, $companyId, $userId);
-    $posting->postApBill($billId);
+    $posting->postApBill($billId, !empty($input['repost']));
     // Retrieve the journal ID that was created
     $stmt = $DB->prepare("SELECT journal_id FROM ap_bills WHERE id = ? AND company_id = ?");
     $stmt->execute([$billId, $companyId]);

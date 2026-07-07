@@ -56,6 +56,8 @@ $raw = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 // Populate default settings
 $settings = [
     'fiscal_year_start'      => $raw['finance_fiscal_year_start']      ?? '',
+    'vat_basis'              => $raw['finance_vat_basis']              ?? 'invoice',
+    'require_sod'            => $raw['finance_require_sod']            ?? '0',
     'ar_account_id'          => $raw['finance_ar_account_id']          ?? '',
     'ap_account_id'          => $raw['finance_ap_account_id']          ?? '',
     'vat_output_account_id'  => $raw['finance_vat_output_account_id']  ?? '',
@@ -124,6 +126,34 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 ?>
                             </select>
                             <span class="fw-finance__help-text">The month your company's fiscal year begins</span>
+                        </div>
+
+                        <!-- VAT accounting basis -->
+                        <div class="fw-finance__form-group">
+                            <label class="fw-finance__label" for="vat_basis">
+                                VAT Accounting Basis <span class="fw-finance__required">*</span>
+                            </label>
+                            <select id="vat_basis" name="vat_basis" class="fw-finance__input">
+                                <option value="invoice" <?= $settings['vat_basis'] !== 'payments' ? 'selected' : '' ?>>Invoice basis (accrual) — VAT when invoices are issued/received</option>
+                                <option value="payments" <?= $settings['vat_basis'] === 'payments' ? 'selected' : '' ?>>Payments basis (cash) — VAT when money is received/paid</option>
+                            </select>
+                            <span class="fw-finance__help-text">
+                                Must match your SARS VAT registration. Payments basis is only available
+                                to qualifying vendors (s15(2) VAT Act). Changing this mid-stream affects
+                                how open VAT periods are calculated — confirm with your bookkeeper first.
+                            </span>
+                        </div>
+
+                        <!-- Segregation of duties -->
+                        <div class="fw-finance__form-group">
+                            <label class="fw-finance__label" for="require_sod">
+                                Journal Segregation of Duties
+                            </label>
+                            <select id="require_sod" name="require_sod" class="fw-finance__input">
+                                <option value="0" <?= $settings['require_sod'] !== '1' ? 'selected' : '' ?>>Off — one user may create, approve and post</option>
+                                <option value="1" <?= $settings['require_sod'] === '1' ? 'selected' : '' ?>>On — approver must differ from the preparer</option>
+                            </select>
+                            <span class="fw-finance__help-text">Recommended when more than one finance user exists</span>
                         </div>
 
                         <div style="height: 32px;"></div>

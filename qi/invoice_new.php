@@ -31,7 +31,14 @@ if ($editInvoiceId) {
 
     $editMode = true;
 
-    $stmt = $DB->prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
+    // tax_code (STD/ZERO/EXEMPT) rides along so edit-reload can restore the
+    // exact classification — matching by rate alone collapses EXEMPT into
+    // ZERO (both 0%).
+    $stmt = $DB->prepare("
+        SELECT il.*, tc.code AS tax_code
+          FROM invoice_lines il
+          LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = il.tax_code_id
+         WHERE il.invoice_id = ? ORDER BY il.sort_order");
     $stmt->execute([$editInvoiceId]);
     $editLineItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -385,6 +392,11 @@ $docSymbol = Currencies::symbol($docCurrency);
                     const unit_price = priceInput ? parseFloat(priceInput.value) || 0 : 0;
                     const discountLine = discountInput ? parseFloat(discountInput.value) || 0 : 0;
                     const tax_rate = taxSelect ? parseFloat(taxSelect.value) || 0 : 0;
+                    // The tax CODE disambiguates the two 0% options (zero-rated
+                    // vs exempt) — rate alone stored every exempt line as
+                    // zero-rated, misstating VAT201 Box 2/3.
+                    const tax_code = taxSelect
+                        ? (taxSelect.selectedOptions[0]?.dataset?.taxCode || 'STD') : 'STD';
                     const inventory_item_id = itemSelect && itemSelect.value ? itemSelect.value : null;
                     const line_total = quantity * unit_price;
 
@@ -395,6 +407,11 @@ $docSymbol = Currencies::symbol($docCurrency);
                         unit_price: unit_price,
                         discount: discountLine,
                         tax_rate: tax_rate,
+                        tax_code: tax_code,
+                        // Round-trip the per-line revenue account on edits
+                        // (edit deletes + reinserts lines; without this any
+                        // custom GL account reset to the default sales account)
+                        gl_account_id: lineDiv.dataset.glAccountId || null,
                         line_total: line_total
                     });
                 });
@@ -472,13 +489,35 @@ $docSymbol = Currencies::symbol($docCurrency);
                     if (priceInput)   priceInput.value    = item.unit_price || 0;
                     if (discountInput) discountInput.value = item.discount || 0;
                     if (taxSelect) {
-                        var rate = parseFloat(item.tax_rate || 15).toFixed(2);
-                        for (var i = 0; i < taxSelect.options.length; i++) {
-                            if (parseFloat(taxSelect.options[i].value).toFixed(2) === rate) {
-                                taxSelect.selectedIndex = i;
-                                break;
+                        // Prefer the stored tax CODE (STD/ZERO/EXEMPT) — rate
+                        // matching alone picks the first 0% option and shows
+                        // exempt lines as zero-rated.
+                        var matched = false;
+                        if (item.tax_code) {
+                            for (var i = 0; i < taxSelect.options.length; i++) {
+                                if ((taxSelect.options[i].dataset.taxCode || '') === item.tax_code) {
+                                    taxSelect.selectedIndex = i;
+                                    matched = true;
+                                    break;
+                                }
                             }
                         }
+                        if (!matched) {
+                            var rate = parseFloat(item.tax_rate || 15).toFixed(2);
+                            for (var i = 0; i < taxSelect.options.length; i++) {
+                                if (parseFloat(taxSelect.options[i].value).toFixed(2) === rate) {
+                                    taxSelect.selectedIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                        var hiddenCode = lastLine.querySelector('.line-tax-code');
+                        if (hiddenCode) hiddenCode.value = taxSelect.selectedOptions[0]?.dataset?.taxCode || 'STD';
+                    }
+                    // Stash the per-line revenue account for the submit
+                    // collector to round-trip.
+                    if (item.gl_account_id) {
+                        lastLine.dataset.glAccountId = item.gl_account_id;
                     }
                     if (itemSelect && item.inventory_item_id) {
                         itemSelect.value = item.inventory_item_id;

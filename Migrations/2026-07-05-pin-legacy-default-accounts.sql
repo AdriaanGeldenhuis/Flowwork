@@ -16,8 +16,9 @@
 -- (readers would look at 2110/2120 while history sits on 2120/2130).
 --
 -- FIX: for each affected company — one that (a) has NO explicit, non-empty
--- setting for the key and (b) HAS posted, pipeline-generated journal lines on
--- the old fallback code — pin an explicit setting to the old code's account,
+-- setting for the key and (b) HAS pipeline-generated journal lines on the old
+-- fallback code (ANY status: the pre-2026-04 engines never set journal
+-- status, so all legacy history sits in 'draft') — pin an explicit setting,
 -- preserving their current, internally consistent behaviour. Companies with
 -- no such history (new books, or configured companies) are untouched and get
 -- the corrected defaults.
@@ -46,7 +47,7 @@ WHERE s.setting_key = 'finance_vat_output_account_id'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = s.company_id AND je.status = 'posted'
+      WHERE je.company_id = s.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
         AND jl.account_code = '2120' AND jl.credit > 0
   );
@@ -62,7 +63,7 @@ WHERE a.account_code = '2120'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = a.company_id AND je.status = 'posted'
+      WHERE je.company_id = a.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
         AND jl.account_code = '2120' AND jl.credit > 0
   );
@@ -76,7 +77,7 @@ WHERE s.setting_key = 'finance_vat_input_account_id'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = s.company_id AND je.status = 'posted'
+      WHERE je.company_id = s.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
         AND jl.account_code = '2130' AND jl.debit > 0
   );
@@ -92,7 +93,7 @@ WHERE a.account_code = '2130'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = a.company_id AND je.status = 'posted'
+      WHERE je.company_id = a.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
         AND jl.account_code = '2130' AND jl.debit > 0
   );
@@ -106,9 +107,10 @@ WHERE s.setting_key = 'finance_ar_account_id'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = s.company_id AND je.status = 'posted'
+      WHERE je.company_id = s.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
-        AND jl.account_code = '1200'
+        AND je.ref_type IN ('invoice', 'ar_invoice')
+        AND jl.account_code = '1200' AND jl.debit > 0
   );
 
 INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
@@ -122,9 +124,10 @@ WHERE a.account_code = '1200'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = a.company_id AND je.status = 'posted'
+      WHERE je.company_id = a.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
-        AND jl.account_code = '1200'
+        AND je.ref_type IN ('invoice', 'ar_invoice')
+        AND jl.account_code = '1200' AND jl.debit > 0
   );
 
 -- ---------- finance_ap_account_id -> legacy code 2110 ----------
@@ -138,7 +141,7 @@ WHERE s.setting_key = 'finance_ap_account_id'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = s.company_id AND je.status = 'posted'
+      WHERE je.company_id = s.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
         AND je.ref_type IN ('ap_bill', 'ap_payment', 'vendor_credit')
         AND jl.account_code = '2110'
@@ -155,7 +158,7 @@ WHERE a.account_code = '2110'
   AND EXISTS (
       SELECT 1 FROM journal_entries je
       JOIN journal_lines jl ON jl.journal_id = je.id
-      WHERE je.company_id = a.company_id AND je.status = 'posted'
+      WHERE je.company_id = a.company_id
         AND (je.module IS NULL OR je.module <> 'manual')
         AND je.ref_type IN ('ap_bill', 'ap_payment', 'vendor_credit')
         AND jl.account_code = '2110'

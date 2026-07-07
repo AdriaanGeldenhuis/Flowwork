@@ -143,6 +143,23 @@ try {
             json_error('Match #' . $rowNo . ': PO/GRN/Bill lines belong to different suppliers');
         }
 
+        // Ownership checks: every referenced line must belong to this
+        // company (the ids arrive from the client and were previously
+        // trusted verbatim — a cross-company reference was accepted).
+        $ownershipChecks = [
+            [$poLineId,  "SELECT 1 FROM purchase_order_lines pol JOIN purchase_orders po ON po.id = pol.po_id WHERE pol.id = ? AND po.company_id = ?"],
+            [$grnLineId, "SELECT 1 FROM grn_lines gl JOIN goods_received_notes grn ON grn.id = gl.grn_id JOIN purchase_orders po ON po.id = grn.po_id WHERE gl.id = ? AND po.company_id = ?"],
+            [$billLineId,"SELECT 1 FROM ap_bill_lines bl JOIN ap_bills b ON b.id = bl.bill_id WHERE bl.id = ? AND b.company_id = ?"],
+        ];
+        foreach ($ownershipChecks as [$id, $sql]) {
+            if ($id === null) continue;
+            $chk = $DB->prepare($sql);
+            $chk->execute([$id, $companyId]);
+            if (!$chk->fetchColumn()) {
+                throw new Exception('Referenced line does not belong to this company');
+            }
+        }
+
         // Insert the match record
         $stmt->execute([
             $companyId,
@@ -152,8 +169,9 @@ try {
             $qty,
             $userId
         ]);
-        // Consume quantity for subsequent rows in this batch
-        foreach ($checks as $kind => [, $lineId, ]) {
+        // Consume quantity for subsequent rows in this batch (keys must match
+        // the availability read above: $usedQty['po'|'grn'|'bill'][line id])
+        foreach (['po' => $poLineId, 'grn' => $grnLineId, 'bill' => $billLineId] as $kind => $lineId) {
             if ($lineId !== null) {
                 $usedQty[$kind][$lineId] = ($usedQty[$kind][$lineId] ?? 0.0) + $qty;
             }
@@ -167,5 +185,6 @@ try {
         $DB->rollBack();
     }
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'Failed to apply matches: ' . $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to apply matches' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

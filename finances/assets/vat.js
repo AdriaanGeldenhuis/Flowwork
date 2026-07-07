@@ -100,10 +100,15 @@
               <td class="fw-finance__vat201-amount">${formatCurrency(data.output_exempt_base_cents)}</td>
               <td class="fw-finance__vat201-amount">R 0.00</td>
             </tr>
-            <tr class="fw-finance__vat201-total">
-              <td><strong>Total Output Tax</strong></td>
+            <tr>
+              <td>4. Output tax adjustments (change in use)</td>
               <td></td>
-              <td class="fw-finance__vat201-amount"><strong>${formatCurrency(data.total_output_vat_cents)}</strong></td>
+              <td class="fw-finance__vat201-amount">${formatCurrency(data.change_in_use_output_cents || 0)}</td>
+            </tr>
+            <tr class="fw-finance__vat201-total">
+              <td><strong>Total Output Tax (Box 5)</strong></td>
+              <td></td>
+              <td class="fw-finance__vat201-amount"><strong>${formatCurrency(data.box5_total_output_cents != null ? data.box5_total_output_cents : data.total_output_vat_cents)}</strong></td>
             </tr>
           </table>
         </div>
@@ -112,27 +117,31 @@
           <h3>Input Tax (Purchases)</h3>
           <table class="fw-finance__vat201-table">
             <tr>
-              <td>4. Capital goods (fixed assets)</td>
+              <td>6. Input tax adjustments (change in use)</td>
+              <td class="fw-finance__vat201-amount">${formatCurrency(data.change_in_use_input_cents || 0)}</td>
+            </tr>
+            <tr>
+              <td>7. Capital goods (fixed assets)</td>
               <td class="fw-finance__vat201-amount">${formatCurrency(data.input_capital_cents)}</td>
             </tr>
             <tr>
-              <td>5. Other goods and services</td>
+              <td>8. Other goods and services</td>
               <td class="fw-finance__vat201-amount">${formatCurrency(data.input_other_cents)}</td>
             </tr>
             <tr class="fw-finance__vat201-total">
-              <td><strong>Total Input Tax</strong></td>
-              <td class="fw-finance__vat201-amount"><strong>${formatCurrency(data.total_input_vat_cents)}</strong></td>
+              <td><strong>Total Input Tax (Box 9)</strong></td>
+              <td class="fw-finance__vat201-amount"><strong>${formatCurrency(data.box9_total_input_cents != null ? data.box9_total_input_cents : data.total_input_vat_cents)}</strong></td>
             </tr>
           </table>
         </div>
 
         <div class="fw-finance__vat201-section">
-          <h3>Net VAT</h3>
+          <h3>Net VAT (Box 10)</h3>
           <table class="fw-finance__vat201-table">
             <tr class="fw-finance__vat201-net">
-              <td><strong>${data.net_vat_cents >= 0 ? 'VAT Payable to SARS' : 'VAT Refundable from SARS'}</strong></td>
+              <td><strong>${(data.box10_net_cents != null ? data.box10_net_cents : data.net_vat_cents) >= 0 ? 'VAT Payable to SARS' : 'VAT Refundable from SARS'}</strong></td>
               <td class="fw-finance__vat201-amount fw-finance__vat201-amount--net">
-                <strong>${formatCurrency(Math.abs(data.net_vat_cents))}</strong>
+                <strong>${formatCurrency(Math.abs(data.box10_net_cents != null ? data.box10_net_cents : data.net_vat_cents))}</strong>
               </td>
             </tr>
           </table>
@@ -219,12 +228,18 @@
     csv += `Standard rated supplies (15%),${data.output_standard_base_cents/100},${data.output_standard_vat_cents/100}\n`;
     csv += `Zero rated supplies (0%),${data.output_zero_base_cents/100},0.00\n`;
     csv += `Exempt supplies,${data.output_exempt_base_cents/100},0.00\n`;
-    csv += `Total Output Tax,,${data.total_output_vat_cents/100}\n\n`;
+    csv += `Output tax adjustments (Box 4),,${(data.change_in_use_output_cents || 0)/100}\n`;
+    const box5 = data.box5_total_output_cents != null ? data.box5_total_output_cents : data.total_output_vat_cents;
+    csv += `Total Output Tax (Box 5),,${box5/100}\n\n`;
     csv += 'INPUT TAX\n';
-    csv += `Capital goods,${data.input_capital_cents/100}\n`;
-    csv += `Other goods and services,${data.input_other_cents/100}\n`;
-    csv += `Total Input Tax,,${data.total_input_vat_cents/100}\n\n`;
-    csv += `NET VAT ${data.net_vat_cents >= 0 ? 'PAYABLE' : 'REFUNDABLE'},,${Math.abs(data.net_vat_cents)/100}\n`;
+    csv += `Input tax adjustments (Box 6),${(data.change_in_use_input_cents || 0)/100}\n`;
+    csv += `Capital goods (Box 7),${data.input_capital_cents/100}\n`;
+    csv += `Other goods and services (Box 8),${data.input_other_cents/100}\n`;
+    const box9 = data.box9_total_input_cents != null ? data.box9_total_input_cents : data.total_input_vat_cents;
+    csv += `Total Input Tax (Box 9),,${box9/100}\n\n`;
+    const box10 = data.box10_net_cents != null ? data.box10_net_cents : data.net_vat_cents;
+    csv += `NET VAT ${box10 >= 0 ? 'PAYABLE' : 'REFUNDABLE'} (Box 10),,${Math.abs(box10)/100}\n`;
+    if (data.basis) { csv += `\nBasis:,${data.basis === 'payments' ? 'Payments (cash)' : 'Invoice (accrual)'}\n`; }
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);

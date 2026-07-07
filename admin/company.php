@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../includes/business_types.php';
+require_once __DIR__ . '/../includes/company_validation.php';
 
 $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
@@ -22,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $businessType = trim($_POST['business_type'] ?? '');
         $vatNumber = trim($_POST['vat_number'] ?? '');
         $regNumber = trim($_POST['reg_number'] ?? '');
+        $taxReference = trim($_POST['tax_reference'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $website = trim($_POST['website'] ?? '');
@@ -36,21 +38,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             throw new Exception('Company name is required');
         }
 
-        // SARS VAT registration numbers are 10 digits starting with 4.
-        // Optional field — only vendors registered for VAT have one.
-        if ($vatNumber !== '') {
-            $vatNumber = preg_replace('/\s+/', '', $vatNumber);
-            if (!preg_match('/^4\d{9}$/', $vatNumber)) {
-                throw new Exception('VAT number must be 10 digits starting with 4 (e.g. 4123456789), or left blank');
-            }
+        $profileErrors = validate_company_profile([
+            'vat_number'    => $vatNumber,
+            'tax_reference' => $taxReference,
+        ]);
+        if ($profileErrors) {
+            throw new Exception(implode('. ', $profileErrors));
         }
-        
+
         $stmt = $DB->prepare("
-            UPDATE companies 
-            SET name = ?, 
+            UPDATE companies
+            SET name = ?,
                 business_type = ?,
                 vat_number = ?,
                 reg_number = ?,
+                tax_reference = ?,
                 phone = ?,
                 email = ?,
                 website = ?,
@@ -65,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         ");
         
         $stmt->execute([
-            $name, $businessType, $vatNumber, $regNumber, $phone, $email, $website,
+            $name, $businessType, $vatNumber, $regNumber, $taxReference, $phone, $email, $website,
             $addressLine1, $addressLine2, $city, $region, $postal, $country,
             $companyId
         ]);
@@ -142,16 +144,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <div class="fw-admin__form-group">
                             <label class="fw-admin__label">VAT Number</label>
                             <input type="text" name="vat_number" class="fw-admin__input" 
-                                   value="<?= htmlspecialchars($company['vat_number'] ?? '') ?>"
-                                   pattern="4[0-9]{9}" maxlength="10" inputmode="numeric"
-                                   title="10 digits starting with 4 (leave blank if not VAT registered)"
-                                   placeholder="4XXXXXXXXX">
+                                   value="<?= htmlspecialchars($company['vat_number'] ?? '') ?>">
                         </div>
 
                         <div class="fw-admin__form-group">
                             <label class="fw-admin__label">Registration Number</label>
-                            <input type="text" name="reg_number" class="fw-admin__input" 
+                            <input type="text" name="reg_number" class="fw-admin__input"
                                    value="<?= htmlspecialchars($company['reg_number'] ?? '') ?>">
+                        </div>
+
+                        <div class="fw-admin__form-group">
+                            <label class="fw-admin__label">SARS Income Tax Reference</label>
+                            <input type="text" name="tax_reference" class="fw-admin__input"
+                                   value="<?= htmlspecialchars($company['tax_reference'] ?? '') ?>"
+                                   placeholder="10 digits">
                         </div>
                     </div>
                 </div>

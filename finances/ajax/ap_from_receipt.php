@@ -1,7 +1,14 @@
 <?php
 
 require_once __DIR__ . '/../lib/http.php';
-require_method('GET');
+// Accepts GET (query param) and POST (JSON body) — the previous
+// require_method('GET') made the POST branch below unreachable dead code.
+if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'POST'], true)) {
+    http_response_code(405);
+    header('Content-Type: application/json');
+    echo json_encode(['ok' => false, 'error' => 'Method Not Allowed']);
+    exit;
+}
 // /finances/ajax/ap_from_receipt.php
 //
 // Build a draft AP bill from an uploaded receipt using OCR data.

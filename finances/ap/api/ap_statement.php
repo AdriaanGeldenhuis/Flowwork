@@ -38,11 +38,10 @@ try {
     $openingDebit  = 0.0; // bills
     $openingCredit = 0.0; // payments + vendor credits
     if ($startDate) {
-        // Sum of bills. Only GL-posted payables count ('posted'/'paid');
-        // draft/review/approved were never posted and cancelled/blocked are
-        // excluded (rule matches ap_aging.php and Tieout::apSubledger intent).
+        // Sum of bills
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM ap_bills WHERE company_id = ? AND supplier_id = ? AND issue_date < ? AND status IN ('posted','paid')"
+            "SELECT SUM(total) FROM ap_bills WHERE company_id = ? AND supplier_id = ? AND issue_date < ?
+              AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $supplierId, $startDate]);
         $openingDebit = floatval($stmt->fetchColumn());
@@ -54,13 +53,9 @@ try {
         );
         $stmt->execute([$companyId, $supplierId, $startDate]);
         $openingCredit += floatval($stmt->fetchColumn());
-        // Sum of vendor credits: only the ALLOCATED portion reduces the
-        // supplier statement (mirrors bill balance = total - payments -
-        // allocated credits), so unapplied remainders don't distort it.
+        // Sum of vendor credits
         $stmt = $DB->prepare(
-            "SELECT SUM(vca.amount) FROM vendor_credit_allocations vca
-             JOIN vendor_credits vc ON vc.id = vca.credit_id
-             WHERE vc.company_id = ? AND vc.supplier_id = ? AND vc.issue_date < ? AND vc.status != 'cancelled'"
+            "SELECT SUM(total) FROM vendor_credits WHERE company_id = ? AND supplier_id = ? AND issue_date < ? AND status != 'cancelled'"
         );
         $stmt->execute([$companyId, $supplierId, $startDate]);
         $openingCredit += floatval($stmt->fetchColumn());
@@ -77,11 +72,7 @@ try {
         $dateSql .= " AND t_date <= ?";
         $params[] = $endDate;
     }
-    // Build union of bills, payments, vendor credits.
-    // Bills: only GL-posted payables ('posted'/'paid') appear on the
-    // statement — same status rule as the opening balance and ap_aging.php.
-    // Vendor credits: only the ALLOCATED portion of each credit is shown so
-    // the closing balance equals bills - payments - allocated credits.
+    // Build union of bills, payments, vendor credits
     $sql = "
         SELECT t_date, t_type, ref, description, debit, credit FROM (
             -- Bills (increase payable)
@@ -92,7 +83,8 @@ try {
                    b.total AS debit,
                    0 AS credit
             FROM ap_bills b
-            WHERE b.company_id = ? AND b.supplier_id = ? AND b.status IN ('posted','paid')
+            WHERE b.company_id = ? AND b.supplier_id = ?
+              AND b.status NOT IN ('draft','cancelled')
             UNION ALL
             -- Payments (reduce payable)
             SELECT p.payment_date AS t_date,
@@ -105,17 +97,15 @@ try {
             JOIN ap_payments p ON apa.ap_payment_id = p.id
             WHERE p.company_id = ? AND p.supplier_id = ?
             UNION ALL
-            -- Vendor credits (reduce payable by their allocated amount only)
+            -- Vendor credits (reduce payable)
             SELECT vc.issue_date AS t_date,
                    'Vendor Credit' AS t_type,
                    vc.credit_number AS ref,
                    'Vendor Credit' AS description,
                    0 AS debit,
-                   SUM(vca.amount) AS credit
+                   vc.total AS credit
             FROM vendor_credits vc
-            JOIN vendor_credit_allocations vca ON vca.credit_id = vc.id
             WHERE vc.company_id = ? AND vc.supplier_id = ? AND vc.status != 'cancelled'
-            GROUP BY vc.id, vc.issue_date, vc.credit_number
         ) AS all_txn
         WHERE 1=1 " . $dateSql . "
         ORDER BY t_date, ref";
@@ -152,5 +142,6 @@ try {
     ]);
 } catch (Exception $e) {
     error_log('AP statement error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to build statement' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

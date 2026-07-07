@@ -15,12 +15,9 @@ if (!$companyId) {
 }
 
 try {
-    // Build subquery to compute remaining balance per bill.
-    // Rule: only bills posted to the GL are real payables — status
-    // 'posted'/'paid' (never-posted draft/review/approved and
-    // cancelled/blocked are excluded, matching Tieout::apSubledger's
-    // exclusion of cancelled/void/blocked from the AP-to-GL tie-out).
-    $sql = "SELECT
+    // Build subquery to compute remaining balance per bill
+    // We exclude bills with no outstanding balance or cancelled status
+    $sql = "SELECT 
                 b.id,
                 b.supplier_id,
                 b.due_date,
@@ -36,7 +33,7 @@ try {
                 FROM vendor_credit_allocations
                 GROUP BY bill_id
             ) vc ON vc.bill_id = b.id
-            WHERE b.company_id = ? AND b.status IN ('posted','paid')
+            WHERE b.company_id = ? AND b.status IN ('posted','part-paid','paid')
             HAVING balance > 0";
     $stmt = $DB->prepare($sql);
     $stmt->execute([$companyId]);

@@ -25,28 +25,30 @@ class AsOf
     /** Trial balance lines: account_id, code, name, debit, credit, balance (debit-positive) */
     public function trialBalance(string $asOf): array
     {
-        // Aggregate journal activity in a company-scoped subquery: joining
-        // journal_lines on account_code alone pulls in other companies' lines
-        // (journal_lines carries no company_id), and filtering after a LEFT
-        // JOIN re-admits them via the entry_date IS NULL branch.
+        // journal_lines has no company_id column: lines must be reached
+        // THROUGH their (company-scoped) journal_entries row. Joining lines on
+        // account_code alone pulls in other tenants' postings, because every
+        // company shares the same seeded account codes.
         $sql = "
         SELECT a.account_id, a.account_code, a.account_name,
-               COALESCE(t.total_debit, 0) AS total_debit,
+               COALESCE(t.total_debit, 0)  AS total_debit,
                COALESCE(t.total_credit, 0) AS total_credit
         FROM gl_accounts a
         LEFT JOIN (
             SELECT jl.account_code,
-                   SUM(jl.debit) AS total_debit,
+                   SUM(jl.debit)  AS total_debit,
                    SUM(jl.credit) AS total_credit
             FROM journal_lines jl
             JOIN journal_entries je ON je.id = jl.journal_id
-            WHERE je.company_id = :cid2 AND je.status = 'posted' AND je.entry_date <= :asof
+            WHERE je.company_id = :jcid
+              AND je.status = 'posted'
+              AND je.entry_date <= :asof
             GROUP BY jl.account_code
         ) t ON t.account_code = a.account_code
         WHERE a.company_id = :cid
         ORDER BY a.account_code";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([':cid'=>$this->companyId, ':cid2'=>$this->companyId, ':asof'=>$asOf]);
+        $stmt->execute([':cid'=>$this->companyId, ':jcid'=>$this->companyId, ':asof'=>$asOf]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $out = [];

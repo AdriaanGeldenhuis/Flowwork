@@ -3,13 +3,12 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../permissions.php';
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../lib/http.php';
 require_once __DIR__ . '/../lib/AccountsMap.php';
 require_once __DIR__ . '/../lib/VatCalculator.php';
 
 require_method('GET');
-
-requireRoles(['admin', 'bookkeeper', 'viewer']);
 
 header('Content-Type: application/json');
 
@@ -35,29 +34,20 @@ try {
 
     // Resolve VAT account codes via AccountsMap
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
+    $vatOutputCode = $accounts->code('finance_vat_output_account_id');
+    $vatInputCode  = $accounts->code('finance_vat_input_account_id');
 
     if (!$vatOutputCode || !$vatInputCode) {
         throw new Exception('Please configure VAT accounts in Finance Settings');
     }
 
-    // Calculate VAT breakdown using centralised helper
-    $vatData = VatCalculator::calculate(
+    // Full basis-aware VAT201 box set via the centralised helper
+    $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        VatCalculator::periodBasis($DB, (int)$companyId, $period)
     );
-
-    // Filed returns are immutable: serve the figures snapshotted into
-    // gl_vat_periods at filing time instead of the live recomputation, so a
-    // filed return does not silently change when journals move. Open,
-    // prepared and adjusted periods keep the live computation above.
-    if ($period['status'] === 'filed' && $period['output_vat_cents'] !== null) {
-        $vatData['total_output_vat_cents'] = (int)$period['output_vat_cents'];
-        $vatData['total_input_vat_cents']  = (int)$period['input_vat_cents'];
-        $vatData['net_vat_cents']          = (int)$period['net_vat_cents'];
-    }
 
     // Fetch company details for VAT201 header
     $stmt = $DB->prepare("SELECT name, vat_number, reg_number FROM companies WHERE id = ?");

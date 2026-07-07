@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../permissions.php';
-requireRoles(['viewer', 'bookkeeper', 'admin']);
+requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../lib/Csrf.php';
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
@@ -23,26 +23,22 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Get AR stats.
-// Conventions (mirrors finances/index.php): a status of 'overdue' is never
-// written, so overdue is DERIVED from due_date < CURDATE() over open invoices
-// (deleted_at IS NULL, status not in the closed/never-posted family,
-// balance_due > 0). Outstanding is in ZAR: balance_due × exchange_rate.
+// Get AR stats
+// Drafts are not receivables and cancelled/written-off/uncollectible
+// invoices are not collectable — excluding them keeps this KPI tied to the
+// AR control account in the GL.
 $stmt = $DB->prepare("
-    SELECT
+    SELECT 
         COUNT(*) as total_invoices,
-        COALESCE(SUM(status = 'paid'), 0) as paid_invoices,
-        COALESCE(SUM(
-            status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
-            AND balance_due > 0
-            AND due_date < CURDATE()
-        ), 0) as overdue_invoices,
-        COALESCE(SUM(CASE
-            WHEN status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
-                 AND balance_due > 0
-            THEN balance_due * exchange_rate END), 0) as total_outstanding
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_invoices,
+        SUM(CASE WHEN status IN ('sent','viewed','part-paid','overdue')
+                  AND balance_due > 0 AND due_date < CURDATE() THEN 1 ELSE 0 END) as overdue_invoices,
+        SUM(CASE WHEN status IN ('sent','viewed','part-paid','overdue')
+                 THEN balance_due * COALESCE(NULLIF(exchange_rate, 0), 1) ELSE 0 END) as total_outstanding
     FROM invoices
-    WHERE company_id = ? AND deleted_at IS NULL
+    WHERE company_id = ?
+      AND status NOT IN ('draft','cancelled')
+      AND deleted_at IS NULL
 ");
 $stmt->execute([$companyId]);
 $stats = $stmt->fetch();
@@ -181,22 +177,22 @@ $stats = $stmt->fetch();
                     <!-- Customer Statements Tab -->
                     <div class="fw-finance__tab-panel" id="statementsPanel">
                         <div class="fw-finance__alert fw-finance__alert--info">
-                            📄 <strong>Customer Statements:</strong> Generate and send account statements to customers.
+                            📄 <strong>Customer Statements:</strong> pick a customer and date range, then print or save the statement.
                         </div>
-                        <div class="fw-finance__empty-state">
-                            Statement functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ar/statement.php</small>
+                        <div class="fw-finance__form-group">
+                            <a class="fw-finance__btn fw-finance__btn--primary" href="/finances/ar/statement.php">
+                                Open Statement Generator
+                            </a>
                         </div>
                     </div>
 
                     <!-- Payment Reminders Tab -->
                     <div class="fw-finance__tab-panel" id="remindersPanel">
                         <div class="fw-finance__alert fw-finance__alert--info">
-                            🔔 <strong>Payment Reminders:</strong> Send automated payment reminders to customers with overdue invoices.
+                            🔔 <strong>Payment Reminders:</strong> overdue invoices ready for follow-up.
                         </div>
-                        <div class="fw-finance__empty-state">
-                            Reminder functionality will be loaded here.
-                            <br><small>This will integrate with /finances/ar/reminders.php</small>
+                        <div class="fw-finance__report-content" id="remindersList">
+                            <div class="fw-finance__empty-state">Loading overdue invoices…</div>
                         </div>
                     </div>
 

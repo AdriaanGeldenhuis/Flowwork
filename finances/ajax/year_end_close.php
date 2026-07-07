@@ -211,6 +211,31 @@ try {
 
     // --- Execute: Create and post the closing journal ---
 
+    // Require prior years to be closed first: if P&L activity exists before
+    // this fiscal year and no year-end close journal covers it, closing this
+    // year would strand that income outside retained earnings.
+    $stmt = $DB->prepare(
+        "SELECT COUNT(*)
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.journal_id
+           JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = je.company_id
+          WHERE je.company_id = ? AND je.status = 'posted'
+            AND je.entry_date < ?
+            AND COALESCE(je.module,'') <> 'year_end'
+            AND ga.account_type IN ('revenue','expense')
+            AND NOT EXISTS (
+                SELECT 1 FROM journal_entries pc
+                 WHERE pc.company_id = je.company_id AND pc.module = 'year_end'
+                   AND pc.status = 'posted' AND pc.entry_date >= je.entry_date
+                   AND pc.entry_date < ?
+            )"
+    );
+    $stmt->execute([$companyId, $fyStart, $fyStart]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        echo json_encode(['ok' => false, 'error' => 'Prior fiscal year(s) contain unclosed income/expense activity — close earlier years first']);
+        exit;
+    }
+
     // Verify journal balances before posting
     $verifyDebit = 0;
     $verifyCredit = 0;
@@ -252,6 +277,15 @@ try {
         $stmt->execute([$journalId, $line['account_code'], $lineDesc, $debit, $credit]);
     }
 
+    // Lock the closed fiscal year (through fy_end) so nothing can post into
+    // it after the close — a year-end close that leaves the year open is a
+    // stale close waiting to happen.
+    $stmt = $DB->prepare(
+        "INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at, is_active)
+         VALUES (?, ?, ?, ?, NOW(), 1)"
+    );
+    $stmt->execute([$companyId, $fyEnd, 'year_end_close_' . substr($fyEnd, 0, 4), $userId]);
+
     // Audit log
     $stmt = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
@@ -283,5 +317,6 @@ try {
         $DB->rollBack();
     }
     error_log('Year-end close error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'Failed to process year-end closing: ' . $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Failed to process year-end closing' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

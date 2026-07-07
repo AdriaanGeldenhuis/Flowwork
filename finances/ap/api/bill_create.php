@@ -62,13 +62,19 @@ $notes       = $header['notes'] ?? null;
 if (!is_array($lines) || count($lines) === 0) {
     json_error('Bill must have at least one line');
 }
+// Default VAT rate from the company's STD tax code — never a hardcoded 15.
+// The same default is applied when the lines are inserted below, so the
+// recomputed totals always match the stored lines.
+require_once __DIR__ . '/../../lib/TaxCodes.php';
+$taxCodes = new TaxCodes($DB, (int)$companyId);
+$defaultRate = $taxCodes->standardRatePercent();
 $computedSubtotal = 0.0;
 $computedTax      = 0.0;
 foreach ($lines as $line) {
     $qty      = isset($line['qty']) ? (float)$line['qty'] : 1.0;
     $price    = isset($line['unit_price']) ? (float)$line['unit_price'] : 0.0;
     $discount = isset($line['discount']) ? (float)$line['discount'] : 0.0;
-    $taxRate  = isset($line['tax_rate']) ? (float)$line['tax_rate'] : 15.0;
+    $taxRate  = isset($line['tax_rate']) && $line['tax_rate'] !== '' ? (float)$line['tax_rate'] : $defaultRate;
     $net      = ($qty * $price) - $discount;
     $computedSubtotal += $net;
     $computedTax      += ($taxRate > 0) ? $net * ($taxRate / 100.0) : 0.0;
@@ -141,7 +147,7 @@ try {
         $userId
     ]);
     $billId = (int)$DB->lastInsertId();
-    // Insert bill lines
+    // Insert bill lines ($defaultRate resolved above, before the totals check)
     $sort = 0;
     foreach ($lines as $line) {
         $desc       = trim($line['description'] ?? '');
@@ -149,7 +155,7 @@ try {
         $unit       = $line['unit'] ?? 'ea';
         $price      = isset($line['unit_price']) ? (float)$line['unit_price'] : 0.0;
         $discount   = isset($line['discount']) ? (float)$line['discount'] : 0.0;
-        $taxRate    = isset($line['tax_rate']) ? (float)$line['tax_rate'] : 15.0;
+        $taxRate    = isset($line['tax_rate']) && $line['tax_rate'] !== '' ? (float)$line['tax_rate'] : $defaultRate;
         $lineTotal  = $qty * $price - $discount;
         $glAccount  = isset($line['gl_account_id']) && $line['gl_account_id'] ? (int)$line['gl_account_id'] : null;
         $inventoryItem = isset($line['inventory_item_id']) && $line['inventory_item_id'] !== '' ? (int)$line['inventory_item_id'] : null;

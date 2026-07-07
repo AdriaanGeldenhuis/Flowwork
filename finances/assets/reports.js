@@ -116,9 +116,12 @@
     }
 
     try {
-      const projResult = await FinanceAPI.request('/projects/api.php?action=list');
+      // project.list.php responds {ok, data:{projects:[...], pagination}}
+      // (the old /projects/api.php?action=list path never existed — the
+      // project filter silently stayed empty).
+      const projResult = await FinanceAPI.request('/projects/api/project.list.php?per=100');
       if (projResult.ok) {
-        projects = projResult.data || [];
+        projects = (projResult.data && projResult.data.projects) || [];
         populateProjectFilter();
       }
     } catch (e) {

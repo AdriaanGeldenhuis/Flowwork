@@ -76,6 +76,18 @@ try {
         echo json_encode(['ignored' => true]);
         exit;
     }
+    // Idempotency: Yoco retries deliveries (and a prior bug made every
+    // delivery return 500 after committing, so retries were guaranteed).
+    // The same checkout reference must never create a second payment.
+    if (!empty($yocoRef)) {
+        $stmt = $DB->prepare("SELECT id FROM payments WHERE company_id = ? AND method = 'yoco' AND reference = ? LIMIT 1");
+        $stmt->execute([$companyId, $yocoRef]);
+        if ($stmt->fetchColumn()) {
+            http_response_code(200);
+            echo json_encode(['ignored' => true, 'reason' => 'duplicate delivery']);
+            exit;
+        }
+    }
     // Begin payment transaction
     $DB->beginTransaction();
     $invoiceId = $invoice['id'];
@@ -94,12 +106,26 @@ try {
     $stmt->execute([$companyId]);
     $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
     $receivedBy = $userRow['id'] ?? 1;
-    // Insert payment
+    // Insert payment. The idempotency_key makes uq_payments_idem
+    // (company_id, idempotency_key) the DB-level backstop for CONCURRENT
+    // duplicate deliveries — the SELECT-based dedupe above only catches
+    // sequential retries.
     $stmt = $DB->prepare(
-        "INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by) " .
-        "VALUES (?, ?, ?, 'yoco', ?, ?, ?)"
+        "INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key) " .
+        "VALUES (?, ?, ?, 'yoco', ?, ?, ?, ?)"
     );
-    $stmt->execute([$companyId, $paymentDate, $balance, $yocoRef, json_encode($payload), $receivedBy]);
+    try {
+        $stmt->execute([$companyId, $paymentDate, $balance, $yocoRef, json_encode($payload), $receivedBy,
+            substr('yoco:' . $yocoRef, 0, 64)]);
+    } catch (PDOException $e) {
+        if (($e->errorInfo[1] ?? 0) == 1062 || $e->getCode() == '23000') {
+            $DB->rollBack();
+            http_response_code(200);
+            echo json_encode(['ignored' => true, 'reason' => 'duplicate delivery']);
+            exit;
+        }
+        throw $e;
+    }
     $paymentId = $DB->lastInsertId();
     // Allocate payment to invoice
     $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
@@ -113,15 +139,20 @@ try {
         "VALUES (?, ?, 'yoco_payment_received', 'invoice', ?, ?, ?, NOW())"
     );
     $stmt->execute([$companyId, $receivedBy, $invoiceId, json_encode(['payment_id' => $paymentId, 'yoco_ref' => $yocoRef]), $_SERVER['REMOTE_ADDR'] ?? null]);
-    $DB->commit();
-    // Post journal entry
-    try {
-        require_once __DIR__ . '/../services/JournalPoster.php';
-        $poster = new JournalPoster($DB, $companyId, $receivedBy);
-        $poster->postPayment((int)$paymentId);
-    } catch (Exception $e) {
-        error_log('Yoco webhook journal posting failed: ' . $e->getMessage());
+
+    // Post to the GL inside the same transaction. (The previous code
+    // required a non-existent path — ../services/JournalPoster.php resolves
+    // outside qi/ — so every webhook fatalled AFTER committing the payment:
+    // no journal, HTTP 500, and a Yoco retry that could duplicate it.)
+    require_once __DIR__ . '/../finances/lib/PostingService.php';
+    require_once __DIR__ . '/../qi/lib/InvoiceLifecycle.php';
+    if ($invoice['status'] === 'draft') {
+        InvoiceLifecycle::issueInvoice($DB, $companyId, $receivedBy, (int)$invoiceId);
     }
+    $posting = new PostingService($DB, $companyId, $receivedBy);
+    $posting->postCustomerPayment((int)$paymentId);
+
+    $DB->commit();
     http_response_code(200);
     echo json_encode(['ok' => true, 'invoice_id' => $invoiceId, 'payment_id' => $paymentId]);
 } catch (Exception $e) {

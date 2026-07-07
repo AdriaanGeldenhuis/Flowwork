@@ -46,18 +46,20 @@ try {
 
     // Resolve VAT account codes via AccountsMap
     $accounts = new AccountsMap($DB, $companyId);
-    $vatOutputCode = $accounts->get('finance_vat_output_account_id', '2110');
-    $vatInputCode  = $accounts->get('finance_vat_input_account_id', '2120');
+    $vatOutputCode = $accounts->code('finance_vat_output_account_id');
+    $vatInputCode  = $accounts->code('finance_vat_input_account_id');
 
     if (!$vatOutputCode || !$vatInputCode) {
         throw new Exception('Please configure VAT accounts in Finance Settings');
     }
 
-    // Calculate VAT breakdown using centralised helper
-    $vatData = VatCalculator::calculate(
+    // Full VAT201 box set via the single shared computation (includes
+    // Box 4/6 adjustments and the Box 5/9/10 arithmetic).
+    $vatData = VatCalculator::vat201Boxes(
         $DB, $companyId,
         $period['period_start'], $period['period_end'],
-        $vatOutputCode, $vatInputCode
+        $vatOutputCode, $vatInputCode,
+        VatCalculator::companyBasis($DB, (int)$companyId)
     );
 
     // Fetch company details for VAT201 header

@@ -31,13 +31,45 @@ function fmt($amount) {
     return $GLOBALS['qiPdfSymbol'] . "\u{00A0}" . number_format((float)$amount, 2);
 }
 
-// VAT summary label reflecting the document's effective tax rate.
-function qi_vat_label($doc) {
-    $base = (float)($doc['subtotal'] ?? 0) - (float)($doc['discount'] ?? 0);
-    $rate = $base > 0 ? ((float)($doc['tax'] ?? 0) / $base) * 100 : 0.0;
-    $rateStr = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
-    if ($rateStr === '' || $rateStr === '-0') { $rateStr = '0'; }
-    return 'VAT (' . $rateStr . '%)';
+// Per-line VAT rate label for the line-items table, e.g. "15%", "0%" or
+// "Exempt" (exempt supplies are identified by the joined gl_tax_codes.code).
+// Same logic as invoice_view.php so the printable page matches the app.
+function qi_line_vat_label(array $line): string {
+    if (strcasecmp((string)($line['tax_code'] ?? ''), 'EXEMPT') === 0) {
+        return 'Exempt';
+    }
+    $r = rtrim(rtrim(number_format((float)($line['tax_rate'] ?? 0), 2, '.', ''), '0'), '.');
+    if ($r === '' || $r === '-0') { $r = '0'; }
+    return $r . '%';
+}
+
+// SARS s20 rate-split summary: one bucket per distinct VAT treatment/rate
+// across the lines, computed per line in integer cents (same as invoice_view).
+function qi_vat_rate_split(array $lines): array {
+    $split = [];
+    foreach ($lines as $l) {
+        $netC = (int)round(((float)$l['quantity'] * (float)$l['unit_price'] - (float)($l['discount'] ?? 0)) * 100);
+        $rate = (float)($l['tax_rate'] ?? 0);
+        $vatC = (int)round($netC * $rate / 100);
+        $isExempt = strcasecmp((string)($l['tax_code'] ?? ''), 'EXEMPT') === 0;
+        if ($isExempt) {
+            $key   = 'EXEMPT';
+            $label = 'Exempt';
+        } elseif ($rate > 0) {
+            $rStr  = rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.');
+            $key   = 'STD:' . $rStr;
+            $label = 'Standard rated (' . $rStr . '%)';
+        } else {
+            $key   = 'ZERO';
+            $label = 'Zero-rated (0%)';
+        }
+        if (!isset($split[$key])) {
+            $split[$key] = ['label' => $label, 'net_cents' => 0, 'vat_cents' => 0];
+        }
+        $split[$key]['net_cents'] += $netC;
+        $split[$key]['vat_cents'] += $vatC;
+    }
+    return array_values($split);
 }
 
 try {
@@ -166,6 +198,28 @@ try {
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$doc) { throw new Exception('Invoice not found'); }
 
+        // SARS s20 gate: a VAT-registered company must not hand out a draft
+        // that fails the tax-invoice checks (it would circulate as a document
+        // that cannot legally be issued). Issued invoices always render —
+        // history must stay accessible regardless of later profile problems.
+        if ($doc['status'] === 'draft' && trim((string)($doc['vat_number'] ?? '')) !== '') {
+            require_once __DIR__ . '/../../finances/lib/TaxInvoiceValidator.php';
+            $validator = new TaxInvoiceValidator($DB, (int)$companyId);
+            $s20Errors = array_values(array_filter(
+                $validator->validate((int)$id),
+                static fn(array $i) => ($i['severity'] ?? '') === 'error'
+            ));
+            if ($s20Errors) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'ok' => false,
+                    'error' => 'This draft is not a valid SARS tax invoice and cannot be rendered. Fix the issues below, then try again.',
+                    'issues' => $s20Errors,
+                ]);
+                exit;
+            }
+        }
+
         $docType = $doc['qi_invoice_title'] ?? 'INVOICE';
         $docNumber = $doc['invoice_number'];
         $docTitle = 'Invoice #: ' . $docNumber;
@@ -174,7 +228,16 @@ try {
             'Due Date' => date('d M Y', strtotime($doc['due_date'])),
         ];
 
-        $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
+        // Line items with the tax code joined so per-line VAT and the VAT
+        // summary can distinguish zero-rated from exempt supplies.
+        $stmt = $DB->prepare(
+            "SELECT il.item_description, il.quantity, il.unit_price, il.discount,
+                    il.tax_rate, il.line_total, tc.code AS tax_code
+               FROM invoice_lines il
+               LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = il.tax_code_id
+              WHERE il.invoice_id = ?
+              ORDER BY il.sort_order"
+        );
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -229,6 +292,12 @@ try {
     $showTax     = $brand['show']['tax'];
     $showReg     = $brand['show']['reg'];
     $showPayment = $brand['show']['payment'];
+
+    // s20 extras only apply to invoices (per-line VAT column, rate-split
+    // summary when the company is VAT-registered, VAT-in-Rand for FX docs).
+    $isInvoice       = ($type !== 'quote' && $type !== 'credit_note');
+    $isVatRegistered = trim((string)($doc['vat_number'] ?? '')) !== '';
+    $vatSplit        = ($isInvoice && $isVatRegistered) ? qi_vat_rate_split($lines) : [];
 
 } catch (Exception $e) {
     http_response_code(500);
@@ -501,8 +570,14 @@ try {
                 <tr>
                     <th>Description</th>
                     <th style="text-align:right;">Qty</th>
-                    <th style="text-align:right;">Unit Price</th>
-                    <th style="text-align:right;">Line Total</th>
+                    <?php if ($isInvoice): ?>
+                        <th style="text-align:right;">Unit Price (excl. VAT)</th>
+                        <th style="text-align:right;">VAT</th>
+                        <th style="text-align:right;">Line Total (incl. VAT)</th>
+                    <?php else: ?>
+                        <th style="text-align:right;">Unit Price</th>
+                        <th style="text-align:right;">Line Total</th>
+                    <?php endif; ?>
                 </tr>
             </thead>
             <tbody>
@@ -511,6 +586,9 @@ try {
                         <td><?= htmlspecialchars($li['item_description']) ?></td>
                         <td style="text-align:right;"><?= number_format((float)$li['quantity'], 2) ?></td>
                         <td style="text-align:right;"><?= fmt($li['unit_price']) ?></td>
+                        <?php if ($isInvoice): ?>
+                            <td style="text-align:right;"><?= htmlspecialchars(qi_line_vat_label($li)) ?></td>
+                        <?php endif; ?>
                         <td style="text-align:right;"><?= fmt($li['line_total']) ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -531,7 +609,7 @@ try {
                 </div>
             <?php endif; ?>
             <div class="fw-qi__doc-total-row">
-                <span><?= qi_vat_label($doc) ?>:</span>
+                <span>VAT:</span>
                 <span><?= fmt($doc['tax']) ?></span>
             </div>
             <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand">
@@ -543,6 +621,13 @@ try {
                     <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docFxRate, 4) ?> ZAR):</span>
                     <span>R&nbsp;<?= number_format((float)$doc['total'] * $docFxRate, 2) ?></span>
                 </div>
+                <?php if ($isInvoice): ?>
+                    <?php // s20: the VAT amount must be expressed in Rand on a foreign-currency tax invoice ?>
+                    <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
+                        <span>VAT in ZAR at rate <?= number_format($docFxRate, 4) ?>:</span>
+                        <span>R&nbsp;<?= number_format((float)$doc['tax'] * $docFxRate, 2) ?></span>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
             <?php if ($type === 'invoice' && (float)($doc['balance_due'] ?? 0) < (float)$doc['total']): ?>
                 <div class="fw-qi__doc-total-row" style="margin-top:8px;">
@@ -551,6 +636,33 @@ try {
                 </div>
             <?php endif; ?>
         </div>
+
+        <!-- VAT rate-split summary (SARS s20: per-rate consideration + VAT) -->
+        <?php if (!empty($vatSplit)): ?>
+            <div class="fw-qi__doc-section fw-qi__vat-summary">
+                <h3>VAT Summary</h3>
+                <div class="fw-qi__doc-table-wrap">
+                <table class="fw-qi__doc-table">
+                    <thead>
+                        <tr>
+                            <th>Rate</th>
+                            <th style="text-align:right;">Consideration (excl. VAT)</th>
+                            <th style="text-align:right;">VAT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($vatSplit as $bucket): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($bucket['label']) ?></td>
+                                <td style="text-align:right;"><?= fmt($bucket['net_cents'] / 100) ?></td>
+                                <td style="text-align:right;"><?= fmt($bucket['vat_cents'] / 100) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <!-- Payment Milestones — same markup as invoice_view.php -->
         <?php if (!empty($milestones)): ?>

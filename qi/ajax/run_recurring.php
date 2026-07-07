@@ -20,8 +20,9 @@ if (!$recurringId) {
 try {
     $DB->beginTransaction();
 
-    // Fetch recurring invoice
-    $stmt = $DB->prepare("SELECT * FROM recurring_invoices WHERE id = ? AND company_id = ?");
+    // Fetch and LOCK the recurring template — serialises a manual "run now"
+    // against an overlapping cron run so only one of them generates.
+    $stmt = $DB->prepare("SELECT * FROM recurring_invoices WHERE id = ? AND company_id = ? FOR UPDATE");
     $stmt->execute([$recurringId, $companyId]);
     $recurring = $stmt->fetch();
 
@@ -38,27 +39,26 @@ try {
     $alloc = new SequenceAllocator($DB);
     [$invoiceNumber, $seqNum] = $alloc->allocate($companyId, 'invoice', null, true);
 
-    // Calculate totals
-    $subtotal = 0;
-    $discount = 0;
-    $tax = 0;
-
+    // Calculate totals in INTEGER CENTS with the engine's per-line rounding
+    // (float totals drifted ±1c from the GL AR and broke the tie-out).
+    $subtotalC = 0;
+    $discountC = 0;
+    $taxC = 0;
     foreach ($lines as $line) {
         $qty = floatval($line['quantity']);
         $price = floatval($line['unit_price']);
         $disc = floatval($line['discount']);
         $taxRate = floatval($line['tax_rate']);
-
-        $lineSubtotal = $qty * $price;
-        $lineNet = $lineSubtotal - $disc;
-        $lineTax = $lineNet * ($taxRate / 100);
-
-        $subtotal += $lineSubtotal;
-        $discount += $disc;
-        $tax += $lineTax;
+        $lineNetC = (int)round(($qty * $price - $disc) * 100);
+        $lineVatC = (int)round($lineNetC * $taxRate / 100);
+        $subtotalC += $lineNetC;
+        $discountC += (int)round($disc * 100);
+        $taxC += $lineVatC;
     }
-
-    $total = $subtotal - $discount + $tax;
+    $subtotal = $subtotalC / 100;
+    $discount = $discountC / 100;
+    $tax = $taxC / 100;
+    $total = ($subtotalC + $taxC) / 100;
 
     // Create invoice - use qi_settings for payment terms and default currency
     $issueDate = date('Y-m-d');
@@ -98,7 +98,7 @@ try {
 
     $invoiceId = $DB->lastInsertId();
 
-    // Copy line items
+    // Copy line items (line_total in the engine's integer-cents rounding)
     $sortOrder = 0;
     foreach ($lines as $line) {
         $qty = floatval($line['quantity']);
@@ -106,15 +106,14 @@ try {
         $disc = floatval($line['discount']);
         $taxRate = floatval($line['tax_rate']);
 
-        $lineSubtotal = $qty * $price;
-        $lineNet = $lineSubtotal - $disc;
-        $lineTax = $lineNet * ($taxRate / 100);
-        $lineTotal = $lineNet + $lineTax;
+        $lineNetC = (int)round(($qty * $price - $disc) * 100);
+        $lineVatC = (int)round($lineNetC * $taxRate / 100);
+        $lineTotal = ($lineNetC + $lineVatC) / 100;
 
         $stmt = $DB->prepare("
             INSERT INTO invoice_lines (
-                invoice_id, item_description, quantity, unit, unit_price, discount, tax_rate, line_total, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                invoice_id, item_description, quantity, unit, unit_price, discount, tax_rate, tax_code_id, line_total, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $invoiceId,
@@ -124,6 +123,7 @@ try {
             $price,
             $disc,
             $taxRate,
+            $line['tax_code_id'] ?? null,
             $lineTotal,
             $sortOrder++
         ]);
@@ -165,16 +165,13 @@ try {
         $_SERVER['REMOTE_ADDR'] ?? null
     ]);
 
-    $DB->commit();
+    // A generated recurring invoice is an intentional issuance: transition it
+    // out of draft and post it to the GL inside this transaction (rolls back
+    // the generation if posting fails).
+    require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
+    InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, (int)$invoiceId);
 
-    // Post journal entry for the generated invoice (Section 11)
-    try {
-        require_once __DIR__ . '/../services/JournalPoster.php';
-        $poster = new JournalPoster($DB, $companyId, $userId);
-        $poster->postInvoice((int)$invoiceId);
-    } catch (Exception $e) {
-        error_log('Recurring invoice journal posting failed: ' . $e->getMessage());
-    }
+    $DB->commit();
 
     echo json_encode(['ok' => true, 'invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber]);
 

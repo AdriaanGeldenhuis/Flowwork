@@ -18,9 +18,35 @@ function json_error(string $message, int $status = 400, $meta = null): void {
     exit;
 }
 
-// Optional: catch uncaught exceptions inside API scripts and emit JSON.
+/**
+ * Emit a JSON error for a caught exception without leaking internals:
+ * business-rule Exceptions pass their message through; PDO/engine failures
+ * are logged and replaced with a generic message. Use inside endpoint
+ * catch-blocks instead of echoing $e->getMessage() directly.
+ */
+if (!function_exists('json_exception')) {
+    function json_exception(Throwable $e, int $defaultStatus = 400): void {
+        if ($e instanceof PDOException || $e instanceof Error) {
+            error_log('API exception: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            json_error('Internal server error', 500);
+        }
+        $code = $e->getCode();
+        if (!is_int($code) || $code < 400 || $code > 599) $code = $defaultStatus;
+        json_error($e->getMessage(), $code);
+    }
+}
+
+// Catch uncaught exceptions inside API scripts and emit JSON. Business-rule
+// failures are thrown as plain Exception and their message is safe to show;
+// database/engine failures (PDOException, Error) carry internal detail (SQL
+// text, file paths) that must never reach the client — log those and return
+// a generic message.
 set_exception_handler(function($e) {
+    if ($e instanceof PDOException || $e instanceof Error) {
+        error_log('API exception: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        json_error('Internal server error', 500);
+    }
     $code = $e->getCode();
-    if (!is_int($code) || $code < 400 || $code > 599) $code = 500;
+    if (!is_int($code) || $code < 400 || $code > 599) $code = 400;
     json_error($e->getMessage(), $code);
 });

@@ -88,14 +88,35 @@ $companyName = $company['name'] ?? 'Company';
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/fa_schedule.php'">
                         Fixed Asset Schedule
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/fa_wear_and_tear.php'">
+                        Wear-and-Tear Register
+                    </button>
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/budget_vs_actual.php'">
                         Budget vs Actual
                     </button>
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/retention.php'">
                         Record Retention
                     </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/trial_balance.php'">
+                        Trial Balance (printable)
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/balance_sheet.php'">
+                        Balance Sheet (printable)
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/income_statement.php'">
+                        Income Statement (printable)
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/gl_detail.php'">
+                        GL Detail
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ar_tieout.php'">
+                        AR Tie-out
+                    </button>
+                    <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/ap_tieout.php'">
+                        AP Tie-out
+                    </button>
                     <button class="fw-finance__report-type-btn" onclick="window.location.href='/finances/reports/sequence_gaps.php'">
-                        Invoice Sequence Gaps
+                        Sequence Gaps
                     </button>
 
                     <!-- New: Exports tab -->

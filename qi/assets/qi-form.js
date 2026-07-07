@@ -74,11 +74,13 @@ window.QI = window.QI || {};
         </div>
 
         <div class="fw-qi__form-group">
-          <label class="fw-qi__label">Tax Rate (%)</label>
+          <label class="fw-qi__label">VAT</label>
           <select name="lines[${lineItemCounter}][tax_rate]" class="fw-qi__input line-tax-rate">
-            <option value="15.00">15% (Standard)</option>
-            <option value="0.00">0% (Zero-rated)</option>
+            <option value="15.00" data-tax-code="STD">15% (Standard)</option>
+            <option value="0.00" data-tax-code="ZERO">0% (Zero-rated)</option>
+            <option value="0.00" data-tax-code="EXEMPT">0% (Exempt)</option>
           </select>
+          <input type="hidden" name="lines[${lineItemCounter}][tax_code]" class="line-tax-code" value="STD">
         </div>
 
         <div class="fw-qi__form-group">
@@ -93,6 +95,12 @@ window.QI = window.QI || {};
     // Attach change listeners
     lineDiv.querySelectorAll('.line-quantity, .line-price, .line-discount, .line-tax-rate').forEach(input => {
       input.addEventListener('input', QI.calculateTotals);
+    });
+    // Keep the hidden tax_code input in sync for classic form POST flows
+    const taxSelect = lineDiv.querySelector('.line-tax-rate');
+    taxSelect.addEventListener('change', function () {
+      const hidden = lineDiv.querySelector('.line-tax-code');
+      if (hidden) hidden.value = taxSelect.selectedOptions[0]?.dataset?.taxCode || 'STD';
     });
 
     QI.calculateTotals();
@@ -398,18 +406,21 @@ window.QI = window.QI || {};
         if (editQuoteId) payload.quote_id = editQuoteId.value;
         if (editModeInput) payload.edit_mode = editModeInput.value;
 
-        // Collect line items
+        // Collect line items — the tax CODE travels with the rate so the
+        // server can classify zero-rated vs exempt on the VAT201.
         payload.line_items = [];
         document.querySelectorAll('.fw-qi__line-item').forEach(function(lineDiv) {
           const description = lineDiv.querySelector('input[name*="[description]"]')?.value || '';
           const quantity = parseFloat(lineDiv.querySelector('.line-quantity')?.value) || 0;
           const unit_price = parseFloat(lineDiv.querySelector('.line-price')?.value) || 0;
           const discount = parseFloat(lineDiv.querySelector('.line-discount')?.value) || 0;
-          const tax_rate = parseFloat(lineDiv.querySelector('.line-tax-rate')?.value) || 0;
+          const taxSelect = lineDiv.querySelector('.line-tax-rate');
+          const tax_rate = parseFloat(taxSelect?.value) || 0;
+          const tax_code = taxSelect?.selectedOptions?.[0]?.dataset?.taxCode || null;
           const inventory_item_id = lineDiv.querySelector('select[name*="[inventory_item_id]"]')?.value || null;
           const lineNet = (quantity * unit_price) - discount;
           const line_total = lineNet + (lineNet * tax_rate / 100);
-          payload.line_items.push({ description, quantity, unit_price, discount, tax_rate, inventory_item_id, line_total });
+          payload.line_items.push({ description, quantity, unit_price, discount, tax_rate, tax_code, inventory_item_id, line_total });
         });
 
         // Include milestones if enabled
