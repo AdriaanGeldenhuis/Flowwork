@@ -336,8 +336,9 @@ try {
     $DB->rollBack();
     error_log("Save invoice error: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
     if ($e instanceof PDOException) {
-        // Include the SQL error code for debugging
-        $safeMsg = 'A database error occurred: ' . $e->getMessage();
+        // Never leak the raw SQL/PDO message to the client (it can expose schema,
+        // data and query structure). It is already logged above for debugging.
+        $safeMsg = 'A database error occurred. Please try again.';
     } else {
         $safeMsg = $e->getMessage();
     }

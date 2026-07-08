@@ -45,6 +45,24 @@ try {
         throw new Exception('Period must be prepared or adjusted before filing');
     }
 
+    // Filing must be chronological. Filing a later period first plants a period
+    // lock at its period_end, and PeriodService::isLocked() uses a single
+    // high-water mark (MAX active lock_date) — so once a later period is filed
+    // every earlier date reads as locked and the earlier period can never post
+    // its settlement journal (postVatAdjustment's isLocked check throws),
+    // leaving it permanently unfileable. Refuse to file while an earlier period
+    // is still open/prepared.
+    $stmt = $DB->prepare(
+        "SELECT period_end FROM gl_vat_periods
+          WHERE company_id = ? AND period_end < ? AND LOWER(status) <> 'filed'
+          ORDER BY period_end LIMIT 1"
+    );
+    $stmt->execute([$companyId, $period['period_end']]);
+    $earlierOpen = $stmt->fetchColumn();
+    if ($earlierOpen) {
+        throw new Exception('File the earlier VAT period ending ' . $earlierOpen . ' first — VAT periods must be filed in chronological order.');
+    }
+
     // Recompute totals at filing time so the stored figures are exactly what
     // was filed — including any adjustments posted after prepare.
     require_once __DIR__ . '/../lib/AccountsMap.php';

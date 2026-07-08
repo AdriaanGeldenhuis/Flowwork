@@ -83,11 +83,19 @@ function generate_simple_pdf_content(array $lines): string
     $offsets[] = strlen($pdf);
     $pdf .= "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n";
     // Content
-    $yPos = 812;
+    // PDF `Td` is a RELATIVE line-matrix translation, not absolute page
+    // coordinates. Passing an absolute (36, yPos) every line accumulated, so
+    // only the first line stayed on the page and the rest marched off it.
+    // Anchor the first line once, then advance each subsequent line by 0 -14.
     $content = "BT\n/F1 12 Tf\n";
+    $first = true;
     foreach ($lines as $line) {
-        $content .= sprintf("36 %.2f Td (%s) Tj\n", $yPos, pdf_escape($line));
-        $yPos -= 14;
+        if ($first) {
+            $content .= sprintf("36 812 Td (%s) Tj\n", pdf_escape($line));
+            $first = false;
+        } else {
+            $content .= sprintf("0 -14 Td (%s) Tj\n", pdf_escape($line));
+        }
     }
     $content .= "ET";
     $offsets[] = strlen($pdf);

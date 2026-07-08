@@ -177,6 +177,21 @@ try {
             )->fetchColumn();
             if ($total <= 0) throw new Exception('No payments to unapply');
 
+            // Deleting the allocations rewrites payments-basis VAT history (the
+            // payments-basis VAT201 is derived from payment_allocations by
+            // payment_date). The allocation tables aren't covered by the period
+            // lock, so refuse when any underlying payment falls in a filed/locked
+            // period — otherwise an already-filed return would silently change.
+            require_once __DIR__ . '/../../finances/lib/PeriodService.php';
+            $periods = new PeriodService($DB, $companyId);
+            $pdStmt = $DB->prepare("SELECT DISTINCT p.payment_date FROM payment_allocations pa JOIN payments p ON p.id = pa.payment_id WHERE pa.invoice_id = ?");
+            $pdStmt->execute([$invoiceId]);
+            foreach ($pdStmt->fetchAll(PDO::FETCH_COLUMN) as $pd) {
+                if ($pd && $periods->isLocked($pd)) {
+                    throw new Exception('Cannot unapply payments: a payment is dated in a filed/locked period (' . $pd . '). Reverse the filing first.');
+                }
+            }
+
             $stmt = $DB->prepare("DELETE FROM payment_allocations WHERE invoice_id = ?");
             $stmt->execute([$invoiceId]);
 

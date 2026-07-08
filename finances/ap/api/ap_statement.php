@@ -43,7 +43,7 @@ try {
         // Sum of bills
         $stmt = $DB->prepare(
             "SELECT SUM(total) FROM ap_bills WHERE company_id = ? AND supplier_id = ? AND issue_date < ?
-              AND status NOT IN ('draft','cancelled')"
+              AND status IN ('posted','paid')"
         );
         $stmt->execute([$companyId, $supplierId, $startDate]);
         $openingDebit = floatval($stmt->fetchColumn());
@@ -57,7 +57,7 @@ try {
         $openingCredit += floatval($stmt->fetchColumn());
         // Sum of vendor credits
         $stmt = $DB->prepare(
-            "SELECT SUM(total) FROM vendor_credits WHERE company_id = ? AND supplier_id = ? AND issue_date < ? AND status != 'cancelled'"
+            "SELECT SUM(total) FROM vendor_credits WHERE company_id = ? AND supplier_id = ? AND issue_date < ? AND status NOT IN ('draft','cancelled')"
         );
         $stmt->execute([$companyId, $supplierId, $startDate]);
         $openingCredit += floatval($stmt->fetchColumn());
@@ -86,7 +86,7 @@ try {
                    0 AS credit
             FROM ap_bills b
             WHERE b.company_id = ? AND b.supplier_id = ?
-              AND b.status NOT IN ('draft','cancelled')
+              AND b.status IN ('posted','paid')
             UNION ALL
             -- Payments (reduce payable)
             SELECT p.payment_date AS t_date,
@@ -107,7 +107,7 @@ try {
                    0 AS debit,
                    vc.total AS credit
             FROM vendor_credits vc
-            WHERE vc.company_id = ? AND vc.supplier_id = ? AND vc.status != 'cancelled'
+            WHERE vc.company_id = ? AND vc.supplier_id = ? AND vc.status NOT IN ('draft','cancelled')
         ) AS all_txn
         WHERE 1=1 " . $dateSql . "
         ORDER BY t_date, ref";

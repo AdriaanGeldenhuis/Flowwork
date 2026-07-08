@@ -44,6 +44,13 @@ if (empty($header['supplier_id']) || empty($header['invoice_number']) || empty($
 }
 
 $supplierId = (int)$header['supplier_id'];
+// The supplier must belong to THIS company (guard against a cross-tenant id).
+$__sc = $DB->prepare("SELECT id FROM crm_accounts WHERE id = ? AND company_id = ? AND type = 'supplier'");
+$__sc->execute([$supplierId, $companyId]);
+if (!$__sc->fetchColumn()) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid supplier']);
+    exit;
+}
 $projectBoardId = isset($header['project_board_id']) ? (int)$header['project_board_id'] : null;
 $invoiceNumber = trim($header['invoice_number']);
 $invoiceDate = $header['invoice_date'];
