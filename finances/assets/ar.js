@@ -4,10 +4,11 @@
 (function() {
   'use strict';
 
-  let invoices = [];
-  let filteredInvoices = [];
+  let invoices = [];          // rows for the CURRENT page only (server-paginated)
   let currentTab = 'invoices';
   let currentPage = 1;
+  let totalPages = 1;
+  let totalCount = 0;
   const pageSize = 25;
 
   // DOM Elements
@@ -22,47 +23,47 @@
 
   // ─── Load Invoices ────────────────────────────────────────────────
 
-  async function loadInvoices() {
+  // Search and status filtering now happen SERVER-side so they see the whole
+  // invoice table, not just the first page. loadInvoices(page) fetches one page
+  // with the current search/status applied.
+  async function loadInvoices(page) {
+    currentPage = Math.max(1, page || 1);
     invoiceList.innerHTML = '<div class="fw-finance__loading">Loading invoices...</div>';
 
-    const result = await FinanceAPI.request('/finances/ajax/ar_invoice_list.php');
+    const params = new URLSearchParams();
+    params.set('page', String(currentPage));
+    params.set('per_page', String(pageSize));
+    const searchTerm = (searchInput ? searchInput.value : '').trim();
+    const statusFilter = filterStatus ? filterStatus.value : '';
+    if (searchTerm) params.set('search', searchTerm);
+    if (statusFilter) params.set('status', statusFilter);
 
-    if (result.ok) {
-      invoices = result.data;
-      applyFilters();
+    const result = await FinanceAPI.request('/finances/ajax/ar_invoice_list.php?' + params.toString());
+
+    if (result && result.ok) {
+      invoices = result.data || [];
+      totalCount = result.total || invoices.length;
+      totalPages = result.total_pages || 1;
+      if (currentPage > totalPages) { // page fell off the end after a filter change
+        return loadInvoices(totalPages);
+      }
+      renderInvoices();
+      renderPagination();
+      updateInvoiceCount();
     } else {
       invoiceList.innerHTML = '<div class="fw-finance__empty-state">Failed to load invoices</div>';
     }
   }
 
-  // ─── Filter & Search ──────────────────────────────────────────────
-
+  // Search/status change → reload from page 1.
   function applyFilters() {
-    const searchTerm = (searchInput ? searchInput.value : '').toLowerCase().trim();
-    const statusFilter = filterStatus ? filterStatus.value : '';
-
-    filteredInvoices = invoices.filter(function(inv) {
-      if (statusFilter && inv.status !== statusFilter) return false;
-      if (searchTerm) {
-        const haystack = [
-          inv.invoice_number,
-          inv.customer_name
-        ].join(' ').toLowerCase();
-        if (haystack.indexOf(searchTerm) === -1) return false;
-      }
-      return true;
-    });
-
-    currentPage = 1;
-    renderInvoices();
-    renderPagination();
-    updateInvoiceCount();
+    loadInvoices(1);
   }
 
   // ─── Render Invoice Cards ─────────────────────────────────────────
 
   function renderInvoices() {
-    if (filteredInvoices.length === 0) {
+    if (invoices.length === 0) {
       invoiceList.innerHTML = '<div class="fw-finance__empty-state">' +
         '<div style="font-size:32px;margin-bottom:12px">' +
           '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4">' +
@@ -77,11 +78,8 @@
       return;
     }
 
-    var start = (currentPage - 1) * pageSize;
-    var end = start + pageSize;
-    var pageInvoices = filteredInvoices.slice(start, end);
-
-    var html = pageInvoices.map(function(inv) {
+    // invoices already holds only the current server page.
+    var html = invoices.map(function(inv) {
       // Only issued/live invoices may be synced to the GL. Draft, cancelled and
       // the terminal write-off/refund statuses must not be posted from here
       // (the server rejects them too — see ar_sync_invoice.php).
@@ -133,7 +131,6 @@
   function renderPagination() {
     if (!pagination) return;
 
-    var totalPages = Math.ceil(filteredInvoices.length / pageSize);
     if (totalPages <= 1) {
       pagination.innerHTML = '';
       return;
@@ -149,11 +146,8 @@
     pagination.querySelectorAll('.fw-finance__page-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var page = parseInt(btn.dataset.page, 10);
-        var totalP = Math.ceil(filteredInvoices.length / pageSize);
-        if (page >= 1 && page <= totalP) {
-          currentPage = page;
-          renderInvoices();
-          renderPagination();
+        if (page >= 1 && page <= totalPages) {
+          loadInvoices(page);
         }
       });
     });
@@ -179,7 +173,7 @@
 
     if (result.ok) {
       showMessage('invoiceList', 'Invoice synced to GL successfully', 'success');
-      loadInvoices();
+      loadInvoices(currentPage);
     } else {
       alert('Error: ' + (result.error || 'Failed to sync invoice'));
     }
@@ -190,13 +184,12 @@
   async function syncAllInvoices() {
     if (!confirm('Sync ALL unsynced invoices to the General Ledger?')) return;
 
-    // Mirror the per-row gate: only issued/live invoices are syncable. The
-    // server rejects the rest, but filtering here keeps the count honest and
-    // avoids firing doomed requests for drafts/cancelled invoices.
-    var SYNCABLE = ['sent', 'viewed', 'part-paid', 'paid', 'overdue'];
-    var unsyncedIds = invoices.filter(function(inv) {
-      return !inv.journal_id && SYNCABLE.indexOf(inv.status) !== -1;
-    }).map(function(inv) { return inv.id; });
+    // Collect every unsynced syncable invoice id for the WHOLE company (not
+    // just the current page) via the server's unsynced_ids mode — the syncable
+    // gate is applied server-side. This is why the list is now paginated but
+    // "Sync All" still means all.
+    var idsResult = await FinanceAPI.request('/finances/ajax/ar_invoice_list.php?unsynced_ids=1');
+    var unsyncedIds = (idsResult && idsResult.ok && idsResult.data && idsResult.data.ids) ? idsResult.data.ids : [];
 
     if (unsyncedIds.length === 0) {
       alert('No unsynced invoices found');
@@ -216,14 +209,18 @@
     syncAllBtn.textContent = 'Sync All to GL';
 
     alert('Synced ' + successCount + ' of ' + unsyncedIds.length + ' invoices');
-    loadInvoices();
+    loadInvoices(currentPage);
   }
 
   // ─── Update Invoice Count ─────────────────────────────────────────
 
   function updateInvoiceCount() {
-    if (invoiceCount) {
-      invoiceCount.textContent = filteredInvoices.length + ' invoice' + (filteredInvoices.length !== 1 ? 's' : '');
+    if (!invoiceCount) return;
+    var noun = ' invoice' + (totalCount !== 1 ? 's' : '');
+    if (totalCount > invoices.length) {
+      invoiceCount.textContent = 'Showing ' + invoices.length + ' of ' + totalCount + noun;
+    } else {
+      invoiceCount.textContent = totalCount + noun;
     }
   }
 

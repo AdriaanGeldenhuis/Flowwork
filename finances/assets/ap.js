@@ -10,6 +10,35 @@
   // Track which tabs have been loaded to avoid duplicate fetches
   var loaded = {};
 
+  var AP_PER_PAGE = 25;
+
+  // Shared "Showing X of Y" line + prev/next pager, appended under a
+  // server-paginated table. Lists are paginated server-side so search/filter
+  // see the whole table (the old client-side filter only searched the first
+  // 200 rows loaded).
+  function apPagerHtml(page, totalPages, total, shown, noun) {
+    var info = (total > shown)
+      ? 'Showing ' + shown + ' of ' + total + ' ' + noun
+      : total + ' ' + noun + (total !== 1 ? 's' : '');
+    var html = '<div class="fw-finance__list-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:0.75rem;gap:1rem;flex-wrap:wrap;">';
+    html += '<span class="fw-finance__page-info">' + info + '</span>';
+    if (totalPages > 1) {
+      html += '<span>' +
+        '<button class="fw-finance__page-btn ap-page-prev" ' + (page <= 1 ? 'disabled' : '') + '>&laquo; Prev</button> ' +
+        '<span class="fw-finance__page-info">Page ' + page + ' of ' + totalPages + '</span> ' +
+        '<button class="fw-finance__page-btn ap-page-next" ' + (page >= totalPages ? 'disabled' : '') + '>Next &raquo;</button>' +
+      '</span>';
+    }
+    html += '</div>';
+    return html;
+  }
+  function wireApPager(container, page, totalPages, onPage) {
+    var prev = container.querySelector('.ap-page-prev');
+    var next = container.querySelector('.ap-page-next');
+    if (prev) prev.addEventListener('click', function() { if (page > 1) onPage(page - 1); });
+    if (next) next.addEventListener('click', function() { if (page < totalPages) onPage(page + 1); });
+  }
+
   // ============================================================
   // Tab Switching
   // ============================================================
@@ -172,14 +201,20 @@
   // ============================================================
   // Bills List Tab
   // ============================================================
-  async function loadBillsTab(status) {
+  async function loadBillsTab(page) {
     var container = document.getElementById('billsListContent');
     if (!container) return;
+    page = Math.max(1, page || 1);
     container.innerHTML = '<div class="fw-finance__loading">Loading bills...</div>';
-    var url = '/finances/ap/api/bill_list.php';
-    if (status) url += '?status=' + encodeURIComponent(status);
+    var statusEl = document.getElementById('billStatusFilter');
+    var searchEl = document.getElementById('billSearchInput');
+    var params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('per_page', String(AP_PER_PAGE));
+    if (statusEl && statusEl.value) params.set('status', statusEl.value);
+    if (searchEl && searchEl.value.trim()) params.set('search', searchEl.value.trim());
     try {
-      var res = await fetch(url);
+      var res = await fetch('/finances/ap/api/bill_list.php?' + params.toString());
       var result = await res.json();
       if (!result.ok) { container.innerHTML = '<div class="fw-finance__error">Failed to load bills</div>'; return; }
       var bills = result.data || [];
@@ -189,7 +224,9 @@
         html += '<tr><td>' + E(b.vendor_invoice_number) + '</td><td>' + E(b.supplier_name) + '</td><td>' + E(b.issue_date) + '</td><td>' + E(b.due_date) + '</td><td>' + E(b.status) + '</td><td style="text-align:right">' + parseFloat(b.total).toFixed(2) + '</td><td style="text-align:right">' + parseFloat(b.paid).toFixed(2) + '</td><td style="text-align:right">' + parseFloat(b.balance).toFixed(2) + '</td><td><a href="/finances/ap/bill_view.php?id=' + parseInt(b.id) + '">View</a></td></tr>';
       });
       html += '</tbody></table>';
+      html += apPagerHtml(result.page || page, result.total_pages || 1, result.total || bills.length, bills.length, 'bill');
       container.innerHTML = html;
+      wireApPager(container, result.page || page, result.total_pages || 1, loadBillsTab);
     } catch (err) {
       container.innerHTML = '<div class="fw-finance__error">' + E(err.message) + '</div>';
     }
@@ -197,28 +234,30 @@
 
   var billStatusFilter = document.getElementById('billStatusFilter');
   if (billStatusFilter) {
-    billStatusFilter.addEventListener('change', function() { loaded.bills = false; loadBillsTab(this.value); loaded.bills = true; });
+    billStatusFilter.addEventListener('change', function() { loadBillsTab(1); });
   }
   var billSearchInput = document.getElementById('billSearchInput');
   if (billSearchInput) {
-    billSearchInput.addEventListener('input', debounce(function() {
-      var query = this.value.toLowerCase();
-      var rows = document.querySelectorAll('#billsListContent tbody tr');
-      rows.forEach(function(row) { row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none'; });
-    }, 300));
+    // Server-side search (debounced) so it reaches every bill, not just the
+    // page currently rendered.
+    billSearchInput.addEventListener('input', debounce(function() { loadBillsTab(1); }, 300));
   }
 
   // ============================================================
   // Payments Tab
   // ============================================================
-  async function loadPaymentsTab(supplierId) {
+  async function loadPaymentsTab(page) {
     var container = document.getElementById('paymentsListContent');
     if (!container) return;
+    page = Math.max(1, page || 1);
     container.innerHTML = '<div class="fw-finance__loading">Loading payments...</div>';
-    var url = '/finances/ap/api/payment_list.php';
-    if (supplierId) url += '?supplier_id=' + encodeURIComponent(supplierId);
+    var supEl = document.getElementById('paymentSupplierFilter');
+    var params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('per_page', String(AP_PER_PAGE));
+    if (supEl && supEl.value) params.set('supplier_id', supEl.value);
     try {
-      var res = await fetch(url);
+      var res = await fetch('/finances/ap/api/payment_list.php?' + params.toString());
       var result = await res.json();
       if (!result.ok) { container.innerHTML = '<div class="fw-finance__error">Failed to load payments</div>'; return; }
       var rows = result.data || [];
@@ -228,7 +267,9 @@
         html += '<tr><td>' + E(p.payment_date) + '</td><td>' + E(p.supplier_name) + '</td><td>' + E(p.method) + '</td><td>' + E(p.reference) + '</td><td style="text-align:right">' + parseFloat(p.amount).toFixed(2) + '</td></tr>';
       });
       html += '</tbody></table>';
+      html += apPagerHtml(result.page || page, result.total_pages || 1, result.total || rows.length, rows.length, 'payment');
       container.innerHTML = html;
+      wireApPager(container, result.page || page, result.total_pages || 1, loadPaymentsTab);
     } catch (err) {
       container.innerHTML = '<div class="fw-finance__error">' + E(err.message) + '</div>';
     }
@@ -236,20 +277,24 @@
 
   var paymentSupplierFilter = document.getElementById('paymentSupplierFilter');
   if (paymentSupplierFilter) {
-    paymentSupplierFilter.addEventListener('change', function() { loadPaymentsTab(this.value); });
+    paymentSupplierFilter.addEventListener('change', function() { loadPaymentsTab(1); });
   }
 
   // ============================================================
   // Vendor Credits Tab
   // ============================================================
-  async function loadCreditsTab(status) {
+  async function loadCreditsTab(page) {
     var container = document.getElementById('creditsListContent');
     if (!container) return;
+    page = Math.max(1, page || 1);
     container.innerHTML = '<div class="fw-finance__loading">Loading vendor credits...</div>';
-    var url = '/finances/ap/api/vendor_credit_list.php';
-    if (status) url += '?status=' + encodeURIComponent(status);
+    var statusEl = document.getElementById('creditStatusFilter');
+    var params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('per_page', String(AP_PER_PAGE));
+    if (statusEl && statusEl.value) params.set('status', statusEl.value);
     try {
-      var res = await fetch(url);
+      var res = await fetch('/finances/ap/api/vendor_credit_list.php?' + params.toString());
       var result = await res.json();
       if (!result.ok) { container.innerHTML = '<div class="fw-finance__error">Failed to load credits</div>'; return; }
       var rows = result.data || [];
@@ -259,7 +304,9 @@
         html += '<tr><td>' + E(c.credit_number) + '</td><td>' + E(c.supplier_name) + '</td><td>' + E(c.issue_date) + '</td><td>' + E(c.status) + '</td><td style="text-align:right">' + parseFloat(c.total).toFixed(2) + '</td><td style="text-align:right">' + parseFloat(c.allocated).toFixed(2) + '</td><td style="text-align:right">' + parseFloat(c.remaining).toFixed(2) + '</td><td><a href="/finances/ap/vendor_credit_view.php?id=' + parseInt(c.id) + '">View</a></td></tr>';
       });
       html += '</tbody></table>';
+      html += apPagerHtml(result.page || page, result.total_pages || 1, result.total || rows.length, rows.length, 'credit');
       container.innerHTML = html;
+      wireApPager(container, result.page || page, result.total_pages || 1, loadCreditsTab);
     } catch (err) {
       container.innerHTML = '<div class="fw-finance__error">' + E(err.message) + '</div>';
     }
@@ -267,7 +314,7 @@
 
   var creditStatusFilter = document.getElementById('creditStatusFilter');
   if (creditStatusFilter) {
-    creditStatusFilter.addEventListener('change', function() { loadCreditsTab(this.value); });
+    creditStatusFilter.addEventListener('change', function() { loadCreditsTab(1); });
   }
 
   // ============================================================
