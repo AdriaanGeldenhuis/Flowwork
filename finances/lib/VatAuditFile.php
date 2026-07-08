@@ -528,6 +528,7 @@ class VatAuditFile
                LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = jl.tax_code_id
               WHERE je.company_id = ? AND je.status = 'posted'
                 AND je.ref_type = 'bank_tx'
+                AND je.reversed_by_journal_id IS NULL
                 AND je.entry_date BETWEEN ? AND ?
                 AND ga.account_type = 'revenue'
               ORDER BY je.entry_date, je.id, jl.id"
@@ -565,6 +566,7 @@ class VatAuditFile
                LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = jl.tax_code_id
               WHERE je.company_id = ? AND je.status = 'posted'
                 AND je.ref_type = 'bank_tx'
+                AND je.reversed_by_journal_id IS NULL
                 AND je.entry_date BETWEEN ? AND ?
                 AND jl.account_code IN (?, ?)
               ORDER BY je.entry_date, je.id, jl.id"
@@ -588,6 +590,45 @@ class VatAuditFile
                 'net_cents'        => 0,
                 'vat_cents'        => $isOutput ? (int)$r['credit_net_cents'] : (int)$r['debit_net_cents'],
                 'section'          => $isOutput ? 'output' : 'input',
+            ];
+        }
+
+        // Fixed-asset disposals (s8(13)): output VAT on the proceeds, cash-dated
+        // at the disposal date — mirrors the payments-basis inclusion in
+        // VatCalculator so the file still foots to Box 5. Reversed disposals out.
+        $stmt = $db->prepare(
+            "SELECT je.entry_date, je.id AS journal_id, je.reference,
+                    COALESCE(jl.description, je.description) AS description,
+                    jl.account_code, tc.code AS tax_code, tc.rate_percent,
+                    ROUND(jl.credit * 100) - ROUND(jl.debit * 100) AS credit_net_cents
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_id
+               LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = jl.tax_code_id
+              WHERE je.company_id = ? AND je.status = 'posted'
+                AND je.ref_type = 'fa_disposal'
+                AND je.reversed_by_journal_id IS NULL
+                AND je.entry_date BETWEEN ? AND ?
+                AND jl.account_code = ?
+              ORDER BY je.entry_date, je.id, jl.id"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate, $vatOutputCode]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $rows[] = [
+                'entry_date'       => $r['entry_date'],
+                'journal_id'       => (int)$r['journal_id'],
+                'reference'        => $r['reference'],
+                'source_type'      => 'fa_disposal',
+                'description'      => $r['description'],
+                'account_code'     => $r['account_code'],
+                'tax_code'         => $r['tax_code'] ?: 'STD',
+                'rate_percent'     => $r['rate_percent'] !== null ? (float)$r['rate_percent'] : null,
+                'is_capital_goods' => 0,
+                'debit'            => null,
+                'credit'           => null,
+                'allocation'       => null,
+                'net_cents'        => 0,
+                'vat_cents'        => (int)$r['credit_net_cents'],
+                'section'          => 'output',
             ];
         }
 

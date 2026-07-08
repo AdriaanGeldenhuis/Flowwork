@@ -88,15 +88,24 @@ function fw_bank_normalize_amount(string $raw): ?float
  */
 function fw_bank_parse_date(string $rawDate): ?string
 {
-    $dateObj = DateTime::createFromFormat('Y-m-d', $rawDate);
-    if ($dateObj && $dateObj->format('Y-m-d') === $rawDate) {
-        return $rawDate;
+    $rawDate = trim($rawDate);
+    // Strict per-format parsing. createFromFormat('d/m/Y', '01/02/26') otherwise
+    // silently reads the 2-digit '26' as year 0026 (PHP's Y token is greedy) and
+    // the 2-digit branch is never reached — Standard Bank statements (2-digit
+    // years) were mis-dated to year 26, so every row sorted out of view and was
+    // blocked by period locks. Require a 4-digit year (>= 1000) for the Y-token
+    // formats; the y-token formats accept the century-pivoted 2-digit year. A
+    // parse warning/error (e.g. an overflowed month in m/d) rejects the value.
+    $formats = ['Y-m-d' => 1000, 'd/m/Y' => 1000, 'm/d/Y' => 1000, 'd/m/y' => 100, 'm/d/y' => 100];
+    foreach ($formats as $fmt => $minYear) {
+        $d = DateTime::createFromFormat('!' . $fmt, $rawDate);
+        $errs = DateTime::getLastErrors();
+        $clean = ($errs === false) || ($errs['warning_count'] === 0 && $errs['error_count'] === 0);
+        if ($d && $clean && (int)$d->format('Y') >= $minYear) {
+            return $d->format('Y-m-d');
+        }
     }
-    $dateObj = DateTime::createFromFormat('d/m/Y', $rawDate);
-    if (!$dateObj) {
-        $dateObj = DateTime::createFromFormat('m/d/Y', $rawDate);
-    }
-    return $dateObj ? $dateObj->format('Y-m-d') : null;
+    return null;
 }
 
 try {

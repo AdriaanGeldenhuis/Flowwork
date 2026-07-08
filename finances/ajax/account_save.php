@@ -147,9 +147,14 @@ try {
                 || $existing['account_type'] !== $accountType
                 || $existing['normal_balance'] !== $normalBalance
                 || (string)$existing['account_subtype'] !== $accountSubtype) {
-                $lineCount = CoaSchema::postedLineCount($DB, $companyId, $existing['account_code']);
+                // Gate on ALL journal lines (posted AND draft), not just posted:
+                // journal_post.php never re-validates account codes, so a draft
+                // journal referencing this account would post onto a code that no
+                // longer exists after a rename and its amounts would silently
+                // vanish from the TB / P&L / balance sheet.
+                $lineCount = CoaSchema::allLineCount($DB, $companyId, $existing['account_code']);
                 if ($lineCount > 0) {
-                    throw new Exception('Cannot change code, type, normal balance or subtype — account has ' . $lineCount . ' posted journal line(s)');
+                    throw new Exception('Cannot change code, type, normal balance or subtype — account is referenced by ' . $lineCount . ' journal line(s) (including drafts)');
                 }
             }
 

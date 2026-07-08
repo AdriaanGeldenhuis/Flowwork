@@ -1220,13 +1220,20 @@ class PostingService
     {
         $this->withTransaction(function () use ($billId, $allowRepost) {
             $stmt = $this->db->prepare(
-                "SELECT id, supplier_id, issue_date, vendor_invoice_number, subtotal, tax, total, journal_id, status
+                "SELECT id, supplier_id, issue_date, vendor_invoice_number, subtotal, tax, total, journal_id, status, currency
                    FROM ap_bills WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE"
             );
             $stmt->execute([$billId, $this->companyId]);
             $bill = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$bill) {
                 throw new Exception('AP bill not found');
+            }
+            // AP FX is unimplemented: this method posts the bill's face values as
+            // ZAR. A non-ZAR bill would mis-state the expense, AP control and
+            // input VAT, so refuse to post it (bill_create rejects it up front).
+            $billCurrency = strtoupper(trim((string)($bill['currency'] ?? 'ZAR'))) ?: 'ZAR';
+            if ($billCurrency !== 'ZAR') {
+                throw new Exception('Cannot post a ' . $billCurrency . ' bill — foreign-currency AP is not supported yet');
             }
             if ($bill['status'] === 'paid') {
                 throw new Exception('Bill is already paid — reposting a paid bill is not allowed');

@@ -421,6 +421,7 @@ class VatCalculator
                LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = jl.tax_code_id
               WHERE je.company_id = ? AND je.status = 'posted'
                 AND je.ref_type = 'bank_tx'
+                AND je.reversed_by_journal_id IS NULL
                 AND je.entry_date BETWEEN ? AND ?
                 AND ga.account_type = 'revenue'
               GROUP BY COALESCE(tc.code, 'UNTAGGED')"
@@ -439,6 +440,7 @@ class VatCalculator
                JOIN journal_entries je ON je.id = jl.journal_id
               WHERE je.company_id = ? AND je.status = 'posted'
                 AND je.ref_type = 'bank_tx'
+                AND je.reversed_by_journal_id IS NULL
                 AND je.entry_date BETWEEN ? AND ?
               GROUP BY jl.account_code, jl.is_capital_goods"
         );
@@ -458,6 +460,33 @@ class VatCalculator
                     $agg['IN_OTHER'] += (int)round(((float)$row['debit_net']) * 100);
                 }
             }
+        }
+
+        // Fixed-asset disposals (SARS s8(13)): output VAT on the proceeds. A
+        // disposal is inherently cash-dated at the disposal date, so include it
+        // on the payments basis too — otherwise a payments-basis vendor selling
+        // an asset omits the output tax. Reversed disposals are excluded.
+        $stmt = $db->prepare(
+            "SELECT tc.rate_percent, SUM(jl.credit - jl.debit) AS vat_net
+               FROM journal_lines jl
+               JOIN journal_entries je ON je.id = jl.journal_id
+               LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = jl.tax_code_id
+              WHERE je.company_id = ? AND je.status = 'posted'
+                AND je.ref_type = 'fa_disposal'
+                AND je.reversed_by_journal_id IS NULL
+                AND je.entry_date BETWEEN ? AND ?
+                AND jl.account_code = ?
+              GROUP BY tc.rate_percent"
+        );
+        $stmt->execute([$companyId, $startDate, $endDate, $outCode]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $vatC = (int)round(((float)$row['vat_net']) * 100);
+            if ($vatC === 0) {
+                continue;
+            }
+            $rate  = (float)($row['rate_percent'] ?? 0);
+            $baseC = $rate > 0 ? (int)round($vatC * 100 / $rate) : 0;
+            self::accumulateOutput($agg, 'STD', $baseC, $vatC);
         }
 
         $totalOutputVat = $agg['STD_VAT'];
