@@ -28,6 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// This endpoint creates a financial document (an AP bill) — validate CSRF. The
+// receipts review page injects X-CSRF-Token (see receipts/review.php + review.js).
+require_once __DIR__ . '/../../finances/lib/Csrf.php';
+Csrf::validate();
+
 $input = json_decode(file_get_contents('php://input'), true);
 $header = isset($input['header']) ? $input['header'] : [];
 $lines = isset($input['lines']) ? $input['lines'] : [];
@@ -47,6 +52,12 @@ $subtotal = isset($header['subtotal']) ? (float)$header['subtotal'] : 0;
 $tax = isset($header['tax']) ? (float)$header['tax'] : 0;
 $total = (float)$header['total'];
 $fileId = isset($header['file_id']) ? (int)$header['file_id'] : 0;
+
+// Effective VAT rate derived from the OCR/header tax:subtotal ratio (mirrors
+// finances/ajax/ap_from_receipt.php) — NOT a blanket 15% on every line. postApBill
+// recomputes input VAT from each line's stored tax_rate, so hardcoding 15%
+// over-claims input VAT on fuel, zero-rated and exempt receipts (a SARS exposure).
+$headerTaxRate = ($subtotal > 0) ? round($tax / $subtotal * 100, 2) : 0.0;
 
 // Compute fingerprint for duplicate detection
 $hash = sha1($invoiceNumber . '|' . $invoiceDate . '|' . $total . '|' . $supplierId);
@@ -113,7 +124,11 @@ try {
         $glAccountId = isset($line['gl_account_id']) && $line['gl_account_id'] ? (int)$line['gl_account_id'] : null;
         $projBoardId = $projectBoardId; // default to header project
         $projItemId = isset($line['project_item_id']) && $line['project_item_id'] ? (int)$line['project_item_id'] : null;
-        $taxRate = 15.00;
+        // Per-line rate from the review wizard wins (allows an explicit 0 for a
+        // zero-rated line); otherwise fall back to the header-derived rate.
+        $taxRate = isset($line['tax_rate']) && is_numeric($line['tax_rate'])
+            ? (float)$line['tax_rate']
+            : $headerTaxRate;
         $stmt2 = $DB->prepare(
             "INSERT INTO ap_bill_lines (
                 bill_id, item_description, quantity, unit, unit_price, discount, tax_rate,

@@ -36,6 +36,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// Posting to the GL is a financial mutation — validate CSRF. The receipts review
+// page injects X-CSRF-Token (see receipts/review.php + review.js).
+require_once __DIR__ . '/../../finances/lib/Csrf.php';
+Csrf::validate();
+
 $input = json_decode(file_get_contents('php://input'), true);
 $billId = isset($input['bill_id']) ? (int)$input['bill_id'] : 0;
 

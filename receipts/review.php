@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/../finances/lib/Csrf.php';
 
 define('ASSET_VERSION', '2025-01-21-RECEIPTS-1');
 
@@ -114,6 +115,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Review Receipt – <?= htmlspecialchars($companyName) ?></title>
     <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
 </head>

@@ -212,7 +212,14 @@ async function loadSupplierBills() {
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || 'Failed to load bills');
         const bills = json.data || [];
-        const outstanding = bills.filter(b => Number(b.supplier_id) === Number(supplierId) && parseFloat(b.balance) > 0.0001);
+        // Only bills already posted to the GL can take a credit allocation (the
+        // server rejects unposted drafts — see api/vendor_credit_post.php).
+        const outstanding = bills.filter(b =>
+            Number(b.supplier_id) === Number(supplierId)
+            && parseFloat(b.balance) > 0.0001
+            && (b.status === 'posted' || b.status === 'paid')
+            && Number(b.journal_id) > 0
+        );
         if (outstanding.length === 0) {
             container.innerHTML = '<div class="fw-finance__empty-state">No outstanding bills for this supplier.</div>';
             document.getElementById('applyBtn').style.display = 'none';

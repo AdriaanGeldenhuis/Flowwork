@@ -75,10 +75,36 @@ and can be deleted).
    committed in `config.php` and were flagged by the earlier security due
    diligence (`SECURITY-REMEDIATION.md`). `config.php` now prefers
    environment variables; set them at the host and remove the fallbacks.
-2. **Run once in production, in this order:** the four
-   `Migrations/2026-07-06-finance-sars-0*.sql` files, then
-   `php finances/tools/finance_setup.php`, then (to migrate historic data)
-   `php finances/tools/repost_all.php`.
+2. **Run once in production, in this order.** These migrations require
+   **MariaDB 10.11+** — they use `ADD COLUMN/INDEX IF NOT EXISTS` and will not
+   run on MySQL. Apply **all six** `Migrations/2026-07-06-finance-sars-0*.sql`
+   files (not four):
+   - `…-01-schema.sql`
+   - `…-02-coa.sql`
+   - `…-03-settings-defaults.sql`
+   - `…-04-data-corrections.sql`
+   - `…-05-fa-asset-id-autoincrement.sql`
+   - `…-06-review-fixes.sql`
+
+   **Before migration 06**, check for duplicate posted depreciation runs — its
+   `ADD UNIQUE INDEX uq_fa_dep_run_month` aborts (errno 1062) if two posted runs
+   share a company+month, and the `IF NOT EXISTS` guard does *not* protect
+   against duplicate rows:
+
+   ```sql
+   SELECT company_id, run_month, COUNT(*) c
+     FROM fa_depreciation_runs
+    WHERE status = 'posted'
+    GROUP BY company_id, run_month HAVING c > 1;
+   ```
+
+   If any rows return, reverse all but one posted run's journal first.
+
+   Then also apply the two 2026-07-08 schema-reconciliation migrations
+   (`…-finance-schema-reconcile.sql` and `…-finance-index-hardening.sql`, which
+   port the orphaned `qi/migrations/` objects, backfill `exchange_rate`, and add
+   the missing indexes). Finally run `php finances/tools/finance_setup.php`,
+   then (to migrate historic data) `php finances/tools/repost_all.php`.
 3. **Fill in company profile**: a valid VAT number (10 digits starting
    with 4), physical address, and SARS income-tax reference in Admin →
    Company (the seeded test company's VAT number is not a valid format —
@@ -207,8 +233,10 @@ the production schema shape):
    account (Banking → Accounts) — customer receipts fall back to the seeded
    bank account and refuse to post if none exists.
 
-Also note: migration 06 (review fixes) joins the ordered migration list, and
-`fa_depreciation_runs` gains a unique month index.
+Also note: migrations 05 (fixed-asset `asset_id` AUTO_INCREMENT fix) and 06
+(review fixes) are part of the ordered migration list — step 2 above enumerates
+all six 2026-07-06 files — and `fa_depreciation_runs` gains a unique month index
+via migration 06 (see the pre-flight duplicate check in step 2).
 
 ## Review items documented, not changed
 

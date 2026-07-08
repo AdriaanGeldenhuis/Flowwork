@@ -82,11 +82,15 @@
     var pageInvoices = filteredInvoices.slice(start, end);
 
     var html = pageInvoices.map(function(inv) {
+      // Only issued/live invoices may be synced to the GL. Draft, cancelled and
+      // the terminal write-off/refund statuses must not be posted from here
+      // (the server rejects them too — see ar_sync_invoice.php).
+      var SYNCABLE = ['sent', 'viewed', 'part-paid', 'paid', 'overdue'];
       var syncBtn = '';
       if (inv.journal_id) {
         syncBtn = '<button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--secondary" disabled>' +
           'Synced to GL</button>';
-      } else {
+      } else if (SYNCABLE.indexOf(inv.status) !== -1) {
         syncBtn = '<button class="fw-finance__btn fw-finance__btn--small fw-finance__btn--primary sync-invoice" data-id="' + inv.id + '">' +
           'Sync to GL</button>';
       }
@@ -186,7 +190,13 @@
   async function syncAllInvoices() {
     if (!confirm('Sync ALL unsynced invoices to the General Ledger?')) return;
 
-    var unsyncedIds = invoices.filter(function(inv) { return !inv.journal_id; }).map(function(inv) { return inv.id; });
+    // Mirror the per-row gate: only issued/live invoices are syncable. The
+    // server rejects the rest, but filtering here keeps the count honest and
+    // avoids firing doomed requests for drafts/cancelled invoices.
+    var SYNCABLE = ['sent', 'viewed', 'part-paid', 'paid', 'overdue'];
+    var unsyncedIds = invoices.filter(function(inv) {
+      return !inv.journal_id && SYNCABLE.indexOf(inv.status) !== -1;
+    }).map(function(inv) { return inv.id; });
 
     if (unsyncedIds.length === 0) {
       alert('No unsynced invoices found');

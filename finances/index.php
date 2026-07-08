@@ -66,25 +66,25 @@ $bankAccountCount = (int)($cashRow['account_count'] ?? 0);
 $recvStmt = $DB->prepare("
     SELECT
         COUNT(*) AS open_count,
-        COALESCE(SUM(i.balance_due * i.exchange_rate), 0) AS outstanding_zar,
+        COALESCE(SUM(i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS outstanding_zar,
         SUM(i.due_date < CURDATE()) AS overdue_count,
         COALESCE(SUM(CASE WHEN i.due_date < CURDATE()
-                          THEN i.balance_due * i.exchange_rate END), 0) AS overdue_zar,
+                          THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS overdue_zar,
         SUM(i.due_date >= CURDATE()) AS cnt_current,
         COALESCE(SUM(CASE WHEN i.due_date >= CURDATE()
-                          THEN i.balance_due * i.exchange_rate END), 0) AS aging_current,
+                          THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_current,
         SUM(DATEDIFF(CURDATE(), i.due_date) BETWEEN 1 AND 30) AS cnt_b30,
         COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 1 AND 30
-                          THEN i.balance_due * i.exchange_rate END), 0) AS aging_b30,
+                          THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b30,
         SUM(DATEDIFF(CURDATE(), i.due_date) BETWEEN 31 AND 60) AS cnt_b60,
         COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 31 AND 60
-                          THEN i.balance_due * i.exchange_rate END), 0) AS aging_b60,
+                          THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b60,
         SUM(DATEDIFF(CURDATE(), i.due_date) BETWEEN 61 AND 90) AS cnt_b90,
         COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 61 AND 90
-                          THEN i.balance_due * i.exchange_rate END), 0) AS aging_b90,
+                          THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b90,
         SUM(DATEDIFF(CURDATE(), i.due_date) > 90) AS cnt_b90plus,
         COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) > 90
-                          THEN i.balance_due * i.exchange_rate END), 0) AS aging_b90plus,
+                          THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b90plus,
         SUM(i.due_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 7 DAY) AS due_week_count
     FROM invoices i
     WHERE i.company_id = ? AND i.deleted_at IS NULL
@@ -218,7 +218,7 @@ foreach ($revExpStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
 $invoicedSeries12 = $zero12;
 $invoicedStmt = $DB->prepare("
     SELECT DATE_FORMAT(i.issue_date, '%Y-%m') AS ym,
-           COALESCE(SUM(i.total * i.exchange_rate), 0) AS invoiced
+           COALESCE(SUM(i.total * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS invoiced
     FROM invoices i
     WHERE i.company_id = ? AND i.deleted_at IS NULL
       AND i.status NOT IN ('draft','cancelled') AND i.issue_date >= ?
@@ -308,7 +308,7 @@ if ($otherSpend > 0) {
 $overdueArStmt = $DB->prepare("
     SELECT i.id, i.invoice_number, COALESCE(ca.name, '(deleted customer)') AS customer_name,
            DATEDIFF(CURDATE(), i.due_date) AS days_overdue,
-           i.balance_due * i.exchange_rate AS balance_zar
+           i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) AS balance_zar
     FROM invoices i
     LEFT JOIN crm_accounts ca ON ca.id = i.customer_id
     WHERE i.company_id = ? AND i.deleted_at IS NULL

@@ -171,8 +171,16 @@ async function loadBillsForSupplier(supId) {
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || 'Failed to load bills');
         const allBills = json.data || [];
-        // Filter by supplier and unpaid balance > 0
-        const bills = allBills.filter(b => Number(b.supplier_id) === Number(supId) && parseFloat(b.balance) > 0.0001);
+        // Filter by supplier and unpaid balance > 0, and only bills already
+        // posted to the GL. Paying an unposted draft would leave AP control
+        // debit and its expense/input-VAT unrecognised (the server rejects it
+        // too — see finances/ap/api/payment_create.php).
+        const bills = allBills.filter(b =>
+            Number(b.supplier_id) === Number(supId)
+            && parseFloat(b.balance) > 0.0001
+            && (b.status === 'posted' || b.status === 'paid')
+            && Number(b.journal_id) > 0
+        );
         if (bills.length === 0) {
             container.innerHTML = '<div class="fw-finance__empty-state">No outstanding bills for this supplier.</div>';
             return;

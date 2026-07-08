@@ -166,12 +166,19 @@ try {
                         $DB->rollBack();
                         break; // already matched by a concurrent run
                     }
-                    // Create journal entry for this match (status=posted for SARS compliance)
+                    // Create journal entry for this match (status=posted for SARS compliance).
+                    // ref_type MUST be 'bank_tx' — the payments-basis VAT201
+                    // (VatCalculator) and the VAT audit file (VatAuditFile) select
+                    // bank VAT legs by je.ref_type = 'bank_tx' only. Posting these
+                    // rule matches as 'bank_rule' hid their output/input VAT from
+                    // the return and the substantiation CSV. source_type stays
+                    // 'bank_rule' so the origin (auto-rule vs manual match) is still
+                    // traceable.
                     $stmtJ = $DB->prepare(
                         "INSERT INTO journal_entries (
                             company_id, entry_date, reference, description, module, ref_type, ref_id,
                             source_type, source_id, created_by, created_at, status, posted_by, posted_at
-                        ) VALUES (?, ?, ?, ?, 'fin', 'bank_rule', ?, 'bank_rule', ?, ?, NOW(), 'posted', ?, NOW())"
+                        ) VALUES (?, ?, ?, ?, 'fin', 'bank_tx', ?, 'bank_rule', ?, ?, NOW(), 'posted', ?, NOW())"
                     );
                     $stmtJ->execute([
                         $companyId,

@@ -5,6 +5,9 @@
 (function() {
   'use strict';
 
+  // CSRF token for state-changing endpoints (save_bill / post_to_gl now validate it).
+  var CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
   // Viewer controls (retain existing functionality)
   const viewerContent = document.getElementById('viewerContent');
   const receiptImage = document.getElementById('receiptImage');
@@ -497,7 +500,7 @@
     };
     fetch('api/save_bill.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
       body: JSON.stringify(payload)
     })
     .then(res => res.json())
@@ -549,7 +552,7 @@
     showMessage('info', 'Posting to GL...');
     fetch('api/post_to_gl.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
       body: JSON.stringify({ bill_id: billId })
     })
     .then(res => res.json())
