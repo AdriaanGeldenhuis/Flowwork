@@ -70,6 +70,16 @@ try {
         echo json_encode(['ok' => false, 'error' => 'Invalid signature']);
         exit;
     }
+    // Only a SUCCESSFUL payment event settles the invoice. Previously ANY signed
+    // event matching the reference marked it fully paid — a payment.failed,
+    // refund or cancellation would have settled it. Reject any typed non-success
+    // event (empty type is treated as legacy-success for older deliveries).
+    $eventType = strtolower(is_array($payload) ? (string)($payload['type'] ?? '') : '');
+    if ($eventType !== '' && strpos($eventType, 'succeeded') === false) {
+        http_response_code(200);
+        echo json_encode(['ignored' => true, 'reason' => 'non-success event: ' . $eventType]);
+        exit;
+    }
     // If invoice already paid, ignore
     if ($invoice['status'] === 'paid' || (float)$invoice['balance_due'] <= 0) {
         http_response_code(200);
@@ -92,6 +102,16 @@ try {
     $DB->beginTransaction();
     $invoiceId = $invoice['id'];
     $balance   = (float)$invoice['balance_due'];
+    // Record the amount ACTUALLY paid (Yoco amounts are in cents), capped at the
+    // outstanding balance — never assume the full balance was settled. Fall back
+    // to the balance only when the payload carries no amount (the "Pay Now" link
+    // is created for the full balance).
+    $paidAmount = null;
+    foreach ([$payload['amount'] ?? null, $payload['data']['amount'] ?? null,
+              $payload['payload']['amount'] ?? null, $payload['data']['order']['amount'] ?? null] as $cand) {
+        if (is_numeric($cand)) { $paidAmount = (float)$cand / 100.0; break; }
+    }
+    $amountToRecord = ($paidAmount !== null && $paidAmount > 0) ? min($paidAmount, $balance) : $balance;
     if ($balance <= 0) {
         // Nothing to allocate
         $DB->commit();
@@ -115,7 +135,7 @@ try {
         "VALUES (?, ?, ?, 'yoco', ?, ?, ?, ?)"
     );
     try {
-        $stmt->execute([$companyId, $paymentDate, $balance, $yocoRef, json_encode($payload), $receivedBy,
+        $stmt->execute([$companyId, $paymentDate, $amountToRecord, $yocoRef, json_encode($payload), $receivedBy,
             substr('yoco:' . $yocoRef, 0, 64)]);
     } catch (PDOException $e) {
         if (($e->errorInfo[1] ?? 0) == 1062 || $e->getCode() == '23000') {
@@ -129,10 +149,17 @@ try {
     $paymentId = $DB->lastInsertId();
     // Allocate payment to invoice
     $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
-    $stmt->execute([$paymentId, $invoiceId, $balance]);
-    // Update invoice
-    $stmt = $DB->prepare("UPDATE invoices SET balance_due = 0, status = 'paid', paid_at = NOW(), updated_at = NOW() WHERE id = ?");
-    $stmt->execute([$invoiceId]);
+    $stmt->execute([$paymentId, $invoiceId, $amountToRecord]);
+    // Update invoice: fully paid only when the amount clears the balance,
+    // otherwise part-paid (a partial Yoco payment must not mark it 'paid').
+    $newBalance = round($balance - $amountToRecord, 2);
+    if ($newBalance <= 0.005) {
+        $stmt = $DB->prepare("UPDATE invoices SET balance_due = 0, status = 'paid', paid_at = NOW(), updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$invoiceId]);
+    } else {
+        $stmt = $DB->prepare("UPDATE invoices SET balance_due = ?, status = 'part-paid', updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$newBalance, $invoiceId]);
+    }
     // Audit log
     $stmt = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, entity_type, entity_id, details, ip, timestamp) " .

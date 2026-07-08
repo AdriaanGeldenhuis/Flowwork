@@ -3,6 +3,7 @@
 // Generate a draft credit note that mirrors all lines of the source invoice.
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/require_writer.php';
 
 header('Content-Type: application/json');
 

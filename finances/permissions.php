@@ -33,6 +33,16 @@ function requireRoles(array $allowed): void {
         return;
     }
 
+    // XHR / JSON callers get a 403 JSON body. A 302 redirect here would be
+    // fetched and JSON-parsed as HTML by the client, surfacing as a misleading
+    // "Network error" instead of a clear permission message.
+    if (function_exists('fw_wants_json') && fw_wants_json()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'You do not have permission to perform this action.']);
+        exit;
+    }
+
     $need = implode(', ', $allowed);
     header('Location: /finances/access_denied.php?need=' . urlencode($need));
     exit;

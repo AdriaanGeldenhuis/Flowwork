@@ -2,6 +2,7 @@
 // /qi/ajax/run_recurring.php
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
