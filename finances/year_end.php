@@ -30,12 +30,14 @@ if (!$companyId || !$userId) {
     exit;
 }
 
-// Get fiscal year start setting
+// Get fiscal year start setting. Resolve the month through the single tolerant
+// parser so a value stored as a number (admin/finance.php) or a name (Finance
+// Settings UI) both resolve correctly instead of silently defaulting to January.
+require_once __DIR__ . '/lib/CoaSchema.php';
 $stmt = $DB->prepare("SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = 'finance_fiscal_year_start' LIMIT 1");
 $stmt->execute([$companyId]);
-$fyMonthName = $stmt->fetchColumn() ?: 'March';
-$fyMonthNum = (int)date('n', strtotime($fyMonthName . ' 1'));
-if (!$fyMonthNum) $fyMonthNum = 3;
+$fyMonthNum  = CoaSchema::parseFiscalMonth($stmt->fetchColumn() ?: '');
+$fyMonthName = date('F', mktime(0, 0, 0, $fyMonthNum, 1));
 
 // Build list of closeable fiscal years (current year minus 1, minus 2, etc.)
 $currentYear = (int)date('Y');

@@ -75,10 +75,18 @@ function columnExists(PDO $DB, string $table, string $column): bool
 
 /**
  * Resolve the fiscal year start date from company settings.
- * Falls back to January 1 of the current year if not set.
+ *
+ * Delegates month resolution to CoaSchema::parseFiscalMonth so it accepts every
+ * stored format (month NAME "March", month number "3"/"03", or "MM-DD") and
+ * defaults to March — the SARS default tax-year start. The old version only
+ * understood numbers/MM-DD and defaulted to January, so a company configured
+ * through the Finance Settings UI (which stores a month name) silently got a
+ * 1-January boundary here, misstating the P&L period and balance-sheet
+ * current-year-earnings split for every non-January fiscal year.
  */
 function getFiscalYearStart(PDO $DB, int $companyId, string $endDate): string
 {
+    require_once __DIR__ . '/../lib/CoaSchema.php';
     $endYear = (int)substr($endDate, 0, 4);
 
     try {
@@ -86,35 +94,24 @@ function getFiscalYearStart(PDO $DB, int $companyId, string $endDate): string
             "SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = 'finance_fiscal_year_start' LIMIT 1"
         );
         $stmt->execute([$companyId]);
-        $value = $stmt->fetchColumn();
+        $value = trim((string)$stmt->fetchColumn());
     } catch (\Exception $e) {
-        return $endYear . '-01-01';
+        $value = '';
     }
 
-    if (!$value) {
-        return $endYear . '-01-01';
+    $month = CoaSchema::parseFiscalMonth($value);
+    // Preserve an explicit day when the value is in "MM-DD" form; otherwise day 1.
+    $day = 1;
+    if (preg_match('/^\d{1,2}-(\d{1,2})$/', $value, $md)) {
+        $d = (int)$md[1];
+        if ($d >= 1 && $d <= 31) { $day = $d; }
     }
 
-    // Support MM-DD format (e.g. "03-01" for March 1)
-    if (preg_match('/^(\d{1,2})-(\d{1,2})$/', trim($value), $m)) {
-        $month = str_pad($m[1], 2, '0', STR_PAD_LEFT);
-        $day   = str_pad($m[2], 2, '0', STR_PAD_LEFT);
-        $fiscalStart = $endYear . '-' . $month . '-' . $day;
-        if ($fiscalStart > $endDate) {
-            $fiscalStart = ($endYear - 1) . '-' . $month . '-' . $day;
-        }
-        return $fiscalStart;
+    $mm = str_pad((string)$month, 2, '0', STR_PAD_LEFT);
+    $dd = str_pad((string)$day, 2, '0', STR_PAD_LEFT);
+    $fiscalStart = $endYear . '-' . $mm . '-' . $dd;
+    if ($fiscalStart > $endDate) {
+        $fiscalStart = ($endYear - 1) . '-' . $mm . '-' . $dd;
     }
-
-    // Support month number only (e.g. "3" for March)
-    if (is_numeric(trim($value))) {
-        $month = str_pad((int)$value, 2, '0', STR_PAD_LEFT);
-        $fiscalStart = $endYear . '-' . $month . '-01';
-        if ($fiscalStart > $endDate) {
-            $fiscalStart = ($endYear - 1) . '-' . $month . '-01';
-        }
-        return $fiscalStart;
-    }
-
-    return $endYear . '-01-01';
+    return $fiscalStart;
 }

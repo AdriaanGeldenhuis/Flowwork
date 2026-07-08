@@ -71,7 +71,19 @@ $allowedKeys = [
     'inventory_account_id',
     'expense_account_id',
     'gain_on_disposal_account_id',
-    'loss_on_disposal_account_id'
+    'loss_on_disposal_account_id',
+    // Payroll (EMP201), forex, bad debt and year-end mappings — previously
+    // reachable by the posting engine (AccountsMap) but not editable here.
+    'paye_account_id',
+    'uif_account_id',
+    'sdl_account_id',
+    'wage_expense_account_id',
+    'uif_expense_account_id',
+    'sdl_expense_account_id',
+    'fx_gain_account_id',
+    'fx_loss_account_id',
+    'bad_debt_account_id',
+    'retained_earnings_account_id'
 ];
 
 // Validate enumerated settings
@@ -115,9 +127,39 @@ if (array_key_exists('fiscal_year_start', $updates)) {
 }
 
 // *_account_id settings: must be positive integers referencing a gl_accounts
-// row owned by this company. Null/empty clears the mapping and is allowed.
+// row owned by this company, AND of the correct account_type for the role.
+// Without the type check an admin could map e.g. VAT Output to a revenue
+// account — which both hides the SARS liability on the balance sheet AND
+// contaminates the VAT201, because VatCalculator sums journal lines by the
+// mapped account code. Null/empty clears the mapping and is allowed. VAT
+// input/control also accept 'asset' since some charts present VAT receivable
+// as a current asset rather than a contra-liability.
+$expectedTypes = [
+    'ar_account_id'                => ['asset'],
+    'ap_account_id'                => ['liability'],
+    'bank_account_id'              => ['asset'],
+    'vat_output_account_id'        => ['liability'],
+    'vat_input_account_id'         => ['liability', 'asset'],
+    'vat_control_account_id'       => ['liability', 'asset'],
+    'sales_account_id'             => ['revenue'],
+    'cogs_account_id'              => ['expense'],
+    'inventory_account_id'         => ['asset'],
+    'expense_account_id'           => ['expense'],
+    'gain_on_disposal_account_id'  => ['revenue'],
+    'loss_on_disposal_account_id'  => ['expense'],
+    'paye_account_id'              => ['liability'],
+    'uif_account_id'               => ['liability'],
+    'sdl_account_id'               => ['liability'],
+    'wage_expense_account_id'      => ['expense'],
+    'uif_expense_account_id'       => ['expense'],
+    'sdl_expense_account_id'       => ['expense'],
+    'fx_gain_account_id'           => ['revenue'],
+    'fx_loss_account_id'           => ['expense'],
+    'bad_debt_account_id'          => ['expense'],
+    'retained_earnings_account_id' => ['equity'],
+];
 $accCheckStmt = $DB->prepare(
-    "SELECT COUNT(*) FROM gl_accounts WHERE company_id = ? AND account_id = ?"
+    "SELECT account_type FROM gl_accounts WHERE company_id = ? AND account_id = ? LIMIT 1"
 );
 foreach ($updates as $key => $value) {
     if (substr($key, -11) !== '_account_id' || $value === null) {
@@ -130,8 +172,13 @@ foreach ($updates as $key => $value) {
         exit;
     }
     $accCheckStmt->execute([$companyId, $accId]);
-    if ((int)$accCheckStmt->fetchColumn() === 0) {
+    $accType = $accCheckStmt->fetchColumn();
+    if ($accType === false) {
         echo json_encode(['ok' => false, 'error' => 'Account for ' . $key . ' does not exist for this company']);
+        exit;
+    }
+    if (isset($expectedTypes[$key]) && !in_array($accType, $expectedTypes[$key], true)) {
+        echo json_encode(['ok' => false, 'error' => 'The account for ' . $key . ' must be of type ' . implode(' or ', $expectedTypes[$key])]);
         exit;
     }
     $updates[$key] = $accId;
@@ -139,30 +186,20 @@ foreach ($updates as $key => $value) {
 
 try {
     $DB->beginTransaction();
-    // Upsert each setting key
+    // Upsert each setting key atomically. company_settings has a unique key on
+    // (company_id, setting_key), so ON DUPLICATE KEY UPDATE avoids the
+    // check-then-write race the previous version could hit under concurrent saves.
+    $upsert = $DB->prepare(
+        "INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
+         VALUES (?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW()"
+    );
     foreach ($updates as $key => $value) {
-        $settingKey = 'finance_' . $key;
-        // Check if setting exists
-        $stmt = $DB->prepare(
-            "SELECT COUNT(*) FROM company_settings WHERE company_id = ? AND setting_key = ?"
-        );
-        $stmt->execute([$companyId, $settingKey]);
-        $exists = $stmt->fetchColumn() > 0;
-        if ($exists) {
-            // Update existing
-            $stmt = $DB->prepare(
-                "UPDATE company_settings SET setting_value = ?, updated_at = NOW()
-                 WHERE company_id = ? AND setting_key = ?"
-            );
-            $stmt->execute([$value, $companyId, $settingKey]);
-        } else {
-            // Insert new (company_settings has no created_at column)
-            $stmt = $DB->prepare(
-                "INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
-                 VALUES (?, ?, ?, NOW())"
-            );
-            $stmt->execute([$companyId, $settingKey, $value]);
-        }
+        // Store '' rather than NULL for a cleared mapping: setting_value is
+        // TEXT NOT NULL, so under strict sql_mode binding NULL aborts the whole
+        // save (errno 1048). AccountsMap treats '' and NULL identically (both
+        // fall back to the default), so a cleared mapping still behaves the same.
+        $upsert->execute([$companyId, 'finance_' . $key, $value ?? '']);
     }
     // Audit log entry
     $stmt = $DB->prepare(
