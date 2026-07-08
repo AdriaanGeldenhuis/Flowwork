@@ -106,6 +106,13 @@ $canForceDelete       = $isAdmin;
 $canArchive           = !$isArchived;
 $canUnarchive         = $isArchived;
 
+// GL drill-through: link to the posted journal so the invoice→GL seam works
+// both ways (finance→invoice already exists). Shown only to finance-capable
+// roles and only once the invoice has actually been posted; the target page
+// (journal_view) enforces its own role gate regardless.
+$canViewGl = in_array(($_SESSION['role'] ?? ''), ['admin', 'bookkeeper', 'viewer'], true);
+$glJournalId = (int)($invoice['journal_id'] ?? 0);
+
 // Colour, text and font customisation — resolved centrally (qi/lib/Branding.php)
 // so the on-screen invoice, the printable page and the downloaded PDF match.
 $brand = Branding::resolve($invoice, 'invoice');
@@ -389,6 +396,18 @@ $vatSplit = $isVatRegistered ? qi_vat_rate_split($lines) : [];
                             </svg>
                             Print
                         </button>
+
+                        <?php if ($canViewGl && $glJournalId > 0): ?>
+                            <a href="/finances/gl/journal_view.php?id=<?= $glJournalId ?>" class="fw-qi__kebab-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14 2 14 8 20 8" />
+                                    <line x1="16" y1="13" x2="8" y2="13" />
+                                    <line x1="16" y1="17" x2="8" y2="17" />
+                                </svg>
+                                View GL Journal
+                            </a>
+                        <?php endif; ?>
 
                         <?php if ($invoice['status'] !== 'paid'): ?>
                             <button onclick="InvoiceView.openPaymentModal()" class="fw-qi__kebab-item">
