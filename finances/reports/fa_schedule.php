@@ -53,6 +53,13 @@ $totalAccumDepr = 0;
 $totalNBV = 0;
 $totalSalvage = 0;
 foreach ($assets as $a) {
+    // Disposed assets have been removed from the GL (asset_dispose posts the
+    // disposal journal), so exclude them from the schedule TOTALS or cost /
+    // accumulated depreciation / NBV overstate and no longer tie to the balance
+    // sheet. They still appear as rows in the listing below.
+    if (($a['status'] ?? '') === 'disposed') {
+        continue;
+    }
     $totalCost += $a['purchase_cost_cents'];
     $totalAccumDepr += $a['accumulated_depreciation_cents'];
     $totalNBV += ($a['purchase_cost_cents'] - $a['accumulated_depreciation_cents']);

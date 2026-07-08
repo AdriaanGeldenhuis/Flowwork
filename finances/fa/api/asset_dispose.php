@@ -61,7 +61,7 @@ try {
     $DB->beginTransaction();
     $stmt = $DB->prepare(
         "SELECT asset_id, asset_name, purchase_cost_cents, accumulated_depreciation_cents,
-                asset_account_id, accumulated_depreciation_account_id, status
+                asset_account_id, accumulated_depreciation_account_id, status, purchase_date
          FROM gl_fixed_assets
          WHERE company_id = ? AND asset_id = ?
          LIMIT 1 FOR UPDATE"
@@ -73,6 +73,22 @@ try {
     }
     if (strtolower($asset['status']) !== 'active') {
         throw new Exception('Asset is not active and cannot be disposed');
+    }
+    // The disposal cannot predate acquisition, nor a month already depreciated —
+    // reversing accumulated depreciation in a period before it was booked
+    // corrupts the register and the GL.
+    if (!empty($asset['purchase_date']) && $dateStr < $asset['purchase_date']) {
+        throw new Exception('Disposal date cannot be before the asset purchase date (' . $asset['purchase_date'] . ')');
+    }
+    $depStmt = $DB->prepare(
+        "SELECT MAX(r.run_month) FROM fa_depreciation_lines l
+           JOIN fa_depreciation_runs r ON r.id = l.run_id
+          WHERE l.asset_id = ? AND r.company_id = ? AND r.status = 'posted'"
+    );
+    $depStmt->execute([$assetId, $companyId]);
+    $lastDepMonth = $depStmt->fetchColumn();
+    if ($lastDepMonth && $dateStr < $lastDepMonth) {
+        throw new Exception('Disposal date cannot be before the last depreciated month (' . $lastDepMonth . ')');
     }
     // Check the disposal date is not in a locked period
     $periodService = new PeriodService($DB, $companyId);

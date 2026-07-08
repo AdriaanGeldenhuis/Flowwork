@@ -124,7 +124,7 @@ $apStmt = $DB->prepare("
                ON p.bill_id = b.id
         LEFT JOIN (SELECT bill_id, SUM(amount) AS cred_tot FROM vendor_credit_allocations GROUP BY bill_id) c
                ON c.bill_id = b.id
-        WHERE b.company_id = ? AND b.status NOT IN ('cancelled','blocked')
+        WHERE b.company_id = ? AND b.status IN ('posted','paid')
     ) t
     WHERE balance > 0.005
 ");
@@ -182,6 +182,9 @@ $plStmt = $DB->prepare("
     WHERE je.company_id = ? AND je.status = 'posted'
       AND je.entry_date >= ? AND je.entry_date <= CURDATE()
       AND ga.account_type IN ('revenue','expense')
+      -- Exclude year-end close journals: they roll P&L to retained earnings and
+      -- would otherwise distort the period's revenue/expense widgets.
+      AND (je.module IS NULL OR je.module <> 'year_end')
 ");
 $plStmt->execute([$monthStart, $monthStart, $monthStart, $monthStart, $companyId, $prevMonthStart]);
 $pl = $plStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -202,6 +205,7 @@ $revExpStmt = $DB->prepare("
     JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
     WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date >= ?
       AND ga.account_type IN ('revenue','expense')
+      AND (je.module IS NULL OR je.module <> 'year_end')
     GROUP BY ym
 ");
 $revExpStmt->execute([$companyId, $rangeStart12]);
@@ -331,7 +335,7 @@ $overdueApStmt = $DB->prepare("
            ON p.bill_id = b.id
     LEFT JOIN (SELECT bill_id, SUM(amount) AS cred_tot FROM vendor_credit_allocations GROUP BY bill_id) c
            ON c.bill_id = b.id
-    WHERE b.company_id = ? AND b.status NOT IN ('cancelled','blocked')
+    WHERE b.company_id = ? AND b.status IN ('posted','paid')
       AND b.due_date IS NOT NULL AND b.due_date < CURDATE()
     HAVING balance > 0.005
     ORDER BY days_overdue DESC

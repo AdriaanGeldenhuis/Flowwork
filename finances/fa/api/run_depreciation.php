@@ -41,6 +41,13 @@ if (!preg_match('/^\d{4}-\d{2}$/', $monthInput)) {
 }
 $runMonthDate = $monthInput . '-01';
 
+// Reject a FUTURE month — depreciation may only be run for the current month or
+// earlier; running ahead books depreciation that has not yet been incurred.
+if ($runMonthDate > date('Y-m-01')) {
+    echo json_encode(['success' => false, 'message' => 'Cannot run depreciation for a future month (' . $monthInput . ')']);
+    exit;
+}
+
 // Check period lock before any calculations or updates
 $periodService = new PeriodService($DB, $companyId);
 if ($periodService->isLocked($runMonthDate)) {

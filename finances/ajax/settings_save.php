@@ -208,6 +208,26 @@ foreach ($updates as $key => $value) {
     $updates[$key] = $accId;
 }
 
+// Health check beyond per-slot type validation: these core roles must each use a
+// DISTINCT account. Type validation alone let, e.g., a VAT-control account (also
+// an 'asset') be dropped into the bank slot, silently corrupting every report
+// keyed on the mapping. (paye/uif/sdl are intentionally excluded — a simple
+// chart may share a statutory-payables account across them.)
+$mutuallyExclusive = ['ar_account_id', 'ap_account_id', 'bank_account_id',
+    'vat_output_account_id', 'vat_input_account_id', 'vat_control_account_id',
+    'sales_account_id', 'cogs_account_id', 'inventory_account_id'];
+$seenSlot = [];
+foreach ($mutuallyExclusive as $meKey) {
+    if (isset($updates[$meKey]) && is_int($updates[$meKey]) && $updates[$meKey] > 0) {
+        $aid = $updates[$meKey];
+        if (isset($seenSlot[$aid])) {
+            echo json_encode(['ok' => false, 'error' => 'The same account is mapped to both ' . $seenSlot[$aid] . ' and ' . $meKey . ' — these roles must use distinct accounts.']);
+            exit;
+        }
+        $seenSlot[$aid] = $meKey;
+    }
+}
+
 try {
     $DB->beginTransaction();
     // Upsert each setting key atomically. company_settings has a unique key on

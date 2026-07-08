@@ -158,14 +158,25 @@ try {
                 }
             }
 
-            // Prevent deactivation if there are posted lines with non-zero balance
+            // Prevent deactivation only when the account still carries a NON-ZERO
+            // balance. Blocking on the mere existence of posted lines (as before)
+            // meant an account that ever transacted could never be deactivated
+            // even at nil balance — contradicting the "transfer balances first"
+            // guidance. An account whose posted activity nets to zero is safe to
+            // retire.
             if ($isActive === 0 && $existing['is_active'] == 1) {
                 if ($existing['is_system']) {
                     throw new Exception('Cannot deactivate a system account');
                 }
-                $lineCount = CoaSchema::postedLineCount($DB, $companyId, $existing['account_code']);
-                if ($lineCount > 0) {
-                    throw new Exception('Cannot deactivate — account has posted journal entries. Transfer balances first.');
+                $balStmt = $DB->prepare(
+                    "SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+                       FROM journal_lines jl
+                       JOIN journal_entries je ON je.id = jl.journal_id
+                      WHERE je.company_id = ? AND je.status = 'posted' AND jl.account_code = ?"
+                );
+                $balStmt->execute([$companyId, $existing['account_code']]);
+                if (abs((float)$balStmt->fetchColumn()) > 0.005) {
+                    throw new Exception('Cannot deactivate — account has a non-zero balance. Transfer the balance to another account first.');
                 }
             }
 
