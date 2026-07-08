@@ -69,7 +69,17 @@ $settings = [
     'vat_control_account_id'         => $raw['finance_vat_control_account_id']         ?? '',
     'expense_account_id'             => $raw['finance_expense_account_id']             ?? '',
     'gain_on_disposal_account_id'    => $raw['finance_gain_on_disposal_account_id']    ?? '',
-    'loss_on_disposal_account_id'    => $raw['finance_loss_on_disposal_account_id']    ?? ''
+    'loss_on_disposal_account_id'    => $raw['finance_loss_on_disposal_account_id']    ?? '',
+    'paye_account_id'                => $raw['finance_paye_account_id']                ?? '',
+    'uif_account_id'                 => $raw['finance_uif_account_id']                 ?? '',
+    'sdl_account_id'                 => $raw['finance_sdl_account_id']                 ?? '',
+    'wage_expense_account_id'        => $raw['finance_wage_expense_account_id']        ?? '',
+    'uif_expense_account_id'         => $raw['finance_uif_expense_account_id']         ?? '',
+    'sdl_expense_account_id'         => $raw['finance_sdl_expense_account_id']         ?? '',
+    'fx_gain_account_id'             => $raw['finance_fx_gain_account_id']             ?? '',
+    'fx_loss_account_id'             => $raw['finance_fx_loss_account_id']             ?? '',
+    'bad_debt_account_id'            => $raw['finance_bad_debt_account_id']            ?? '',
+    'retained_earnings_account_id'   => $raw['finance_retained_earnings_account_id']   ?? ''
 ];
 
 // Load active GL accounts for dropdowns
@@ -81,6 +91,35 @@ $stmt = $DB->prepare(
 );
 $stmt->execute([$companyId]);
 $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Include any account a mapping currently points to but which is now inactive.
+// The dropdowns are built from active accounts only, so without this an inactive
+// mapped account has no matching option — the select falls back to the blank
+// "Select account", and simply re-saving the form would post an empty value and
+// silently wipe the mapping (then posting falls back to a possibly-wrong default
+// code). Appending the mapped-but-inactive accounts keeps them selected.
+$activeIds = [];
+foreach ($accounts as $a) { $activeIds[(int)$a['account_id']] = true; }
+$mappedIds = [];
+foreach ($settings as $sk => $sv) {
+    if (substr($sk, -11) === '_account_id' && ctype_digit((string)$sv)) {
+        $id = (int)$sv;
+        if (!isset($activeIds[$id])) { $mappedIds[$id] = true; }
+    }
+}
+if ($mappedIds) {
+    $ids = array_keys($mappedIds);
+    $ph  = implode(',', array_fill(0, count($ids), '?'));
+    $st  = $DB->prepare(
+        "SELECT account_id, account_code, account_name FROM gl_accounts
+         WHERE company_id = ? AND account_id IN ($ph) ORDER BY account_code"
+    );
+    $st->execute(array_merge([$companyId], $ids));
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $row['account_name'] .= ' (inactive)';
+        $accounts[] = $row;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -118,9 +157,16 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <select id="fiscal_year_start" name="fiscal_year_start" class="fw-finance__input" required>
                                 <option value="">Select month</option>
                                 <?php
+                                // Normalise the stored value to a month name so the correct month
+                                // preselects whether it was saved as a name (this page) or a number
+                                // (admin/finance.php). Unset stays blank to force an explicit choice.
+                                require_once __DIR__ . '/lib/CoaSchema.php';
+                                $fyStartName = ($settings['fiscal_year_start'] !== '')
+                                    ? date('F', mktime(0, 0, 0, CoaSchema::parseFiscalMonth($settings['fiscal_year_start']), 1))
+                                    : '';
                                 $months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
                                 foreach ($months as $month) {
-                                    $sel = ($settings['fiscal_year_start'] === $month) ? 'selected' : '';
+                                    $sel = ($fyStartName === $month) ? 'selected' : '';
                                     echo '<option value="' . htmlspecialchars($month) . '" ' . $sel . '>' . htmlspecialchars($month) . '</option>';
                                 }
                                 ?>
@@ -210,6 +256,31 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         // --- Fixed Asset Disposal ---
                         renderSelect('gain_on_disposal_account_id', 'Gain on Disposal', 'Income account for fixed asset disposal gains', $settings, $accounts);
                         renderSelect('loss_on_disposal_account_id', 'Loss on Disposal', 'Expense account for fixed asset disposal losses', $settings, $accounts);
+
+                        echo '<div style="height: 24px;"></div>';
+                        echo '<div class="fw-finance__form-card-title" style="font-size: 14px; margin-bottom: 16px; color: var(--fw-text-secondary);">Payroll (EMP201)</div>';
+
+                        // --- Payroll liabilities & expenses ---
+                        renderSelect('paye_account_id', 'PAYE Payable', 'Employees\' tax withheld, owed to SARS', $settings, $accounts);
+                        renderSelect('uif_account_id', 'UIF Payable', 'UIF contributions owed to SARS', $settings, $accounts);
+                        renderSelect('sdl_account_id', 'SDL Payable', 'Skills development levy owed to SARS', $settings, $accounts);
+                        renderSelect('wage_expense_account_id', 'Salaries & Wages Expense', 'Gross remuneration expense account', $settings, $accounts);
+                        renderSelect('uif_expense_account_id', 'UIF Employer Expense', 'Employer UIF contribution expense', $settings, $accounts);
+                        renderSelect('sdl_expense_account_id', 'SDL Employer Expense', 'Employer skills development levy expense', $settings, $accounts);
+
+                        echo '<div style="height: 24px;"></div>';
+                        echo '<div class="fw-finance__form-card-title" style="font-size: 14px; margin-bottom: 16px; color: var(--fw-text-secondary);">Foreign Exchange &amp; Write-offs</div>';
+
+                        // --- Forex + bad debt ---
+                        renderSelect('fx_gain_account_id', 'Realised Forex Gain', 'Income account for realised foreign-exchange gains', $settings, $accounts);
+                        renderSelect('fx_loss_account_id', 'Realised Forex Loss', 'Expense account for realised foreign-exchange losses', $settings, $accounts);
+                        renderSelect('bad_debt_account_id', 'Bad Debts Written Off', 'Expense account for customer write-offs (s22 VAT relief)', $settings, $accounts);
+
+                        echo '<div style="height: 24px;"></div>';
+                        echo '<div class="fw-finance__form-card-title" style="font-size: 14px; margin-bottom: 16px; color: var(--fw-text-secondary);">Equity</div>';
+
+                        // --- Year-end ---
+                        renderSelect('retained_earnings_account_id', 'Retained Earnings', 'Accumulated-profit account the year-end close posts net income to', $settings, $accounts);
                         ?>
 
                         <div id="formMessage"></div>
@@ -255,24 +326,32 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
+        const ORIGINAL_VAT_BASIS = <?= json_encode($settings['vat_basis']) ?>;
         document.getElementById('settingsForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
+
             const saveBtn = document.getElementById('saveBtn');
             const formMessage = document.getElementById('formMessage');
             const form = e.target;
-            
+
             // Clear previous message
             formMessage.style.display = 'none';
             formMessage.textContent = '';
-            
+
             // Collect form data
             const payload = {};
             const formData = new FormData(form);
             formData.forEach((value, key) => {
                 payload[key] = value;
             });
-            
+
+            // A VAT-basis change is a SARS election change — confirm before saving.
+            if (payload.vat_basis && payload.vat_basis !== ORIGINAL_VAT_BASIS) {
+                if (!confirm('Changing the VAT accounting basis (invoice ↔ payments) is a SARS election change. Open VAT periods will be recomputed on the new basis, and any s16(3) transitional adjustments must be captured manually. Continue?')) {
+                    return;
+                }
+            }
+
             // Disable submit button
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving...';

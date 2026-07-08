@@ -20,7 +20,7 @@ try {
   $limit = min(100, max(1, (int)($_GET['limit'] ?? 25)));
   $offset = ($page - 1) * $limit;
 
-  $where = ['i.company_id = ?'];
+  $where = ['i.company_id = ?', 'i.deleted_at IS NULL'];
   $params = [$companyId];
 
   if ($q !== '') {
@@ -29,7 +29,14 @@ try {
     $params[] = $like;
     $params[] = $like;
   }
-  if ($status !== '') {
+  if ($status === 'overdue') {
+    // 'overdue' is a DERIVED state, never stored (invoices.status is never
+    // written as 'overdue' anywhere). Mirror the dashboard KPI's derivation
+    // exactly (finances/ar/index.php): past due date, outstanding balance, and
+    // a still-collectable status — the whitelist deliberately excludes
+    // written_off/refunded/uncollectible so Reminders doesn't chase them.
+    $where[] = "i.due_date < CURDATE() AND i.balance_due > 0 AND i.status IN ('sent','viewed','part-paid','overdue')";
+  } elseif ($status !== '') {
     $where[] = 'i.status = ?';
     $params[] = $status;
   }

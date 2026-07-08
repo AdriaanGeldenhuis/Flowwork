@@ -41,7 +41,7 @@ try {
          FROM gl_bank_rules r
          LEFT JOIN gl_accounts a ON r.gl_account_id = a.account_id AND a.company_id = r.company_id
          WHERE r.company_id = ? AND r.is_active = 1
-         ORDER BY r.priority ASC"
+         ORDER BY r.priority ASC, r.id ASC"
     );
     $stmt->execute([$companyId]);
     $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -67,6 +67,10 @@ try {
             }
         } catch (Exception $lockEx) {
             // On error, skip this transaction
+            continue;
+        }
+        // A zero-value transaction would post a 0.00/0.00 journal — skip it.
+        if ((int)$tx['amount_cents'] === 0) {
             continue;
         }
         foreach ($rules as $rule) {
@@ -112,11 +116,56 @@ try {
                 }
                 $description = $rule['description_template'] ?: ($tx['description'] ?: 'Bank transaction');
                 $reference = 'BANKTX' . $tx['bank_tx_id'];
-                $amount = abs(intval($tx['amount_cents'])) / 100;
                 $ruleTaxCodeId = !empty($rule['tax_code_id']) ? (int)$rule['tax_code_id'] : null;
+
+                // When the rule carries a VAT tax code the bank amount is
+                // VAT-INCLUSIVE: split it into a net leg on the rule account and
+                // a VAT leg on the VAT output/input account (tax fraction), so
+                // the VAT201 sees the tax. Mirrors bank_match_transaction.php —
+                // posting the gross with only a tag left VAT off the GL.
+                $amountC    = abs((int)$tx['amount_cents']);
+                $isMoneyIn  = (int)$tx['amount_cents'] > 0;
+                $netC       = $amountC;
+                $vatC       = 0;
+                $vatLegCode = null;
+                if ($ruleTaxCodeId) {
+                    $tcStmt = $DB->prepare("SELECT rate_percent FROM gl_tax_codes WHERE tax_code_id = ? AND company_id = ? AND is_active = 1");
+                    $tcStmt->execute([$ruleTaxCodeId, $companyId]);
+                    $rate = (float)$tcStmt->fetchColumn();
+                    if ($rate > 0.005) {
+                        $vatC = (int)round($amountC * $rate / (100 + $rate));
+                        $netC = $amountC - $vatC;
+                        require_once __DIR__ . '/../lib/AccountsMap.php';
+                        $accountsMap = new AccountsMap($DB, $companyId);
+                        $vatLegCode = $isMoneyIn
+                            ? $accountsMap->code('finance_vat_output_account_id')
+                            : $accountsMap->code('finance_vat_input_account_id');
+                    } else {
+                        // Tax code invalid/zero-rated for this company — don't tag.
+                        $ruleTaxCodeId = null;
+                    }
+                    // Can't resolve a VAT account: fall back to a gross 2-line
+                    // posting so the journal always balances.
+                    if ($vatC > 0 && !$vatLegCode) {
+                        $netC = $amountC;
+                        $vatC = 0;
+                    }
+                }
+                $fmt = fn(int $c) => number_format($c / 100, 2, '.', '');
+
                 // Atomically create header + lines + matched flag for this transaction
                 try {
                     $DB->beginTransaction();
+                    // Re-lock the row and re-check matched INSIDE the transaction
+                    // so two concurrent apply-rules runs (or a race with a manual
+                    // match) can't both post a journal for the same line.
+                    $lockStmt = $DB->prepare("SELECT matched FROM gl_bank_transactions WHERE bank_tx_id = ? AND company_id = ? FOR UPDATE");
+                    $lockStmt->execute([$tx['bank_tx_id'], $companyId]);
+                    $lockedMatched = $lockStmt->fetchColumn();
+                    if ($lockedMatched === false || (int)$lockedMatched === 1) {
+                        $DB->rollBack();
+                        break; // already matched by a concurrent run
+                    }
                     // Create journal entry for this match (status=posted for SARS compliance)
                     $stmtJ = $DB->prepare(
                         "INSERT INTO journal_entries (
@@ -139,20 +188,30 @@ try {
                     $lineStmt = $DB->prepare(
                         "INSERT INTO journal_lines (journal_id, account_code, description, debit, credit, tax_code_id, supplier_id, customer_id, reference) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)"
                     );
-                    if (intval($tx['amount_cents']) > 0) {
-                        // Money IN: Dr bank, Cr rule account
-                        $lineStmt->execute([$journalId, $bankAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, null, $reference]);
-                        $lineStmt->execute([$journalId, $ruleAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), $ruleTaxCodeId, $reference]);
+                    if ($isMoneyIn) {
+                        // Money IN: Dr bank (gross), Cr rule account (net), Cr VAT output (vat)
+                        $lineStmt->execute([$journalId, $bankAccountCode, $description, $fmt($amountC), 0.0, null, $reference]);
+                        $lineStmt->execute([$journalId, $ruleAccountCode, $description, 0.0, $fmt($netC), $ruleTaxCodeId, $reference]);
+                        if ($vatC > 0 && $vatLegCode) {
+                            $lineStmt->execute([$journalId, $vatLegCode, 'VAT on ' . $description, 0.0, $fmt($vatC), $ruleTaxCodeId, $reference]);
+                        }
                     } else {
-                        // Money OUT: Dr rule account, Cr bank
-                        $lineStmt->execute([$journalId, $ruleAccountCode, $description, number_format($amount, 2, '.', ''), 0.0, $ruleTaxCodeId, $reference]);
-                        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, number_format($amount, 2, '.', ''), null, $reference]);
+                        // Money OUT: Dr rule account (net), Dr VAT input (vat), Cr bank (gross)
+                        $lineStmt->execute([$journalId, $ruleAccountCode, $description, $fmt($netC), 0.0, $ruleTaxCodeId, $reference]);
+                        if ($vatC > 0 && $vatLegCode) {
+                            $lineStmt->execute([$journalId, $vatLegCode, 'VAT on ' . $description, $fmt($vatC), 0.0, $ruleTaxCodeId, $reference]);
+                        }
+                        $lineStmt->execute([$journalId, $bankAccountCode, $description, 0.0, $fmt($amountC), null, $reference]);
                     }
-                    // Mark transaction as matched
+                    // Mark transaction as matched. The matched=0 predicate +
+                    // rowCount guard backstops the FOR UPDATE check above.
                     $stmtU = $DB->prepare(
-                        "UPDATE gl_bank_transactions SET matched = 1, journal_id = ? WHERE bank_tx_id = ? AND company_id = ?"
+                        "UPDATE gl_bank_transactions SET matched = 1, journal_id = ? WHERE bank_tx_id = ? AND company_id = ? AND matched = 0"
                     );
                     $stmtU->execute([$journalId, $tx['bank_tx_id'], $companyId]);
+                    if ($stmtU->rowCount() === 0) {
+                        throw new Exception('Transaction already matched (concurrent run)');
+                    }
                     $DB->commit();
                     $matchCount++;
                 } catch (Exception $postEx) {

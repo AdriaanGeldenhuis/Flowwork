@@ -63,7 +63,12 @@ if ($selected) {
     $selEnd   = $selected['period_end'];
     $selBasis = VatCalculator::periodBasis($DB, (int)$companyId, $selected);
 
-    // GL control movements for the period (posted journals only).
+    // GL control movements for the period (posted journals only). Exclude ONLY
+    // the settlement clearing journal (module 'vat_settle'), which zeroes the
+    // VAT accounts on filing and would otherwise make every filed period show a
+    // large false variance. bad_debt is deliberately KEPT: box9 includes s22
+    // bad-debt relief (VatCalculator excludes it from the main input sum then
+    // adds it back separately), so the GL input side must keep that debit too.
     $stmt = $DB->prepare(
         "SELECT jl.account_code,
                 SUM(jl.debit) AS total_debit, SUM(jl.credit) AS total_credit
@@ -71,6 +76,7 @@ if ($selected) {
          JOIN journal_entries je ON je.id = jl.journal_id
          WHERE je.company_id = ? AND je.status = 'posted'
            AND je.entry_date BETWEEN ? AND ?
+           AND COALESCE(je.module,'') <> 'vat_settle'
            AND jl.account_code IN (?, ?)
          GROUP BY jl.account_code"
     );
@@ -92,6 +98,19 @@ if ($selected) {
         $vatOutputCode, $vatInputCode, $selBasis
     );
 
+    // Independent output-VAT integrity figures: the output VAT actually posted
+    // on standard-rated supplies (read from the VAT account, per STD tax code)
+    // vs the standard rate applied to the standard-rated revenue BASE (summed
+    // from revenue accounts — an independent source). A material gap means a
+    // standard-rated supply reached revenue without matching output VAT. This
+    // is the genuinely independent check; gl_out vs box5 below both read the
+    // same VAT account and can only ever tie.
+    require_once __DIR__ . '/../lib/TaxCodes.php';
+    $stdRate  = (new TaxCodes($DB, (int)$companyId))->standardRatePercent();
+    $stdBaseC = (int)($boxes['output_standard_base_cents'] ?? 0);
+    $stdVatC  = (int)($boxes['output_standard_vat_cents'] ?? 0);
+    $expectedOutC = (int)round($stdBaseC * $stdRate / 100);
+
     $detail = [
         'period'   => $selStart . ' to ' . $selEnd,
         'basis'    => $selBasis,
@@ -102,6 +121,10 @@ if ($selected) {
         'box9'     => (int)$boxes['box9_total_input_cents'],
         'box10'    => (int)$boxes['box10_net_cents'],
         'timing'   => null,
+        'std_rate'     => $stdRate,
+        'std_base'     => $stdBaseC,
+        'std_vat'      => $stdVatC,
+        'expected_out' => $expectedOutC,
     ];
 
     if ($selBasis === 'payments') {
@@ -128,7 +151,10 @@ foreach ($periods as $p) {
     $periodStart = $p['period_start'];
     $periodEnd   = $p['period_end'];
 
-    // 1. GL balance: sum of posted journal lines on VAT accounts for period
+    // 1. GL balance: sum of posted journal lines on VAT accounts for period.
+    // Exclude ONLY the settlement clearing journal (vat_settle). bad_debt is
+    // kept because box9 includes s22 bad-debt relief (see the detail query
+    // above), so the GL input side must retain that debit to reconcile.
     $stmt = $DB->prepare(
         "SELECT jl.account_code,
                 SUM(jl.debit) AS total_debit, SUM(jl.credit) AS total_credit
@@ -136,6 +162,7 @@ foreach ($periods as $p) {
          JOIN journal_entries je ON je.id = jl.journal_id
          WHERE je.company_id = ? AND je.status = 'posted'
            AND je.entry_date BETWEEN ? AND ?
+           AND COALESCE(je.module,'') <> 'vat_settle'
            AND jl.account_code IN (?, ?)
          GROUP BY jl.account_code"
     );
@@ -323,6 +350,36 @@ function varClass($cents) {
                 <td><?= fmtR($detail['gl_out'] - $detail['gl_in']) ?></td>
                 <td><?= fmtR($detail['box10']) ?></td>
                 <td class="<?= varClass($outResidual - $inResidual) ?>"><?= fmtR(($detail['gl_out'] - $detail['gl_in']) - $detail['box10']) ?></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <?php $rateLbl = rtrim(rtrim(number_format($detail['std_rate'], 2), '0'), '.'); ?>
+    <h2>Output VAT integrity — posted VAT vs <?= htmlspecialchars($rateLbl) ?>% of standard-rated base</h2>
+    <div class="info-box">
+        The <strong>independent</strong> check. The GL-vs-VAT201 table above reads the same VAT output account on
+        both sides, so it can only ever tie. Here the output VAT actually posted on standard-rated supplies is compared
+        against <?= htmlspecialchars($rateLbl) ?>% of the standard-rated <em>revenue base</em> (summed from revenue
+        accounts — a source independent of the VAT account). A red variance means a standard-rated supply reached
+        revenue with missing or under-declared output VAT (e.g. an asset disposal booked without VAT, or a manual entry).
+    </div>
+    <table>
+        <thead>
+            <tr class="section-header">
+                <th></th>
+                <th>Standard-rated base</th>
+                <th>Output VAT posted</th>
+                <th>Expected (base × <?= htmlspecialchars($rateLbl) ?>%)</th>
+                <th>Variance</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Standard-rated supplies</td>
+                <td><?= fmtR($detail['std_base']) ?></td>
+                <td><?= fmtR($detail['std_vat']) ?></td>
+                <td><?= fmtR($detail['expected_out']) ?></td>
+                <td class="<?= varClass($detail['std_vat'] - $detail['expected_out']) ?>"><?= fmtR($detail['std_vat'] - $detail['expected_out']) ?></td>
             </tr>
         </tbody>
     </table>

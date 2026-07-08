@@ -109,8 +109,14 @@
 
     const grouped = {};
     ['asset','liability','equity','revenue','expense'].forEach(t => { grouped[t] = []; });
+    const filteredIds = new Set(filtered.map(a => String(a.account_id)));
     filtered.forEach(a => {
-      if (!a.parent_id) grouped[a.account_type]?.push(a);
+      // A matched account becomes a group root when it has no parent OR its
+      // parent did not survive the filter — otherwise a matched child of a
+      // filtered-out parent (e.g. searching "bank" matching 1020 under header
+      // 1000) would never render, and the search would appear to find nothing.
+      const parentRendered = a.parent_id && filteredIds.has(String(a.parent_id));
+      if (!parentRendered) grouped[a.account_type]?.push(a);
     });
 
     let html = '';
@@ -168,6 +174,12 @@
     html += '<span class="fw-finance__col-normal">' + (account.normal_balance === 'debit' ? 'Dr' : 'Cr') + '</span>';
     html += '<span class="fw-finance__col-balance ' + balClass + '">' + formatBalance(bal) + '</span>';
     html += '<span class="fw-finance__col-actions">';
+    // Drill-through to this account's ledger (GL Account Detail).
+    html += '<a class="fw-finance__icon-btn" href="/finances/reports/gl_detail.php?account_id=' + escapeHtml(account.account_id) + '" title="View transactions">'
+          + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+          + '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>'
+          + '<line x1="3" y1="6" x2="3" y2="6"/><line x1="3" y1="12" x2="3" y2="12"/><line x1="3" y1="18" x2="3" y2="18"/>'
+          + '</svg></a>';
     html += '<button class="fw-finance__icon-btn edit-account" data-id="' + account.account_id + '" title="' + (isLocked ? 'View (locked)' : 'Edit') + '">'
           + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
           + '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'

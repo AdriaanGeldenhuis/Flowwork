@@ -76,9 +76,9 @@ window.QI = window.QI || {};
         <div class="fw-qi__form-group">
           <label class="fw-qi__label">VAT</label>
           <select name="lines[${lineItemCounter}][tax_rate]" class="fw-qi__input line-tax-rate">
-            <option value="15.00" data-tax-code="STD">15% (Standard)</option>
-            <option value="0.00" data-tax-code="ZERO">0% (Zero-rated)</option>
-            <option value="0.00" data-tax-code="EXEMPT">0% (Exempt)</option>
+            <option value="15.00" data-tax-code="STD">VAT (15%)</option>
+            <option value="0.00" data-tax-code="ZERO">No VAT (Zero-rated)</option>
+            <option value="0.00" data-tax-code="EXEMPT">No VAT (Exempt)</option>
           </select>
           <input type="hidden" name="lines[${lineItemCounter}][tax_code]" class="line-tax-code" value="STD">
         </div>

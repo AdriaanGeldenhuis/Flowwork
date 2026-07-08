@@ -21,8 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 Csrf::validate();
 
-// Check user role
-$role = $_SESSION['role'] ?? 'member';
+// Check user role (case-normalized like every sibling bank endpoint — a
+// mixed-case DB role must not be denied here while accepted elsewhere).
+$role = strtolower($_SESSION['role'] ?? 'member');
 if (!in_array($role, ['admin', 'bookkeeper'])) {
     echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
     exit;

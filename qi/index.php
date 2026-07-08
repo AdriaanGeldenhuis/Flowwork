@@ -48,25 +48,25 @@ if ($activeTab === 'overview') {
     $recvKpi = $DB->prepare("
         SELECT
             COUNT(*) AS open_count,
-            COALESCE(SUM(i.balance_due * i.exchange_rate), 0) AS outstanding_zar,
+            COALESCE(SUM(i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS outstanding_zar,
             SUM(i.due_date < CURDATE()) AS overdue_count,
             COALESCE(SUM(CASE WHEN i.due_date < CURDATE()
-                              THEN i.balance_due * i.exchange_rate END), 0) AS overdue_zar,
+                              THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS overdue_zar,
             SUM(i.due_date >= CURDATE()) AS cnt_current,
             COALESCE(SUM(CASE WHEN i.due_date >= CURDATE()
-                              THEN i.balance_due * i.exchange_rate END), 0) AS aging_current,
+                              THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_current,
             SUM(DATEDIFF(CURDATE(), i.due_date) BETWEEN 1 AND 30) AS cnt_b30,
             COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 1 AND 30
-                              THEN i.balance_due * i.exchange_rate END), 0) AS aging_b30,
+                              THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b30,
             SUM(DATEDIFF(CURDATE(), i.due_date) BETWEEN 31 AND 60) AS cnt_b60,
             COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 31 AND 60
-                              THEN i.balance_due * i.exchange_rate END), 0) AS aging_b60,
+                              THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b60,
             SUM(DATEDIFF(CURDATE(), i.due_date) BETWEEN 61 AND 90) AS cnt_b90,
             COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) BETWEEN 61 AND 90
-                              THEN i.balance_due * i.exchange_rate END), 0) AS aging_b90,
+                              THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b90,
             SUM(DATEDIFF(CURDATE(), i.due_date) > 90) AS cnt_b90plus,
             COALESCE(SUM(CASE WHEN DATEDIFF(CURDATE(), i.due_date) > 90
-                              THEN i.balance_due * i.exchange_rate END), 0) AS aging_b90plus,
+                              THEN i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS aging_b90plus,
             SUM(i.due_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 7 DAY) AS due_week_count
         FROM invoices i
         WHERE i.company_id = ? AND i.deleted_at IS NULL
@@ -92,10 +92,10 @@ if ($activeTab === 'overview') {
     $mtdStmt = $DB->prepare("
         SELECT
             COALESCE(SUM(CASE WHEN p.payment_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-                              THEN pa.amount * i.exchange_rate END), 0) AS mtd_zar,
+                              THEN pa.amount * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS mtd_zar,
             COALESCE(SUM(CASE WHEN p.payment_date >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')
                                AND p.payment_date < DATE_FORMAT(CURDATE(), '%Y-%m-01')
-                              THEN pa.amount * i.exchange_rate END), 0) AS prev_month_zar
+                              THEN pa.amount * COALESCE(NULLIF(i.exchange_rate,0),1) END), 0) AS prev_month_zar
         FROM payments p
         JOIN payment_allocations pa ON pa.payment_id = p.id
         JOIN invoices i ON i.id = pa.invoice_id
@@ -121,7 +121,7 @@ if ($activeTab === 'overview') {
     $revenueSeries = $zero12;
     $monthlyRevenue = $DB->prepare("
         SELECT DATE_FORMAT(p.payment_date, '%Y-%m') AS ym,
-               COALESCE(SUM(pa.amount * i.exchange_rate), 0) AS collected
+               COALESCE(SUM(pa.amount * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS collected
         FROM payments p
         JOIN payment_allocations pa ON pa.payment_id = p.id
         JOIN invoices i ON i.id = pa.invoice_id
@@ -138,7 +138,7 @@ if ($activeTab === 'overview') {
     $invoicedSeries = $zero12;
     $monthlyInvoiced = $DB->prepare("
         SELECT DATE_FORMAT(i.issue_date, '%Y-%m') AS ym,
-               COALESCE(SUM(i.total * i.exchange_rate), 0) AS invoiced
+               COALESCE(SUM(i.total * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS invoiced
         FROM invoices i
         WHERE i.company_id = ? AND i.deleted_at IS NULL
           AND i.status NOT IN ('draft','cancelled') AND i.issue_date >= ?
@@ -154,7 +154,7 @@ if ($activeTab === 'overview') {
     $overdueSeries = $zero12;
     $monthlyOverdue = $DB->prepare("
         SELECT DATE_FORMAT(i.due_date, '%Y-%m') AS ym,
-               COALESCE(SUM(i.balance_due * i.exchange_rate), 0) AS overdue_val
+               COALESCE(SUM(i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS overdue_val
         FROM invoices i
         WHERE i.company_id = ? AND i.deleted_at IS NULL
           AND i.status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
@@ -171,7 +171,7 @@ if ($activeTab === 'overview') {
     $quotedSeries = $zero12;
     $monthlyQuoted = $DB->prepare("
         SELECT DATE_FORMAT(q.issue_date, '%Y-%m') AS ym,
-               COALESCE(SUM(q.total * q.exchange_rate), 0) AS quoted
+               COALESCE(SUM(q.total * COALESCE(NULLIF(q.exchange_rate,0),1)), 0) AS quoted
         FROM quotes q
         WHERE q.company_id = ? AND q.issue_date >= ?
         GROUP BY ym
@@ -190,7 +190,7 @@ if ($activeTab === 'overview') {
                 AND (expiry_date IS NULL OR expiry_date >= CURDATE()))) AS open_cnt,
             COALESCE(SUM(CASE WHEN status = 'draft' OR (status IN ('sent','viewed')
                               AND (expiry_date IS NULL OR expiry_date >= CURDATE()))
-                              THEN total * exchange_rate END), 0) AS open_value_zar,
+                              THEN total * COALESCE(NULLIF(exchange_rate,0),1) END), 0) AS open_value_zar,
             SUM(status = 'draft') AS draft_cnt,
             SUM(status IN ('sent','viewed')
                 AND expiry_date BETWEEN CURDATE() AND CURDATE() + INTERVAL 7 DAY) AS expiring_week
@@ -215,8 +215,8 @@ if ($activeTab === 'overview') {
         : null;
 
     $collectStmt = $DB->prepare("
-        SELECT ROUND(100 * SUM((i.total - i.balance_due) * i.exchange_rate)
-                     / NULLIF(SUM(i.total * i.exchange_rate), 0), 1)
+        SELECT ROUND(100 * SUM((i.total - i.balance_due) * COALESCE(NULLIF(i.exchange_rate,0),1))
+                     / NULLIF(SUM(i.total * COALESCE(NULLIF(i.exchange_rate,0),1)), 0), 1)
         FROM invoices i
         WHERE i.company_id = ? AND i.deleted_at IS NULL
           AND i.status NOT IN ('draft','cancelled')
@@ -236,7 +236,7 @@ if ($activeTab === 'overview') {
     // --- Outstanding split by status (overdue derived) for the doughnut ---
     $statusSplitStmt = $DB->prepare("
         SELECT CASE WHEN i.due_date < CURDATE() THEN 'overdue' ELSE i.status END AS status_key,
-               COALESCE(SUM(i.balance_due * i.exchange_rate), 0) AS value_zar
+               COALESCE(SUM(i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS value_zar
         FROM invoices i
         WHERE i.company_id = ? AND i.deleted_at IS NULL
           AND i.status NOT IN ('draft','paid','cancelled','written_off','uncollectible','refunded')
@@ -312,7 +312,7 @@ if ($activeTab === 'overview') {
     $debtorStmt = $DB->prepare("
         SELECT ca.id, COALESCE(ca.name, '(deleted customer)') AS name,
                COUNT(i.id) AS open_invoices,
-               COALESCE(SUM(i.balance_due * i.exchange_rate), 0) AS outstanding_zar,
+               COALESCE(SUM(i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1)), 0) AS outstanding_zar,
                MIN(i.due_date) AS oldest_due
         FROM invoices i
         LEFT JOIN crm_accounts ca ON ca.id = i.customer_id
@@ -353,7 +353,7 @@ if ($activeTab === 'overview') {
     $overdueListStmt = $DB->prepare("
         SELECT i.id, i.invoice_number, ca.name AS customer_name,
                DATEDIFF(CURDATE(), i.due_date) AS days_overdue,
-               i.balance_due * i.exchange_rate AS balance_zar
+               i.balance_due * COALESCE(NULLIF(i.exchange_rate,0),1) AS balance_zar
         FROM invoices i
         LEFT JOIN crm_accounts ca ON ca.id = i.customer_id
         WHERE i.company_id = ? AND i.deleted_at IS NULL
@@ -369,7 +369,7 @@ if ($activeTab === 'overview') {
     $expiringStmt = $DB->prepare("
         SELECT q.id, q.quote_number, ca.name AS customer_name, q.expiry_date,
                DATEDIFF(q.expiry_date, CURDATE()) AS days_left,
-               q.total * q.exchange_rate AS total_zar
+               q.total * COALESCE(NULLIF(q.exchange_rate,0),1) AS total_zar
         FROM quotes q
         LEFT JOIN crm_accounts ca ON ca.id = q.customer_id
         WHERE q.company_id = ? AND q.status IN ('sent','viewed')

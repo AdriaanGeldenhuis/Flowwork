@@ -2,6 +2,7 @@
 // /finances/ap/payment_list.php – List of supplier payments
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
@@ -105,7 +106,7 @@ async function loadPayments() {
             return;
         }
         let html = '<table class="fw-finance__table">';
-        html += '<thead><tr><th>Date</th><th>Supplier</th><th>Method</th><th>Reference</th><th class="amount">Amount</th></tr></thead><tbody>';
+        html += '<thead><tr><th>Date</th><th>Supplier</th><th>Method</th><th>Reference</th><th class="amount">Amount</th><th>Journal</th></tr></thead><tbody>';
         rows.forEach(p => {
             html += '<tr>' +
                 '<td>' + escapeHtml(p.payment_date) + '</td>' +
@@ -113,6 +114,7 @@ async function loadPayments() {
                 '<td>' + escapeHtml(p.method) + '</td>' +
                 '<td>' + escapeHtml(p.reference) + '</td>' +
                 '<td class="amount">' + parseFloat(p.amount).toFixed(2) + '</td>' +
+                '<td>' + (p.journal_id ? '<a href="/finances/gl/journal_view.php?id=' + encodeURIComponent(p.journal_id) + '">View</a>' : '') + '</td>' +
                 '</tr>';
         });
         html += '</tbody></table>';

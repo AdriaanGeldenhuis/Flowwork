@@ -66,6 +66,19 @@ try {
     $salvageCents = (int)round(floatval($salvageVal) * 100);
     $lifeMonths  = (int)$lifeMonths;
     $method      = in_array($method, ['straight_line','declining_balance']) ? $method : 'straight_line';
+    // Server-side sanity checks (the HTML min= attrs are cosmetic; this JSON
+    // endpoint is directly callable). Without these, a negative cost, a salvage
+    // above cost, or a zero life are accepted and the asset then sits on the
+    // register forever, silently never depreciating.
+    if ($costCents <= 0) {
+        throw new Exception('Purchase cost must be greater than zero');
+    }
+    if ($salvageCents < 0 || $salvageCents > $costCents) {
+        throw new Exception('Salvage value must be between zero and the purchase cost');
+    }
+    if ($lifeMonths < 1) {
+        throw new Exception('Useful life must be at least 1 month');
+    }
     // Validate the three GL account ids: each must reference a gl_accounts row
     // belonging to this company, otherwise the depreciation run later fails to
     // resolve account codes and cannot post.
@@ -123,6 +136,9 @@ try {
     echo json_encode(['success' => true, 'data' => ['asset_id' => $assetId], 'message' => 'Asset created successfully']);
 } catch (Exception $e) {
     error_log('FA asset create error: ' . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'Failed to create asset']);
+    // Surface business-rule messages (validation failures) so the user knows
+    // what to fix; hide raw DB/engine detail behind a generic message.
+    $msg = ($e instanceof PDOException) ? 'Failed to create asset' : $e->getMessage();
+    echo json_encode(['success' => false, 'message' => $msg]);
 }
 ?>

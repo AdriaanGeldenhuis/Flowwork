@@ -94,24 +94,53 @@ if ((int)$stmt->fetchColumn() > 0) {
     exit;
 }
 
-// Resolve Retained Earnings account code. Try 3100 first, then look up by subtype.
+// Resolve the Retained Earnings account the SAME way the rest of the finance
+// module does — by the company's configured mapping and by account subtype —
+// NOT by a hard-coded code. This is critical: the legacy seeded chart uses
+// account code 3100 for *Share Capital* and 3200 for Retained Earnings, while
+// the SARS chart uses 3100 for Retained Earnings. Hard-coding "3100 first"
+// therefore posted the entire year's profit to Share Capital on every legacy
+// company (the balance sheet still balanced, so nothing flagged it). Resolution
+// order: explicit company mapping → retained_earnings subtype → name match.
+// We never fall back to a bare code, since 3100 is ambiguous across charts.
+require_once __DIR__ . '/../lib/AccountsMap.php';
+$accountsMap  = new AccountsMap($DB, (int)$companyId);
 $retainedCode = null;
-$stmt = $DB->prepare(
-    "SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_code = '3100' AND is_active = 1 LIMIT 1"
-);
-$stmt->execute([$companyId]);
-$retainedCode = $stmt->fetchColumn();
 
-if (!$retainedCode) {
-    // Fallback: find by account_subtype
+// The retained_earnings subtype is NOT unique: the SARS chart tags "Dividends
+// Declared" (a debit-normal contra-equity account, code 3200) with the same
+// subtype. Excluding debit-normal accounts keeps the profit from ever landing
+// on that contra account. The filter is NULL-safe so legacy charts (which may
+// carry no normal_balance) still resolve their real Retained Earnings account.
+$notDebit = "(normal_balance IS NULL OR normal_balance <> 'debit')";
+
+// 1) Explicit company mapping (seeded by finance_setup, resolved by subtype)
+$mappedId = $accountsMap->getAccountId('finance_retained_earnings_account_id');
+if ($mappedId) {
     $stmt = $DB->prepare(
-        "SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_subtype = 'retained_earnings' AND is_active = 1 ORDER BY account_code LIMIT 1"
+        "SELECT account_code FROM gl_accounts WHERE account_id = ? AND company_id = ? AND is_active = 1 AND $notDebit LIMIT 1"
+    );
+    $stmt->execute([$mappedId, $companyId]);
+    $retainedCode = $stmt->fetchColumn() ?: null;
+}
+// 2) By the retained_earnings subtype (back-filled on both legacy and SARS charts)
+if (!$retainedCode) {
+    $stmt = $DB->prepare(
+        "SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_subtype = 'retained_earnings' AND is_active = 1 AND $notDebit ORDER BY account_code LIMIT 1"
     );
     $stmt->execute([$companyId]);
-    $retainedCode = $stmt->fetchColumn();
+    $retainedCode = $stmt->fetchColumn() ?: null;
+}
+// 3) By name, as a final safeguard on charts with no subtype metadata
+if (!$retainedCode) {
+    $stmt = $DB->prepare(
+        "SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_name LIKE '%Retained Earnings%' AND is_active = 1 ORDER BY account_code LIMIT 1"
+    );
+    $stmt->execute([$companyId]);
+    $retainedCode = $stmt->fetchColumn() ?: null;
 }
 if (!$retainedCode) {
-    echo json_encode(['ok' => false, 'error' => 'Retained Earnings account (3100) not found. Please ensure your Chart of Accounts includes this account.']);
+    echo json_encode(['ok' => false, 'error' => 'Retained Earnings account not found. Add a Retained Earnings account (subtype retained_earnings) to your Chart of Accounts before closing.']);
     exit;
 }
 
@@ -236,6 +265,24 @@ try {
         exit;
     }
 
+    // Guard against a boundary-shift double-close: the closeable-year list and
+    // the YE-CLOSE reference are derived from the CURRENT fiscal_year_start, so
+    // if that setting changed since an earlier close, this window can overlap an
+    // already-closed year under a *different* reference — which the duplicate-
+    // reference check above would miss, letting the same P&L be closed twice.
+    // Each close is dated at its own fy_end, so an existing year_end journal
+    // dated inside (fy_start, fy_end] means this period overlaps a closed one.
+    $stmt = $DB->prepare(
+        "SELECT COUNT(*) FROM journal_entries
+          WHERE company_id = ? AND module = 'year_end' AND status = 'posted'
+            AND entry_date >= ? AND entry_date <= ?"
+    );
+    $stmt->execute([$companyId, $fyStart, $fyEnd]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        echo json_encode(['ok' => false, 'error' => 'This period overlaps a fiscal year that has already been closed — the fiscal year start setting appears to have changed since that close. Restore the previous fiscal year start to close on the original boundary.']);
+        exit;
+    }
+
     // Verify journal balances before posting
     $verifyDebit = 0;
     $verifyCredit = 0;
@@ -249,6 +296,41 @@ try {
     }
 
     $DB->beginTransaction();
+
+    // Serialize concurrent closes for this company. journal_entries.reference
+    // carries only a non-unique index, so without this two simultaneous
+    // "execute" requests could both pass the duplicate-reference check above and
+    // post the closing journal twice — doubling retained earnings. Locking the
+    // company row forces the second request to wait, then the re-check below
+    // sees the first committer's journal and bails.
+    $lockStmt = $DB->prepare("SELECT id FROM companies WHERE id = ? FOR UPDATE");
+    $lockStmt->execute([$companyId]);
+
+    $dupStmt = $DB->prepare(
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ? AND reference = ? AND status = 'posted'"
+    );
+    $dupStmt->execute([$companyId, $closingRef]);
+    if ((int)$dupStmt->fetchColumn() > 0) {
+        $DB->rollBack();
+        echo json_encode(['ok' => false, 'error' => 'This fiscal year has already been closed']);
+        exit;
+    }
+
+    // Re-check the boundary-overlap guard under the lock too. Two concurrent
+    // closes with overlapping but differently-referenced windows would each pass
+    // the reference re-check above; this catches the first committer's journal so
+    // the loser can't double-close the overlap.
+    $overlapStmt = $DB->prepare(
+        "SELECT COUNT(*) FROM journal_entries
+          WHERE company_id = ? AND module = 'year_end' AND status = 'posted'
+            AND entry_date >= ? AND entry_date <= ?"
+    );
+    $overlapStmt->execute([$companyId, $fyStart, $fyEnd]);
+    if ((int)$overlapStmt->fetchColumn() > 0) {
+        $DB->rollBack();
+        echo json_encode(['ok' => false, 'error' => 'This period overlaps a fiscal year that has already been closed. Restore the previous fiscal year start to close on the original boundary.']);
+        exit;
+    }
 
     // Create journal entry header
     $entryDate = $fyEnd; // Closing entry dated at fiscal year end

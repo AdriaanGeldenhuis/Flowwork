@@ -28,7 +28,7 @@ try {
             c.name as customer_name
         FROM invoices i
         LEFT JOIN crm_accounts c ON i.customer_id = c.id
-        WHERE i.company_id = ?
+        WHERE i.company_id = ? AND i.deleted_at IS NULL
         ORDER BY i.issue_date DESC
         LIMIT 100
     ");

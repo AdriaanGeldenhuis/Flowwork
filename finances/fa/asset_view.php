@@ -154,7 +154,7 @@ $status    = strtolower($asset['status']);
                 <dd>R <?= $asset['disposal_proceeds_cents'] ? number_format($asset['disposal_proceeds_cents'] / 100, 2) : '0.00' ?></dd>
                 <?php if ($asset['disposal_journal_id']): ?>
                 <dt>Journal Entry</dt>
-                <dd><a href="/finances/journals.php?jid=<?= (int)$asset['disposal_journal_id'] ?>">View Journal</a></dd>
+                <dd><a href="/finances/gl/journal_view.php?id=<?= (int)$asset['disposal_journal_id'] ?>">View Journal</a></dd>
                 <?php endif; ?>
             </dl>
             <?php endif; ?>

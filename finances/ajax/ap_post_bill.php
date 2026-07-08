@@ -72,7 +72,10 @@ try {
     }
     echo json_encode($result);
 } catch (Exception $e) {
-    // Log the error and return a generic message
     error_log('AP bill post error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'Failed to post bill']);
+    // Surface business-rule failures (locked period, already posted, no lines)
+    // so the user gets an actionable reason; hide raw DB errors. Mirrors
+    // ap/api/bill_post.php so the message is the same from either post path.
+    $msg = ($e instanceof PDOException) ? 'Failed to post bill' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }

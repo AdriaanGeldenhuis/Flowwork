@@ -127,6 +127,16 @@ try {
             $vatLegCode = $isMoneyIn
                 ? $accountsMap->code('finance_vat_output_account_id')
                 : $accountsMap->code('finance_vat_input_account_id');
+        } else {
+            // Tax code invalid/inactive for this company — don't tag the line
+            // with a code that resolves to no rate.
+            $taxCodeId = null;
+        }
+        // Can't resolve a VAT account: fall back to a gross posting so the
+        // journal always balances.
+        if ($vatC > 0 && !$vatLegCode) {
+            $netC = $amountC;
+            $vatC = 0;
         }
     }
 

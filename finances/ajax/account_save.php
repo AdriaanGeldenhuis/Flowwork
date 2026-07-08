@@ -138,11 +138,18 @@ try {
                 }
             }
 
-            // Prevent changing account_code or account_type if journals reference it
-            if ($existing['account_code'] !== $accountCode || $existing['account_type'] !== $accountType) {
+            // Prevent changing structural fields once journals reference the
+            // account. normal_balance and account_subtype are guarded alongside
+            // code/type: flipping normal_balance silently inverts the sign of
+            // every historical line in the trial balance / AFS / YTD, and a code
+            // rename orphans lines that join on account_code.
+            if ($existing['account_code'] !== $accountCode
+                || $existing['account_type'] !== $accountType
+                || $existing['normal_balance'] !== $normalBalance
+                || (string)$existing['account_subtype'] !== $accountSubtype) {
                 $lineCount = CoaSchema::postedLineCount($DB, $companyId, $existing['account_code']);
                 if ($lineCount > 0) {
-                    throw new Exception('Cannot change code/type — account has ' . $lineCount . ' posted journal line(s)');
+                    throw new Exception('Cannot change code, type, normal balance or subtype — account has ' . $lineCount . ' posted journal line(s)');
                 }
             }
 

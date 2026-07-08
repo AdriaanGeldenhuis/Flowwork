@@ -569,7 +569,7 @@ class VatCalculator
              LEFT JOIN gl_tax_codes tc ON jl.tax_code_id = tc.tax_code_id
              WHERE je.company_id = ? AND je.status = 'posted'
                AND je.entry_date BETWEEN ? AND ?
-               AND ga.account_type = 'revenue'
+               AND ga.account_type = 'revenue'$adjFilter
              GROUP BY COALESCE(tc.code, 'UNTAGGED')"
         );
         $stmt->execute([$companyId, $startDate, $endDate]);

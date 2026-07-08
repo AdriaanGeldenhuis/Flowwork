@@ -78,11 +78,14 @@ try {
     $inputVatCents  = $vatData['box9_total_input_cents'];
     $netVatCents    = $vatData['box10_net_cents'];
 
+    // Atomic + company-scoped transition: the status='open' predicate and
+    // rowCount guard stop two concurrent prepares from both snapshotting and
+    // inserting duplicate period locks / audit rows.
     $stmt = $DB->prepare(
         "UPDATE gl_vat_periods
          SET output_vat_cents = ?, input_vat_cents = ?, net_vat_cents = ?, basis = ?,
              status = 'prepared', prepared_by = ?, prepared_at = NOW()
-         WHERE id = ?"
+         WHERE id = ? AND company_id = ? AND status = 'open'"
     );
     $stmt->execute([
         $outputVatCents,
@@ -90,8 +93,12 @@ try {
         $netVatCents,
         $basis,
         $userId,
-        $periodId
+        $periodId,
+        $companyId
     ]);
+    if ($stmt->rowCount() !== 1) {
+        throw new Exception('Period is no longer open — refresh and try again');
+    }
 
     // Lock journal entries in this period (legacy flag for backward compatibility)
     $stmt = $DB->prepare(
@@ -102,18 +109,19 @@ try {
     );
     $stmt->execute([$companyId, $period['period_start'], $period['period_end']]);
 
-    // Insert a period lock using gl_period_locks so the posting service respects it
-    // We lock up to the period_end date inclusive
-    $stmt = $DB->prepare(
-        "INSERT INTO gl_period_locks (company_id, lock_date, lock_reason, locked_by, locked_at)
-         VALUES (?, ?, 'vat_period_locked', ?, NOW())"
-    );
-    $stmt->execute([$companyId, $period['period_end'], $userId]);
+    // The period is intentionally NOT locked at prepare time. Locking here
+    // (the previous behaviour) sealed period_end and made it impossible to post
+    // the VAT adjustments — and the settlement journal — that must land on
+    // period_end between prepare and file, so every adjustment threw "Cannot
+    // post into locked period". The period is now sealed only on FILE
+    // (vat_file.php posts the settlement journal, then inserts the gl_period_locks
+    // row). File recomputes the box totals, so any adjustment posted in the
+    // meantime is captured in the filed figures.
 
     // Audit log
     $stmt = $DB->prepare(
         "INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-         VALUES (?, ?, 'vat_period_locked', ?, ?, NOW())"
+         VALUES (?, ?, 'vat_period_prepared', ?, ?, NOW())"
     );
     $stmt->execute([
         $companyId,

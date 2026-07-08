@@ -46,7 +46,6 @@
   function statusLabel(status) {
     const map = {
       draft:    'Draft',
-      prepared: 'Prepared',
       approved: 'Approved',
       posted:   'Posted'
     };
@@ -56,11 +55,46 @@
   function statusClass(status) {
     const map = {
       draft:    'draft',
-      prepared: 'prepared',
       approved: 'approved',
       posted:   'posted'
     };
     return map[status] || 'draft';
+  }
+
+  // Friendly labels for the module buckets actually written to journal_entries.
+  // Unknown values fall back to a title-cased version of the raw code.
+  const MODULE_LABELS = {
+    manual:     'Manual',
+    fin:        'System / Finance',
+    payroll:    'Payroll',
+    bad_debt:   'Bad Debt',
+    vat_settle: 'VAT Settlement',
+    vat_adjust: 'VAT Adjustment',
+    year_end:   'Year-End Close'
+  };
+
+  function moduleLabel(code) {
+    if (MODULE_LABELS[code]) return MODULE_LABELS[code];
+    return String(code || '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  let moduleFilterPopulated = false;
+
+  // Populate the module filter from the modules actually present in the data,
+  // preserving the current selection. Only runs once (the set is company-wide).
+  function populateModuleFilter(modules) {
+    if (moduleFilterPopulated || !filterModule || !Array.isArray(modules)) return;
+    const current = filterModule.value;
+    let html = '<option value="">All Modules</option>';
+    modules.forEach(code => {
+      if (!code) return;
+      html += `<option value="${escapeHtml(code)}">${escapeHtml(moduleLabel(code))}</option>`;
+    });
+    filterModule.innerHTML = html;
+    if (current) filterModule.value = current;
+    moduleFilterPopulated = true;
   }
 
   // ─── Load Data ──────────────────────────────────────────────────────
@@ -79,6 +113,7 @@
       totalPages   = result.total_pages || 1;
       totalEntries = result.total || 0;
       currentPage  = result.page || 1;
+      populateModuleFilter(result.modules);
       renderJournals();
       renderPagination();
       updateJournalCount();
@@ -183,7 +218,9 @@
   async function viewJournal(journalId) {
     const result = await FinanceAPI.request(`/finances/ajax/journal_get.php?journal_id=${journalId}`);
     if (!result || !result.ok) {
-      showMessage('viewMessage', result?.error || 'Failed to load journal', 'error');
+      // The modal is still hidden here, so #viewMessage would be invisible.
+      // Surface the failure through the always-visible toast channel instead.
+      FIN3D.toast(result?.error || 'Failed to load journal', 'error');
       return;
     }
 
@@ -213,6 +250,11 @@
           <div class="fw-finance__view-label">Module</div>
           <div class="fw-finance__view-value">${escapeHtml(j.module) || '-'}</div>
         </div>
+        ${j.source_link ? `
+        <div class="fw-finance__view-field">
+          <div class="fw-finance__view-label">Source Document</div>
+          <div class="fw-finance__view-value"><a href="${escapeHtml(j.source_link.url)}">${escapeHtml(j.source_link.label)}</a></div>
+        </div>` : ''}
         <div class="fw-finance__view-field" style="grid-column: 1 / -1">
           <div class="fw-finance__view-label">Memo</div>
           <div class="fw-finance__view-value">${escapeHtml(j.memo) || '-'}</div>
@@ -286,6 +328,7 @@
       `;
     } else if (j.status === 'approved') {
       buttons += `
+        <button type="button" class="fw-finance__btn fw-finance__btn--secondary" id="viewUnapproveBtn" data-id="${j.journal_id}">Unapprove</button>
         <button type="button" class="fw-finance__btn fw-finance__btn--primary" id="viewPostBtn" data-id="${j.journal_id}">Post to GL</button>
       `;
     } else if (j.status === 'posted' && !j.reversed_by_journal_id) {
@@ -308,6 +351,9 @@
     const approveBtn = document.getElementById('viewApproveBtn');
     if (approveBtn) approveBtn.addEventListener('click', () => approveJournal(approveBtn.dataset.id));
 
+    const unapproveBtn = document.getElementById('viewUnapproveBtn');
+    if (unapproveBtn) unapproveBtn.addEventListener('click', () => unapproveJournal(unapproveBtn.dataset.id));
+
     const postBtn = document.getElementById('viewPostBtn');
     if (postBtn) postBtn.addEventListener('click', () => postJournal(postBtn.dataset.id));
 
@@ -328,6 +374,14 @@
     });
   }
 
+  // Re-enable the footer buttons after a failed action so the user can fix the
+  // problem and retry without having to close and reopen the modal.
+  function reEnableActionButtons() {
+    document.querySelectorAll('#viewModalFooter .fw-finance__btn').forEach(btn => {
+      btn.disabled = false;
+    });
+  }
+
   async function approveJournal(journalId) {
     disableActionButtons();
     const result = await FinanceAPI.request('/finances/ajax/journal_approve.php', 'POST', { journal_id: parseInt(journalId, 10) });
@@ -338,7 +392,24 @@
         loadJournals();
       }, 800);
     } else {
+      reEnableActionButtons();
       showMessage('viewMessage', result?.error || 'Failed to approve', 'error');
+    }
+  }
+
+  async function unapproveJournal(journalId) {
+    if (!confirm('Send this approved journal back to draft for editing?')) return;
+    disableActionButtons();
+    const result = await FinanceAPI.request('/finances/ajax/journal_unapprove.php', 'POST', { journal_id: parseInt(journalId, 10) });
+    if (result && result.ok) {
+      showMessage('viewMessage', 'Journal returned to draft', 'success');
+      setTimeout(() => {
+        FinanceModal.close('viewModal');
+        loadJournals();
+      }, 800);
+    } else {
+      reEnableActionButtons();
+      showMessage('viewMessage', result?.error || 'Failed to unapprove', 'error');
     }
   }
 
@@ -352,6 +423,7 @@
         loadJournals();
       }, 800);
     } else {
+      reEnableActionButtons();
       showMessage('viewMessage', result?.error || 'Failed to post', 'error');
     }
   }
@@ -364,6 +436,7 @@
       FinanceModal.close('viewModal');
       loadJournals();
     } else {
+      reEnableActionButtons();
       showMessage('viewMessage', result?.error || 'Failed to delete', 'error');
     }
   }
@@ -387,6 +460,7 @@
         loadJournals();
       }, 1200);
     } else {
+      reEnableActionButtons();
       showMessage('viewMessage', result?.error || 'Failed to reverse journal', 'error');
     }
   }
@@ -412,7 +486,14 @@
         account_code: line.account_code,
         description: line.description || '',
         debit: parseFloat(line.debit) || '',
-        credit: parseFloat(line.credit) || ''
+        credit: parseFloat(line.credit) || '',
+        // Carry the analytic tags through the edit round-trip. The modal does
+        // not surface them, but journal_save.php deletes and re-inserts every
+        // line, so without this they would be silently reset to NULL.
+        tax_code_id: line.tax_code_id,
+        project_id: line.project_id,
+        board_id: line.board_id,
+        item_id: line.item_id
       });
     });
 
@@ -451,6 +532,13 @@
     line.className = 'fw-finance__journal-line';
     line.dataset.lineId = lineCounter;
 
+    // Stash analytic tags on the row so an edit preserves them on save even
+    // though there is no input for them in the modal.
+    if (data.tax_code_id) line.dataset.taxCodeId = data.tax_code_id;
+    if (data.project_id)  line.dataset.projectId = data.project_id;
+    if (data.board_id)    line.dataset.boardId   = data.board_id;
+    if (data.item_id)     line.dataset.itemId    = data.item_id;
+
     line.innerHTML = `
       <div class="fw-finance__line-col fw-finance__line-col--account">
         <select class="fw-finance__input line-account" required>
@@ -488,7 +576,9 @@
     });
 
     line.querySelectorAll('.line-debit, .line-credit').forEach(input => {
-      input.addEventListener('input', updateBalance);
+      // Single listener: clear the opposite field FIRST (a programmatic
+      // .value = '' fires no 'input' event), then recompute the balance so the
+      // totals never reflect a debit and a credit on the same line at once.
       input.addEventListener('input', (e) => {
         const isDebit = e.target.classList.contains('line-debit');
         const opposite = isDebit ?
@@ -497,6 +587,7 @@
         if (e.target.value && opposite.value) {
           opposite.value = '';
         }
+        updateBalance();
       });
     });
   }
@@ -549,12 +640,18 @@
       const credit = parseFloat(line.querySelector('.line-credit').value) || 0;
 
       if (accountCode && (debit > 0 || credit > 0)) {
-        lines.push({
+        const entry = {
           account_code: accountCode,
           description: description,
           debit: Math.round(debit * 100) / 100,
           credit: Math.round(credit * 100) / 100
-        });
+        };
+        // Preserve analytic tags stashed on the row during an edit.
+        if (line.dataset.taxCodeId) entry.tax_code_id = parseInt(line.dataset.taxCodeId, 10);
+        if (line.dataset.projectId) entry.project_id  = parseInt(line.dataset.projectId, 10);
+        if (line.dataset.boardId)   entry.board_id    = parseInt(line.dataset.boardId, 10);
+        if (line.dataset.itemId)    entry.item_id     = parseInt(line.dataset.itemId, 10);
+        lines.push(entry);
       }
     });
 
@@ -659,11 +756,43 @@
     viewModalClose.addEventListener('click', () => FinanceModal.close('viewModal'));
   }
 
+  // ─── Modal dismissal: Escape + backdrop click ──────────────────────
+  // Scoped to this page's two overlays; the shared FinanceModal contract in
+  // finance.js is intentionally left untouched.
+  ['journalModal', 'viewModal'].forEach(id => {
+    const overlay = document.getElementById(id);
+    if (!overlay) return;
+    let downOnBackdrop = false;
+    overlay.addEventListener('mousedown', (e) => { downOnBackdrop = (e.target === overlay); });
+    overlay.addEventListener('click', (e) => {
+      if (downOnBackdrop && e.target === overlay) FinanceModal.close(id);
+      downOnBackdrop = false;
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    ['viewModal', 'journalModal'].forEach(id => {
+      const overlay = document.getElementById(id);
+      if (overlay && overlay.getAttribute('aria-hidden') === 'false') {
+        FinanceModal.close(id);
+      }
+    });
+  });
+
   // ─── Initialize ───────────────────────────────────────────────────
 
   document.addEventListener('DOMContentLoaded', () => {
     loadAccounts().then(() => {
       loadJournals();
+      // Deep link: /finances/journals.php?id=N (legacy ?jid=N also accepted)
+      // opens that journal directly in the detail modal, so links from other
+      // modules (Fixed Assets, GL Detail, dashboard) resolve to this page.
+      const params = new URLSearchParams(window.location.search);
+      const deepId = params.get('id') || params.get('jid');
+      if (deepId && /^\d+$/.test(deepId)) {
+        viewJournal(deepId);
+      }
     });
   });
 

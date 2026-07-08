@@ -5,6 +5,7 @@ require_method('GET');
 // /finances/ap/vendor_credit_view.php – View and apply a vendor credit note
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../permissions.php';
 requireRoles(['viewer','bookkeeper','admin']);
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
@@ -128,6 +129,11 @@ $companyName = $company['name'] ?? 'Company';
         ?>
         <main class="fw-finance__main">
             <h2>Vendor Credit: <?= htmlspecialchars($credit['credit_number']) ?></h2>
+            <?php if (!empty($credit['journal_id'])): ?>
+            <div class="fw-finance__toolbar">
+                <a href="/finances/gl/journal_view.php?id=<?= (int)$credit['journal_id'] ?>" class="fw-finance__btn fw-finance__btn--secondary">View Journal</a>
+            </div>
+            <?php endif; ?>
             <table class="summary-table">
                 <tr><th>Supplier:</th><td><?= htmlspecialchars($credit['supplier_name']) ?></td></tr>
                 <tr><th>Issue Date:</th><td><?= htmlspecialchars($credit['issue_date']) ?></td></tr>

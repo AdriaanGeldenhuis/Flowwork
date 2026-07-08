@@ -5,6 +5,8 @@
 
 require_once __DIR__ . '/../../../init.php';
 require_once __DIR__ . '/../../../auth_gate.php';
+require_once __DIR__ . '/../../permissions.php';
+requireRoles(['admin','bookkeeper','viewer']);
 
 header('Content-Type: application/json');
 
@@ -33,7 +35,7 @@ try {
                 FROM vendor_credit_allocations
                 GROUP BY bill_id
             ) vc ON vc.bill_id = b.id
-            WHERE b.company_id = ? AND b.status IN ('posted','part-paid','paid')
+            WHERE b.company_id = ? AND b.status IN ('posted','paid')
             HAVING balance > 0";
     $stmt = $DB->prepare($sql);
     $stmt->execute([$companyId]);

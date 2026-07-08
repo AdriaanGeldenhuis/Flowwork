@@ -10,6 +10,15 @@ require_once __DIR__ . '/../../auth_gate.php';
 
 header('Content-Type: application/json');
 
+// Read-only, but still a finance surface: gate to finance roles like the
+// sibling read endpoints (bank_transaction_list / bank_rule_list), so a
+// non-finance authenticated user can't enumerate unmatched counts.
+$role = strtolower($_SESSION['role'] ?? 'member');
+if (!in_array($role, ['admin', 'bookkeeper', 'viewer'])) {
+    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
+    exit;
+}
+
 // Determine company context
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 if (!$companyId) {

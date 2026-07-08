@@ -430,7 +430,7 @@
       setTimeout(() => {
         FinanceModal.close('vatAdjustModal');
         // If currentPeriod is the period just adjusted, reload its VAT201; otherwise reload page
-        if (currentPeriod && currentPeriod.id && parseInt(currentPeriod.id, 10) === parseInt(periodId, 10)) {
+        if (currentPeriod && currentPeriod.period_id && parseInt(currentPeriod.period_id, 10) === parseInt(periodId, 10)) {
           viewVAT201(periodId);
         } else {
           location.reload();

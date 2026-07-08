@@ -186,13 +186,38 @@ class CoaSchema {
      * company_settings.finance_fiscal_year_start stores a month name (e.g. "February").
      * If today is before that month in the current year, FY start is in the prior year.
      */
+    /**
+     * Parse a stored finance_fiscal_year_start value into a month number (1-12).
+     * Accepts a month NAME ("March"), a month number ("3" / "03"), or an "MM-DD"
+     * string (the day is ignored here). Defaults to 3 (March — the SARS default
+     * tax-year start) for empty or unrecognised values.
+     *
+     * This is the single tolerant authority: the Finance Settings UI stores this
+     * key as a month name while admin/finance.php stores it as a number, so every
+     * reader must accept both or it computes the wrong fiscal-year boundary.
+     */
+    public static function parseFiscalMonth(?string $value): int {
+        $value = trim((string)$value);
+        if ($value === '') return 3;
+        // Month number, optionally with a "-DD" day suffix (e.g. "03" or "03-01")
+        if (preg_match('/^(\d{1,2})(?:-\d{1,2})?$/', $value, $m)) {
+            $n = (int)$m[1];
+            return ($n >= 1 && $n <= 12) ? $n : 3;
+        }
+        // Month name (e.g. "March")
+        $ts = strtotime($value . ' 1');
+        if ($ts !== false) {
+            $n = (int)date('n', $ts);
+            if ($n >= 1 && $n <= 12) return $n;
+        }
+        return 3;
+    }
+
     public static function fiscalYearStartDate(PDO $DB, int $companyId, ?string $today = null): string {
         $today = $today ?? date('Y-m-d');
         $stmt = $DB->prepare("SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = 'finance_fiscal_year_start' LIMIT 1");
         $stmt->execute([$companyId]);
-        $monthName = $stmt->fetchColumn() ?: 'March'; // SARS default tax year starts March
-        $monthNum = (int)date('n', strtotime($monthName . ' 1'));
-        if (!$monthNum) $monthNum = 3;
+        $monthNum = self::parseFiscalMonth($stmt->fetchColumn() ?: '');
 
         $todayTs = strtotime($today);
         $year = (int)date('Y', $todayTs);

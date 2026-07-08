@@ -107,12 +107,12 @@ $companyName = $company['name'] ?? 'Company';
       }
 
       function statusLabel(s) {
-        var map = { draft: 'Draft', prepared: 'Prepared', approved: 'Approved', posted: 'Posted' };
+        var map = { draft: 'Draft', approved: 'Approved', posted: 'Posted' };
         return map[s] || s || 'Unknown';
       }
 
       function statusClass(s) {
-        var map = { draft: 'draft', prepared: 'prepared', approved: 'approved', posted: 'posted' };
+        var map = { draft: 'draft', approved: 'approved', posted: 'posted' };
         return map[s] || 'draft';
       }
 
@@ -151,6 +151,9 @@ $companyName = $company['name'] ?? 'Company';
         }
         if (j.posted_at) {
           headerHtml += '<div class="fw-finance__invoice-meta-item"><div class="fw-finance__invoice-meta-label">Posted At</div><div class="fw-finance__invoice-meta-value">' + fmtDate(j.posted_at) + '</div></div>';
+        }
+        if (j.source_link) {
+          headerHtml += '<div class="fw-finance__invoice-meta-item"><div class="fw-finance__invoice-meta-label">Source</div><div class="fw-finance__invoice-meta-value"><a href="' + esc(j.source_link.url) + '">' + esc(j.source_link.label) + '</a></div></div>';
         }
         headerHtml += '</div>';
 

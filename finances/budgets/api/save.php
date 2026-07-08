@@ -50,10 +50,21 @@ $budgets = $data['budgets'];
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
 
-// Period lock check – reject if the budget year is fully locked
+// Period lock check – must be per-month, not per-year. The save DELETEs and
+// re-INSERTs rows for the year, so a coarse "is Dec 31 locked?" test would let a
+// partial-year lock (e.g. books locked through Jun 30) be silently rewritten for
+// the locked Jan–Jun months. Compute the locked month set and only ever touch
+// unlocked months below.
 require_once __DIR__ . '/../../lib/PeriodService.php';
 $periodService = new PeriodService($DB, $companyId);
-if ($periodService->isLocked($year . '-12-31')) {
+$lockedMonths  = [];
+for ($m = 1; $m <= 12; $m++) {
+    $lastDay = date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $year, $m)));
+    if ($periodService->isLocked($lastDay)) {
+        $lockedMonths[$m] = true;
+    }
+}
+if (count($lockedMonths) === 12) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Period is locked. Budget changes are not allowed for ' . $year . '.']);
     exit;
@@ -73,11 +84,21 @@ try {
     // Begin transaction
     $DB->beginTransaction();
 
-    // Remove existing budgets for this company/year (project_id NULL only)
-    $delStmt = $DB->prepare(
-        "DELETE FROM gl_budgets WHERE company_id = ? AND period_year = ? AND project_id IS NULL"
-    );
-    $delStmt->execute([$companyId, $year]);
+    // Remove existing budgets for this company/year (project_id NULL only),
+    // but never touch locked months — their existing rows are preserved.
+    if (empty($lockedMonths)) {
+        $delStmt = $DB->prepare(
+            "DELETE FROM gl_budgets WHERE company_id = ? AND period_year = ? AND project_id IS NULL"
+        );
+        $delStmt->execute([$companyId, $year]);
+    } else {
+        $unlocked = array_values(array_diff(range(1, 12), array_keys($lockedMonths)));
+        $ph = implode(',', array_fill(0, count($unlocked), '?'));
+        $delStmt = $DB->prepare(
+            "DELETE FROM gl_budgets WHERE company_id = ? AND period_year = ? AND project_id IS NULL AND period_month IN ($ph)"
+        );
+        $delStmt->execute(array_merge([$companyId, $year], $unlocked));
+    }
 
     // Prepare insert statement
     $insStmt = $DB->prepare(
@@ -97,6 +118,8 @@ try {
         if (!in_array($accId, $validAccountIds, true)) continue;
         // Validate month and amount
         if ($month < 1 || $month > 12) continue;
+        // Never write into a locked month (its existing rows were preserved above)
+        if (isset($lockedMonths[$month])) continue;
         if ($amt < 0) $amt = 0.0;
         // Convert to cents
         $cents = (int) round($amt * 100);
@@ -129,7 +152,7 @@ try {
         error_log('Budget audit log error [company=' . $companyId . ']: ' . $auditErr->getMessage());
     }
 
-    echo json_encode(['success' => true]);
+    echo json_encode(['success' => true, 'count' => $count]);
 } catch (Throwable $e) {
     $DB->rollBack();
     error_log('Budget save error [company=' . $companyId . ']: ' . $e->getMessage());

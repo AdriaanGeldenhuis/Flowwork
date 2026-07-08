@@ -1442,7 +1442,7 @@ select.fw-qi__input:focus {
 /* Quote form line grid (legacy fw-qi-form__ block — JS contract, keep names) */
 .fw-qi-form__line-item {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 40px;
+  grid-template-columns: 2fr 1fr 1fr 1.2fr 1fr 40px;
   gap: 12px;
   align-items: center;
   margin-bottom: 10px;

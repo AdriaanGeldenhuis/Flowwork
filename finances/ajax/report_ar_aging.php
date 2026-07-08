@@ -36,7 +36,7 @@ try {
     // when their settling payment falls after the as-of date.
     $stmt = $DB->prepare("
         SELECT i.id, i.customer_id, i.due_date,
-               (i.total - COALESCE(pay.paid_tot, 0) - COALESCE(cred.cred_tot, 0)) * i.exchange_rate AS balance_zar
+               (i.total - COALESCE(pay.paid_tot, 0) - COALESCE(cred.cred_tot, 0)) * COALESCE(NULLIF(i.exchange_rate,0),1) AS balance_zar
         FROM invoices i
         LEFT JOIN (
             SELECT pa.invoice_id, SUM(pa.amount) AS paid_tot
@@ -50,6 +50,7 @@ try {
             FROM credit_note_allocations cna
             JOIN credit_notes cn ON cn.id = cna.credit_note_id
             WHERE cna.company_id = ? AND cn.issue_date <= ?
+              AND cn.status NOT IN ('draft','cancelled') AND cn.journal_id IS NOT NULL
             GROUP BY cna.invoice_id
         ) cred ON cred.invoice_id = i.id
         WHERE i.company_id = ?
@@ -102,8 +103,8 @@ try {
     if ($customers) {
         $ids = array_keys($customers);
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE id IN ($placeholders)");
-        $stmt->execute($ids);
+        $stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE id IN ($placeholders) AND company_id = ?");
+        $stmt->execute(array_merge($ids, [$companyId]));
         $names = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         foreach ($customers as $cid => &$row) {
             $row['customer_name'] = $names[$cid] ?? '';

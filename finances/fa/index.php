@@ -185,7 +185,7 @@ $runs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <td><?= htmlspecialchars(ucfirst($r['status'])) ?></td>
                                     <td><?= (int)($r['lines_count'] ?? 0) ?></td>
                                     <td>R <?= number_format($total, 2) ?></td>
-                                    <td><?= $r['journal_id'] ? '<a href="/finances/journals.php?jid=' . (int)$r['journal_id'] . '">View</a>' : '-' ?></td>
+                                    <td><?= $r['journal_id'] ? '<a href="/finances/gl/journal_view.php?id=' . (int)$r['journal_id'] . '">View</a>' : '-' ?></td>
                                 </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>

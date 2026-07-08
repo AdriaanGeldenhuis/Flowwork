@@ -54,31 +54,24 @@ try {
         $creditCents = (int) round(floatval($acc['total_credit']) * 100);
         $balance     = $debitCents - $creditCents;
 
-        // Only include accounts that have a non-zero balance
-        if ($debitCents === 0 && $creditCents === 0) {
+        // Only include accounts with a non-zero NET balance (a fully-reversed
+        // account nets to zero and doesn't belong on the trial balance).
+        if ($balance === 0) {
             continue;
         }
 
-        // Determine normal balance side
-        $normalDebit = in_array($acc['account_type'], ['asset', 'expense']);
-
-        if ($normalDebit) {
-            // Debit balance accounts: positive balance on debit side
-            $formattedAccounts[] = [
-                'account_code' => $acc['account_code'],
-                'account_name' => $acc['account_name'],
-                'debit_cents'  => max(0, $balance),
-                'credit_cents' => max(0, -$balance)
-            ];
-        } else {
-            // Credit balance accounts: positive balance on credit side
-            $formattedAccounts[] = [
-                'account_code' => $acc['account_code'],
-                'account_name' => $acc['account_name'],
-                'debit_cents'  => max(0, -$balance),
-                'credit_cents' => max(0, $balance)
-            ];
-        }
+        // A trial balance places each account's net balance on its natural side
+        // by SIGN, not by account type: a net debit ($balance > 0) in the debit
+        // column, a net credit in the credit column. The previous per-type split
+        // inverted credit-normal accounts (liabilities/equity/revenue) — pushing
+        // their credit balances into the debit column — so the TB never balanced.
+        // Because the ledger nets to zero, the two columns now sum equal.
+        $formattedAccounts[] = [
+            'account_code' => $acc['account_code'],
+            'account_name' => $acc['account_name'],
+            'debit_cents'  => max(0, $balance),
+            'credit_cents' => max(0, -$balance)
+        ];
     }
 
     echo json_encode([

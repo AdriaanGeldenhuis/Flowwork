@@ -173,46 +173,66 @@ try {
 
     fclose($file);
 
-    // ── Snapshot existing DB rows BEFORE inserting ──
-    // Duplicates are detected against this pre-import snapshot only, so
-    // identical rows WITHIN the file (e.g. two equal card payments) are
-    // imported. Each existing DB row absorbs at most one file row.
+    // ── De-duplicate on the SAME import_hash the PDF path uses ──
+    // (bank_import_confirm.php). Sharing the key means a CSV import and a
+    // later PDF re-import (or vice-versa) of the same statement don't both
+    // land, and the UNIQUE(company_id, bank_account_id, import_hash) index is
+    // the concurrent-double-submit backstop. The occurrence index (#n) lets
+    // two genuinely identical same-day lines (e.g. two equal card fees) both
+    // import, while including `reference` avoids collapsing distinct rows.
     $importCount = 0;
     $skippedExisting = 0;
+    $dupSeen = [];
 
     if (!empty($rows)) {
+        // Legacy snapshot of rows imported BEFORE import_hash existed
+        // (import_hash IS NULL — the migration backfills nothing). Without this,
+        // re-importing a pre-existing statement would double-import, since the
+        // hash pre-check below never matches a NULL row and the unique index
+        // treats every NULL as distinct. Keyed on the old (date|desc|amount)
+        // tuple with counts; each legacy row absorbs at most one file row.
         $dates = array_column($rows, 'tx_date');
-        $minDate = min($dates);
-        $maxDate = max($dates);
-
-        $stmt = $DB->prepare("
+        $legacyStmt = $DB->prepare("
             SELECT tx_date, description, amount_cents, COUNT(*) AS cnt
             FROM gl_bank_transactions
-            WHERE company_id = ?
-              AND bank_account_id = ?
-              AND tx_date BETWEEN ? AND ?
+            WHERE company_id = ? AND bank_account_id = ?
+              AND tx_date BETWEEN ? AND ? AND import_hash IS NULL
             GROUP BY tx_date, description, amount_cents
         ");
-        $stmt->execute([$companyId, $bankAccountId, $minDate, $maxDate]);
-
-        $existing = [];
-        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $existing[$r['tx_date'] . '|' . $r['description'] . '|' . $r['amount_cents']] = (int)$r['cnt'];
+        $legacyStmt->execute([$companyId, $bankAccountId, min($dates), max($dates)]);
+        $legacy = [];
+        while ($lr = $legacyStmt->fetch(PDO::FETCH_ASSOC)) {
+            $legacy[$lr['tx_date'] . '|' . $lr['description'] . '|' . $lr['amount_cents']] = (int)$lr['cnt'];
         }
 
+        $checkStmt = $DB->prepare("
+            SELECT COUNT(*) FROM gl_bank_transactions
+            WHERE company_id = ? AND bank_account_id = ? AND import_hash = ?
+        ");
         $insert = $DB->prepare("
             INSERT INTO gl_bank_transactions (
                 company_id, bank_account_id, tx_date, description,
-                amount_cents, reference, matched, import_batch_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, NOW())
+                amount_cents, reference, matched, import_batch_id, import_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NOW())
         ");
 
         foreach ($rows as $r) {
-            $key = $r['tx_date'] . '|' . $r['description'] . '|' . $r['amount_cents'];
-            if (!empty($existing[$key])) {
-                $existing[$key]--;
+            $dupKey = $r['tx_date'] . '|' . $r['description'] . '|' . $r['amount_cents'] . '|' . ($r['reference'] ?? '');
+            $dupSeen[$dupKey] = ($dupSeen[$dupKey] ?? 0) + 1;
+            $importHash = sha1($dupKey . '|#' . $dupSeen[$dupKey]);
+
+            // 1) Already imported via the hash key (this path or the PDF path).
+            $checkStmt->execute([$companyId, $bankAccountId, $importHash]);
+            if ($checkStmt->fetchColumn() > 0) {
                 $skippedExisting++;
-                continue; // Already in the DB from a previous import
+                continue;
+            }
+            // 2) Matches a pre-hash (legacy NULL-hash) row.
+            $legacyKey = $r['tx_date'] . '|' . $r['description'] . '|' . $r['amount_cents'];
+            if (!empty($legacy[$legacyKey])) {
+                $legacy[$legacyKey]--;
+                $skippedExisting++;
+                continue;
             }
             $insert->execute([
                 $companyId,
@@ -221,7 +241,8 @@ try {
                 $r['description'],
                 $r['amount_cents'],
                 $r['reference'],
-                $batchId
+                $batchId,
+                $importHash
             ]);
             $importCount++;
         }

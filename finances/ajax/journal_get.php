@@ -29,6 +29,8 @@ try {
             je.module,
             je.ref_type,
             je.ref_id,
+            je.source_type,
+            je.source_id,
             je.reference,
             je.status,
             je.created_at,
@@ -72,6 +74,13 @@ try {
     ");
     $stmt->execute([$companyId, $journalId]);
     $journal['lines'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Link back to the originating source document (invoice / bill / vendor
+    // credit / asset) when this journal came from another module. The current
+    // role is passed so a link the user could not open (e.g. a viewer following
+    // an FA asset link) is suppressed rather than redirecting to access_denied.
+    require_once __DIR__ . '/../lib/JournalSource.php';
+    $journal['source_link'] = journal_resolve_source_link($journal, fw_get_user_role($DB));
 
     echo json_encode([
         'ok' => true,

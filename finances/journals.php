@@ -30,6 +30,11 @@ $stmt = $DB->prepare("SELECT MAX(lock_date) as latest_lock FROM gl_period_locks 
 $stmt->execute([$companyId]);
 $lockInfo = $stmt->fetch();
 $latestLock = $lockInfo['latest_lock'] ?? null;
+
+// Earliest date a new/edited entry may carry: the backend rejects any entry
+// dated on or before the latest lock (PeriodService::isLocked uses <=), so the
+// first allowed day is the day after the lock. Used to constrain the date input.
+$lockMinDate = $latestLock ? date('Y-m-d', strtotime($latestLock . ' +1 day')) : null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -74,15 +79,10 @@ $latestLock = $lockInfo['latest_lock'] ?? null;
                         title="To Date"
                     >
 
+                    <!-- Options populated from the modules actually present
+                         in the data (see journals.js populateModuleFilter). -->
                     <select class="fw-finance__filter" id="filterModule">
                         <option value="">All Modules</option>
-                        <option value="manual">Manual</option>
-                        <option value="ar">Accounts Receivable</option>
-                        <option value="ap">Accounts Payable</option>
-                        <option value="bank">Bank</option>
-                        <option value="payroll">Payroll</option>
-                        <option value="pos">Point of Sale</option>
-                        <option value="depreciation">Depreciation</option>
                     </select>
 
                     <select class="fw-finance__filter" id="filterStatus">
@@ -151,6 +151,7 @@ $latestLock = $lockInfo['latest_lock'] ?? null;
                                 name="entry_date"
                                 required
                                 value="<?= date('Y-m-d') ?>"
+                                <?= $lockMinDate ? 'min="' . htmlspecialchars($lockMinDate) . '"' : '' ?>
                             >
                         </div>
                         <div class="fw-finance__form-group">

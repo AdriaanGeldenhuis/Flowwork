@@ -60,7 +60,7 @@ if ($lockId <= 0) {
 try {
     $DB->beginTransaction();
     // Fetch lock to include details in audit
-    $stmt = $DB->prepare("SELECT lock_date, lock_reason FROM gl_period_locks WHERE company_id = ? AND lock_id = ?");
+    $stmt = $DB->prepare("SELECT lock_date, lock_reason, is_active FROM gl_period_locks WHERE company_id = ? AND lock_id = ?");
     $stmt->execute([$companyId, $lockId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
@@ -68,7 +68,16 @@ try {
         json_error('Error');
     }
     $lockDate  = $row['lock_date'];
-    $lockReason = $row['lock_reason'];
+    $lockReason = (string)$row['lock_reason'];
+    // Refuse to delete system-generated locks from this generic screen. VAT
+    // filing ('vat_period_filed') and year-end close ('year_end_close_YYYY')
+    // both write into gl_period_locks; deleting those here would silently
+    // reopen a SARS-filed / closed period for posting. Reversing them must go
+    // through their own dedicated flow, not the manual lock manager.
+    if ($lockReason === 'vat_period_filed' || strpos($lockReason, 'year_end_close_') === 0) {
+        $DB->rollBack();
+        json_error('This lock was created by VAT filing or year-end close and cannot be removed here. Reverse the filing or reopen the year through its own process.', 403);
+    }
     // Delete lock
     $stmt = $DB->prepare("UPDATE gl_period_locks SET is_active = 0, deleted_at = NOW(), deleted_by = ? WHERE company_id = ? AND lock_id = ?");
     $stmt->execute([$userId, $companyId, $lockId]);

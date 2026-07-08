@@ -131,7 +131,16 @@ $firstName = $stmt->fetchColumn() ?: 'User';
             FWReport.download('gl-detail-' + code + '-' + reportDate.value + '.csv', FWReport.csv.glDetail(reportData));
         });
 
-        loadAccounts();
+        loadAccounts().then(function () {
+            // Deep link from the Chart of Accounts:
+            // /finances/reports/gl_detail.php?account_id=N preselects the account
+            // and runs the report immediately.
+            var acc = new URLSearchParams(window.location.search).get('account_id');
+            if (acc && /^\d+$/.test(acc)) {
+                accountFilter.value = acc;
+                if (accountFilter.value === acc) { run(); } // only if the option exists
+            }
+        });
     })();
     </script>
 </body>

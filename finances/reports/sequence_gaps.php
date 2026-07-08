@@ -7,58 +7,74 @@ require_once __DIR__ . '/../permissions.php';
 requireRoles(['admin', 'bookkeeper', 'viewer']);
 require_once __DIR__ . '/../lib/AccountsMap.php';
 
-// Simple gaps report for AR invoices using doc_sequences prefixes
+// SARS sequential-numbering check, driven by the ACTUAL document numbers in the
+// data. The previous version read a doc_sequences 'AR-INVOICE' row that nothing
+// ever writes and matched an 'INV-YYYY-MM-' prefix the app never produces (real
+// numbers are e.g. INV2026-0001), so it silently reported "No gaps" for every
+// company. This parses each number into <prefix><digits>, groups by prefix, and
+// reports internal gaps and duplicates within each sequence for the selected
+// year (numbering resets yearly, so the year scopes the check).
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 if (!$companyId) { http_response_code(403); echo 'No company'; exit; }
 
 define('ASSET_VERSION', FIN_ASSET_VERSION);
-
 header('Content-Type: text/html; charset=utf-8');
 
-// Period selectable via ?period=YYYYMM (defaults to the current month) so
-// historical months remain auditable — SARS expects sequential numbering
-// across the whole retention window, not just the current month.
 $now = new DateTimeImmutable('now');
-$periodParam = (string)($_GET['period'] ?? '');
-if (preg_match('/^(20\d{2})(0[1-9]|1[0-2])$/', $periodParam)) {
-    $periodKey = $periodParam;
-    $now = new DateTimeImmutable($periodParam . '01');
-} else {
-    $periodKey = $now->format('Ym');
-}
+$yearParam = (string)($_GET['year'] ?? '');
+$year = preg_match('/^20\d{2}$/', $yearParam) ? (int)$yearParam : (int)$now->format('Y');
 
-$stmt = $DB->prepare("SELECT prefix, pad, last_number FROM doc_sequences WHERE company_id = :cid AND doc_type = 'AR-INVOICE' AND period_key = :pk");
-$stmt->execute([':cid'=>$companyId, ':pk'=>$periodKey]);
-$seq = $stmt->fetch(PDO::FETCH_ASSOC);
-$prefix = $seq['prefix'] ?? str_replace(['{YYYY}','{YY}','{MM}'], [$now->format('Y'),$now->format('y'),$now->format('m')], 'INV-{YYYY}-{MM}-');
-$pad = (int)($seq['pad'] ?? 4);
-
-// Pull all invoice numbers for the period with this prefix
-$q = $DB->prepare("SELECT id, invoice_number FROM invoices WHERE company_id = :cid AND invoice_number LIKE :pfx");
-$q->execute([':cid'=>$companyId, ':pfx'=>$prefix.'%']);
-$rows = $q->fetchAll(PDO::FETCH_ASSOC);
-
-// Extract numeric suffixes
-$used = [];
-$dupes = [];
-$seen = [];
-foreach ($rows as $r) {
-    $no = $r['invoice_number'] ?? '';
-    if (strpos($no, $prefix) !== 0) continue;
-    $suffix = substr($no, strlen($prefix));
-    if (ctype_digit($suffix)) {
-        $n = (int)$suffix;
-        $used[$n] = true;
-        if (isset($seen[$n])) { $dupes[] = [$seen[$n], $r['id'], $no]; }
-        $seen[$n] = $r['id'];
+/** Split a document number into [prefix, intSuffix]; null when it has no trailing digits. */
+function fw_split_seq(string $num): ?array {
+    if (preg_match('/^(.*?)(\d+)$/', trim($num), $m)) {
+        return [$m[1], (int)$m[2]];
     }
+    return null;
 }
 
-// Determine gaps from 1..max
-$max = $seq ? (int)$seq['last_number'] : (count($used) ? max(array_keys($used)) : 0);
-$gaps = [];
-for ($i=1; $i <= $max; $i++) {
-    if (!isset($used[$i])) $gaps[] = $i;
+// Each source: label, table, number column, date column, extra WHERE.
+// All identifiers are hard-coded constants — no user input reaches the SQL.
+$sources = [
+    ['AR Invoices',  'invoices',     'invoice_number',     'issue_date', 'AND deleted_at IS NULL'],
+    ['Credit Notes', 'credit_notes', 'credit_note_number', 'issue_date', ''],
+];
+
+$report = [];
+foreach ($sources as $src) {
+    [$label, $table, $col, $dateCol, $extra] = $src;
+    $q = $DB->prepare("SELECT id, `$col` AS num FROM `$table`
+                       WHERE company_id = ? AND YEAR(`$dateCol`) = ? $extra");
+    $q->execute([$companyId, $year]);
+
+    $groups = []; // prefix => [ seq => [id, ...] ]
+    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $parsed = fw_split_seq((string)($r['num'] ?? ''));
+        if (!$parsed) { continue; }
+        [$prefix, $n] = $parsed;
+        $groups[$prefix][$n][] = $r['id'];
+    }
+
+    $groupResults = [];
+    foreach ($groups as $prefix => $nums) {
+        ksort($nums, SORT_NUMERIC);
+        $keys = array_keys($nums);
+        $min  = (int)min($keys);
+        $max  = (int)max($keys);
+        $gaps = [];
+        for ($i = $min; $i <= $max; $i++) {
+            if (!isset($nums[$i])) { $gaps[] = $i; }
+        }
+        $dupes = [];
+        foreach ($nums as $n => $ids) {
+            if (count($ids) > 1) { $dupes[] = ['seq' => $n, 'ids' => $ids]; }
+        }
+        $groupResults[] = [
+            'prefix' => $prefix, 'min' => $min, 'max' => $max,
+            'count' => count($keys), 'gaps' => $gaps, 'dupes' => $dupes,
+        ];
+    }
+    usort($groupResults, fn($a, $b) => strcmp((string)$a['prefix'], (string)$b['prefix']));
+    $report[] = ['label' => $label, 'groups' => $groupResults];
 }
 ?>
 <!doctype html>
@@ -83,40 +99,44 @@ for ($i=1; $i <= $max; $i++) {
   <?php $finTitle = 'Sequence Gaps'; $finBack = '/finances/reports.php'; include __DIR__ . '/../partials/header.php'; ?>
   <main class="fw-finance__main">
   <div class="fw-finance__paper">
-  <h1>AR Invoice sequence check</h1>
+  <h1>Document sequence check — <?= (int)$year ?></h1>
   <form method="get" style="margin-bottom:12px">
-    <label for="period">Period (month):</label>
-    <input type="month" id="period" name="period_month" value="<?= htmlspecialchars(substr($periodKey, 0, 4) . '-' . substr($periodKey, 4, 2)) ?>">
-    <button type="submit">View</button>
+    <label for="year">Year:</label>
+    <select id="year" name="year" onchange="this.form.submit()">
+      <?php for ($y = (int)$now->format('Y'); $y >= (int)$now->format('Y') - 7; $y--): ?>
+        <option value="<?= $y ?>" <?= $y === $year ? 'selected' : '' ?>><?= $y ?></option>
+      <?php endfor; ?>
+    </select>
+    <noscript><button type="submit">View</button></noscript>
   </form>
-  <script>
-    // <input type=month> posts YYYY-MM; the endpoint expects period=YYYYMM
-    document.querySelector('form').addEventListener('submit', function() {
-      var m = document.getElementById('period');
-      var hidden = document.createElement('input');
-      hidden.type = 'hidden';
-      hidden.name = 'period';
-      hidden.value = (m.value || '').replace('-', '');
-      this.appendChild(hidden);
-      m.removeAttribute('name');
-    });
-  </script>
-  <p>Period: <code><?=htmlspecialchars($periodKey)?></code> Prefix: <code><?=htmlspecialchars($prefix)?></code> Pad: <code><?=$pad?></code> Last issued: <code><?=$max?></code></p>
-  <?php if ($gaps): ?>
-    <h3 class="bad">Gaps (<?=count($gaps)?>)</h3>
-    <p><?=implode(', ', $gaps)?></p>
-  <?php else: ?>
-    <p class="ok">No gaps detected up to last issued number.</p>
-  <?php endif; ?>
+  <p style="color:#6c757d;margin-bottom:1rem">Detects missing numbers (gaps) and duplicates within each document-number
+     sequence for the year. Sequential numbering without gaps is a SARS requirement.</p>
 
-  <?php if ($dupes): ?>
-    <h3 class="bad">Duplicates (<?=count($dupes)?>)</h3>
-    <table><tr><th>Suffix</th><th>Invoice IDs</th><th>Number</th></tr>
-    <?php foreach ($dupes as $d): ?>
-      <tr><td><?=$d[0]?></td><td><?=$d[1]?></td><td><?=htmlspecialchars($d[2])?></td></tr>
-    <?php endforeach; ?>
-    </table>
-  <?php endif; ?>
+  <?php foreach ($report as $section): ?>
+    <h2><?= htmlspecialchars($section['label']) ?></h2>
+    <?php if (!$section['groups']): ?>
+      <p>No documents for <?= (int)$year ?>.</p>
+    <?php else: foreach ($section['groups'] as $g): ?>
+      <div style="margin-bottom:1.25rem">
+        <p>Prefix <code><?= htmlspecialchars($g['prefix'] !== '' ? $g['prefix'] : '(none)') ?></code>
+           — range <code><?= (int)$g['min'] ?></code>–<code><?= (int)$g['max'] ?></code>,
+           <?= (int)$g['count'] ?> number(s) used.</p>
+        <?php if ($g['gaps']): ?>
+          <p class="bad">Gaps (<?= count($g['gaps']) ?>): <?= htmlspecialchars(implode(', ', $g['gaps'])) ?></p>
+        <?php else: ?>
+          <p class="ok">No gaps.</p>
+        <?php endif; ?>
+        <?php if ($g['dupes']): ?>
+          <p class="bad">Duplicates (<?= count($g['dupes']) ?>):</p>
+          <table><tr><th>Number</th><th>Document IDs</th></tr>
+          <?php foreach ($g['dupes'] as $d): ?>
+            <tr><td><?= (int)$d['seq'] ?></td><td><?= htmlspecialchars(implode(', ', $d['ids'])) ?></td></tr>
+          <?php endforeach; ?>
+          </table>
+        <?php endif; ?>
+      </div>
+    <?php endforeach; endif; ?>
+  <?php endforeach; ?>
   </div><!-- /fw-finance__paper -->
   </main>
   <footer class="fw-finance__footer">

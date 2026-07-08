@@ -1,6 +1,6 @@
 <?php
 // /finances/ajax/journal_approve.php
-// Approve a draft/prepared journal for posting.
+// Approve a draft journal for posting.
 
 // permissions.php bootstraps the app session that Csrf::validate() reads
 // its token from — it MUST load first (the sibling journal endpoints
