@@ -82,8 +82,12 @@ try {
                 $svc = new CurrencyService($DB, (int)$rec['company_id']);
                 $exchangeRate = (float)($svc->getRate($currency, $issueDate) ?? 0);
                 if ($exchangeRate <= 0) {
-                    error_log("Recurring cron: no {$currency} exchange rate for {$issueDate} (company {$rec['company_id']}); using 1.0");
-                    $exchangeRate = 1.0;
+                    // Never book a foreign invoice at parity (1.0) — that posts
+                    // materially wrong revenue/VAT to the GL. Abort this template
+                    // for this run: the per-iteration catch rolls back, so
+                    // next_run_date is NOT advanced and the invoice regenerates
+                    // automatically once a rate for this currency is captured.
+                    throw new RuntimeException("No {$currency} exchange rate for {$issueDate} (company {$rec['company_id']}); deferring until a rate is captured");
                 }
             }
 

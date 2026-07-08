@@ -44,6 +44,19 @@ $stmt = $DB->prepare(
 $stmt->execute([$companyId]);
 $locks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// The lock model is a single cut-off: PeriodService::isLocked() locks every
+// date on or before the LATEST active lock. Rows are ordered lock_date DESC, so
+// the first one is that cut-off. Surface it so the per-row list isn't mistaken
+// for independent per-period locks.
+$lockedThrough = !empty($locks) ? $locks[0]['lock_date'] : null;
+
+// A lock is "system" (protected) when VAT filing or year-end close created it.
+// Those must not be deletable from this manual screen.
+$isSystemLock = static function (?string $reason): bool {
+    $reason = (string)$reason;
+    return $reason === 'vat_period_filed' || strpos($reason, 'year_end_close_') === 0;
+};
+
 // Fetch user names for display. Build map of user_id => full name
 $userIds = array_column($locks, 'locked_by');
 $userNames = [];
@@ -81,6 +94,8 @@ if ($userIds) {
         button:disabled { background-color: #aaa; }
         .message { margin-top: 0.5rem; font-weight: bold; }
         .danger-btn { background-color: #dc3545; color: #fff; border: none; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 4px; }
+        .sys-badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; background: #e2e3e5; color: #41464b; font-size: 0.75rem; font-weight: bold; }
+        .lock-through { background:#e7f3ff; border:1px solid #b6d4fe; color:#084298; padding:0.6rem 0.9rem; border-radius:6px; margin-bottom:1rem; font-size:0.9rem; }
     </style>
 </head>
 <body class="fw-finance">
@@ -89,6 +104,9 @@ if ($userIds) {
     <main class="fw-finance__main">
     <div class="fw-finance__paper">
     <h1>Period Locks</h1>
+    <?php if ($lockedThrough): ?>
+    <div class="lock-through">The general ledger is currently locked <strong>through <?= htmlspecialchars($lockedThrough) ?></strong>. No entries dated on or before this date can be posted. This cut-off is the latest active lock in the list below — removing it lowers the cut-off to the next date.</div>
+    <?php endif; ?>
     <form id="lockForm">
         <div class="form-group">
             <label for="lock_date">Lock Date (YYYY-MM-DD)</label>
@@ -112,13 +130,13 @@ if ($userIds) {
             </tr>
         </thead>
         <tbody id="locksTableBody">
-            <?php foreach ($locks as $lock): ?>
+            <?php foreach ($locks as $lock): $sys = $isSystemLock($lock['lock_reason']); ?>
             <tr data-lock-id="<?php echo htmlspecialchars($lock['lock_id']); ?>">
                 <td><?php echo htmlspecialchars($lock['lock_date']); ?></td>
                 <td><?php echo htmlspecialchars($lock['lock_reason']); ?></td>
                 <td><?php echo htmlspecialchars($userNames[$lock['locked_by']] ?? ''); ?></td>
                 <td><?php echo htmlspecialchars($lock['locked_at']); ?></td>
-                <td><button class="danger-btn" data-id="<?php echo htmlspecialchars($lock['lock_id']); ?>">Delete</button></td>
+                <td><?php if ($sys): ?><span class="sys-badge" title="Created by VAT filing or year-end close — reverse it through its own process">System — protected</span><?php else: ?><button class="danger-btn" data-id="<?php echo htmlspecialchars($lock['lock_id']); ?>">Delete</button><?php endif; ?></td>
             </tr>
             <?php endforeach; ?>
         </tbody>

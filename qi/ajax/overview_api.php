@@ -56,7 +56,7 @@ try {
 
     // Monthly revenue for last 12 months (including current month). Only paid invoices count.
     $stmt = $DB->prepare(
-        "SELECT DATE_FORMAT(paid_at, '%Y-%m') as ym, SUM(total * exchange_rate) as revenue
+        "SELECT DATE_FORMAT(paid_at, '%Y-%m') as ym, SUM(total * COALESCE(NULLIF(exchange_rate,0),1)) as revenue
          FROM invoices
          WHERE company_id = ? AND status = 'paid' AND paid_at >= DATE_SUB(CURDATE(), INTERVAL 11 MONTH)
          GROUP BY ym
@@ -111,7 +111,7 @@ try {
 
     // Month-to-date actual revenue (paid invoices). Use the current month range.
     $stmt = $DB->prepare(
-        "SELECT COALESCE(SUM(total * exchange_rate),0) FROM invoices
+        "SELECT COALESCE(SUM(total * COALESCE(NULLIF(exchange_rate,0),1)),0) FROM invoices
          WHERE company_id = ? AND status = 'paid'
            AND paid_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
            AND paid_at <= CURDATE()"
@@ -138,7 +138,7 @@ try {
 
     // Sales analytics: top customers by invoice total over last 30 days
     $stmt = $DB->prepare(
-        "SELECT ca.name as customer, COUNT(*) as invoices, SUM(i.total * i.exchange_rate) as total
+        "SELECT ca.name as customer, COUNT(*) as invoices, SUM(i.total * COALESCE(NULLIF(i.exchange_rate,0),1)) as total
          FROM invoices i
          JOIN crm_accounts ca ON ca.id = i.customer_id
          WHERE i.company_id = ? AND i.issue_date >= CURDATE() - INTERVAL 30 DAY

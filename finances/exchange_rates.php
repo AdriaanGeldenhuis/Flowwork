@@ -39,7 +39,19 @@ $stmt = $DB->prepare(
 $stmt->execute([$companyId]);
 $rates = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$commonCurrencies = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KES', 'NGN', 'AUD', 'CNY', 'JPY', 'CHF', 'CAD'];
+// Offer every currency an invoice can be issued in — not a hard-coded subset —
+// so a rate can be pre-loaded for any transaction currency. Falls back to a
+// common subset if the shared Currencies list isn't present.
+$curLib = __DIR__ . '/../qi/lib/Currencies.php';
+if (file_exists($curLib)) { require_once $curLib; }
+if (class_exists('Currencies')) {
+    $currencyOptions = Currencies::all();          // code => ['name','symbol']
+    unset($currencyOptions[Currencies::BASE]);     // base currency needs no rate
+} else {
+    $common = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KES', 'NGN', 'AUD', 'CNY', 'JPY', 'CHF', 'CAD'];
+    $currencyOptions = [];
+    foreach ($common as $c) { $currencyOptions[$c] = ['name' => $c, 'symbol' => $c]; }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -91,8 +103,8 @@ $commonCurrencies = ['USD', 'EUR', 'GBP', 'BWP', 'MZN', 'NAD', 'SZL', 'ZMW', 'KE
                     <label>Currency</label>
                     <select id="currency" required>
                         <option value="">Select</option>
-                        <?php foreach ($commonCurrencies as $c): ?>
-                        <option value="<?= $c ?>"><?= $c ?></option>
+                        <?php foreach ($currencyOptions as $code => $info): ?>
+                        <option value="<?= htmlspecialchars($code) ?>"><?= htmlspecialchars($code . ' — ' . $info['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

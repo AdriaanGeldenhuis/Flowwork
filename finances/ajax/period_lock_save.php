@@ -56,18 +56,37 @@ if (!is_array($payload)) {
 $lockDate = trim($payload['lock_date'] ?? '');
 $reason   = trim($payload['reason'] ?? '');
 
-// Validate date (YYYY-MM-DD). Use regex to ensure proper format.
-if (!$lockDate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $lockDate)) {
-    json_error('Error');
+// Validate date (YYYY-MM-DD). Regex checks the shape; checkdate() rejects
+// impossible calendar dates (e.g. 2025-13-40, 2025-02-31) that would otherwise
+// reach the DATE column and, under non-strict SQL mode, store as 0000-00-00 and
+// poison the MAX(lock_date) cut-off.
+if (!$lockDate || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $lockDate, $dm) || !checkdate((int)$dm[2], (int)$dm[3], (int)$dm[1])) {
+    json_error('Invalid lock date');
+}
+// Reject absurd far-future dates. Because isLocked() locks everything up to the
+// latest lock date, a fat-fingered year like 9999 would freeze the entire
+// ledger. Allow near-term month/year-end locks (up to ~1 year out) but no more.
+if ($lockDate > date('Y-m-d', strtotime('+366 days'))) {
+    json_error('Lock date is too far in the future');
 }
 
 try {
     $DB->beginTransaction();
 
     // Check if lock for this date already exists
-    $stmt = $DB->prepare("SELECT lock_id FROM gl_period_locks WHERE company_id = ? AND lock_date = ?");
+    $stmt = $DB->prepare("SELECT lock_id, lock_reason FROM gl_period_locks WHERE company_id = ? AND lock_date = ?");
     $stmt->execute([$companyId, $lockDate]);
-    $existingId = $stmt->fetchColumn();
+    $existing       = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $existingId     = $existing['lock_id'] ?? null;
+    $existingReason = (string)($existing['lock_reason'] ?? '');
+
+    // Never let a manual save overwrite a system lock (VAT filing / year-end
+    // close) on the same date. Doing so would rewrite its reason and reassign
+    // ownership to the current user, erasing the record of who sealed the SARS
+    // period. The date is already locked, so there is nothing to add.
+    if ($existingId && ($existingReason === 'vat_period_filed' || strpos($existingReason, 'year_end_close_') === 0)) {
+        throw new Exception('This date is already locked by VAT filing or year-end close.');
+    }
 
     if ($existingId) {
         // Update existing lock: update reason and locked_by/locked_at.

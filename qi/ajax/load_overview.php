@@ -16,9 +16,9 @@ try {
             (SELECT COUNT(*) FROM quotes WHERE company_id = ? AND status IN ('draft','sent','viewed')) as active_quotes,
             (SELECT COUNT(*) FROM invoices WHERE company_id = ? AND status = 'overdue') as overdue_invoices,
             (SELECT COUNT(*) FROM invoices WHERE company_id = ? AND status IN ('sent','viewed')) as pending_invoices,
-            (SELECT SUM(balance_due * exchange_rate) FROM invoices WHERE company_id = ? AND status IN ('sent','viewed','overdue')) as outstanding_amount,
-            (SELECT SUM(total * exchange_rate) FROM invoices WHERE company_id = ? AND status = 'paid' AND MONTH(paid_at) = MONTH(CURRENT_DATE())) as paid_this_month,
-            (SELECT SUM(total * exchange_rate) FROM invoices WHERE company_id = ? AND status = 'paid' AND YEAR(paid_at) = YEAR(CURRENT_DATE())) as paid_this_year,
+            (SELECT SUM(balance_due * COALESCE(NULLIF(exchange_rate,0),1)) FROM invoices WHERE company_id = ? AND status IN ('sent','viewed','overdue')) as outstanding_amount,
+            (SELECT SUM(total * COALESCE(NULLIF(exchange_rate,0),1)) FROM invoices WHERE company_id = ? AND status = 'paid' AND MONTH(paid_at) = MONTH(CURRENT_DATE())) as paid_this_month,
+            (SELECT SUM(total * COALESCE(NULLIF(exchange_rate,0),1)) FROM invoices WHERE company_id = ? AND status = 'paid' AND YEAR(paid_at) = YEAR(CURRENT_DATE())) as paid_this_year,
             (SELECT AVG(DATEDIFF(paid_at, issue_date)) FROM invoices WHERE company_id = ? AND status = 'paid' AND paid_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)) as avg_payment_days
     ");
     $stmt->execute([$companyId, $companyId, $companyId, $companyId, $companyId, $companyId, $companyId]);
@@ -89,7 +89,7 @@ try {
     $stmt = $DB->prepare("
         SELECT
             DATE_FORMAT(paid_at, '%Y-%m') as month,
-            SUM(total * exchange_rate) as revenue,
+            SUM(total * COALESCE(NULLIF(exchange_rate,0),1)) as revenue,
             COUNT(*) as invoice_count
         FROM invoices
         WHERE company_id = ?
@@ -106,7 +106,7 @@ try {
         SELECT
             ca.id,
             ca.name,
-            SUM(i.total * i.exchange_rate) as total_revenue,
+            SUM(i.total * COALESCE(NULLIF(i.exchange_rate,0),1)) as total_revenue,
             COUNT(i.id) as invoice_count
         FROM invoices i
         LEFT JOIN crm_accounts ca ON i.customer_id = ca.id

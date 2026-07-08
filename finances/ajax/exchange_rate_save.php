@@ -16,6 +16,10 @@ if ($__fin_root !== false && file_exists($__fin_root . '/app/init.php')) {
 }
 
 require_once __DIR__ . '/../lib/Csrf.php';
+// Single source of truth for valid ISO currency codes (shared with the invoice
+// form). Guarded so a layout without qi/ still loads (falls back to length check).
+$curLib = __DIR__ . '/../../qi/lib/Currencies.php';
+if (file_exists($curLib)) { require_once $curLib; }
 
 header('Content-Type: application/json');
 
@@ -38,16 +42,26 @@ $currencyCode = strtoupper(trim($input['currency_code'] ?? ''));
 $rateDate     = $input['rate_date'] ?? '';
 $rateToZAR    = isset($input['rate_to_zar']) ? (float)$input['rate_to_zar'] : 0;
 
-if (!$currencyCode || strlen($currencyCode) !== 3) {
+// Currency: validate against the ISO whitelist when available, and never store a
+// rate for the base currency (ZAR is always 1 and is ignored by getRate()).
+if (class_exists('Currencies')) {
+    if (!Currencies::isValid($currencyCode) || $currencyCode === Currencies::BASE) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid currency code']);
+        exit;
+    }
+} elseif (!$currencyCode || strlen($currencyCode) !== 3 || $currencyCode === 'ZAR') {
     echo json_encode(['ok' => false, 'error' => 'Invalid currency code']);
     exit;
 }
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $rateDate)) {
-    echo json_encode(['ok' => false, 'error' => 'Invalid date format']);
+// Date: shape + real calendar date (rejects 2026-13-45, 2026-02-30, 0000-00-00).
+if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $rateDate, $dm) || !checkdate((int)$dm[2], (int)$dm[3], (int)$dm[1])) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid date']);
     exit;
 }
-if ($rateToZAR <= 0) {
-    echo json_encode(['ok' => false, 'error' => 'Rate must be positive']);
+// Rate: positive AND within a sane band. A fat-finger like 1850 instead of 18.50
+// would silently ~100x every amount that later resolves this rate, so bound it.
+if ($rateToZAR <= 0 || $rateToZAR > 100000) {
+    echo json_encode(['ok' => false, 'error' => 'Rate must be a positive number within a sensible range']);
     exit;
 }
 
@@ -62,5 +76,6 @@ try {
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
     error_log('Exchange rate save error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = ($e instanceof PDOException) ? 'Could not save exchange rate' : $e->getMessage();
+    echo json_encode(['ok' => false, 'error' => $msg]);
 }
