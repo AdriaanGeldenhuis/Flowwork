@@ -131,8 +131,12 @@ try {
                 if ($ruleTaxCodeId) {
                     $tcStmt = $DB->prepare("SELECT rate_percent FROM gl_tax_codes WHERE tax_code_id = ? AND company_id = ? AND is_active = 1");
                     $tcStmt->execute([$ruleTaxCodeId, $companyId]);
-                    $rate = (float)$tcStmt->fetchColumn();
-                    if ($rate > 0.005) {
+                    $rateRaw = $tcStmt->fetchColumn();
+                    if ($rateRaw === false) {
+                        // No active tax code with that id — drop the tag entirely.
+                        $ruleTaxCodeId = null;
+                    } elseif ((float)$rateRaw > 0.005) {
+                        $rate = (float)$rateRaw;
                         $vatC = (int)round($amountC * $rate / (100 + $rate));
                         $netC = $amountC - $vatC;
                         require_once __DIR__ . '/../lib/AccountsMap.php';
@@ -140,16 +144,15 @@ try {
                         $vatLegCode = $isMoneyIn
                             ? $accountsMap->code('finance_vat_output_account_id')
                             : $accountsMap->code('finance_vat_input_account_id');
-                    } else {
-                        // Tax code invalid/zero-rated for this company — don't tag.
-                        $ruleTaxCodeId = null;
+                        // Can't resolve a VAT account: fall back to a gross 2-line
+                        // posting so the journal always balances.
+                        if ($vatC > 0 && !$vatLegCode) {
+                            $netC = $amountC;
+                            $vatC = 0;
+                        }
                     }
-                    // Can't resolve a VAT account: fall back to a gross 2-line
-                    // posting so the journal always balances.
-                    if ($vatC > 0 && !$vatLegCode) {
-                        $netC = $amountC;
-                        $vatC = 0;
-                    }
+                    // A valid ZERO-rated / EXEMPT code (rate 0) keeps its tag on the
+                    // net line (no VAT leg) so the zero/exempt base isn't dropped.
                 }
                 $fmt = fn(int $c) => number_format($c / 100, 2, '.', '');
 

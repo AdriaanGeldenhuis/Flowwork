@@ -112,9 +112,10 @@ try {
     $DB->beginTransaction();
 
     // Verify bank account belongs to company
-    $stmt = $DB->prepare("SELECT name FROM gl_bank_accounts WHERE id = ? AND company_id = ?");
+    $stmt = $DB->prepare("SELECT name, last_reconciled_date FROM gl_bank_accounts WHERE id = ? AND company_id = ?");
     $stmt->execute([$bankAccountId, $companyId]);
     $bankAccount = $stmt->fetch();
+    $lastReconciled = $bankAccount['last_reconciled_date'] ?? null;
 
     if (!$bankAccount) {
         throw new Exception('Bank account not found');
@@ -143,6 +144,7 @@ try {
     $file = fopen($_FILES['csv_file']['tmp_name'], 'r');
     $rows = [];
     $skippedInvalid = 0;
+    $skippedReconciled = 0;
     $isFirstRow = true;
 
     while (($row = fgetcsv($file)) !== false) {
@@ -169,6 +171,14 @@ try {
                 continue; // Header row — discard without counting as skipped
             }
             $skippedInvalid++;
+            continue;
+        }
+
+        // Do not import a row into a CLOSED reconciliation period — back-dating a
+        // transaction on/before the last reconciled date would silently change an
+        // already-reconciled balance.
+        if ($lastReconciled && $txDate <= $lastReconciled) {
+            $skippedReconciled++;
             continue;
         }
 
@@ -257,7 +267,7 @@ try {
         }
     }
 
-    $skippedCount = $skippedInvalid + $skippedExisting;
+    $skippedCount = $skippedInvalid + $skippedExisting + $skippedReconciled;
 
     // Update bank account balance
     $stmt = $DB->prepare("
@@ -292,7 +302,8 @@ try {
             'imported'         => $importCount,
             'skipped'          => $skippedCount,
             'skipped_existing' => $skippedExisting,
-            'skipped_invalid'  => $skippedInvalid
+            'skipped_invalid'  => $skippedInvalid,
+            'skipped_reconciled' => $skippedReconciled
         ]
     ]);
 
