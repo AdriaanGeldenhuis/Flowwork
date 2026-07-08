@@ -91,6 +91,30 @@ if (isset($input['vat_basis']) && !in_array($input['vat_basis'], ['invoice', 'pa
     echo json_encode(['ok' => false, 'error' => 'VAT basis must be invoice or payments']);
     exit;
 }
+
+// Guard a VAT-basis change. Switching invoice<->payments is a SARS election
+// change (payments basis is a restricted s15(2) election) that requires manual
+// s16(3) transitional adjustments, and it must not happen while a VAT period is
+// prepared but not yet filed — that period was prepared under the old basis.
+// Filed periods are frozen to the basis stamped at prepare time, so they do not
+// block; only in-flight prepared/adjusted periods do.
+if (isset($input['vat_basis'])) {
+    $curStmt = $DB->prepare(
+        "SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = 'finance_vat_basis' LIMIT 1"
+    );
+    $curStmt->execute([$companyId]);
+    $currentBasis = $curStmt->fetchColumn() ?: 'invoice';
+    if ($input['vat_basis'] !== $currentBasis) {
+        $vpStmt = $DB->prepare(
+            "SELECT COUNT(*) FROM gl_vat_periods WHERE company_id = ? AND status IN ('prepared','adjusted')"
+        );
+        $vpStmt->execute([$companyId]);
+        if ((int)$vpStmt->fetchColumn() > 0) {
+            echo json_encode(['ok' => false, 'error' => 'Cannot change the VAT basis while a VAT period is prepared but not yet filed. File or discard the in-flight period first.']);
+            exit;
+        }
+    }
+}
 if (isset($input['require_sod']) && !in_array((string)$input['require_sod'], ['0', '1'], true)) {
     echo json_encode(['ok' => false, 'error' => 'Invalid segregation-of-duties value']);
     exit;

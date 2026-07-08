@@ -265,6 +265,24 @@ try {
         exit;
     }
 
+    // Guard against a boundary-shift double-close: the closeable-year list and
+    // the YE-CLOSE reference are derived from the CURRENT fiscal_year_start, so
+    // if that setting changed since an earlier close, this window can overlap an
+    // already-closed year under a *different* reference — which the duplicate-
+    // reference check above would miss, letting the same P&L be closed twice.
+    // Each close is dated at its own fy_end, so an existing year_end journal
+    // dated inside (fy_start, fy_end] means this period overlaps a closed one.
+    $stmt = $DB->prepare(
+        "SELECT COUNT(*) FROM journal_entries
+          WHERE company_id = ? AND module = 'year_end' AND status = 'posted'
+            AND entry_date >= ? AND entry_date <= ?"
+    );
+    $stmt->execute([$companyId, $fyStart, $fyEnd]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        echo json_encode(['ok' => false, 'error' => 'This period overlaps a fiscal year that has already been closed — the fiscal year start setting appears to have changed since that close. Restore the previous fiscal year start to close on the original boundary.']);
+        exit;
+    }
+
     // Verify journal balances before posting
     $verifyDebit = 0;
     $verifyCredit = 0;
@@ -295,6 +313,22 @@ try {
     if ((int)$dupStmt->fetchColumn() > 0) {
         $DB->rollBack();
         echo json_encode(['ok' => false, 'error' => 'This fiscal year has already been closed']);
+        exit;
+    }
+
+    // Re-check the boundary-overlap guard under the lock too. Two concurrent
+    // closes with overlapping but differently-referenced windows would each pass
+    // the reference re-check above; this catches the first committer's journal so
+    // the loser can't double-close the overlap.
+    $overlapStmt = $DB->prepare(
+        "SELECT COUNT(*) FROM journal_entries
+          WHERE company_id = ? AND module = 'year_end' AND status = 'posted'
+            AND entry_date >= ? AND entry_date <= ?"
+    );
+    $overlapStmt->execute([$companyId, $fyStart, $fyEnd]);
+    if ((int)$overlapStmt->fetchColumn() > 0) {
+        $DB->rollBack();
+        echo json_encode(['ok' => false, 'error' => 'This period overlaps a fiscal year that has already been closed. Restore the previous fiscal year start to close on the original boundary.']);
         exit;
     }
 

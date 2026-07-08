@@ -6,6 +6,7 @@ $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
 require_once __DIR__ . '/../includes/companies.php';
+require_once __DIR__ . '/../finances/lib/CoaSchema.php';
 fw_require_admin();
 
 // Handle form submission
@@ -14,7 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     try {
         $settings = [
             'finance_currency' => trim($_POST['finance_currency'] ?? 'ZAR'),
-            'finance_fiscal_year_start' => trim($_POST['finance_fiscal_year_start'] ?? '03'),
+            // Store the month NAME (e.g. "March") so this page and the Finance
+            // Settings UI write finance_fiscal_year_start in one canonical format.
+            'finance_fiscal_year_start' => date('F', mktime(0, 0, 0, CoaSchema::parseFiscalMonth(trim($_POST['finance_fiscal_year_start'] ?? '3')), 1)),
             'finance_tax_rate' => trim($_POST['finance_tax_rate'] ?? '15'),
             'finance_default_payment_terms' => trim($_POST['finance_default_payment_terms'] ?? '30'),
             'finance_bank_name' => trim($_POST['finance_bank_name'] ?? ''),
@@ -147,9 +150,12 @@ $settings = [
                             <select name="finance_fiscal_year_start" class="fw-admin__select">
                                 <?php
                                 $months = ['01'=>'January','02'=>'February','03'=>'March','04'=>'April','05'=>'May','06'=>'June','07'=>'July','08'=>'August','09'=>'September','10'=>'October','11'=>'November','12'=>'December'];
+                                // Normalise the stored value (name or legacy number) to a number so
+                                // the right month preselects regardless of which format was saved.
+                                $fyStoredNum = str_pad((string)CoaSchema::parseFiscalMonth($settings['finance_fiscal_year_start']), 2, '0', STR_PAD_LEFT);
                                 foreach ($months as $num => $name):
                                 ?>
-                                <option value="<?= $num ?>" <?= $settings['finance_fiscal_year_start'] === $num ? 'selected' : '' ?>><?= $name ?></option>
+                                <option value="<?= $num ?>" <?= $fyStoredNum === $num ? 'selected' : '' ?>><?= $name ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>

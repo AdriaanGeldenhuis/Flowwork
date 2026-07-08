@@ -326,24 +326,32 @@ if ($mappedIds) {
 
     <script src="/finances/assets/finance.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
+        const ORIGINAL_VAT_BASIS = <?= json_encode($settings['vat_basis']) ?>;
         document.getElementById('settingsForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
+
             const saveBtn = document.getElementById('saveBtn');
             const formMessage = document.getElementById('formMessage');
             const form = e.target;
-            
+
             // Clear previous message
             formMessage.style.display = 'none';
             formMessage.textContent = '';
-            
+
             // Collect form data
             const payload = {};
             const formData = new FormData(form);
             formData.forEach((value, key) => {
                 payload[key] = value;
             });
-            
+
+            // A VAT-basis change is a SARS election change — confirm before saving.
+            if (payload.vat_basis && payload.vat_basis !== ORIGINAL_VAT_BASIS) {
+                if (!confirm('Changing the VAT accounting basis (invoice ↔ payments) is a SARS election change. Open VAT periods will be recomputed on the new basis, and any s16(3) transitional adjustments must be captured manually. Continue?')) {
+                    return;
+                }
+            }
+
             // Disable submit button
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving...';
