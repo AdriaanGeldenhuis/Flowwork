@@ -57,6 +57,12 @@ try {
             if ((float)$cnStmt->fetchColumn() > 0) {
                 throw new Exception('Cannot void: credit notes have been applied to this invoice. Unapply the credit notes first.');
             }
+            // A partial write-off posted a SEPARATE journal that also credits AR;
+            // voiding reverses only the invoice journal and would strand that
+            // Cr AR. Require the write-off reversed first.
+            if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+                throw new Exception('Cannot void: a write-off has been posted against this invoice. Reverse the write-off first.');
+            }
             // Zero the balance so the cancelled invoice is no longer payable
             // (record_payment.php also refuses cancelled invoices, but a stale
             // balance_due would still show it as outstanding in AR views).
@@ -90,6 +96,10 @@ try {
             $cnStmt->execute([$invoiceId]);
             if ((float)$cnStmt->fetchColumn() > 0) {
                 throw new Exception('Cannot revert: credit notes have been applied. Unapply the credit notes first.');
+            }
+            // A partial write-off's separate Cr AR journal would be stranded too.
+            if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+                throw new Exception('Cannot revert: a write-off has been posted against this invoice. Reverse the write-off first.');
             }
             $stmt = $DB->prepare("UPDATE invoices SET status='draft', updated_at=NOW() WHERE id=? AND company_id=?");
             $stmt->execute([$invoiceId, $companyId]);

@@ -47,6 +47,11 @@ try {
             if ($allocated > 0) {
                 throw new Exception('Unapply payments and credit notes before deleting this invoice.');
             }
+            // A partial write-off's separate Cr AR journal is not touched by
+            // reverseJournal (which only reverses the invoice journal).
+            if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+                throw new Exception('Reverse the write-off posted against this invoice before deleting it.');
+            }
             InvoiceDeleteHelper::reverseJournal($DB, $companyId, $userId, $invoiceId);
         }
         $stmt = $DB->prepare("
@@ -76,6 +81,9 @@ try {
                    + (float)$DB->query("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = " . (int)$invoiceId)->fetchColumn();
         if ($allocated > 0) {
             throw new Exception('Unapply all payments and credit notes before force-deleting this invoice.');
+        }
+        if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+            throw new Exception('Reverse the write-off posted against this invoice before force-deleting it.');
         }
         InvoiceDeleteHelper::reverseJournal($DB, $companyId, $userId, $invoiceId);
         InvoiceDeleteHelper::purgeChildren($DB, $invoiceId, $companyId);
