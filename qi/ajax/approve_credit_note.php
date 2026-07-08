@@ -38,6 +38,19 @@ try {
     // Approve the credit note
     $upd = $DB->prepare("UPDATE credit_notes SET status = 'approved', updated_at = NOW() WHERE id = ? AND company_id = ?");
     $upd->execute([$creditNoteId, $companyId]);
+
+    // Standalone credit notes (no linked invoice) are never applied via
+    // apply_credit_note.php (which requires an invoice), so post them to the GL
+    // here at approval — otherwise their revenue/VAT reversal never reaches the
+    // ledger and the customer's credit is invisible. Linked credit notes are
+    // posted when they are applied. Posting joins this transaction, so a failure
+    // rolls the approval back.
+    if (empty($credit['invoice_id'])) {
+        require_once __DIR__ . '/../../finances/lib/PostingService.php';
+        $posting = new PostingService($DB, $companyId, $userId);
+        $posting->postCreditNote($creditNoteId);
+    }
+
     // Write audit log
     $insAudit = $DB->prepare("INSERT INTO audit_log (company_id, user_id, action, details, ip) VALUES (?, ?, 'credit_note_approved', ?, ?)");
     $details = json_encode(['credit_note_id' => $creditNoteId, 'credit_note_number' => $credit['credit_note_number']]);

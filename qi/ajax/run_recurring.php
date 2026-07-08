@@ -76,8 +76,10 @@ try {
         $svc = new CurrencyService($DB, (int)$companyId);
         $exchangeRate = (float)($svc->getRate($currency, $issueDate) ?? 0);
         if ($exchangeRate <= 0) {
-            error_log("Recurring invoice: no {$currency} exchange rate for {$issueDate}; using 1.0");
-            $exchangeRate = 1.0;
+            // Mirror the cron path (qi/cron/generate_recurring.php): booking a
+            // foreign-currency invoice at rate 1.0 silently mis-states revenue,
+            // AR and VAT. Roll the whole generation back instead.
+            throw new Exception("No {$currency} exchange rate available for {$issueDate}. Add one under Finances → Exchange Rates before generating this recurring invoice.");
         }
     }
 

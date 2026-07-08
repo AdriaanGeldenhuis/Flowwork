@@ -52,49 +52,76 @@ try {
     if ($creditCurrency !== $invoiceCurrency) {
         throw new Exception("Currency mismatch: credit note is in {$creditCurrency} but the invoice is in {$invoiceCurrency}");
     }
-    // Calculate new balance and status
-    $creditAmount = (float)$credit['total'];
-    if ($creditAmount <= 0) {
+    $creditTotal = (float)$credit['total'];
+    if ($creditTotal <= 0) {
         throw new Exception('Invalid credit amount');
     }
-    $newBalance = (float)$invoice['balance_due'] - $creditAmount;
-    $excess = 0;
-    if ($newBalance < 0) {
-        $excess = abs($newBalance);
-        $newBalance = 0;
+    // Same-customer safety: a credit note may only be applied to an invoice for
+    // its own customer (guards the arbitrary invoice_id override, which could
+    // otherwise apply customer A's credit to customer B's invoice).
+    $cnCustomer  = (int)($credit['customer_id'] ?? 0);
+    $invCustomer = (int)($invoice['customer_id'] ?? 0);
+    if ($cnCustomer && $invCustomer && $cnCustomer !== $invCustomer) {
+        throw new Exception('This credit note belongs to a different customer than the invoice');
     }
-    // Determine new status
-    $newStatus = ($newBalance <= 0) ? 'paid' : 'part-paid';
-    $paidAt = ($newBalance <= 0) ? date('Y-m-d H:i:s') : $invoice['paid_at'];
+
+    // B6: cap the application at BOTH the credit note's unallocated remainder and
+    // the invoice's outstanding balance. The old code recorded the FULL credit
+    // amount in the allocation while only reducing the balance to 0, so the
+    // excess was silently lost and the allocation subledger no longer matched the
+    // invoice's actual balance reduction.
+    $allocStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE credit_note_id = ?");
+    $allocStmt->execute([$creditNoteId]);
+    $alreadyAllocated = (float)$allocStmt->fetchColumn();
+    $remainingCredit  = round($creditTotal - $alreadyAllocated, 2);
+    if ($remainingCredit <= 0.01) {
+        throw new Exception('This credit note has already been fully applied');
+    }
+    $balanceDue = (float)$invoice['balance_due'];
+    if ($balanceDue <= 0.01) {
+        throw new Exception('The invoice has no outstanding balance to credit');
+    }
+    $appliedAmount = round(min($remainingCredit, $balanceDue), 2);
+    $excess     = round($remainingCredit - $appliedAmount, 2); // unapplied remainder
+    $newBalance = round($balanceDue - $appliedAmount, 2);
+    $newStatus  = ($newBalance <= 0.01) ? 'paid' : 'part-paid';
+    $paidAt     = ($newBalance <= 0.01) ? date('Y-m-d H:i:s') : $invoice['paid_at'];
+
     // Update invoice
     $stmt = $DB->prepare("UPDATE invoices SET balance_due = ?, status = ?, paid_at = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
     $stmt->execute([$newBalance, $newStatus, $paidAt, $invoiceId, $companyId]);
-    // Update credit note status to applied
-    $stmt = $DB->prepare("UPDATE credit_notes SET status = 'applied', updated_at = NOW() WHERE id = ? AND company_id = ?");
-    $stmt->execute([$creditNoteId, $companyId]);
-    // Insert allocation record (new table) for this credit application
+    // Credit note becomes 'applied' only when fully allocated; otherwise it
+    // stays 'approved' so the unapplied remainder can be applied elsewhere.
+    $cnFullyApplied = round($alreadyAllocated + $appliedAmount, 2) >= round($creditTotal, 2) - 0.01;
+    $stmt = $DB->prepare("UPDATE credit_notes SET status = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
+    $stmt->execute([$cnFullyApplied ? 'applied' : 'approved', $creditNoteId, $companyId]);
+    // Allocation records the amount ACTUALLY applied to this invoice.
     $stmt = $DB->prepare(
         "INSERT INTO credit_note_allocations (company_id, credit_note_id, invoice_id, amount) VALUES (?, ?, ?, ?)"
     );
-    $stmt->execute([$companyId, $creditNoteId, $invoiceId, $creditAmount]);
+    $stmt->execute([$companyId, $creditNoteId, $invoiceId, $appliedAmount]);
     // Record audit log
     $stmt = $DB->prepare("INSERT INTO audit_log (company_id, user_id, action, details, ip) VALUES (?, ?, 'credit_note_applied', ?, ?)");
-    $details = json_encode(['credit_note_id' => $creditNoteId, 'credit_amount' => $creditAmount, 'invoice_id' => $invoiceId]);
+    $details = json_encode(['credit_note_id' => $creditNoteId, 'applied_amount' => $appliedAmount, 'invoice_id' => $invoiceId, 'unapplied_remainder' => $excess]);
     $stmt->execute([$companyId, $userId, $details, $_SERVER['REMOTE_ADDR'] ?? null]);
-    $DB->commit();
 
-    // Post journal entry for this credit note application using PostingService
-    try {
+    // B4: post the credit-note journal INSIDE this transaction. The old code
+    // committed first and posted afterwards in a swallow-all try/catch, so a
+    // posting failure left the credit applied with no journal — AR overstated,
+    // VAT201 missing the output-tax reduction. postCreditNote posts the FULL
+    // credit note once (it supersedes on re-post); only trigger it on the first
+    // application (journal_id NULL) so later partial applications reuse it.
+    if (empty($credit['journal_id'])) {
         require_once __DIR__ . '/../../finances/lib/PostingService.php';
         $posting = new PostingService($DB, $companyId, $userId);
         $posting->postCreditNote((int)$creditNoteId);
-    } catch (Exception $e) {
-        error_log('Credit note journal posting failed: ' . $e->getMessage());
     }
 
+    $DB->commit();
+
     $response = ['ok' => true, 'new_balance' => $newBalance];
-    if ($excess > 0) {
-        $response['warning'] = 'Credit note amount exceeded invoice balance by R ' . number_format($excess, 2) . '. Excess was not applied.';
+    if ($excess > 0.01) {
+        $response['warning'] = 'R' . number_format($excess, 2) . ' of the credit note remains unapplied and can be applied to another invoice.';
     }
     echo json_encode($response);
 } catch (Exception $e) {

@@ -70,6 +70,16 @@ try {
         throw new Exception('Invoice not found');
     }
 
+    // Only invoices in a payable state may receive a receipt. A cancelled,
+    // written-off, refunded or uncollectible invoice has had its journal
+    // reversed (or never had one), so a receipt against it would book
+    // Dr Bank / Cr AR with no invoice journal behind it and drive AR control
+    // negative. (A 'draft' is implicitly issued below; 'paid' has no balance.)
+    $PAYABLE = ['draft', 'sent', 'viewed', 'overdue', 'part-paid'];
+    if (!in_array($invoice['status'], $PAYABLE, true)) {
+        throw new Exception('Payments cannot be recorded against a ' . $invoice['status'] . ' invoice');
+    }
+
     if ($amount > $invoice['balance_due']) {
         throw new Exception('Payment amount exceeds balance due');
     }

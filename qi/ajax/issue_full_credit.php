@@ -21,10 +21,30 @@ if (!$invoiceId) {
 try {
     $DB->beginTransaction();
 
-    $stmt = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ?");
+    $stmt = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE");
     $stmt->execute([$invoiceId, $companyId]);
     $inv = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$inv) throw new Exception('Invoice not found');
+
+    // Only issued invoices can be credited, and never beyond what is still
+    // creditable (invoice total minus credits already issued) — mirrors the s21
+    // control in save_credit_note.php. Without this, clicking "Full credit"
+    // twice manufactured duplicate revenue/VAT reversals.
+    if (in_array($inv['status'], ['draft', 'cancelled'], true) || !empty($inv['deleted_at'])) {
+        throw new Exception('Only issued invoices can be credited');
+    }
+    $credStmt = $DB->prepare(
+        "SELECT COALESCE(SUM(total), 0) FROM credit_notes
+          WHERE invoice_id = ? AND company_id = ? AND status <> 'cancelled'"
+    );
+    $credStmt->execute([$invoiceId, $companyId]);
+    $creditable = round((float)$inv['total'] - (float)$credStmt->fetchColumn(), 2);
+    if (round((float)$inv['total'], 2) > $creditable + 0.01) {
+        throw new Exception(sprintf(
+            'A full credit of R%.2f exceeds the remaining creditable amount R%.2f on this invoice',
+            (float)$inv['total'], max(0, $creditable)
+        ));
+    }
 
     $stmt = $DB->prepare("SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
     $stmt->execute([$invoiceId]);

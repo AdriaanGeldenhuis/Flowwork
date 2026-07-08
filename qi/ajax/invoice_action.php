@@ -49,9 +49,19 @@ try {
             if ((float)$paidStmt->fetchColumn() > 0) {
                 throw new Exception('Cannot void: payments have been allocated to this invoice. Unapply payments first.');
             }
+            // Applied credit notes also credit AR; voiding the invoice would
+            // reverse only its own journal and strand the credit note's Cr AR.
+            $cnStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = ?");
+            $cnStmt->execute([$invoiceId]);
+            if ((float)$cnStmt->fetchColumn() > 0) {
+                throw new Exception('Cannot void: credit notes have been applied to this invoice. Unapply the credit notes first.');
+            }
+            // Zero the balance so the cancelled invoice is no longer payable
+            // (record_payment.php also refuses cancelled invoices, but a stale
+            // balance_due would still show it as outstanding in AR views).
             $stmt = $DB->prepare("
                 UPDATE invoices
-                   SET status='cancelled', cancellation_reason = ?, updated_at = NOW()
+                   SET status='cancelled', balance_due = 0, cancellation_reason = ?, updated_at = NOW()
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$reason ?: null, $invoiceId, $companyId]);
@@ -68,11 +78,17 @@ try {
             if (!in_array($status, ['sent','viewed','overdue','cancelled'], true)) {
                 throw new Exception('Only sent/viewed/overdue/cancelled invoices can revert to draft');
             }
-            // Block revert if any payments have been allocated
+            // Block revert if any payments OR credit notes have been allocated —
+            // reverting unposts the invoice journal and would strand their Cr AR.
             $paidStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = ?");
             $paidStmt->execute([$invoiceId]);
             if ((float)$paidStmt->fetchColumn() > 0) {
                 throw new Exception('Cannot revert: payments have been allocated. Unapply first.');
+            }
+            $cnStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = ?");
+            $cnStmt->execute([$invoiceId]);
+            if ((float)$cnStmt->fetchColumn() > 0) {
+                throw new Exception('Cannot revert: credit notes have been applied. Unapply the credit notes first.');
             }
             $stmt = $DB->prepare("UPDATE invoices SET status='draft', updated_at=NOW() WHERE id=? AND company_id=?");
             $stmt->execute([$invoiceId, $companyId]);
