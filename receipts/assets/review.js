@@ -290,7 +290,7 @@
     // Prepare promises: fetch suggested lines, load GL accounts, load project items
     const suggestPromise = fetch('api/suggest_lines.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
       body: JSON.stringify({ file_id: FILE_ID, supplier_id: supplierId })
     }).then(res => res.json()).then(data => {
       if (data.ok && Array.isArray(data.lines)) {
@@ -374,7 +374,7 @@
     // Policy check
     fetch('api/policy_check.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
       body: JSON.stringify(payload)
     })
     .then(res => res.json())
@@ -382,7 +382,7 @@
       // Match targets
       fetch('api/match_targets.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
         body: JSON.stringify(payload)
       })
       .then(res2 => res2.json())
@@ -410,6 +410,18 @@
   function renderPolicyMatch(policyData, matchData) {
     // Clear existing
     matchSuggestions.innerHTML = '';
+    // Fail CLOSED: if the policy check did not complete successfully (network
+    // error, an auth/CSRF 419, or ok:false) we must NOT let the receipt proceed
+    // as though it were compliant. Treat an unverified check as a block so a PO-
+    // required (or other) policy can never be silently bypassed.
+    if (!policyData || policyData.ok !== true) {
+      const alert = document.createElement('div');
+      alert.className = 'fw-receipts__alert fw-receipts__alert--error';
+      alert.innerHTML = '<strong>Policy check could not be completed.</strong> Resolve the error and retry before continuing.';
+      matchSuggestions.appendChild(alert);
+      step3Next.disabled = true;
+      return;
+    }
     // Policy blocks and warnings
     if (policyData && policyData.blocks && policyData.blocks.length) {
       const alert = document.createElement('div');
@@ -578,7 +590,7 @@
     showMessage('info', 'Creating bank rule...');
     fetch('api/bank_link_rule.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
       body: JSON.stringify({ supplier_id: headerData.supplier_id })
     })
     .then(res => res.json())
@@ -608,7 +620,7 @@
     if (supplierSelect.value) return; // Already selected
     fetch('api/suggest_vendor.php', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
       body: JSON.stringify({ file_id: FILE_ID })
     })
       .then(res => res.json())
