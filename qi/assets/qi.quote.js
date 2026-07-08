@@ -21,6 +21,11 @@
             <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" required>
             <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="1" step="0.01" min="0" required>
             <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" step="0.01" min="0" required>
+            <select class="fw-qi__input line-tax-rate" name="item_tax_rate[]">
+                <option value="15.00" data-tax-code="STD">VAT (15%)</option>
+                <option value="0.00" data-tax-code="ZERO">No VAT (Zero-rated)</option>
+                <option value="0.00" data-tax-code="EXEMPT">No VAT (Exempt)</option>
+            </select>
             <input type="text" class="fw-qi__input" placeholder="R 0.00" readonly name="item_total[]">
             <button type="button" class="fw-qi-form__remove-line" data-action="remove-line">×</button>
         `;
@@ -43,13 +48,16 @@
     function attachLineListeners(line) {
         const qty = line.querySelector('[name="item_quantity[]"]');
         const price = line.querySelector('[name="item_price[]"]');
+        const tax = line.querySelector('.line-tax-rate');
         if (qty) qty.addEventListener('input', calculateTotals);
         if (price) price.addEventListener('input', calculateTotals);
+        if (tax) tax.addEventListener('change', calculateTotals);
     }
 
     // Calculate subtotal, tax and total and update UI
     function calculateTotals() {
         let subtotal = 0;
+        let tax = 0;
         const lines = document.querySelectorAll('.fw-qi-form__line-item');
         lines.forEach(line => {
             const qty = parseFloat(line.querySelector('[name="item_quantity[]"]').value) || 0;
@@ -58,10 +66,11 @@
             const totalField = line.querySelector('[name="item_total[]"]');
             if (totalField) totalField.value = curSym() + ' ' + lineTotal.toFixed(2);
             subtotal += lineTotal;
+            // Per-line VAT: the selected option's rate (VAT 15% or No VAT 0%).
+            const taxSel = line.querySelector('.line-tax-rate');
+            const lineRate = taxSel ? (parseFloat(taxSel.value) || 0) / 100 : 0.15;
+            tax += lineTotal * lineRate;
         });
-        // Use global defaultTaxRate if provided (percentage), else default to 15%
-        const rate = (typeof window !== 'undefined' && window.defaultTaxRate) ? (parseFloat(window.defaultTaxRate) / 100) : 0.15;
-        const tax = subtotal * rate;
         const total = subtotal + tax;
         const subtotalDisplay = document.getElementById('subtotalDisplay');
         const taxDisplay = document.getElementById('taxDisplay');
@@ -77,24 +86,30 @@
         const form = e.target;
         const formData = new FormData(form);
 
-        // Build line items array
+        // Build line items array, carrying each line's VAT choice (rate + SARS
+        // tax code) so the server stores it and the converted invoice inherits it.
         const lineItems = [];
         document.querySelectorAll('.fw-qi-form__line-item').forEach(line => {
             const desc = line.querySelector('[name="item_description[]"]').value;
             const qty = parseFloat(line.querySelector('[name="item_quantity[]"]').value) || 0;
             const price = parseFloat(line.querySelector('[name="item_price[]"]').value) || 0;
+            const taxSel = line.querySelector('.line-tax-rate');
+            const taxRate = taxSel ? (parseFloat(taxSel.value) || 0) : 15;
+            const taxCode = taxSel ? (taxSel.selectedOptions[0]?.dataset?.taxCode || 'STD') : 'STD';
             lineItems.push({
                 description: desc,
                 quantity: qty,
                 unit_price: price,
-                line_total: qty * price
+                line_total: qty * price,
+                tax_rate: taxRate,
+                tax_code: taxCode
             });
         });
 
-        // Compute totals client-side for convenience (server will recompute). Use defaultTaxRate if provided
+        // Compute totals client-side for convenience (server recomputes and is
+        // authoritative). VAT is summed per line from each line's chosen rate.
         const subtotal = lineItems.reduce((sum, item) => sum + item.line_total, 0);
-        const rateSubmit = (typeof window !== 'undefined' && window.defaultTaxRate) ? (parseFloat(window.defaultTaxRate) / 100) : 0.15;
-        const tax = subtotal * rateSubmit;
+        const tax = lineItems.reduce((sum, item) => sum + item.line_total * ((parseFloat(item.tax_rate) || 0) / 100), 0);
         const total = subtotal + tax;
 
         // Build payload

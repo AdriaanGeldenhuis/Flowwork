@@ -34,7 +34,15 @@ if ($quoteId) {
         die('Quote not found or cannot be edited');
     }
     
-    $stmt = $DB->prepare("SELECT * FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
+    // Join the tax code so the per-line VAT dropdown can restore the exact
+    // choice (the two 0% options — zero-rated vs exempt — can't be told apart
+    // by rate alone).
+    $stmt = $DB->prepare(
+        "SELECT ql.*, tc.code AS tax_code
+           FROM quote_lines ql
+           LEFT JOIN gl_tax_codes tc ON tc.tax_code_id = ql.tax_code_id
+          WHERE ql.quote_id = ? ORDER BY ql.sort_order"
+    );
     $stmt->execute([$quoteId]);
     $lineItems = $stmt->fetchAll();
 
@@ -69,6 +77,27 @@ $stmt->execute([$companyId]);
 $qiSettings = $stmt->fetch();
 $defaultTerms = $qiSettings['default_terms'] ?? '';
 $defaultTaxRate = isset($qiSettings['default_tax_rate']) && is_numeric($qiSettings['default_tax_rate']) ? floatval($qiSettings['default_tax_rate']) : 15.0;
+
+// Per-line VAT dropdown. The two 0% options (zero-rated vs exempt) carry the
+// SARS tax code so the VAT201 stays correct; the labels read as a plain
+// "VAT / No VAT" choice. Selection restores by tax_code on edit, falling back
+// to the stored rate when a line has no code yet.
+if (!function_exists('qi_line_tax_select')) {
+    function qi_line_tax_select(?string $selectedCode, $rate = null): string {
+        $options = [
+            ['15.00', 'STD',    'VAT (15%)'],
+            ['0.00',  'ZERO',   'No VAT (Zero-rated)'],
+            ['0.00',  'EXEMPT', 'No VAT (Exempt)'],
+        ];
+        $sel = $selectedCode ?: (($rate !== null && (float)$rate == 0.0) ? 'ZERO' : 'STD');
+        $html = '<select class="fw-qi__input line-tax-rate" name="item_tax_rate[]">';
+        foreach ($options as [$val, $code, $label]) {
+            $html .= '<option value="' . $val . '" data-tax-code="' . $code . '"'
+                   . ($code === $sel ? ' selected' : '') . '>' . htmlspecialchars($label) . '</option>';
+        }
+        return $html . '</select>';
+    }
+}
 
 // Document currency: existing quote keeps its currency, new quotes use the company default
 $defaultCurrency = Currencies::isValid($qiSettings['default_currency'] ?? null) ? strtoupper($qiSettings['default_currency']) : Currencies::BASE;
@@ -202,6 +231,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                                     <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" value="<?= htmlspecialchars($item['item_description']) ?>" required>
                                     <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="<?= $item['quantity'] ?>" step="0.01" min="0" required>
                                     <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" value="<?= $item['unit_price'] ?>" step="0.01" min="0" required>
+                                    <?= qi_line_tax_select($item['tax_code'] ?? null, $item['tax_rate'] ?? null) ?>
                                     <input type="text" class="fw-qi__input" placeholder="R 0.00" readonly name="item_total[]" value="<?= number_format($item['line_total'], 2) ?>">
                                     <button type="button" class="fw-qi-form__remove-line" onclick="removeLine(this)">×</button>
                                 </div>
@@ -211,6 +241,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                                 <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" required>
                                 <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="1" step="0.01" min="0" required>
                                 <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" step="0.01" min="0" required>
+                                <?= qi_line_tax_select(null) ?>
                                 <input type="text" class="fw-qi__input" placeholder="R 0.00" readonly name="item_total[]">
                                 <button type="button" class="fw-qi-form__remove-line" onclick="removeLine(this)">×</button>
                             </div>
@@ -233,7 +264,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                             <span id="subtotalDisplay"><?= htmlspecialchars($docSymbol) ?> 0.00</span>
                         </div>
                         <div class="fw-qi-form__total-row">
-                            <span>VAT (15%):</span>
+                            <span>VAT:</span>
                             <span id="taxDisplay"><?= htmlspecialchars($docSymbol) ?> 0.00</span>
                         </div>
                         <div class="fw-qi-form__total-row fw-qi-form__total-row--grand">
@@ -335,13 +366,18 @@ $docSymbol = Currencies::symbol($docCurrency);
 
         function grandTotal() {
             let subtotal = 0;
+            let tax = 0;
             document.querySelectorAll('.fw-qi-form__line-item').forEach(function(line) {
                 const qty = parseFloat(line.querySelector('[name="item_quantity[]"]')?.value) || 0;
                 const price = parseFloat(line.querySelector('[name="item_price[]"]')?.value) || 0;
-                subtotal += qty * price;
+                const lineNet = qty * price;
+                subtotal += lineNet;
+                // Per-line VAT, consistent with the totals shown and the payload.
+                const taxSel = line.querySelector('.line-tax-rate');
+                const rate = taxSel ? (parseFloat(taxSel.value) || 0) / 100 : 0.15;
+                tax += lineNet * rate;
             });
-            const rate = window.defaultTaxRate ? (parseFloat(window.defaultTaxRate) / 100) : 0.15;
-            return subtotal + subtotal * rate;
+            return subtotal + tax;
         }
 
         QI.toggleMilestones = function() {
