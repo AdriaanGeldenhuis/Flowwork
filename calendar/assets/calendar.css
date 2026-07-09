@@ -1,81 +1,344 @@
-/* ========================================
-   CALENDAR STYLES – SCOPED TO .fw-calendar
-   Aqua/Cyan theme, matches CRM structure
-   ======================================== */
+/* ============================================================================
+   FLOWWORK CALENDAR — DIMENSION 3D DESIGN SYSTEM (Cyan Edition)
+   Lineage: projects/board-3d.css → crm/assets/crm.css (cyan) → this file.
+   Same true-depth interface as CRM: perspective grid floor, aurora ambient
+   drift, floating glass slabs, extruded pressable keys, carved input wells,
+   segmented tab groove. Scoped to .fw-calendar.
 
-.fw-calendar {
-  /* Design tokens */
-  --fw-radius-sm: 8px;
-  --fw-radius-md: 12px;
-  --fw-radius-lg: 16px;
+   3D rules of the road:
+   1. Glass (backdrop-filter) panels and any preserve-3d tilt slabs are
+      separate families — a surface is one or the other, never both.
+   2. Theme contract: dark scope is .fw-calendar[data-theme="dark"] ONLY
+      (JS sets data-theme on the .fw-calendar root).
+   3. Kebab menu is aria-driven (.fw-calendar__kebab-menu[aria-hidden="false"]).
+   4. ≤768px and prefers-reduced-motion flatten motion and hide the grid floor.
+   ============================================================================ */
+
+/* ===== CSS VARIABLES ===== */
+:root {
+  /* Spacing */
   --fw-spacing-xs: 8px;
   --fw-spacing-sm: 12px;
   --fw-spacing-md: 16px;
   --fw-spacing-lg: 24px;
   --fw-spacing-xl: 32px;
+  --fw-spacing-2xl: 48px;
 
-  /* Light theme */
-  --fw-bg-base: #f5f6f8;
-  --fw-bg-radial: radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.06), transparent 50%),
-                  radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.04), transparent 50%);
-  --fw-text-primary: #1a1d29;
-  --fw-text-muted: #6b7280;
-  --fw-border: rgba(0, 0, 0, 0.08);
-  --fw-panel-bg: rgba(255, 255, 255, 0.7);
+  /* Border Radius */
+  --fw-radius-sm: 8px;
+  --fw-radius-md: 12px;
+  --fw-radius-lg: 16px;
+  --fw-radius-xl: 20px;
+  --fw-radius-full: 9999px;
+
+  /* Transitions */
+  --fw-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  --fw-tilt-ease: 0.16s cubic-bezier(0.33, 1, 0.68, 1);
+
+  /* Neon palette (status / event-type colors) */
+  --neon-cyan: #06b6d4;
+  --neon-cyan-glow: rgba(6, 182, 212, 0.3);
+  --neon-yellow: #fbbf24;
+  --neon-green: #10b981;
+  --neon-green-glow: rgba(16, 185, 129, 0.3);
+  --neon-orange: #f59e0b;
+  --neon-purple: #8b5cf6;
+  --neon-purple-glow: rgba(139, 92, 246, 0.3);
+  --neon-pink: #ff1dce;
+  --neon-red: #ef4444;
+  --neon-blue: #3b82f6;
+
+  /* Z-Index */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 500;
+  --z-modal: 2000;
+
+  /* 3D scene */
+  --fw-persp: 1100px;
+  --fw-tilt-max: 6deg;
+
+  /* ----- Light theme ----- */
+  --fw-bg-base: #eef3f7;
+  --fw-bg-secondary: #e2eaf0;
+  --fw-card-bg: #ffffff;
+  --fw-bg-card: #ffffff;
+  --fw-card-face: linear-gradient(168deg, #ffffff 0%, #fbfdfe 45%, #edf4f9 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.95);
+  --fw-panel-bg: rgba(255, 255, 255, 0.82);
+  --fw-panel-solid: #ffffff;
   --fw-panel-border: rgba(255, 255, 255, 0.9);
-  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --fw-glow: rgba(6, 182, 212, 0.15);
-  --fw-highlight: rgba(255, 255, 255, 0.6);
-  --fw-rim-light: rgba(255, 255, 255, 0.5);
+  --fw-panel-hover: rgba(248, 250, 252, 1);
 
-  /* Calendar accent - AQUA/CYAN */
-  --accent-calendar: #06b6d4;
-  --accent-calendar-hover: #0891b2;
+  --fw-text-primary: #16212b;
+  --fw-text-secondary: #46555f;
+  --fw-text-tertiary: #64737d;
+  --fw-text-muted: #93a3ad;
+
+  --fw-border-base: rgba(21, 39, 50, 0.08);
+  --fw-border-strong: rgba(21, 39, 50, 0.14);
+  --fw-border: var(--fw-border-base);
+
+  --fw-shadow-sm: 0 2px 8px rgba(21, 39, 50, 0.07);
+  --fw-shadow-md: 0 4px 16px rgba(21, 39, 50, 0.09);
+  --fw-shadow-lg: 0 8px 32px rgba(21, 39, 50, 0.13);
+  --fw-shadow-xl: 0 12px 48px rgba(21, 39, 50, 0.17);
+
+  --fw-highlight: rgba(255, 255, 255, 0.65);
+  --fw-rim-light: rgba(255, 255, 255, 0.85);
+  --fw-glare: rgba(255, 255, 255, 0.5);
+
+  --fw-input-bg: #f2f7fa;
+  --fw-input-border: rgba(21, 39, 50, 0.14);
+  --fw-input-border-hover: rgba(21, 39, 50, 0.26);
+  --fw-input-well:
+    inset 0 2px 4px rgba(21, 39, 50, 0.07),
+    inset 0 1px 2px rgba(21, 39, 50, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.9);
+
+  --fw-modal-overlay: rgba(12, 24, 32, 0.55);
+
+  /* Cyan accent ramp (light) */
+  --fw-primary: #06b6d4;
+  --fw-primary-hover: #0891b2;
+  --fw-primary-deep: #0e7490;
+  --fw-primary-deeper: #155e75;
+  --fw-primary-glow: rgba(6, 182, 212, 0.25);
+  --fw-primary-light: rgba(6, 182, 212, 0.12);
+  --fw-glow: rgba(6, 182, 212, 0.16);
+  --fw-grid-line: rgba(6, 182, 212, 0.13);
+  --fw-aurora-a: rgba(6, 182, 212, 0.20);
+  --fw-aurora-b: rgba(139, 92, 246, 0.12);
+  --fw-aurora-c: rgba(255, 29, 206, 0.06);
+
+  /* Card elevation stacks */
+  --fw-card-shadow:
+    0 1px 2px rgba(21, 39, 50, 0.05),
+    0 6px 14px -4px rgba(21, 39, 50, 0.09),
+    0 18px 36px -14px rgba(21, 39, 50, 0.16),
+    0 30px 60px -26px rgba(6, 182, 212, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(21, 39, 50, 0.05);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(21, 39, 50, 0.06),
+    0 12px 24px -6px rgba(21, 39, 50, 0.13),
+    0 32px 56px -16px rgba(21, 39, 50, 0.22),
+    0 48px 90px -28px rgba(6, 182, 212, 0.38),
+    0 0 0 1px rgba(6, 182, 212, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(21, 39, 50, 0.05);
+
+  /* Extruded control edges */
+  --fw-key-side: rgba(21, 39, 50, 0.16);
+  --fw-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(21, 39, 50, 0.05),
+    0 2px 0 var(--fw-key-side),
+    0 3px 6px rgba(21, 39, 50, 0.10),
+    0 8px 16px -6px rgba(21, 39, 50, 0.14);
+  --fw-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(21, 39, 50, 0.05),
+    0 4px 0 var(--fw-key-side),
+    0 6px 12px rgba(21, 39, 50, 0.12),
+    0 14px 24px -8px rgba(21, 39, 50, 0.18);
+  --fw-key-shadow-active:
+    inset 0 2px 4px rgba(21, 39, 50, 0.14),
+    0 1px 0 var(--fw-key-side);
+
+  /* Calendar event-type accents (semantic — kept across themes) */
+  --accent-calendar: var(--fw-primary);
+  --accent-calendar-hover: var(--fw-primary-hover);
   --accent-event: #8b5cf6;
   --accent-note: #fbbf24;
   --accent-task: #10b981;
-  --accent-danger: #ef4444;
+  --accent-danger: var(--neon-red);
 }
 
+/* ===== DARK THEME ===== */
 .fw-calendar[data-theme="dark"] {
-  --fw-bg-base: #0a0c12;
-  --fw-bg-radial: radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.08), transparent 50%),
-                  radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.06), transparent 50%);
-  --fw-text-primary: #f3f4f6;
-  --fw-text-muted: #9ca3af;
-  --fw-border: rgba(255, 255, 255, 0.08);
-  --fw-panel-bg: rgba(20, 24, 35, 0.8);
+  --fw-bg-base: #060b0f;
+  --fw-bg-secondary: #0b131b;
+  --fw-card-bg: #12202c;
+  --fw-bg-card: #12202c;
+  --fw-card-face: linear-gradient(168deg, rgba(30, 48, 62, 0.98) 0%, rgba(19, 32, 44, 0.99) 48%, rgba(11, 19, 30, 1) 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.12);
+  --fw-panel-bg: rgba(14, 24, 34, 0.78);
+  --fw-panel-solid: #101c28;
   --fw-panel-border: rgba(255, 255, 255, 0.1);
-  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --fw-glow: rgba(6, 182, 212, 0.25);
-  --fw-highlight: rgba(255, 255, 255, 0.15);
-  --fw-rim-light: rgba(255, 255, 255, 0.2);
+  --fw-panel-hover: rgba(26, 44, 58, 1);
+
+  --fw-text-primary: #e7f0f4;
+  --fw-text-secondary: #c3d5dd;
+  --fw-text-tertiary: #9cb4c0;
+  --fw-text-muted: #78909d;
+
+  --fw-border-base: rgba(255, 255, 255, 0.08);
+  --fw-border-strong: rgba(255, 255, 255, 0.14);
+
+  --fw-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --fw-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --fw-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6);
+  --fw-shadow-xl: 0 16px 64px rgba(0, 0, 0, 0.7);
+
+  --fw-highlight: rgba(255, 255, 255, 0.14);
+  --fw-rim-light: rgba(255, 255, 255, 0.28);
+  --fw-glare: rgba(190, 235, 255, 0.14);
+
+  --fw-input-bg: rgba(4, 10, 16, 0.6);
+  --fw-input-border: rgba(255, 255, 255, 0.14);
+  --fw-input-border-hover: rgba(255, 255, 255, 0.26);
+  --fw-input-well:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+
+  --fw-modal-overlay: rgba(1, 6, 12, 0.78);
+
+  --fw-primary-glow: rgba(6, 182, 212, 0.38);
+  --fw-primary-light: rgba(6, 182, 212, 0.16);
+  --fw-glow: rgba(6, 182, 212, 0.3);
+  --fw-grid-line: rgba(0, 224, 214, 0.10);
+  --fw-aurora-a: rgba(6, 182, 212, 0.20);
+  --fw-aurora-b: rgba(139, 92, 246, 0.13);
+  --fw-aurora-c: rgba(255, 29, 206, 0.08);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 10px 22px -6px rgba(0, 0, 0, 0.55),
+    0 26px 50px -18px rgba(0, 0, 0, 0.65),
+    0 34px 70px -28px rgba(6, 182, 212, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 16px 32px -8px rgba(0, 0, 0, 0.6),
+    0 40px 70px -20px rgba(0, 0, 0, 0.7),
+    0 52px 100px -30px rgba(6, 182, 212, 0.55),
+    0 0 0 1px rgba(6, 182, 212, 0.35),
+    0 0 44px -6px rgba(6, 182, 212, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+
+  --fw-key-side: rgba(0, 0, 0, 0.7);
+  --fw-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 var(--fw-key-side),
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    0 8px 18px -6px rgba(0, 0, 0, 0.5);
+  --fw-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 4px 0 var(--fw-key-side),
+    0 7px 14px rgba(0, 0, 0, 0.5),
+    0 14px 28px -8px rgba(0, 0, 0, 0.55);
+  --fw-key-shadow-active:
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    0 1px 0 var(--fw-key-side);
 }
 
-/* Base */
-.fw-calendar {
-  margin: 0;
-  padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--fw-text-primary);
-  background: var(--fw-bg-base);
-  background-image: var(--fw-bg-radial);
-  min-height: 100vh;
-  box-sizing: border-box;
-}
-
+/* ===== BASE RESET ===== */
 .fw-calendar *,
 .fw-calendar *::before,
 .fw-calendar *::after {
-  box-sizing: inherit;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
+.fw-calendar {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--fw-text-primary);
+  background:
+    radial-gradient(1400px 700px at 18% -8%, var(--fw-aurora-a), transparent 60%),
+    radial-gradient(1200px 600px at 85% 5%, var(--fw-aurora-b), transparent 55%),
+    radial-gradient(900px 500px at 55% 110%, var(--fw-aurora-c), transparent 60%),
+    var(--fw-bg-base);
+  min-height: 100vh;
+  transition: background 0.4s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.fw-calendar ::selection {
+  background: var(--fw-primary);
+  color: #fff;
+}
+
+/* ===== ENVIRONMENT: PERSPECTIVE GRID FLOOR + AMBIENT DRIFT ===== */
+.fw-calendar::before {
+  content: '';
+  position: fixed;
+  left: -30%;
+  right: -30%;
+  bottom: -14%;
+  height: 60vh;
+  background-image:
+    linear-gradient(var(--fw-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--fw-grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(620px) rotateX(63deg);
+  transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent 80%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent 80%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.fw-calendar::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(720px 420px at 78% 82%, var(--fw-aurora-b), transparent 70%),
+    radial-gradient(880px 520px at 12% 70%, var(--fw-aurora-a), transparent 70%);
+  opacity: 0.55;
+  animation: fwAuroraDrift 22s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes fwAuroraDrift {
+  from { opacity: 0.3; transform: translateY(0); }
+  to   { opacity: 0.7; transform: translateY(-30px); }
+}
+
+/* ===== SCROLLBAR ===== */
+.fw-calendar ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.fw-calendar ::-webkit-scrollbar-track {
+  background: var(--fw-bg-secondary);
+  border-radius: var(--fw-radius-sm);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.fw-calendar ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--fw-primary), var(--fw-primary-deep));
+  border-radius: var(--fw-radius-sm);
+  border: 3px solid var(--fw-bg-secondary);
+}
+
+.fw-calendar ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #22d3ee, var(--fw-primary));
+}
+
+/* ===== FOCUS ===== */
+.fw-calendar :focus-visible {
+  outline: 2px solid var(--fw-primary);
+  outline-offset: 2px;
+}
+
+/* ===== CONTAINER ===== */
 .fw-calendar__container {
   max-width: 1600px;
   margin: 0 auto;
@@ -83,28 +346,49 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  position: relative;
+  z-index: 1;
 }
 
-/* ========== HEADER (aqua gradient) ========== */
+/* ===== HEADER — floating glass slab ===== */
 .fw-calendar__header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
+  padding: 0 var(--fw-spacing-lg);
+  height: 70px;
   background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 1px 0 rgba(6, 182, 212, 0.18),
+    0 10px 30px -12px rgba(21, 39, 50, 0.35),
+    0 4px 24px -4px var(--fw-primary-glow);
   margin-bottom: var(--fw-spacing-xl);
-  z-index:999;
+  z-index: var(--z-sticky);
+}
+
+/* Gloss overlay */
+.fw-calendar__header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--fw-radius-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
 }
 
 .fw-calendar__brand {
   display: flex;
   align-items: center;
-  gap: var(--fw-spacing-md);
+  gap: 12px;
+  min-width: 0;
+  z-index: 1;
 }
 
 .fw-calendar__logo-tile {
@@ -113,25 +397,49 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-calendar), rgba(6, 182, 212, 0.7));
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3),
-              inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.45),
+    inset 0 -3px 6px rgba(8, 51, 82, 0.45),
+    0 3px 0 var(--fw-primary-deeper),
+    0 8px 18px -4px rgba(6, 182, 212, 0.55);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring);
+}
+
+.fw-calendar__logo-tile::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: fwShimmer 3s infinite;
+}
+
+@keyframes fwShimmer {
+  to { left: 100%; }
 }
 
 .fw-calendar__logo-tile svg {
   width: 28px;
   height: 28px;
-  color: #ffffff;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  position: relative;
+  z-index: 1;
 }
 
 .fw-calendar__brand-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  z-index: 1;
+  min-width: 0;
 }
 
 .fw-calendar__company-name {
@@ -139,6 +447,9 @@
   font-weight: 700;
   color: var(--fw-text-primary);
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fw-calendar__app-name {
@@ -150,112 +461,133 @@
 }
 
 .fw-calendar__greeting {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--fw-text-primary);
   flex: 1;
   text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fw-text-secondary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1;
 }
 
 .fw-calendar__greeting-name {
-  color: var(--accent-calendar);
+  color: var(--fw-primary);
+  font-weight: 700;
+  text-shadow: 0 0 18px var(--fw-primary-glow);
 }
 
 .fw-calendar__controls {
   display: flex;
   align-items: center;
-  gap: var(--fw-spacing-sm);
+  gap: 10px;
+  z-index: 1;
 }
 
+/* Header icon buttons — mini keys */
 .fw-calendar__home-btn,
 .fw-calendar__theme-toggle,
-.fw-calendar__kebab-toggle {
+.fw-calendar__kebab-toggle,
+.fw-calendar__notifications-btn {
   width: 40px;
   height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
+  display: grid;
+  place-items: center;
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
-  cursor: pointer;
-  transition: all 0.2s ease;
   color: var(--fw-text-primary);
+  cursor: pointer;
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
   text-decoration: none;
-}
-
-.fw-calendar__home-btn svg,
-.fw-calendar__theme-toggle svg,
-.fw-calendar__kebab-toggle svg {
-  width: 20px;
-  height: 20px;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .fw-calendar__home-btn:hover,
 .fw-calendar__theme-toggle:hover,
-.fw-calendar__kebab-toggle:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
-  transform: translateY(-1px);
+.fw-calendar__kebab-toggle:hover,
+.fw-calendar__notifications-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+  color: var(--fw-primary);
+}
+
+.fw-calendar__home-btn:active,
+.fw-calendar__theme-toggle:active,
+.fw-calendar__kebab-toggle:active,
+.fw-calendar__notifications-btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
+}
+
+.fw-calendar__home-btn svg,
+.fw-calendar__theme-toggle svg,
+.fw-calendar__kebab-toggle svg,
+.fw-calendar__notifications-btn svg {
+  width: 20px;
+  height: 20px;
 }
 
 .fw-calendar__theme-icon {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--fw-transition-base);
 }
 
-.fw-calendar__theme-icon--light {
-  opacity: 1;
-}
+.fw-calendar__theme-icon--light { opacity: 1; }
 
 .fw-calendar__theme-icon--dark {
   opacity: 0;
   position: absolute;
 }
 
-.fw-calendar[data-theme="dark"] .fw-calendar__theme-icon--light {
-  opacity: 0;
-}
+.fw-calendar[data-theme="dark"] .fw-calendar__theme-icon--light { opacity: 0; }
+.fw-calendar[data-theme="dark"] .fw-calendar__theme-icon--dark { opacity: 1; }
 
-.fw-calendar[data-theme="dark"] .fw-calendar__theme-icon--dark {
-  opacity: 1;
-}
-
+/* ===== KEBAB MENU — 3D flip-down ===== */
 .fw-calendar__menu-wrapper {
   position: relative;
 }
 
 .fw-calendar__kebab-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   right: 0;
+  min-width: 200px;
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-md);
-  box-shadow: var(--fw-shadow-lg);
-  backdrop-filter: blur(12px);
-  min-width: 180px;
-  padding: var(--fw-spacing-xs);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 24px 48px -12px rgba(8, 16, 24, 0.45),
+    0 8px 24px -8px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  padding: 8px;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-8px);
-  transition: all 0.2s ease;
-  z-index: 100;
+  transform: perspective(700px) rotateX(-14deg) translateY(-8px) scale(0.96);
+  transform-origin: top right;
+  transition: all var(--fw-transition-base);
+  z-index: var(--z-dropdown);
 }
 
 .fw-calendar__kebab-menu[aria-hidden="false"] {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: perspective(700px) rotateX(0) translateY(0) scale(1);
 }
 
 .fw-calendar__kebab-item {
   display: block;
   width: 100%;
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  padding: 10px 14px;
   color: var(--fw-text-primary);
   text-decoration: none;
   border-radius: var(--fw-radius-sm);
-  transition: all 0.15s ease;
+  transition: all var(--fw-transition-fast);
   font-size: 14px;
   font-weight: 500;
   background: none;
@@ -265,23 +597,50 @@
 }
 
 .fw-calendar__kebab-item:hover {
-  background: var(--fw-highlight);
-  color: var(--accent-calendar);
+  background: var(--fw-primary-light);
+  color: var(--fw-primary);
+  transform: translateX(3px);
 }
 
-/* ========== MAIN LAYOUT ========== */
+/* ===== MAIN ===== */
 .fw-calendar__main {
   flex: 1;
+  position: relative;
+  z-index: 1;
 }
 
-/* Toolbar */
+/* ===== TOOLBAR — floating glass shelf ===== */
 .fw-calendar__toolbar {
   display: flex;
   gap: var(--fw-spacing-md);
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--fw-spacing-lg);
   flex-wrap: wrap;
+  padding: 14px var(--fw-spacing-lg);
+  margin-bottom: var(--fw-spacing-lg);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(21, 39, 50, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  position: relative;
+  z-index: 2;
+}
+
+.fw-calendar__toolbar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: var(--fw-radius-lg) var(--fw-radius-lg) 0 0;
+  background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  pointer-events: none;
 }
 
 .fw-calendar__nav {
@@ -290,33 +649,73 @@
   align-items: center;
 }
 
-.fw-calendar__btn {
-  padding: var(--fw-spacing-sm) var(--fw-spacing-lg);
-  border: none;
-  border-radius: var(--fw-radius-md);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-  background: var(--fw-panel-bg);
+.fw-calendar__date-display {
+  font-size: 18px;
+  font-weight: 800;
   color: var(--fw-text-primary);
-  border: 1px solid var(--fw-border);
+  text-shadow: 0 1px 0 var(--fw-highlight);
+  padding: 0 var(--fw-spacing-md);
+  min-width: 200px;
+  text-align: center;
 }
 
+/* ===== BUTTONS — extruded pressable keys ===== */
+.fw-calendar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--fw-radius-md);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), background var(--fw-transition-base), color var(--fw-transition-base), border-color var(--fw-transition-base);
+  border: 1px solid var(--fw-border-base);
+  white-space: nowrap;
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  background: var(--fw-card-face);
+  color: var(--fw-text-primary);
+  box-shadow: var(--fw-key-shadow);
+}
+
+/* Sheen sweep on hover */
+.fw-calendar__btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.5s ease;
+  pointer-events: none;
+}
+
+.fw-calendar__btn:hover::before { left: 130%; }
+
 .fw-calendar__btn:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
-  transform: translateY(-1px);
+  border-color: var(--fw-primary);
+  color: var(--fw-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+}
+
+.fw-calendar__btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
 }
 
 .fw-calendar__btn--icon {
   width: 40px;
   height: 40px;
   padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .fw-calendar__btn--icon svg {
@@ -325,79 +724,170 @@
 }
 
 .fw-calendar__btn--primary {
-  background: var(--accent-calendar);
-  color: #ffffff;
-  border-color: var(--accent-calendar);
+  background: linear-gradient(165deg, #7ee5f5 0%, var(--fw-primary) 52%, var(--fw-primary-hover) 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(8, 51, 82, 0.45);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(8, 51, 82, 0.35),
+    0 3px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 14px 28px -8px var(--fw-primary-glow);
 }
 
 .fw-calendar__btn--primary:hover {
-  background: var(--accent-calendar-hover);
-  border-color: var(--accent-calendar-hover);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(8, 51, 82, 0.35),
+    0 5px 0 var(--fw-primary-deeper),
+    0 10px 22px -2px var(--fw-primary-glow),
+    0 22px 44px -10px var(--fw-primary-glow);
+}
+
+.fw-calendar__btn--primary:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 6px rgba(8, 51, 82, 0.5),
+    0 1px 0 var(--fw-primary-deeper);
+}
+
+.fw-calendar__btn--danger {
+  background: linear-gradient(165deg, #f87171, #ef4444 55%, #dc2626);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(120, 10, 10, 0.4);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.35),
+    0 3px 0 #991b1b,
+    0 6px 14px -2px rgba(239, 68, 68, 0.4);
+}
+
+.fw-calendar__btn--danger:hover {
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.35),
+    0 5px 0 #991b1b,
+    0 12px 26px -4px rgba(239, 68, 68, 0.5);
 }
 
 .fw-calendar__btn--small {
-  padding: 4px 12px;
-  font-size: 12px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: var(--fw-radius-sm);
 }
 
-.fw-calendar__date-display {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--fw-text-primary);
-  padding: 0 var(--fw-spacing-md);
-  min-width: 200px;
-  text-align: center;
+.fw-calendar__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
+/* ===== VIEW SWITCHER — segmented control in a carved groove ===== */
 .fw-calendar__view-switcher {
   display: flex;
-  gap: var(--fw-spacing-xs);
-  border-bottom: 2px solid var(--fw-border);
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-full);
+  box-shadow: var(--fw-input-well);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
+.fw-calendar__view-switcher::-webkit-scrollbar { display: none; }
+
 .fw-calendar__view-tab {
-  padding: var(--fw-spacing-sm) var(--fw-spacing-lg);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 9px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text-tertiary);
   font-size: 14px;
   font-weight: 600;
-  color: var(--fw-text-muted);
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base), background var(--fw-transition-base);
   text-decoration: none;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -2px;
-  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .fw-calendar__view-tab:hover {
-  color: var(--fw-text-primary);
+  color: var(--fw-primary);
+  background: var(--fw-primary-light);
 }
+
+.fw-calendar__view-tab:active { transform: scale(0.97); }
 
 .fw-calendar__view-tab--active {
-  color: var(--accent-calendar);
-  border-bottom-color: var(--accent-calendar);
+  background: linear-gradient(165deg, #7ee5f5 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(8, 51, 82, 0.45);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(8, 51, 82, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 4px 10px -2px var(--fw-primary-glow),
+    0 8px 20px -4px var(--fw-primary-glow);
 }
 
-/* Content Layout */
+.fw-calendar__view-tab--active:hover {
+  color: #fff;
+  background: linear-gradient(165deg, #7ee5f5 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+}
+
+/* ===== CONTENT LAYOUT ===== */
 .fw-calendar__content {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 300px 1fr;
   gap: var(--fw-spacing-lg);
   min-height: 600px;
 }
 
-/* Sidebar */
-.fw-calendar__sidebar {
+/* Glass panels: sidebar + main view */
+.fw-calendar__sidebar,
+.fw-calendar__view {
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(21, 39, 50, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   padding: var(--fw-spacing-lg);
+  position: relative;
+}
+
+.fw-calendar__sidebar {
   display: flex;
   flex-direction: column;
   gap: var(--fw-spacing-lg);
+  align-self: start;
 }
 
+.fw-calendar__view { min-height: 600px; }
+
 .fw-calendar__sidebar-section {
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
   padding-bottom: var(--fw-spacing-lg);
 }
 
@@ -414,90 +904,74 @@
 }
 
 .fw-calendar__sidebar-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 800;
   color: var(--fw-text-primary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
   margin: 0 0 var(--fw-spacing-md) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
-.fw-calendar__myday {
-  min-height: 150px;
+.fw-calendar__sidebar-header .fw-calendar__sidebar-title { margin: 0; }
+
+.fw-calendar__myday { min-height: 150px; }
+.fw-calendar__calendar-list { min-height: 100px; }
+
+/* Calendar list items (sidebar) */
+.fw-calendar__calendar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-sm);
+  padding: 8px 10px;
+  border-radius: var(--fw-radius-sm);
+  font-size: 14px;
+  color: var(--fw-text-secondary);
+  cursor: pointer;
+  transition: background var(--fw-transition-fast), color var(--fw-transition-fast);
 }
 
-.fw-calendar__calendar-list {
-  min-height: 100px;
+.fw-calendar__calendar-item:hover {
+  background: var(--fw-primary-light);
+  color: var(--fw-text-primary);
 }
 
-/* Main View */
-.fw-calendar__view {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
-  padding: var(--fw-spacing-lg);
-  min-height: 600px;
+.fw-calendar__calendar-toggle {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--fw-primary);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .fw-calendar__loading {
   text-align: center;
   padding: var(--fw-spacing-xl);
   color: var(--fw-text-muted);
+  font-size: 14px;
+  animation: fwPulse 2s ease-in-out infinite;
 }
 
-/* Footer */
+@keyframes fwPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* ===== FOOTER ===== */
 .fw-calendar__footer {
   margin-top: var(--fw-spacing-xl);
-  padding: var(--fw-spacing-md);
+  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--fw-text-muted);
-  border-top: 1px solid var(--fw-border);
+  font-size: 13px;
+  color: var(--fw-text-tertiary);
+  border-top: 1px solid var(--fw-panel-border);
 }
 
-/* Responsive */
-@media (max-width: 1024px) {
-  .fw-calendar__content {
-    grid-template-columns: 1fr;
-  }
-
-  .fw-calendar__sidebar {
-    order: 2;
-  }
-
-  .fw-calendar__view {
-    order: 1;
-  }
-}
-
-@media (max-width: 768px) {
-  .fw-calendar__header {
-    flex-direction: column;
-    gap: var(--fw-spacing-md);
-  }
-
-  .fw-calendar__greeting {
-    order: -1;
-    text-align: left;
-  }
-
-  .fw-calendar__toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .fw-calendar__nav {
-    flex-wrap: wrap;
-  }
-
-  .fw-calendar__view-switcher {
-    overflow-x: auto;
-  }
-}
-
-/* ========== CALENDAR VIEWS (placeholders) ========== */
+/* ============================================================================
+   CALENDAR VIEWS
+   ============================================================================ */
 .fw-calendar__day-view,
 .fw-calendar__week-view,
 .fw-calendar__month-view,
@@ -507,53 +981,50 @@
   min-height: 500px;
 }
 
-/* Calendar Grid (Month View) */
+/* Month View */
 .fw-calendar__month-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1px;
-  background: var(--fw-border);
-  border: 1px solid var(--fw-border);
+  background: var(--fw-border-base);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   overflow: hidden;
+  box-shadow: var(--fw-shadow-sm);
 }
 
 .fw-calendar__month-header {
   padding: var(--fw-spacing-sm);
-  background: var(--fw-highlight);
-  font-weight: 600;
+  background: var(--fw-panel-solid);
+  font-weight: 700;
   font-size: 12px;
   text-align: center;
-  color: var(--fw-text-muted);
+  color: var(--fw-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .fw-calendar__month-day {
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-bg);
   padding: var(--fw-spacing-sm);
-  min-height: 100px;
+  min-height: 104px;
   position: relative;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--fw-transition-base);
 }
 
-.fw-calendar__month-day:hover {
-  background: var(--fw-highlight);
-}
+.fw-calendar__month-day:hover { background: var(--fw-panel-hover); }
 
-.fw-calendar__month-day--other-month {
-  opacity: 0.4;
-}
+.fw-calendar__month-day--other-month { opacity: 0.4; }
 
 .fw-calendar__month-day--today {
-  background: rgba(6, 182, 212, 0.1);
-  border: 2px solid var(--accent-calendar);
+  background: var(--fw-primary-light);
+  box-shadow: inset 0 0 0 2px var(--fw-primary);
 }
 
 .fw-calendar__month-day-number {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--fw-text-primary);
   margin-bottom: 4px;
 }
@@ -566,7 +1037,7 @@
 
 .fw-calendar__month-event {
   padding: 2px 6px;
-  background: var(--accent-event);
+  background: linear-gradient(165deg, #a78bfa, var(--accent-event));
   color: #ffffff;
   border-radius: 4px;
   font-size: 11px;
@@ -574,6 +1045,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-shadow: 0 1px 3px rgba(139, 92, 246, 0.4);
 }
 
 /* Week View */
@@ -581,59 +1053,60 @@
   display: grid;
   grid-template-columns: 60px repeat(7, 1fr);
   gap: 1px;
-  background: var(--fw-border);
-  border: 1px solid var(--fw-border);
+  background: var(--fw-border-base);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   overflow: hidden;
+  box-shadow: var(--fw-shadow-sm);
 }
 
 .fw-calendar__week-time {
   padding: var(--fw-spacing-xs);
-  background: var(--fw-highlight);
+  background: var(--fw-panel-solid);
   font-size: 12px;
   text-align: center;
-  color: var(--fw-text-muted);
+  color: var(--fw-text-tertiary);
 }
 
 .fw-calendar__week-slot {
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-bg);
   min-height: 40px;
   position: relative;
+  transition: background var(--fw-transition-base);
 }
 
-.fw-calendar__week-slot:hover {
-  background: var(--fw-highlight);
-}
+.fw-calendar__week-slot:hover { background: var(--fw-panel-hover); }
 
 /* Day View */
 .fw-calendar__day-timeline {
   display: grid;
   grid-template-columns: 60px 1fr;
   gap: 1px;
-  background: var(--fw-border);
-  border: 1px solid var(--fw-border);
+  background: var(--fw-border-base);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
+  overflow: hidden;
+  box-shadow: var(--fw-shadow-sm);
 }
 
 .fw-calendar__day-hour {
   padding: var(--fw-spacing-xs);
-  background: var(--fw-highlight);
+  background: var(--fw-panel-solid);
   font-size: 12px;
   text-align: center;
-  color: var(--fw-text-muted);
+  color: var(--fw-text-tertiary);
   height: 60px;
 }
 
 .fw-calendar__day-slot {
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-bg);
   height: 60px;
   position: relative;
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
+  transition: background var(--fw-transition-base);
 }
 
-.fw-calendar__day-slot:hover {
-  background: var(--fw-highlight);
-}
+.fw-calendar__day-slot:hover { background: var(--fw-panel-hover); }
 
 /* Agenda View */
 .fw-calendar__agenda-list {
@@ -646,31 +1119,31 @@
   display: flex;
   gap: var(--fw-spacing-md);
   padding: var(--fw-spacing-md);
-  background: var(--fw-highlight);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   border-left: 4px solid var(--accent-event);
-  transition: all 0.2s ease;
+  box-shadow: var(--fw-shadow-sm);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base);
 }
 
 .fw-calendar__agenda-item:hover {
-  box-shadow: var(--fw-shadow-sm);
+  box-shadow: var(--fw-shadow-md);
   transform: translateY(-2px);
 }
 
 .fw-calendar__agenda-time {
   min-width: 100px;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--fw-text-primary);
+  font-weight: 700;
+  color: var(--fw-primary);
 }
 
-.fw-calendar__agenda-details {
-  flex: 1;
-}
+.fw-calendar__agenda-details { flex: 1; }
 
 .fw-calendar__agenda-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--fw-text-primary);
   margin-bottom: 4px;
 }
@@ -703,14 +1176,14 @@
 
 .fw-calendar__timeline-label {
   min-width: 150px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--fw-text-primary);
 }
 
 .fw-calendar__timeline-bar {
   flex: 1;
   height: 40px;
-  background: var(--accent-event);
+  background: linear-gradient(165deg, #a78bfa, var(--accent-event));
   border-radius: var(--fw-radius-sm);
   position: relative;
   padding: var(--fw-spacing-xs);
@@ -719,6 +1192,7 @@
   font-weight: 600;
   display: flex;
   align-items: center;
+  box-shadow: 0 4px 12px -2px rgba(139, 92, 246, 0.5);
 }
 
 /* Year View */
@@ -729,14 +1203,16 @@
 }
 
 .fw-calendar__year-month {
-  background: var(--fw-highlight);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   padding: var(--fw-spacing-md);
+  box-shadow: var(--fw-shadow-sm);
 }
 
 .fw-calendar__year-month-title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
   margin-bottom: var(--fw-spacing-sm);
   color: var(--fw-text-primary);
@@ -754,27 +1230,25 @@
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  background: var(--fw-panel-bg);
+  background: var(--fw-input-bg);
   border-radius: 4px;
   color: var(--fw-text-primary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--fw-transition-fast), color var(--fw-transition-fast);
 }
 
 .fw-calendar__year-day:hover {
-  background: var(--accent-calendar);
+  background: var(--fw-primary);
   color: #ffffff;
 }
 
 .fw-calendar__year-day--today {
-  background: var(--accent-calendar);
+  background: var(--fw-primary);
   color: #ffffff;
   font-weight: 700;
 }
 
-.fw-calendar__year-day--has-events {
-  position: relative;
-}
+.fw-calendar__year-day--has-events { position: relative; }
 
 .fw-calendar__year-day--has-events::after {
   content: '';
@@ -788,7 +1262,9 @@
   border-radius: 50%;
 }
 
-/* ========== EVENT VIEW PAGE ========== */
+/* ============================================================================
+   EVENT VIEW PAGE
+   ============================================================================ */
 .fw-calendar__event-view {
   max-width: 1200px;
   margin: 0 auto;
@@ -803,8 +1279,12 @@
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(21, 39, 50, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   margin-bottom: var(--fw-spacing-lg);
 }
 
@@ -820,29 +1300,25 @@
   flex-shrink: 0;
 }
 
-.fw-calendar__event-header-content {
-  flex: 1;
-}
+.fw-calendar__event-header-content { flex: 1; }
 
 .fw-calendar__event-title {
   font-size: 32px;
-  font-weight: 700;
+  font-weight: 900;
   color: var(--fw-text-primary);
   margin: 0 0 var(--fw-spacing-sm) 0;
   line-height: 1.2;
   outline: none;
   padding: 4px;
   border-radius: 4px;
-  transition: background 0.2s;
+  transition: background 0.2s, box-shadow 0.2s;
 }
 
-.fw-calendar__event-title[contenteditable="true"]:hover {
-  background: var(--fw-highlight);
-}
+.fw-calendar__event-title[contenteditable="true"]:hover { background: var(--fw-primary-light); }
 
 .fw-calendar__event-title[contenteditable="true"]:focus {
-  background: var(--fw-highlight);
-  box-shadow: 0 0 0 2px var(--accent-calendar);
+  background: var(--fw-primary-light);
+  box-shadow: 0 0 0 2px var(--fw-primary);
 }
 
 .fw-calendar__event-meta {
@@ -879,23 +1355,57 @@
 .fw-calendar__recurrence-badge {
   margin-top: var(--fw-spacing-sm);
   padding: var(--fw-spacing-xs) var(--fw-spacing-sm);
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--neon-purple-glow);
   border-radius: var(--fw-radius-sm);
   font-size: 13px;
-  color: #8b5cf6;
+  color: var(--accent-event);
   display: inline-block;
+  font-weight: 600;
 }
 
-.fw-calendar__event-location {
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--fw-text-primary);
-}
-
+.fw-calendar__event-location,
 .fw-calendar__event-description {
   font-size: 15px;
   line-height: 1.7;
   color: var(--fw-text-primary);
+}
+
+/* Info cards (event view side panels) */
+.fw-calendar__info-card {
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-lg);
+  box-shadow: var(--fw-shadow-sm);
+}
+
+.fw-calendar__info-card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--fw-text-primary);
+  margin: 0 0 var(--fw-spacing-md) 0;
+}
+
+.fw-calendar__info-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-sm);
+  margin: 0;
+}
+
+.fw-calendar__info-item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--fw-spacing-md);
+  font-size: 14px;
+  color: var(--fw-text-secondary);
+  padding-bottom: var(--fw-spacing-sm);
+  border-bottom: 1px solid var(--fw-border-base);
+}
+
+.fw-calendar__info-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 /* Participants */
@@ -910,20 +1420,22 @@
   align-items: center;
   gap: var(--fw-spacing-md);
   padding: var(--fw-spacing-sm);
-  background: var(--fw-highlight);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
-  transition: all 0.2s;
+  transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .fw-calendar__participant:hover {
   box-shadow: var(--fw-shadow-sm);
+  transform: translateY(-1px);
 }
 
 .fw-calendar__participant-avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-calendar), var(--accent-event));
+  background: linear-gradient(135deg, var(--fw-primary), var(--accent-event));
   color: white;
   display: flex;
   align-items: center;
@@ -931,11 +1443,10 @@
   font-weight: 700;
   font-size: 14px;
   flex-shrink: 0;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.3), 0 2px 6px -1px rgba(6, 182, 212, 0.5);
 }
 
-.fw-calendar__participant-info {
-  flex: 1;
-}
+.fw-calendar__participant-info { flex: 1; min-width: 0; }
 
 .fw-calendar__participant-name {
   font-size: 14px;
@@ -952,16 +1463,7 @@
   color: var(--fw-text-muted);
 }
 
-.fw-calendar__participant-response {
-  flex-shrink: 0;
-}
-
-.fw-calendar__badge--small {
-  padding: 2px 8px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
+.fw-calendar__participant-response { flex-shrink: 0; }
 
 /* Attachments */
 .fw-calendar__attachments-list {
@@ -975,13 +1477,15 @@
   align-items: center;
   gap: var(--fw-spacing-md);
   padding: var(--fw-spacing-sm);
-  background: var(--fw-highlight);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
-  transition: all 0.2s;
+  transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .fw-calendar__attachment-item:hover {
   box-shadow: var(--fw-shadow-sm);
+  transform: translateY(-1px);
 }
 
 .fw-calendar__attachment-icon {
@@ -994,9 +1498,7 @@
   flex-shrink: 0;
 }
 
-.fw-calendar__attachment-info {
-  flex: 1;
-}
+.fw-calendar__attachment-info { flex: 1; min-width: 0; }
 
 .fw-calendar__attachment-name {
   font-size: 14px;
@@ -1023,47 +1525,50 @@
   align-items: center;
   gap: var(--fw-spacing-sm);
   padding: var(--fw-spacing-xs) var(--fw-spacing-sm);
-  background: var(--fw-highlight);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-sm);
 }
 
 .fw-calendar__link-text {
   font-size: 14px;
-  color: var(--accent-calendar);
+  color: var(--fw-primary);
   text-decoration: none;
+  font-weight: 600;
 }
 
-.fw-calendar__link-text:hover {
-  text-decoration: underline;
+.fw-calendar__link-text:hover { text-decoration: underline; }
+
+/* ===== BADGES — glossy pills ===== */
+.fw-calendar__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--fw-radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  background: var(--fw-primary-light);
+  color: var(--fw-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-/* Responsive */
-@media (max-width: 1024px) {
-  .fw-calendar__event-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .fw-calendar__event-header {
-    flex-direction: column;
-  }
-
-  .fw-calendar__event-actions {
-    width: 100%;
-  }
+.fw-calendar__badge--small {
+  padding: 2px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-@media (max-width: 768px) {
-  .fw-calendar__event-title {
-    font-size: 24px;
-  }
-
-  .fw-calendar__participant,
-  .fw-calendar__attachment-item {
-    flex-wrap: wrap;
-  }
+.fw-calendar__badge--private {
+  background: var(--neon-purple-glow);
+  color: var(--accent-event);
 }
 
-/* ========== EVENT FORM ========== */
+/* ============================================================================
+   EVENT FORM
+   ============================================================================ */
 .fw-calendar__form-container {
   max-width: 900px;
   margin: 0 auto;
@@ -1073,25 +1578,32 @@
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(21, 39, 50, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   padding: var(--fw-spacing-xl);
 }
 
 .fw-calendar__form-section {
   margin-bottom: var(--fw-spacing-xl);
   padding-bottom: var(--fw-spacing-xl);
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
 }
 
 .fw-calendar__form-section:last-of-type {
   border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 .fw-calendar__form-section-title {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 800;
   color: var(--fw-text-primary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
   margin: 0 0 var(--fw-spacing-lg) 0;
 }
 
@@ -1109,31 +1621,41 @@
   display: block;
   font-size: 14px;
   font-weight: 600;
-  color: var(--fw-text-primary);
+  color: var(--fw-text-secondary);
   margin-bottom: var(--fw-spacing-xs);
 }
 
-.fw-calendar__required {
-  color: var(--accent-danger);
-}
+.fw-calendar__required { color: var(--accent-danger); }
 
+/* Carved input wells */
 .fw-calendar__input,
 .fw-calendar__textarea {
   width: 100%;
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
+  padding: 11px var(--fw-spacing-md);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
   border-radius: var(--fw-radius-md);
   color: var(--fw-text-primary);
   font-size: 14px;
   font-family: inherit;
-  transition: all 0.2s ease;
+  box-shadow: var(--fw-input-well);
+  transition: border-color var(--fw-transition-base), box-shadow var(--fw-transition-base);
 }
+
+.fw-calendar__input::placeholder,
+.fw-calendar__textarea::placeholder { color: var(--fw-text-muted); }
+
+.fw-calendar__input:hover,
+.fw-calendar__textarea:hover { border-color: var(--fw-input-border-hover); }
 
 .fw-calendar__input:focus,
 .fw-calendar__textarea:focus {
-  outline: 2px solid var(--accent-calendar);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow:
+    var(--fw-input-well),
+    0 0 0 3px var(--fw-primary-light),
+    0 0 18px -2px var(--fw-primary-glow);
 }
 
 .fw-calendar__textarea {
@@ -1144,9 +1666,10 @@
 .fw-calendar__color-picker {
   width: 60px;
   height: 40px;
-  border: 1px solid var(--fw-border);
+  border: 1px solid var(--fw-input-border);
   border-radius: var(--fw-radius-sm);
   cursor: pointer;
+  background: var(--fw-input-bg);
 }
 
 .fw-calendar__checkbox-wrapper {
@@ -1163,6 +1686,7 @@
   width: 18px;
   height: 18px;
   cursor: pointer;
+  accent-color: var(--fw-primary);
 }
 
 .fw-calendar__help-text {
@@ -1188,77 +1712,32 @@
 }
 
 .fw-calendar__form-message--success {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.3);
   color: #10b981;
 }
 
 .fw-calendar__form-message--error {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #ef4444;
 }
 
-/* Reminder item */
 .fw-calendar__reminder-item {
   display: flex;
   gap: var(--fw-spacing-sm);
   align-items: center;
   padding: var(--fw-spacing-sm);
-  background: var(--fw-highlight);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   margin-bottom: var(--fw-spacing-xs);
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .fw-calendar__form-row {
-    grid-template-columns: 1fr;
-  }
-
-  .fw-calendar__form-actions {
-    flex-direction: column;
-  }
-
-  .fw-calendar__form-actions .fw-calendar__btn {
-    width: 100%;
-  }
-
-  .fw-calendar__reminder-item {
-    flex-wrap: wrap;
-  }
-}
-
-/* ========== NOTIFICATIONS ========== */
-.fw-calendar__notifications-wrapper {
-  position: relative;
-}
-
-.fw-calendar__notifications-btn {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
-  border-radius: var(--fw-radius-md);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--fw-text-primary);
-  position: relative;
-}
-
-.fw-calendar__notifications-btn:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
-  transform: translateY(-1px);
-}
-
-.fw-calendar__notifications-btn svg {
-  width: 20px;
-  height: 20px;
-}
+/* ============================================================================
+   NOTIFICATIONS
+   ============================================================================ */
+.fw-calendar__notifications-wrapper { position: relative; }
 
 .fw-calendar__notifications-badge {
   position: absolute;
@@ -1272,25 +1751,31 @@
   border-radius: 10px;
   min-width: 18px;
   text-align: center;
+  box-shadow: 0 2px 6px -1px rgba(239, 68, 68, 0.6);
 }
 
 .fw-calendar__notifications-dropdown {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   right: 0;
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-md);
-  box-shadow: var(--fw-shadow-lg);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 24px 48px -12px rgba(8, 16, 24, 0.45),
+    0 8px 24px -8px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   width: 360px;
   max-height: 500px;
   overflow: hidden;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-8px);
-  transition: all 0.2s ease;
-  z-index: 100;
+  transform: perspective(700px) rotateX(-14deg) translateY(-8px) scale(0.96);
+  transform-origin: top right;
+  transition: all var(--fw-transition-base);
+  z-index: var(--z-dropdown);
   display: flex;
   flex-direction: column;
 }
@@ -1298,7 +1783,7 @@
 .fw-calendar__notifications-dropdown[aria-hidden="false"] {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: perspective(700px) rotateX(0) translateY(0) scale(1);
 }
 
 .fw-calendar__notifications-header {
@@ -1306,12 +1791,12 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--fw-spacing-md);
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
 }
 
 .fw-calendar__notifications-header h3 {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0;
   color: var(--fw-text-primary);
 }
@@ -1319,18 +1804,16 @@
 .fw-calendar__notifications-mark-all {
   background: none;
   border: none;
-  color: var(--accent-calendar);
+  color: var(--fw-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: var(--fw-radius-sm);
-  transition: all 0.2s ease;
+  transition: background var(--fw-transition-base);
 }
 
-.fw-calendar__notifications-mark-all:hover {
-  background: var(--fw-highlight);
-}
+.fw-calendar__notifications-mark-all:hover { background: var(--fw-primary-light); }
 
 .fw-calendar__notifications-list {
   overflow-y: auto;
@@ -1341,20 +1824,18 @@
   display: flex;
   gap: var(--fw-spacing-sm);
   padding: var(--fw-spacing-md);
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--fw-transition-base);
   text-decoration: none;
   color: inherit;
 }
 
-.fw-calendar__notification-item:hover {
-  background: var(--fw-highlight);
-}
+.fw-calendar__notification-item:hover { background: var(--fw-primary-light); }
 
 .fw-calendar__notification-item--unread {
-  background: rgba(6, 182, 212, 0.05);
-  border-left: 3px solid var(--accent-calendar);
+  background: var(--fw-primary-light);
+  border-left: 3px solid var(--fw-primary);
 }
 
 .fw-calendar__notification-icon {
@@ -1364,16 +1845,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-calendar), rgba(6, 182, 212, 0.7));
+  background: linear-gradient(135deg, var(--fw-primary), var(--fw-primary-deep));
   color: white;
   font-size: 18px;
   flex-shrink: 0;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
-.fw-calendar__notification-content {
-  flex: 1;
-  min-width: 0;
-}
+.fw-calendar__notification-content { flex: 1; min-width: 0; }
 
 .fw-calendar__notification-title {
   font-size: 14px;
@@ -1403,9 +1882,59 @@
   font-size: 14px;
 }
 
+/* ============================================================================
+   RESPONSIVE
+   ============================================================================ */
+@media (max-width: 1024px) {
+  .fw-calendar__content { grid-template-columns: 1fr; }
+  .fw-calendar__sidebar { order: 2; }
+  .fw-calendar__view { order: 1; }
+  .fw-calendar__event-grid { grid-template-columns: 1fr; }
+  .fw-calendar__event-header { flex-direction: column; }
+  .fw-calendar__event-actions { width: 100%; }
+}
+
 @media (max-width: 768px) {
-  .fw-calendar__notifications-dropdown {
-    width: 320px;
-    right: -100px;
+  .fw-calendar__container { padding: var(--fw-spacing-md); }
+
+  .fw-calendar__header {
+    height: auto;
+    flex-direction: column;
+    gap: var(--fw-spacing-md);
+    padding: var(--fw-spacing-md);
   }
+
+  .fw-calendar__greeting {
+    order: -1;
+    text-align: center;
+  }
+
+  .fw-calendar__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fw-calendar__nav { flex-wrap: wrap; justify-content: center; }
+  .fw-calendar__view-switcher { width: 100%; }
+
+  .fw-calendar__form-row { grid-template-columns: 1fr; }
+
+  .fw-calendar__form-actions { flex-direction: column; }
+  .fw-calendar__form-actions .fw-calendar__btn { width: 100%; }
+
+  .fw-calendar__event-title { font-size: 24px; }
+
+  .fw-calendar__participant,
+  .fw-calendar__attachment-item,
+  .fw-calendar__reminder-item { flex-wrap: wrap; }
+
+  .fw-calendar__notifications-dropdown { width: 320px; right: -80px; }
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  .fw-calendar::after { animation: none; }
+  .fw-calendar__logo-tile::before { animation: none; }
+  .fw-calendar__loading { animation: none; }
+  .fw-calendar * { transition-duration: 0.01ms !important; }
 }

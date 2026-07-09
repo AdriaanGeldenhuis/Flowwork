@@ -1,95 +1,376 @@
-/* ========================================
-   MAIL STYLES – SCOPED TO .fw-mail
-   INVERSE MODALS & DROPDOWNS (soos CRM)
-   ======================================== */
+/* ============================================================================
+   FLOWWORK MAIL — DIMENSION 3D DESIGN SYSTEM (Crimson Edition)
+   Lineage: projects/board-3d.css → crm/assets/crm.css (cyan) → this file.
+   Same true-depth interface as CRM: perspective grid floor, aurora ambient
+   drift, floating glass slabs, extruded pressable keys, carved input wells,
+   segmented tab groove — recoloured to Mail's signature maroon/crimson accent.
+   Scoped to .fw-mail.
 
-.fw-mail {
-  /* Design tokens */
-  --fw-radius-sm: 8px;
-  --fw-radius-md: 12px;
-  --fw-radius-lg: 16px;
+   3D rules of the road:
+   1. Glass (backdrop-filter) panels and preserve-3d tilt slabs are separate
+      families — a surface is one or the other, never both.
+   2. .fw-mail is the root scope and sits on <main>, so it establishes its own
+      stacking context (position:relative; z-index:0) and the environment
+      layers hang off it as fixed pseudo-elements.
+   3. Theme contract: dark scope is .fw-mail[data-theme="dark"] ONLY
+      (JS sets data-theme on the .fw-mail root).
+   4. Kebab is aria-driven (.fw-mail__kebab-menu[aria-hidden="false"]);
+      modals are class-driven (.fw-mail__modal-overlay--active);
+      settings tabs are class-driven (__tab--active / __tab-panel--active).
+   ============================================================================ */
+
+/* ===== CSS VARIABLES ===== */
+:root {
+  /* Spacing */
   --fw-spacing-xs: 8px;
   --fw-spacing-sm: 12px;
   --fw-spacing-md: 16px;
   --fw-spacing-lg: 24px;
   --fw-spacing-xl: 32px;
+  --fw-spacing-2xl: 48px;
 
-  /* Light theme (default) */
-  --fw-bg-base: #f5f6f8;
-  --fw-bg-radial: radial-gradient(circle at 20% 20%, rgba(101, 0, 0, 0.06), transparent 50%),
-                  radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.04), transparent 50%);
-  --fw-text-primary: #1a1d29;
-  --fw-text-muted: #6b7280;
-  --fw-border: rgba(0, 0, 0, 0.08);
-  --fw-panel-bg: rgba(255, 255, 255, 0.7);
+  /* Border Radius */
+  --fw-radius-sm: 8px;
+  --fw-radius-md: 12px;
+  --fw-radius-lg: 16px;
+  --fw-radius-xl: 20px;
+  --fw-radius-full: 9999px;
+
+  /* Transitions */
+  --fw-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Neon palette (status colors) */
+  --neon-crimson: #a11a1a;
+  --neon-purple: #8b5cf6;
+  --neon-purple-glow: rgba(139, 92, 246, 0.3);
+  --neon-cyan: #06b6d4;
+  --neon-green: #10b981;
+  --neon-orange: #f59e0b;
+  --neon-red: #ef4444;
+  --neon-blue: #3b82f6;
+
+  /* Z-Index */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 500;
+  --z-modal: 2000;
+
+  /* 3D scene */
+  --fw-persp: 1100px;
+
+  /* ----- Light theme ----- */
+  --fw-bg-base: #eef3f7;
+  --fw-bg-secondary: #e2eaf0;
+  --fw-card-bg: #ffffff;
+  --fw-bg-card: #ffffff;
+  --fw-card-face: linear-gradient(168deg, #ffffff 0%, #fbfdfe 45%, #edf4f9 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.95);
+  --fw-panel-bg: rgba(255, 255, 255, 0.82);
+  --fw-panel-solid: #ffffff;
   --fw-panel-border: rgba(255, 255, 255, 0.9);
-  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --fw-glow: rgba(101, 0, 0, 0.15);
-  --fw-highlight: rgba(255, 255, 255, 0.6);
-  --fw-rim-light: rgba(255, 255, 255, 0.5);
-  
-  /* INVERSE for modals/dropdowns - DARKER in light mode */
-  --fw-modal-bg: rgba(30, 35, 48, 0.98);
-  --fw-modal-text: #f3f4f6;
-  --fw-modal-border: rgba(255, 255, 255, 0.15);
-  --fw-modal-input-bg: rgba(20, 24, 35, 0.8);
-  --fw-modal-input-border: rgba(255, 255, 255, 0.2);
+  --fw-panel-hover: rgba(248, 250, 252, 1);
 
-  /* Mail accent – maroon red */
-  --accent-mail: #650000;
-  --accent-mail-hover: #4a0000;
+  --fw-text-primary: #16212b;
+  --fw-text-secondary: #46555f;
+  --fw-text-tertiary: #64737d;
+  --fw-text-muted: #93a3ad;
+
+  --fw-border-base: rgba(21, 39, 50, 0.08);
+  --fw-border-strong: rgba(21, 39, 50, 0.14);
+  --fw-border: var(--fw-border-base);
+
+  --fw-shadow-sm: 0 2px 8px rgba(21, 39, 50, 0.07);
+  --fw-shadow-md: 0 4px 16px rgba(21, 39, 50, 0.09);
+  --fw-shadow-lg: 0 8px 32px rgba(21, 39, 50, 0.13);
+  --fw-shadow-xl: 0 12px 48px rgba(21, 39, 50, 0.17);
+
+  --fw-highlight: rgba(255, 255, 255, 0.65);
+  --fw-rim-light: rgba(255, 255, 255, 0.85);
+  --fw-glare: rgba(255, 255, 255, 0.5);
+
+  --fw-input-bg: #f7f2f3;
+  --fw-input-border: rgba(21, 39, 50, 0.14);
+  --fw-input-border-hover: rgba(21, 39, 50, 0.26);
+  --fw-input-well:
+    inset 0 2px 4px rgba(21, 39, 50, 0.07),
+    inset 0 1px 2px rgba(21, 39, 50, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.9);
+
+  --fw-modal-overlay: rgba(12, 24, 32, 0.55);
+
+  /* Crimson / maroon accent ramp (light) */
+  --fw-primary: #8b0000;
+  --fw-primary-hover: #6d0000;
+  --fw-primary-deep: #5c0000;
+  --fw-primary-deeper: #450000;
+  --fw-primary-tint: #c0392b;
+  --fw-primary-glow: rgba(139, 0, 0, 0.26);
+  --fw-primary-light: rgba(139, 0, 0, 0.10);
+  --fw-glow: rgba(139, 0, 0, 0.16);
+  --fw-grid-line: rgba(139, 0, 0, 0.12);
+  --fw-aurora-a: rgba(139, 0, 0, 0.18);
+  --fw-aurora-b: rgba(139, 92, 246, 0.10);
+  --fw-aurora-c: rgba(6, 182, 212, 0.05);
+
+  /* Card elevation stacks */
+  --fw-card-shadow:
+    0 1px 2px rgba(21, 39, 50, 0.05),
+    0 6px 14px -4px rgba(21, 39, 50, 0.09),
+    0 18px 36px -14px rgba(21, 39, 50, 0.16),
+    0 30px 60px -26px rgba(139, 0, 0, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(21, 39, 50, 0.05);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(21, 39, 50, 0.06),
+    0 12px 24px -6px rgba(21, 39, 50, 0.13),
+    0 32px 56px -16px rgba(21, 39, 50, 0.22),
+    0 48px 90px -28px rgba(139, 0, 0, 0.34),
+    0 0 0 1px rgba(139, 0, 0, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(21, 39, 50, 0.05);
+
+  /* Extruded control edges */
+  --fw-key-side: rgba(21, 39, 50, 0.16);
+  --fw-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(21, 39, 50, 0.05),
+    0 2px 0 var(--fw-key-side),
+    0 3px 6px rgba(21, 39, 50, 0.10),
+    0 8px 16px -6px rgba(21, 39, 50, 0.14);
+  --fw-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(21, 39, 50, 0.05),
+    0 4px 0 var(--fw-key-side),
+    0 6px 12px rgba(21, 39, 50, 0.12),
+    0 14px 24px -8px rgba(21, 39, 50, 0.18);
+  --fw-key-shadow-active:
+    inset 0 2px 4px rgba(21, 39, 50, 0.14),
+    0 1px 0 var(--fw-key-side);
+
+  /* Modals & dropdowns — glass, same-theme (CRM-style, no longer inverse).
+     Literal values per theme: an alias to a theme-varying var declared only
+     on :root would compute once here (light) and freeze that value. */
+  --fw-modal-bg: #ffffff;
+  --fw-modal-text: #16212b;
+  --fw-modal-border: rgba(21, 39, 50, 0.10);
+  --fw-modal-input-bg: #f7f2f3;
+  --fw-modal-input-border: rgba(21, 39, 50, 0.14);
+
+  /* Semantic accent aliases (used across mail components) */
+  --accent-mail: #8b0000;
+  --accent-mail-hover: #6d0000;
   --accent-secondary: #8b5cf6;
   --accent-success: #10b981;
   --accent-danger: #ef4444;
   --accent-warning: #f59e0b;
 }
 
+/* ===== DARK THEME ===== */
 .fw-mail[data-theme="dark"] {
-  --fw-bg-base: #0a0c12;
-  --fw-bg-radial: radial-gradient(circle at 20% 20%, rgba(101, 0, 0, 0.08), transparent 50%),
-                  radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.06), transparent 50%);
-  --fw-text-primary: #f3f4f6;
-  --fw-text-muted: #9ca3af;
-  --fw-border: rgba(255, 255, 255, 0.08);
-  --fw-panel-bg: rgba(20, 24, 35, 0.8);
+  --fw-bg-base: #060b0f;
+  --fw-bg-secondary: #0b131b;
+  --fw-card-bg: #12202c;
+  --fw-bg-card: #12202c;
+  --fw-card-face: linear-gradient(168deg, rgba(30, 48, 62, 0.98) 0%, rgba(19, 32, 44, 0.99) 48%, rgba(11, 19, 30, 1) 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.12);
+  --fw-panel-bg: rgba(14, 24, 34, 0.78);
+  --fw-panel-solid: #101c28;
   --fw-panel-border: rgba(255, 255, 255, 0.1);
-  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --fw-glow: rgba(101, 0, 0, 0.25);
-  --fw-highlight: rgba(255, 255, 255, 0.15);
-  --fw-rim-light: rgba(255, 255, 255, 0.2);
-  
-  /* INVERSE for modals/dropdowns - LIGHTER in dark mode */
-  --fw-modal-bg: rgba(240, 242, 245, 0.98);
-  --fw-modal-text: #1a1d29;
-  --fw-modal-border: rgba(0, 0, 0, 0.12);
-  --fw-modal-input-bg: rgba(255, 255, 255, 0.9);
-  --fw-modal-input-border: rgba(0, 0, 0, 0.15);
+  --fw-panel-hover: rgba(26, 44, 58, 1);
+
+  --fw-text-primary: #e7f0f4;
+  --fw-text-secondary: #c3d5dd;
+  --fw-text-tertiary: #9cb4c0;
+  --fw-text-muted: #78909d;
+
+  --fw-border-base: rgba(255, 255, 255, 0.08);
+  --fw-border-strong: rgba(255, 255, 255, 0.14);
+
+  --fw-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --fw-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --fw-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6);
+  --fw-shadow-xl: 0 16px 64px rgba(0, 0, 0, 0.7);
+
+  --fw-highlight: rgba(255, 255, 255, 0.14);
+  --fw-rim-light: rgba(255, 255, 255, 0.28);
+  --fw-glare: rgba(255, 210, 210, 0.14);
+
+  --fw-input-bg: rgba(4, 10, 16, 0.6);
+  --fw-input-border: rgba(255, 255, 255, 0.14);
+  --fw-input-border-hover: rgba(255, 255, 255, 0.26);
+  --fw-input-well:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+
+  --fw-modal-overlay: rgba(1, 6, 12, 0.78);
+
+  /* Modal / accent aliases re-declared with dark literals (see :root note) */
+  --fw-modal-bg: #101c28;
+  --fw-modal-text: #e7f0f4;
+  --fw-modal-border: rgba(255, 255, 255, 0.12);
+  --fw-modal-input-bg: rgba(4, 10, 16, 0.6);
+  --fw-modal-input-border: rgba(255, 255, 255, 0.14);
+  --accent-mail: #ff4d4d;
+  --accent-mail-hover: #e63939;
+
+  /* Crimson accent ramp (dark) — brightens so it reads on near-black */
+  --fw-primary: #ff4d4d;
+  --fw-primary-hover: #e63939;
+  --fw-primary-deep: #c81e1e;
+  --fw-primary-deeper: #991b1b;
+  --fw-primary-tint: #ff8080;
+  --fw-primary-glow: rgba(255, 77, 77, 0.40);
+  --fw-primary-light: rgba(255, 77, 77, 0.16);
+  --fw-glow: rgba(255, 77, 77, 0.30);
+  --fw-grid-line: rgba(255, 77, 77, 0.10);
+  --fw-aurora-a: rgba(255, 77, 77, 0.18);
+  --fw-aurora-b: rgba(139, 92, 246, 0.13);
+  --fw-aurora-c: rgba(6, 182, 212, 0.07);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 10px 22px -6px rgba(0, 0, 0, 0.55),
+    0 26px 50px -18px rgba(0, 0, 0, 0.65),
+    0 34px 70px -28px rgba(255, 77, 77, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 16px 32px -8px rgba(0, 0, 0, 0.6),
+    0 40px 70px -20px rgba(0, 0, 0, 0.7),
+    0 52px 100px -30px rgba(255, 77, 77, 0.5),
+    0 0 0 1px rgba(255, 77, 77, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+
+  --fw-key-side: rgba(0, 0, 0, 0.7);
+  --fw-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 var(--fw-key-side),
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    0 8px 18px -6px rgba(0, 0, 0, 0.5);
+  --fw-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 4px 0 var(--fw-key-side),
+    0 7px 14px rgba(0, 0, 0, 0.5),
+    0 14px 28px -8px rgba(0, 0, 0, 0.55);
+  --fw-key-shadow-active:
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    0 1px 0 var(--fw-key-side);
 }
 
-/* Base */
-.fw-mail {
-  margin: 0;
-  padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--fw-text-primary);
-  background: var(--fw-bg-base);
-  background-image: var(--fw-bg-radial);
-  min-height: 100vh;
-  box-sizing: border-box;
-}
-
+/* ===== BASE RESET ===== */
 .fw-mail *,
 .fw-mail *::before,
 .fw-mail *::after {
-  box-sizing: inherit;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
+/* The mail root lives on <main>; neutralise the host <body> margin so the
+   glass layout sits flush to the viewport like the other modules. */
+body { margin: 0; }
+
+.fw-mail {
+  position: relative;
+  z-index: 0;
+  display: block;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--fw-text-primary);
+  background:
+    radial-gradient(1400px 700px at 18% -8%, var(--fw-aurora-a), transparent 60%),
+    radial-gradient(1200px 600px at 85% 5%, var(--fw-aurora-b), transparent 55%),
+    radial-gradient(900px 500px at 55% 110%, var(--fw-aurora-c), transparent 60%),
+    var(--fw-bg-base);
+  min-height: 100vh;
+  transition: background 0.4s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.fw-mail ::selection {
+  background: var(--fw-primary);
+  color: #fff;
+}
+
+/* ===== ENVIRONMENT: PERSPECTIVE GRID FLOOR + AMBIENT DRIFT =====
+   .fw-mail establishes a stacking context, so these negative-z fixed layers
+   paint above its own background but below all normal-flow content. */
+.fw-mail::before {
+  content: '';
+  position: fixed;
+  left: -30%;
+  right: -30%;
+  bottom: -14%;
+  height: 60vh;
+  background-image:
+    linear-gradient(var(--fw-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--fw-grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(620px) rotateX(63deg);
+  transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent 80%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent 80%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.fw-mail::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(720px 420px at 78% 82%, var(--fw-aurora-b), transparent 70%),
+    radial-gradient(880px 520px at 12% 70%, var(--fw-aurora-a), transparent 70%);
+  opacity: 0.55;
+  animation: fwAuroraDrift 22s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes fwAuroraDrift {
+  from { opacity: 0.3; transform: translateY(0); }
+  to   { opacity: 0.7; transform: translateY(-30px); }
+}
+
+/* ===== SCROLLBAR ===== */
+.fw-mail ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.fw-mail ::-webkit-scrollbar-track {
+  background: var(--fw-bg-secondary);
+  border-radius: var(--fw-radius-sm);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.fw-mail ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--fw-primary), var(--fw-primary-deep));
+  border-radius: var(--fw-radius-sm);
+  border: 3px solid var(--fw-bg-secondary);
+}
+
+.fw-mail ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c0392b, var(--fw-primary));
+}
+
+/* ===== FOCUS ===== */
+.fw-mail :focus-visible {
+  outline: 2px solid var(--fw-primary);
+  outline-offset: 2px;
+}
+
+/* ===== CONTAINER ===== */
 .fw-mail__container {
   max-width: 1600px;
   margin: 0 auto;
@@ -97,29 +378,48 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  position: relative;
+  z-index: 1;
 }
 
-/* ========== HEADER ========== */
+/* ===== HEADER — floating glass slab ===== */
 .fw-mail__header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
+  padding: 0 var(--fw-spacing-lg);
+  height: 70px;
   background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 1px 0 rgba(139, 0, 0, 0.18),
+    0 10px 30px -12px rgba(21, 39, 50, 0.35),
+    0 4px 24px -4px var(--fw-primary-glow);
   margin-bottom: var(--fw-spacing-xl);
-  position: relative;
-  z-index: 100; /* ADD THIS - header moet bo layout wees */
+  z-index: var(--z-sticky);
+}
+
+.fw-mail__header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--fw-radius-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
 }
 
 .fw-mail__brand {
   display: flex;
   align-items: center;
-  gap: var(--fw-spacing-md);
+  gap: 12px;
+  min-width: 0;
+  z-index: 1;
 }
 
 .fw-mail__logo-tile {
@@ -128,25 +428,49 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-mail), #8b0000);
+  background: linear-gradient(135deg, var(--neon-crimson), #650000);
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 4px 12px rgba(101, 0, 0, 0.3),
-              inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 6px rgba(40, 0, 0, 0.55),
+    0 3px 0 #3a0000,
+    0 8px 18px -4px rgba(139, 0, 0, 0.55);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring);
+}
+
+.fw-mail__logo-tile::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: fwShimmer 3s infinite;
+}
+
+@keyframes fwShimmer {
+  to { left: 100%; }
 }
 
 .fw-mail__logo-tile svg {
   width: 28px;
   height: 28px;
-  color: #ffffff;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+  position: relative;
+  z-index: 1;
 }
 
 .fw-mail__brand-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  z-index: 1;
+  min-width: 0;
 }
 
 .fw-mail__company-name {
@@ -154,6 +478,9 @@
   font-weight: 700;
   color: var(--fw-text-primary);
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fw-mail__app-name {
@@ -165,40 +492,65 @@
 }
 
 .fw-mail__greeting {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--fw-text-primary);
   flex: 1;
   text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fw-text-secondary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1;
 }
 
 .fw-mail__greeting-name {
-  color: var(--accent-mail);
+  color: var(--fw-primary);
+  font-weight: 700;
+  text-shadow: 0 0 18px var(--fw-primary-glow);
 }
 
 .fw-mail__controls {
   display: flex;
   align-items: center;
-  gap: var(--fw-spacing-sm);
+  gap: 10px;
+  z-index: 1;
 }
 
+/* Header icon buttons — mini keys */
 .fw-mail__home-btn,
 .fw-mail__theme-toggle,
 .fw-mail__kebab-toggle {
   width: 40px;
   height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
+  display: grid;
+  place-items: center;
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
-  cursor: pointer;
-  transition: all 0.2s ease;
   color: var(--fw-text-primary);
+  cursor: pointer;
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
   text-decoration: none;
+  flex-shrink: 0;
   position: relative;
-  z-index: 110;
+  z-index: 1;
+}
+
+.fw-mail__home-btn:hover,
+.fw-mail__theme-toggle:hover,
+.fw-mail__kebab-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+  color: var(--fw-primary);
+}
+
+.fw-mail__home-btn:active,
+.fw-mail__theme-toggle:active,
+.fw-mail__kebab-toggle:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
 }
 
 .fw-mail__home-btn svg,
@@ -208,72 +560,62 @@
   height: 20px;
 }
 
-.fw-mail__home-btn:hover,
-.fw-mail__theme-toggle:hover,
-.fw-mail__kebab-toggle:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
-  transform: translateY(-1px);
-}
-
 .fw-mail__theme-icon {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--fw-transition-base);
 }
 
-.fw-mail__theme-icon--light {
-  opacity: 1;
-}
+.fw-mail__theme-icon--light { opacity: 1; }
 
 .fw-mail__theme-icon--dark {
   opacity: 0;
   position: absolute;
 }
 
-.fw-mail[data-theme="dark"] .fw-mail__theme-icon--light {
-  opacity: 0;
-}
+.fw-mail[data-theme="dark"] .fw-mail__theme-icon--light { opacity: 0; }
+.fw-mail[data-theme="dark"] .fw-mail__theme-icon--dark { opacity: 1; }
 
-.fw-mail[data-theme="dark"] .fw-mail__theme-icon--dark {
-  opacity: 1;
-}
-
+/* ===== KEBAB MENU — 3D flip-down, glass ===== */
 .fw-mail__menu-wrapper {
   position: relative;
 }
 
-/* KEBAB MENU - INVERSE BG & HOOGSTE Z-INDEX */
 .fw-mail__kebab-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   right: 0;
-  background: var(--fw-modal-bg);
-  border: 1px solid var(--fw-modal-border);
+  min-width: 200px;
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(16px);
-  min-width: 180px;
-  padding: var(--fw-spacing-xs);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 24px 48px -12px rgba(8, 16, 24, 0.45),
+    0 8px 24px -8px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  padding: 8px;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-8px);
-  transition: all 0.2s ease;
-  z-index: 9999; /* HOOGSTE */
+  transform: perspective(700px) rotateX(-14deg) translateY(-8px) scale(0.96);
+  transform-origin: top right;
+  transition: all var(--fw-transition-base);
+  z-index: var(--z-dropdown);
 }
 
 .fw-mail__kebab-menu[aria-hidden="false"] {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: perspective(700px) rotateX(0) translateY(0) scale(1);
 }
 
 .fw-mail__kebab-item {
   display: block;
   width: 100%;
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  color: var(--fw-modal-text);
+  padding: 10px 14px;
+  color: var(--fw-text-primary);
   text-decoration: none;
   border-radius: var(--fw-radius-sm);
-  transition: all 0.15s ease;
+  transition: all var(--fw-transition-fast);
   font-size: 14px;
   font-weight: 500;
   background: none;
@@ -283,51 +625,81 @@
 }
 
 .fw-mail__kebab-item:hover {
-  background: rgba(101, 0, 0, 0.1);
-  color: var(--accent-mail);
+  background: var(--fw-primary-light);
+  color: var(--fw-primary);
+  transform: translateX(3px);
 }
 
-/* ========== 3-PANE LAYOUT ========== */
+/* ===== 3-PANE LAYOUT ===== */
 .fw-mail__layout {
   display: grid;
-  grid-template-columns: 250px 400px 1fr;
+  grid-template-columns: 260px 400px 1fr;
   gap: var(--fw-spacing-lg);
   flex: 1;
   min-height: 0;
 }
 
-/* Sidebar */
-.fw-mail__sidebar {
+/* Glass panels */
+.fw-mail__sidebar,
+.fw-mail__thread-list,
+.fw-mail__preview {
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(21, 39, 50, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.fw-mail__sidebar {
   padding: var(--fw-spacing-lg);
   overflow-y: auto;
 }
 
 .fw-mail__compose-btn {
   width: 100%;
-  padding: var(--fw-spacing-md);
-  background: var(--accent-mail);
+  padding: 0 var(--fw-spacing-md);
+  height: 46px;
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 52%, var(--fw-primary-hover) 100%);
   color: #ffffff;
   border: none;
   border-radius: var(--fw-radius-md);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: var(--fw-spacing-lg);
+  text-shadow: 0 1px 2px rgba(50, 0, 0, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
+    0 3px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 14px 28px -8px var(--fw-primary-glow);
 }
 
 .fw-mail__compose-btn:hover {
-  background: var(--accent-mail-hover);
-  box-shadow: var(--fw-shadow-md);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
+    0 5px 0 var(--fw-primary-deeper),
+    0 10px 22px -2px var(--fw-primary-glow),
+    0 22px 44px -10px var(--fw-primary-glow);
+}
+
+.fw-mail__compose-btn:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 6px rgba(50, 0, 0, 0.5),
+    0 1px 0 var(--fw-primary-deeper);
 }
 
 .fw-mail__folder-list {
@@ -340,31 +712,44 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
+  padding: 10px var(--fw-spacing-md);
   border-radius: var(--fw-radius-sm);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--fw-transition-fast), color var(--fw-transition-fast), transform var(--fw-transition-fast);
   font-size: 14px;
-  color: var(--fw-text-primary);
+  font-weight: 500;
+  color: var(--fw-text-secondary);
   text-decoration: none;
 }
 
 .fw-mail__folder-item:hover {
-  background: var(--fw-highlight);
+  background: var(--fw-primary-light);
+  color: var(--fw-primary);
+  transform: translateX(3px);
 }
 
 .fw-mail__folder-item--active {
-  background: var(--accent-mail);
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
   color: #ffffff;
-  font-weight: 600;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(50, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 6px 16px -4px var(--fw-primary-glow);
+}
+
+.fw-mail__folder-item--active:hover {
+  color: #ffffff;
+  transform: none;
 }
 
 .fw-mail__folder-badge {
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--fw-radius-full);
   font-size: 11px;
-  font-weight: 600;
-  background: var(--accent-mail);
+  font-weight: 700;
+  background: var(--fw-primary);
   color: #ffffff;
 }
 
@@ -382,13 +767,8 @@
   margin-bottom: var(--fw-spacing-md);
 }
 
-/* Thread List */
+/* ===== THREAD LIST ===== */
 .fw-mail__thread-list {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -396,7 +776,7 @@
 
 .fw-mail__thread-header {
   padding: var(--fw-spacing-lg);
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
   display: flex;
   flex-direction: column;
   gap: var(--fw-spacing-md);
@@ -405,8 +785,9 @@
 .fw-mail__thread-header h2 {
   margin: 0;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--fw-text-primary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
 }
 
 .fw-mail__thread-controls {
@@ -414,35 +795,35 @@
   gap: var(--fw-spacing-sm);
 }
 
-.fw-mail__search {
-  flex: 1;
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
-  border-radius: var(--fw-radius-md);
-  color: var(--fw-text-primary);
-  font-size: 14px;
-  transition: all 0.2s ease;
-}
-
-.fw-mail__search:focus {
-  outline: 2px solid var(--accent-mail);
-  outline-offset: 2px;
-}
-
+/* Carved search + filter wells */
+.fw-mail__search,
 .fw-mail__filter {
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
+  padding: 9px var(--fw-spacing-md);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
   border-radius: var(--fw-radius-md);
   color: var(--fw-text-primary);
   font-size: 14px;
-  transition: all 0.2s ease;
+  font-family: inherit;
+  box-shadow: var(--fw-input-well);
+  transition: border-color var(--fw-transition-base), box-shadow var(--fw-transition-base);
 }
 
+.fw-mail__search { flex: 1; min-width: 0; }
+
+.fw-mail__search::placeholder { color: var(--fw-text-muted); }
+
+.fw-mail__search:hover,
+.fw-mail__filter:hover { border-color: var(--fw-input-border-hover); }
+
+.fw-mail__search:focus,
 .fw-mail__filter:focus {
-  outline: 2px solid var(--accent-mail);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow:
+    var(--fw-input-well),
+    0 0 0 3px var(--fw-primary-light),
+    0 0 18px -2px var(--fw-primary-glow);
 }
 
 .fw-mail__threads {
@@ -456,29 +837,35 @@
   align-items: flex-start;
   gap: var(--fw-spacing-md);
   padding: var(--fw-spacing-md);
-  border: 1px solid var(--fw-border);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   margin-bottom: var(--fw-spacing-sm);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), background var(--fw-transition-base), border-color var(--fw-transition-base);
   text-decoration: none;
   color: inherit;
+  background: var(--fw-card-face);
+  box-shadow: var(--fw-shadow-sm);
 }
 
 .fw-mail__thread-card:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
+  box-shadow: var(--fw-shadow-md);
   transform: translateY(-2px);
+  border-color: var(--fw-primary-light);
 }
 
 .fw-mail__thread-card--unread {
-  background: rgba(101, 0, 0, 0.05);
-  border-left: 4px solid var(--accent-mail);
+  border-left: 4px solid var(--fw-primary);
+}
+
+.fw-mail__thread-card--unread .fw-mail__thread-sender,
+.fw-mail__thread-card--unread .fw-mail__thread-subject {
+  font-weight: 800;
 }
 
 .fw-mail__thread-card--selected {
-  background: rgba(101, 0, 0, 0.1);
-  border-color: var(--accent-mail);
+  border-color: var(--fw-primary);
+  box-shadow: var(--fw-shadow-md), 0 0 0 1px var(--fw-primary);
 }
 
 .fw-mail__thread-avatar {
@@ -491,14 +878,12 @@
   font-weight: 700;
   font-size: 14px;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--accent-mail), #8b0000);
+  background: linear-gradient(135deg, var(--neon-crimson), #650000);
   flex-shrink: 0;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 2px 6px -1px rgba(139, 0, 0, 0.5);
 }
 
-.fw-mail__thread-info {
-  flex: 1;
-  min-width: 0;
-}
+.fw-mail__thread-info { flex: 1; min-width: 0; }
 
 .fw-mail__thread-sender {
   font-size: 14px;
@@ -572,13 +957,8 @@
   color: #ef4444;
 }
 
-/* Preview Pane */
+/* ===== PREVIEW PANE ===== */
 .fw-mail__preview {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
   overflow-y: auto;
 }
 
@@ -595,13 +975,14 @@
 
 .fw-mail__preview-header {
   padding: var(--fw-spacing-lg);
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
 }
 
 .fw-mail__preview-subject {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--fw-text-primary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
   margin: 0 0 var(--fw-spacing-md) 0;
 }
 
@@ -622,12 +1003,11 @@
   font-weight: 700;
   font-size: 18px;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--accent-mail), #8b0000);
+  background: linear-gradient(135deg, var(--neon-crimson), #650000);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 2px 8px -1px rgba(139, 0, 0, 0.5);
 }
 
-.fw-mail__preview-sender-info {
-  flex: 1;
-}
+.fw-mail__preview-sender-info { flex: 1; min-width: 0; }
 
 .fw-mail__preview-sender-name {
   font-size: 16px;
@@ -650,12 +1030,13 @@
   display: flex;
   gap: var(--fw-spacing-sm);
   margin-top: var(--fw-spacing-md);
+  flex-wrap: wrap;
 }
 
 .fw-mail__preview-body {
   padding: var(--fw-spacing-lg);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--fw-text-primary);
 }
 
@@ -667,22 +1048,23 @@
 }
 
 .fw-mail__preview-body a {
-  color: var(--accent-mail);
+  color: var(--fw-primary);
   text-decoration: none;
-}
-
-.fw-mail__preview-body a:hover {
-  text-decoration: underline;
-}
-
-.fw-mail__attachments {
-  padding: var(--fw-spacing-lg);
-  border-top: 1px solid var(--fw-border);
-}
-
-.fw-mail__attachments-title {
-  font-size: 14px;
   font-weight: 600;
+}
+
+.fw-mail__preview-body a:hover { text-decoration: underline; }
+
+.fw-mail__attachments,
+.fw-mail__preview-links {
+  padding: var(--fw-spacing-lg);
+  border-top: 1px solid var(--fw-border-base);
+}
+
+.fw-mail__attachments-title,
+.fw-mail__preview-links-title {
+  font-size: 14px;
+  font-weight: 700;
   color: var(--fw-text-primary);
   margin-bottom: var(--fw-spacing-sm);
 }
@@ -698,17 +1080,16 @@
   align-items: center;
   gap: var(--fw-spacing-sm);
   padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  background: var(--fw-highlight);
-  border: 1px solid var(--fw-border);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   font-size: 13px;
   color: var(--fw-text-primary);
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base);
 }
 
 .fw-mail__attachment-item:hover {
-  background: var(--fw-panel-bg);
   box-shadow: var(--fw-shadow-sm);
   transform: translateY(-1px);
 }
@@ -716,19 +1097,7 @@
 .fw-mail__attachment-icon {
   width: 20px;
   height: 20px;
-  color: var(--accent-mail);
-}
-
-.fw-mail__preview-links {
-  padding: var(--fw-spacing-lg);
-  border-top: 1px solid var(--fw-border);
-}
-
-.fw-mail__preview-links-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fw-text-primary);
-  margin-bottom: var(--fw-spacing-sm);
+  color: var(--fw-primary);
 }
 
 .fw-mail__link-chips {
@@ -741,22 +1110,23 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 12px;
-  background: var(--accent-mail);
+  padding: 5px 12px;
+  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary));
   color: #ffffff;
-  border-radius: 12px;
+  border-radius: var(--fw-radius-full);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base);
+  box-shadow: 0 2px 6px -1px var(--fw-primary-glow);
 }
 
 .fw-mail__link-chip:hover {
-  background: var(--accent-mail-hover);
-  transform: scale(1.05);
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 4px 12px -2px var(--fw-primary-glow);
 }
 
-/* ========== COMPOSE PAGE ========== */
+/* ===== COMPOSE PAGE ===== */
 .fw-mail__compose-container {
   max-width: 900px;
   margin: 0 auto;
@@ -766,8 +1136,12 @@
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(21, 39, 50, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   padding: var(--fw-spacing-xl);
 }
 
@@ -779,27 +1153,39 @@
   display: block;
   font-size: 14px;
   font-weight: 600;
-  color: var(--fw-text-primary);
+  color: var(--fw-text-secondary);
   margin-bottom: var(--fw-spacing-xs);
 }
 
+/* Carved input wells */
 .fw-mail__input,
 .fw-mail__textarea {
   width: 100%;
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border);
+  padding: 11px var(--fw-spacing-md);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
   border-radius: var(--fw-radius-md);
   color: var(--fw-text-primary);
   font-size: 14px;
   font-family: inherit;
-  transition: all 0.2s ease;
+  box-shadow: var(--fw-input-well);
+  transition: border-color var(--fw-transition-base), box-shadow var(--fw-transition-base);
 }
+
+.fw-mail__input::placeholder,
+.fw-mail__textarea::placeholder { color: var(--fw-text-muted); }
+
+.fw-mail__input:hover,
+.fw-mail__textarea:hover { border-color: var(--fw-input-border-hover); }
 
 .fw-mail__input:focus,
 .fw-mail__textarea:focus {
-  outline: 2px solid var(--accent-mail);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow:
+    var(--fw-input-well),
+    0 0 0 3px var(--fw-primary-light),
+    0 0 18px -2px var(--fw-primary-glow);
 }
 
 .fw-mail__textarea {
@@ -814,48 +1200,64 @@
   padding-top: var(--fw-spacing-lg);
 }
 
-/* ========== SETTINGS PAGE ========== */
+/* ===== SETTINGS PAGE ===== */
 .fw-mail__settings-container {
   max-width: 1200px;
   margin: 0 auto;
 }
 
+/* Settings tabs — segmented control in a carved groove */
 .fw-mail__tabs {
   display: flex;
-  gap: var(--fw-spacing-sm);
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
   margin-bottom: var(--fw-spacing-lg);
-  border-bottom: 2px solid var(--fw-border);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-full);
+  box-shadow: var(--fw-input-well);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
+.fw-mail__tabs::-webkit-scrollbar { display: none; }
+
 .fw-mail__tab {
-  padding: var(--fw-spacing-sm) var(--fw-spacing-lg);
-  font-size: 15px;
+  padding: 9px 18px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--fw-text-muted);
-  background: none;
+  color: var(--fw-text-tertiary);
+  background: transparent;
   border: none;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -2px;
+  border-radius: var(--fw-radius-full);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color var(--fw-transition-base), background var(--fw-transition-base);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .fw-mail__tab:hover {
-  color: var(--fw-text-primary);
+  color: var(--fw-primary);
+  background: var(--fw-primary-light);
 }
 
 .fw-mail__tab--active {
-  color: var(--accent-mail);
-  border-bottom-color: var(--accent-mail);
+  color: #ffffff;
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  text-shadow: 0 1px 2px rgba(50, 0, 0, 0.45);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 4px 10px -2px var(--fw-primary-glow);
 }
 
-.fw-mail__tab-panel {
-  display: none;
-}
-
-.fw-mail__tab-panel--active {
-  display: block;
-}
+.fw-mail__tab-panel { display: none; }
+.fw-mail__tab-panel--active { display: block; }
 
 .fw-mail__settings-header {
   display: flex;
@@ -866,120 +1268,219 @@
 
 .fw-mail__settings-header h2 {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--fw-text-primary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
   margin: 0;
 }
 
-.fw-mail__accounts-list {
+.fw-mail__accounts-list,
+.fw-mail__signatures-list,
+.fw-mail__rules-list {
   display: flex;
   flex-direction: column;
   gap: var(--fw-spacing-lg);
 }
 
-.fw-mail__account-card {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+/* Cards */
+.fw-mail__account-card,
+.fw-mail__template-card {
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
-  box-shadow: var(--fw-shadow-sm);
-  backdrop-filter: blur(12px);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base);
 }
 
-.fw-mail__account-card-header {
+.fw-mail__account-card:hover,
+.fw-mail__template-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--fw-card-shadow-hover);
+}
+
+.fw-mail__account-card-header,
+.fw-mail__template-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: var(--fw-spacing-md);
   padding-bottom: var(--fw-spacing-md);
-  border-bottom: 1px solid var(--fw-border);
+  border-bottom: 1px solid var(--fw-border-base);
 }
 
-.fw-mail__account-card-header h3 {
+.fw-mail__account-card-header h3,
+.fw-mail__template-card-header h3 {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--fw-text-primary);
   margin: 0;
 }
 
-.fw-mail__account-card-body {
+.fw-mail__account-card-body,
+.fw-mail__template-card-body {
   margin-bottom: var(--fw-spacing-md);
 }
 
-.fw-mail__account-card-body p {
+.fw-mail__account-card-body p,
+.fw-mail__template-card-body p {
   margin: var(--fw-spacing-xs) 0;
   font-size: 14px;
-  color: var(--fw-text-primary);
+  color: var(--fw-text-secondary);
 }
 
-.fw-mail__error-text {
-  color: var(--accent-danger);
-}
+.fw-mail__error-text { color: var(--accent-danger); }
 
-/* ========== BUTTONS ========== */
+/* ===== BUTTONS — extruded pressable keys ===== */
 .fw-mail__btn {
-  padding: var(--fw-spacing-sm) var(--fw-spacing-lg);
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 20px;
   border-radius: var(--fw-radius-md);
+  font-weight: 700;
   font-size: 14px;
-  font-weight: 600;
+  letter-spacing: 0.3px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), background var(--fw-transition-base), color var(--fw-transition-base), border-color var(--fw-transition-base);
+  border: 1px solid var(--fw-border-base);
   white-space: nowrap;
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
   text-decoration: none;
-  display: inline-block;
+  background: var(--fw-card-face);
+  color: var(--fw-text-primary);
+  box-shadow: var(--fw-key-shadow);
+}
+
+.fw-mail__btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.5s ease;
+  pointer-events: none;
+}
+
+.fw-mail__btn:hover::before { left: 130%; }
+
+.fw-mail__btn:hover {
+  border-color: var(--fw-primary);
+  color: var(--fw-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+}
+
+.fw-mail__btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
 }
 
 .fw-mail__btn--primary {
-  background: var(--accent-mail);
-  color: #ffffff;
-  box-shadow: var(--fw-shadow-sm);
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 52%, var(--fw-primary-hover) 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(50, 0, 0, 0.45);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
+    0 3px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 14px 28px -8px var(--fw-primary-glow);
 }
 
 .fw-mail__btn--primary:hover {
-  background: var(--accent-mail-hover);
-  box-shadow: var(--fw-shadow-md);
-  transform: translateY(-1px);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
+    0 5px 0 var(--fw-primary-deeper),
+    0 10px 22px -2px var(--fw-primary-glow),
+    0 22px 44px -10px var(--fw-primary-glow);
+}
+
+.fw-mail__btn--primary:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 6px rgba(50, 0, 0, 0.5),
+    0 1px 0 var(--fw-primary-deeper);
 }
 
 .fw-mail__btn--secondary {
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   color: var(--fw-text-primary);
-  border: 1px solid var(--fw-border);
+  box-shadow: var(--fw-key-shadow);
 }
 
 .fw-mail__btn--secondary:hover {
-  background: var(--fw-highlight);
-}
-
-.fw-mail__btn--small {
-  padding: 6px 12px;
-  font-size: 12px;
+  border-color: var(--fw-primary);
+  color: var(--fw-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
 }
 
 .fw-mail__btn--danger {
-  background: var(--accent-danger);
-  color: #ffffff;
+  background: linear-gradient(165deg, #f87171, #ef4444 55%, #dc2626);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(120, 10, 10, 0.4);
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.35),
+    0 3px 0 #991b1b,
+    0 6px 14px -2px rgba(239, 68, 68, 0.4);
 }
 
 .fw-mail__btn--danger:hover {
-  background: #dc2626;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.35),
+    0 5px 0 #991b1b,
+    0 12px 26px -4px rgba(239, 68, 68, 0.5);
+}
+
+.fw-mail__btn--small {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: var(--fw-radius-sm);
+}
+
+.fw-mail__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .fw-mail__card-actions {
   display: flex;
   gap: var(--fw-spacing-xs);
   margin-top: var(--fw-spacing-sm);
+  flex-wrap: wrap;
 }
 
-/* ========== BADGES ========== */
+/* ===== BADGES — glossy pills ===== */
 .fw-mail__badge {
   padding: 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--fw-radius-full);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.3px;
   display: inline-block;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .fw-mail__badge--active {
@@ -992,16 +1493,14 @@
   color: #64748b;
 }
 
-/* ========== MODALS - INVERSE BG ========== */
+/* ===== MODALS — deep glass ===== */
 .fw-mail__modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: var(--fw-modal-overlay);
   backdrop-filter: blur(8px);
-  z-index: 1000;
+  -webkit-backdrop-filter: blur(8px);
+  z-index: var(--z-modal);
   display: none;
   align-items: center;
   justify-content: center;
@@ -1016,27 +1515,22 @@
   background: var(--fw-modal-bg);
   border: 1px solid var(--fw-modal-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 30px 80px -20px rgba(0, 0, 0, 0.6),
+    0 12px 32px -8px var(--fw-primary-glow);
   max-width: 600px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  animation: modalSlideIn 0.3s ease;
+  animation: fwModalSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.fw-mail__modal--large {
-  max-width: 900px;
-}
+.fw-mail__modal--large { max-width: 900px; }
 
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+@keyframes fwModalSlideIn {
+  from { opacity: 0; transform: perspective(900px) translateY(-24px) rotateX(-6deg) scale(0.96); }
+  to   { opacity: 1; transform: perspective(900px) translateY(0) rotateX(0) scale(1); }
 }
 
 .fw-mail__modal-header {
@@ -1049,7 +1543,7 @@
 
 .fw-mail__modal-title {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--fw-modal-text);
   margin: 0;
 }
@@ -1065,13 +1559,13 @@
   border-radius: var(--fw-radius-sm);
   color: var(--fw-modal-text);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--fw-transition-base), opacity var(--fw-transition-base);
   font-size: 24px;
   opacity: 0.7;
 }
 
 .fw-mail__modal-close:hover {
-  background: rgba(101, 0, 0, 0.1);
+  background: var(--fw-primary-light);
   opacity: 1;
 }
 
@@ -1079,14 +1573,10 @@
   padding: var(--fw-spacing-lg);
 }
 
-/* ========== FORMS IN MODALS ========== */
-.fw-mail__form {
-  width: 100%;
-}
+/* ===== FORMS ===== */
+.fw-mail__form { width: 100%; }
 
-.fw-mail__form-group {
-  margin-bottom: var(--fw-spacing-md);
-}
+.fw-mail__form-group { margin-bottom: var(--fw-spacing-md); }
 
 .fw-mail__form-row {
   display: grid;
@@ -1094,36 +1584,32 @@
   gap: var(--fw-spacing-md);
 }
 
-/* MODAL INPUTS - USE MODAL COLORS */
+/* Modal inputs — carved wells, same theme */
 .fw-mail__modal .fw-mail__input,
-.fw-mail__modal .fw-mail__textarea,
-.fw-mail__modal .fw-mail__label {
+.fw-mail__modal .fw-mail__textarea {
   background: var(--fw-modal-input-bg);
   border-color: var(--fw-modal-input-border);
   color: var(--fw-modal-text);
 }
 
-.fw-mail__modal .fw-mail__label {
-  color: var(--fw-modal-text);
-}
+.fw-mail__modal .fw-mail__label { color: var(--fw-modal-text); }
 
 .fw-mail__modal .fw-mail__input:focus,
 .fw-mail__modal .fw-mail__textarea:focus {
-  outline: 2px solid var(--accent-mail);
-  outline-offset: 2px;
-  border-color: var(--accent-mail);
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow:
+    var(--fw-input-well),
+    0 0 0 3px var(--fw-primary-light);
 }
 
-.fw-mail__required {
-  color: var(--accent-danger);
-}
+.fw-mail__required { color: var(--accent-danger); }
 
 .fw-mail__help-text {
   display: block;
   margin-top: var(--fw-spacing-xs);
   font-size: 12px;
-  color: var(--fw-modal-text);
-  opacity: 0.7;
+  color: var(--fw-text-muted);
 }
 
 .fw-mail__checkbox-wrapper {
@@ -1131,7 +1617,7 @@
   align-items: center;
   gap: var(--fw-spacing-sm);
   font-size: 14px;
-  color: var(--fw-modal-text);
+  color: var(--fw-text-primary);
   cursor: pointer;
   margin-bottom: var(--fw-spacing-sm);
 }
@@ -1140,6 +1626,7 @@
   width: 18px;
   height: 18px;
   cursor: pointer;
+  accent-color: var(--fw-primary);
 }
 
 .fw-mail__form-actions {
@@ -1169,7 +1656,7 @@
   color: #ef4444;
 }
 
-/* ========== TEMPLATES PAGE ========== */
+/* ===== TEMPLATES PAGE ===== */
 .fw-mail__templates-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -1181,47 +1668,6 @@
   gap: var(--fw-spacing-lg);
 }
 
-.fw-mail__template-card {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  padding: var(--fw-spacing-lg);
-  box-shadow: var(--fw-shadow-sm);
-  backdrop-filter: blur(12px);
-  transition: all 0.2s ease;
-}
-
-.fw-mail__template-card:hover {
-  box-shadow: var(--fw-shadow-md);
-  transform: translateY(-2px);
-}
-
-.fw-mail__template-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--fw-spacing-md);
-  padding-bottom: var(--fw-spacing-md);
-  border-bottom: 1px solid var(--fw-border);
-}
-
-.fw-mail__template-card-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--fw-text-primary);
-  margin: 0;
-}
-
-.fw-mail__template-card-body {
-  margin-bottom: var(--fw-spacing-md);
-}
-
-.fw-mail__template-card-body p {
-  margin: var(--fw-spacing-xs) 0;
-  font-size: 14px;
-  color: var(--fw-text-primary);
-}
-
 .fw-mail__template-preview {
   font-size: 13px;
   color: var(--fw-text-muted);
@@ -1229,37 +1675,8 @@
   margin-top: var(--fw-spacing-sm);
 }
 
-/* ========== SIGNATURES & RULES ========== */
-.fw-mail__signatures-list,
-.fw-mail__rules-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--fw-spacing-md);
-}
-
-/* ========== LOADING ========== */
-.fw-mail__loading {
-  text-align: center;
-  padding: var(--fw-spacing-xl);
-  color: var(--fw-text-muted);
-  font-size: 14px;
-}
-
-.fw-mail__spinner {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--fw-border);
-  border-top-color: var(--accent-mail);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ========== EMPTY STATE ========== */
+/* ===== LOADING / EMPTY ===== */
+.fw-mail__loading,
 .fw-mail__empty-state {
   text-align: center;
   padding: var(--fw-spacing-xl);
@@ -1267,20 +1684,130 @@
   font-size: 14px;
 }
 
-.fw-mail__empty-state p {
-  margin-bottom: var(--fw-spacing-xs);
+.fw-mail__loading { animation: fwPulse 2s ease-in-out infinite; }
+
+@keyframes fwPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
+
+.fw-mail__empty-state p { margin-bottom: var(--fw-spacing-xs); }
 
 .fw-mail__empty-state small {
   display: block;
   font-size: 12px;
+  color: var(--fw-text-tertiary);
+}
+
+.fw-mail__spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--fw-border-base);
+  border-top-color: var(--fw-primary);
+  border-radius: 50%;
+  animation: fwSpin 0.6s linear infinite;
+}
+
+@keyframes fwSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== MODAL EXTRAS (rules / signatures / selects / colour pickers) ===== */
+.fw-mail__modal select {
+  background: var(--fw-modal-input-bg);
+  border: 1px solid var(--fw-modal-input-border);
+  color: var(--fw-modal-text);
+  padding: 11px var(--fw-spacing-md);
+  border-radius: var(--fw-radius-md);
+  font-size: 14px;
+  font-family: inherit;
+  width: 100%;
+  box-shadow: var(--fw-input-well);
+}
+
+.fw-mail__modal select:focus {
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow: var(--fw-input-well), 0 0 0 3px var(--fw-primary-light);
+}
+
+.fw-mail__modal input::placeholder,
+.fw-mail__modal textarea::placeholder {
   color: var(--fw-text-muted);
 }
 
-/* ========== RESPONSIVE ========== */
+.fw-mail__modal .fw-mail__checkbox { accent-color: var(--fw-primary); }
+
+.fw-mail__color-picker {
+  width: 60px;
+  height: 40px;
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-sm);
+  cursor: pointer;
+  background: var(--fw-input-bg);
+}
+
+.fw-mail__rule-conditions,
+.fw-mail__rule-actions {
+  margin-bottom: var(--fw-spacing-lg);
+  padding: var(--fw-spacing-md);
+  background: var(--fw-primary-light);
+  border-radius: var(--fw-radius-md);
+  border: 1px solid var(--fw-border-base);
+}
+
+.fw-mail__rule-item {
+  display: flex;
+  gap: var(--fw-spacing-sm);
+  margin-bottom: var(--fw-spacing-sm);
+  align-items: center;
+}
+
+.fw-mail__rule-item select,
+.fw-mail__rule-item input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fw-mail__rule-item button {
+  padding: 8px 12px;
+  background: var(--accent-danger);
+  color: white;
+  border: none;
+  border-radius: var(--fw-radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.fw-mail__rule-add-btn {
+  padding: 9px 16px;
+  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary));
+  color: white;
+  border: none;
+  border-radius: var(--fw-radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: var(--fw-spacing-sm);
+  box-shadow: 0 2px 8px -2px var(--fw-primary-glow);
+  transition: transform var(--fw-transition-base);
+}
+
+.fw-mail__rule-add-btn:hover { transform: translateY(-1px); }
+
+/* ===== UTILITIES ===== */
+.fw-mail__text-center { text-align: center; }
+.fw-mail__mt-md { margin-top: var(--fw-spacing-md); }
+.fw-mail__mb-md { margin-bottom: var(--fw-spacing-md); }
+.fw-mail__hidden { display: none !important; }
+
+/* ===== RESPONSIVE ===== */
 @media (max-width: 1200px) {
   .fw-mail__layout {
-    grid-template-columns: 220px 350px 1fr;
+    grid-template-columns: 230px 340px 1fr;
   }
 }
 
@@ -1290,44 +1817,33 @@
     grid-template-rows: auto auto 1fr;
   }
 
-  .fw-mail__sidebar {
-    display: none;
-  }
+  .fw-mail__sidebar { display: none; }
 
   .fw-mail__thread-list,
-  .fw-mail__preview {
-    min-height: 400px;
-  }
+  .fw-mail__preview { min-height: 400px; }
 }
 
 @media (max-width: 768px) {
+  .fw-mail__container { padding: var(--fw-spacing-md); }
+
   .fw-mail__header {
+    height: auto;
     flex-direction: column;
     gap: var(--fw-spacing-md);
+    padding: var(--fw-spacing-md);
   }
 
-  .fw-mail__greeting {
-    order: -1;
-    text-align: left;
-  }
+  .fw-mail__greeting { order: -1; text-align: center; }
 
-  .fw-mail__form-row {
-    grid-template-columns: 1fr;
-  }
+  .fw-mail__form-row { grid-template-columns: 1fr; }
 
-  .fw-mail__templates-grid {
-    grid-template-columns: 1fr;
-  }
+  .fw-mail__templates-grid { grid-template-columns: 1fr; }
 
   .fw-mail__compose-actions,
-  .fw-mail__form-actions {
-    flex-direction: column;
-  }
+  .fw-mail__form-actions { flex-direction: column; }
 
   .fw-mail__compose-actions button,
-  .fw-mail__form-actions button {
-    width: 100%;
-  }
+  .fw-mail__form-actions button { width: 100%; }
 
   .fw-mail__modal {
     max-width: 100%;
@@ -1335,152 +1851,14 @@
     border-radius: 0;
   }
 
-  .fw-mail__modal-overlay {
-    padding: 0;
-  }
+  .fw-mail__modal-overlay { padding: 0; }
 }
 
-/* ========== UTILITIES ========== */
-.fw-mail__text-center {
-  text-align: center;
-}
-
-.fw-mail__mt-md {
-  margin-top: var(--fw-spacing-md);
-}
-
-.fw-mail__mb-md {
-  margin-bottom: var(--fw-spacing-md);
-}
-
-.fw-mail__hidden {
-  display: none !important;
-}
-
-/* FIX: Kebab menu z-index (moet bo alles wees) */
-.fw-mail__kebab-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  background: var(--fw-modal-bg);
-  border: 1px solid var(--fw-modal-border);
-  border-radius: var(--fw-radius-md);
-  box-shadow: var(--fw-shadow-lg);
-  backdrop-filter: blur(16px);
-  min-width: 180px;
-  padding: var(--fw-spacing-xs);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-8px);
-  transition: all 0.2s ease;
-  z-index: 9999; /* VERHOOG - moet bo alles wees */
-}
-
-.fw-mail__kebab-menu[aria-hidden="false"] {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-}
-
-/* FIX: Modal overlay moet bo alles wees */
-.fw-mail__modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  z-index: 10000; /* VERHOOG */
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: var(--fw-spacing-lg);
-}
-
-/* FIX: Account modal input placeholder colors */
-.fw-mail__modal input::placeholder,
-.fw-mail__modal textarea::placeholder {
-  color: var(--fw-modal-text);
-  opacity: 0.5;
-}
-
-/* FIX: Account modal select dropdowns */
-.fw-mail__modal select {
-  background: var(--fw-modal-input-bg);
-  border: 1px solid var(--fw-modal-input-border);
-  color: var(--fw-modal-text);
-  padding: var(--fw-spacing-sm) var(--fw-spacing-md);
-  border-radius: var(--fw-radius-md);
-  font-size: 14px;
-  width: 100%;
-}
-
-.fw-mail__modal select:focus {
-  outline: 2px solid var(--accent-mail);
-  outline-offset: 2px;
-}
-
-/* FIX: Checkbox styling in modals */
-.fw-mail__modal .fw-mail__checkbox {
-  accent-color: var(--accent-mail);
-}
-
-/* ========== SIGNATURE & RULE MODALS ========== */
-.fw-mail__modal .fw-mail__color-picker {
-  width: 60px;
-  height: 40px;
-  border: 1px solid var(--fw-modal-input-border);
-  border-radius: var(--fw-radius-sm);
-  cursor: pointer;
-  background: var(--fw-modal-input-bg);
-}
-
-.fw-mail__modal .fw-mail__rule-conditions,
-.fw-mail__modal .fw-mail__rule-actions {
-  margin-bottom: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md);
-  background: rgba(101, 0, 0, 0.05);
-  border-radius: var(--fw-radius-md);
-  border: 1px solid var(--fw-modal-input-border);
-}
-
-.fw-mail__modal .fw-mail__rule-item {
-  display: flex;
-  gap: var(--fw-spacing-sm);
-  margin-bottom: var(--fw-spacing-sm);
-  align-items: center;
-}
-
-.fw-mail__modal .fw-mail__rule-item select,
-.fw-mail__modal .fw-mail__rule-item input {
-  flex: 1;
-  min-width: 0;
-}
-
-.fw-mail__modal .fw-mail__rule-item button {
-  padding: 6px 12px;
-  background: var(--accent-danger);
-  color: white;
-  border: none;
-  border-radius: var(--fw-radius-sm);
-  cursor: pointer;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.fw-mail__modal .fw-mail__rule-add-btn {
-  padding: 8px 16px;
-  background: var(--accent-mail);
-  color: white;
-  border: none;
-  border-radius: var(--fw-radius-sm);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  margin-top: var(--fw-spacing-sm);
-}
-
-.fw-mail__modal .fw-mail__rule-add-btn:hover {
-  background: var(--accent-mail-hover);
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  .fw-mail::after { animation: none; }
+  .fw-mail__logo-tile::before { animation: none; }
+  .fw-mail__loading,
+  .fw-mail__spinner { animation: none; }
+  .fw-mail * { transition-duration: 0.01ms !important; }
 }
