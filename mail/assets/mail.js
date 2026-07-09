@@ -1218,11 +1218,20 @@
   window.MailCompose = MailCompose;
 
   // ========== INIT ==========
+  function initLogoTileEffect() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var logoTile = document.querySelector('.fw-mail__logo-tile');
+    if (!logoTile) return;
+    logoTile.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.05) rotate(-3deg)'; });
+    logoTile.addEventListener('mouseleave', function() { this.style.transform = ''; });
+  }
+
   function init() {
     console.log('🚀 Mail app init...');
     initTheme();
     initKebabMenu();
     initTabs();
+    initLogoTileEffect();
 
     if (document.getElementById('folderList')) {
       MailApp.init();
