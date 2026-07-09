@@ -245,12 +245,21 @@
     });
   }
 
+  function initLogoTileEffect() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var logoTile = document.querySelector('.fw-admin__logo-tile');
+    if (!logoTile) return;
+    logoTile.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.05) rotate(-3deg)'; });
+    logoTile.addEventListener('mouseleave', function() { this.style.transform = ''; });
+  }
+
   // ========== INIT ==========
   function init() {
     initTheme();
     initKebabMenu();
     initUserModal();
     initKeyboardShortcuts();
+    initLogoTileEffect();
   }
 
   if (document.readyState === 'loading') {

@@ -19,7 +19,7 @@ $firstName    = $user['first_name'] ?? ($_SESSION['user_first_name'] ?? 'Welcome
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($pageTitle) ?></title>
-    <link rel="stylesheet" href="/admin/style.css?v=2026-04-25-2">
+    <link rel="stylesheet" href="/admin/style.css?v=2026-07-09-ADMIN-UI-3D">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
 </head>
 <body class="fw-admin" data-theme="<?= $initialTheme ?>">
