@@ -75,10 +75,36 @@ and can be deleted).
    committed in `config.php` and were flagged by the earlier security due
    diligence (`SECURITY-REMEDIATION.md`). `config.php` now prefers
    environment variables; set them at the host and remove the fallbacks.
-2. **Run once in production, in this order:** the four
-   `Migrations/2026-07-06-finance-sars-0*.sql` files, then
-   `php finances/tools/finance_setup.php`, then (to migrate historic data)
-   `php finances/tools/repost_all.php`.
+2. **Run once in production, in this order.** These migrations require
+   **MariaDB 10.11+** — they use `ADD COLUMN/INDEX IF NOT EXISTS` and will not
+   run on MySQL. Apply **all six** `Migrations/2026-07-06-finance-sars-0*.sql`
+   files (not four):
+   - `…-01-schema.sql`
+   - `…-02-coa.sql`
+   - `…-03-settings-defaults.sql`
+   - `…-04-data-corrections.sql`
+   - `…-05-fa-asset-id-autoincrement.sql`
+   - `…-06-review-fixes.sql`
+
+   **Before migration 06**, check for duplicate posted depreciation runs — its
+   `ADD UNIQUE INDEX uq_fa_dep_run_month` aborts (errno 1062) if two posted runs
+   share a company+month, and the `IF NOT EXISTS` guard does *not* protect
+   against duplicate rows:
+
+   ```sql
+   SELECT company_id, run_month, COUNT(*) c
+     FROM fa_depreciation_runs
+    WHERE status = 'posted'
+    GROUP BY company_id, run_month HAVING c > 1;
+   ```
+
+   If any rows return, reverse all but one posted run's journal first.
+
+   Then also apply the two 2026-07-08 schema-reconciliation migrations
+   (`…-finance-schema-reconcile.sql` and `…-finance-index-hardening.sql`, which
+   port the orphaned `qi/migrations/` objects, backfill `exchange_rate`, and add
+   the missing indexes). Finally run `php finances/tools/finance_setup.php`,
+   then (to migrate historic data) `php finances/tools/repost_all.php`.
 3. **Fill in company profile**: a valid VAT number (10 digits starting
    with 4), physical address, and SARS income-tax reference in Admin →
    Company (the seeded test company's VAT number is not a valid format —
@@ -207,8 +233,10 @@ the production schema shape):
    account (Banking → Accounts) — customer receipts fall back to the seeded
    bank account and refuse to post if none exists.
 
-Also note: migration 06 (review fixes) joins the ordered migration list, and
-`fa_depreciation_runs` gains a unique month index.
+Also note: migrations 05 (fixed-asset `asset_id` AUTO_INCREMENT fix) and 06
+(review fixes) are part of the ordered migration list — step 2 above enumerates
+all six 2026-07-06 files — and `fa_depreciation_runs` gains a unique month index
+via migration 06 (see the pre-flight duplicate check in step 2).
 
 ## Review items documented, not changed
 
@@ -224,3 +252,58 @@ Also note: migration 06 (review fixes) joins the ordered migration list, and
   issue under the payments basis; they represent actual refunds.
 - `repost_all.php` reposts unconditionally (reversal + replacement per run);
   reruns are financially safe but grow `journal_entries` — run it once.
+
+---
+
+# Due-diligence remediation (2026-07-08) — Sections A–F
+
+A second full audit (Sections A–H) was worked top-down per Section H. Sections
+A (critical money bugs), B (integrity), C (schema/provisioning), D (medium
+correctness, by subsystem), E (UX & wiring) and F (test coverage) are landed on
+`claude/flowwork-finances-audit-4embgr`. The finance suite grew from 11 to 22
+files and stays green throughout.
+
+## Section E — UX & wiring
+
+- **VAT adjustment was not idempotent.** A double-click posted two adjustment
+  journals, double-counting the adjustment in the VAT201 boxes. Fixed:
+  `vat_adjust_post.php` locks the period `FOR UPDATE` and dedups on a client
+  nonce stamped into the journal reference; `FinanceUI.busy` disables the
+  submit in-flight. (Reusable `FinanceUI.busy`/`FinanceUI.nonce` helpers added
+  to `finance.js`.)
+- **AR/AP lists silently truncated** (AR at 100, AP bills/payments/credits at
+  200) with client-side search over only the loaded rows — anything past the
+  cap was invisible to search. All five list endpoints now paginate and filter
+  server-side (mirroring `journal_list.php`), return `total`/`total_pages`, and
+  the UIs show "Showing X of Y" with prev/next. AR Sync-All pulls all unsynced
+  ids from the server so it still covers every page; bill search moved
+  server-side.
+- **invoice→GL drill-through** added to `qi/invoice_view.php` (finance→invoice
+  already existed), gated to finance roles and a posted journal.
+
+## Section F — Test coverage (new regression tests)
+
+`test_vendor_credit`, `test_fa_depreciation`, `test_year_end_close`,
+`test_bank_reconciliation` — each targets a subsystem the audit flagged as
+zero-coverage and sits behind a Section A/B/D fix (vendor-credit posting,
+depreciation posting + future-month guard, year-end date guards + reversed-
+close re-close (B2), closed-reconciliation undo guard). Earlier passes already
+added coverage for refunds, credit-note application, dashboard KPIs, the bank
+VAT split and fixed-asset disposal.
+
+## Deferred (LARGE — noted for a later pass, not daily-bookkeeping blockers)
+
+- Declining-balance depreciation never crosses over to straight-line (assets
+  never fully depreciate); s11(e) first-year pro-rata.
+- Customer/vendor credits do not restock inventory or reverse COGS
+  (`return_issue.php` is wired to no UI).
+- Budget save deletes the whole year then re-inserts only rendered rows
+  (destroys deactivated-account budgets; silently drops locked-month edits).
+- AR/AP aging: credit balances and retrospective status-as-of (historically
+  open invoices vanish once later written off).
+- Bank: substring statement-parser detection, and transfers between own
+  accounts (matching both legs double-counts).
+- VAT: capital-goods (Box 7) report is basis-unaware; no delete/reopen for a
+  mis-created period.
+- Section G is a product-gap roadmap (live bank feeds, consolidation,
+  deferred tax, dunning, etc.) — not auto-buildable here.

@@ -173,23 +173,38 @@ try {
         $investingChange -= $change;
     }
 
-    // Financing: changes in liabilities and equity (excluding AP)
-    $sqlLE = "SELECT account_id, account_code, account_type FROM gl_accounts WHERE company_id = ? AND account_type IN ('liability','equity')";
+    // Financing = LONG-TERM liabilities (loans, non-current) and equity only.
+    // Current-liability movements — VAT control, PAYE/UIF/SDL, provisional /
+    // dividends tax, accruals and other current liabilities — are OPERATING
+    // working-capital changes, not financing. Lumping every non-AP liability into
+    // financing systematically mis-stated operating cash flow every period.
+    $OPERATING_LIAB_SUBTYPES = ['current_liability', 'vat_control', 'paye_liability',
+        'uif_liability', 'sdl_liability', 'dividends_tax_payable', 'provisional_tax',
+        'accruals', 'accounts_payable'];
+    $sqlLE = "SELECT account_id, account_code, account_type, account_subtype FROM gl_accounts WHERE company_id = ? AND account_type IN ('liability','equity')";
     $stmt = $DB->prepare($sqlLE);
     $stmt->execute([$companyId]);
     $rowsLE = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $financingChange = 0.0;
+    $operatingLiabChange = 0.0;
     foreach ($rowsLE as $row) {
         $aid   = intval($row['account_id']);
         $acode = $row['account_code'];
         $atype = $row['account_type'];
-        // Skip AP
+        $asub  = (string)($row['account_subtype'] ?? '');
+        // Skip AP — already counted in changeAP (operating) above.
         if ($aid == $apId) continue;
         [$start, $end] = calculateBalances($DB, $companyId, [$acode], [$aid], $startDate, $endDate, false);
-        // For liability/equity, a positive change means inflow
+        // A positive change (liability/equity increase) is a cash inflow.
         $change = $end - $start;
-        $financingChange += $change;
+        if ($atype === 'liability' && in_array($asub, $OPERATING_LIAB_SUBTYPES, true)) {
+            $operatingLiabChange += $change; // operating working capital
+        } else {
+            $financingChange += $change;     // loans / non-current / equity
+        }
     }
+    // Fold current-liability movements into operating activities.
+    $operating += $operatingLiabChange;
 
     // Net cash flow
     $netCash = $operating + $investingChange + $financingChange;

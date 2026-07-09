@@ -71,6 +71,20 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fyStart) || !preg_match('/^\d{4}-\d{2}
     exit;
 }
 
+// Reject an in-progress or malformed fiscal year. Only a COMPLETED year may be
+// closed: fy_start must precede fy_end, and fy_end must be strictly before today.
+// Closing the current (unfinished) year rolls a partial-year P&L to retained
+// earnings and plants an undeletable future-dated period lock that freezes all
+// posting.
+if (strtotime($fyStart) >= strtotime($fyEnd)) {
+    echo json_encode(['ok' => false, 'error' => 'Fiscal year start must be before its end']);
+    exit;
+}
+if (strtotime($fyEnd) >= strtotime(date('Y-m-d'))) {
+    echo json_encode(['ok' => false, 'error' => 'The fiscal year has not ended yet — only a year that ended before today can be closed']);
+    exit;
+}
+
 // Period lock check: the closing journal is dated fy_end, so posting must be
 // rejected if that date falls in a locked period (same rule as PostingService).
 require_once __DIR__ . '/../lib/PeriodService.php';
@@ -86,7 +100,7 @@ $closingRef = 'YE-CLOSE-' . substr($fyStart, 0, 4) . '-' . substr($fyEnd, 0, 4);
 
 // Check if already closed
 $stmt = $DB->prepare(
-    "SELECT COUNT(*) FROM journal_entries WHERE company_id = ? AND reference = ? AND status = 'posted'"
+    "SELECT COUNT(*) FROM journal_entries WHERE company_id = ? AND reference = ? AND status = 'posted' AND reversed_by_journal_id IS NULL"
 );
 $stmt->execute([$companyId, $closingRef]);
 if ((int)$stmt->fetchColumn() > 0) {
@@ -255,7 +269,8 @@ try {
             AND NOT EXISTS (
                 SELECT 1 FROM journal_entries pc
                  WHERE pc.company_id = je.company_id AND pc.module = 'year_end'
-                   AND pc.status = 'posted' AND pc.entry_date >= je.entry_date
+                   AND pc.status = 'posted' AND pc.reversed_by_journal_id IS NULL
+                   AND pc.entry_date >= je.entry_date
                    AND pc.entry_date < ?
             )"
     );
@@ -275,6 +290,7 @@ try {
     $stmt = $DB->prepare(
         "SELECT COUNT(*) FROM journal_entries
           WHERE company_id = ? AND module = 'year_end' AND status = 'posted'
+            AND reversed_by_journal_id IS NULL
             AND entry_date >= ? AND entry_date <= ?"
     );
     $stmt->execute([$companyId, $fyStart, $fyEnd]);
@@ -307,7 +323,7 @@ try {
     $lockStmt->execute([$companyId]);
 
     $dupStmt = $DB->prepare(
-        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ? AND reference = ? AND status = 'posted'"
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ? AND reference = ? AND status = 'posted' AND reversed_by_journal_id IS NULL"
     );
     $dupStmt->execute([$companyId, $closingRef]);
     if ((int)$dupStmt->fetchColumn() > 0) {
@@ -323,6 +339,7 @@ try {
     $overlapStmt = $DB->prepare(
         "SELECT COUNT(*) FROM journal_entries
           WHERE company_id = ? AND module = 'year_end' AND status = 'posted'
+            AND reversed_by_journal_id IS NULL
             AND entry_date >= ? AND entry_date <= ?"
     );
     $overlapStmt->execute([$companyId, $fyStart, $fyEnd]);

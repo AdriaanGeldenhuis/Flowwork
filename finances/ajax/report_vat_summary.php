@@ -53,7 +53,10 @@ try {
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_id = je.id
         WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?
-          AND COALESCE(je.module,'') NOT IN ('vat_settle','bad_debt','vat_adjust')
+          -- Exclude only the settlement CLEARING journal (which would double-count
+          -- the filed liability). bad_debt (s22 relief) and vat_adjust (manual
+          -- VAT201 adjustments) ARE part of the return and must be included.
+          AND COALESCE(je.module,'') NOT IN ('vat_settle')
         GROUP BY period
         ORDER BY period";
     $params = [$vatOutputCode, $vatInputCode, $companyId, $startDate, $endDate];

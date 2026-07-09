@@ -37,6 +37,13 @@ if (empty($header['supplier_id']) || empty($header['credit_number']) || empty($h
     exit;
 }
 $supplierId   = (int)$header['supplier_id'];
+// The supplier must belong to THIS company (guard against a cross-tenant id).
+$__sc = $DB->prepare("SELECT id FROM crm_accounts WHERE id = ? AND company_id = ? AND type = 'supplier'");
+$__sc->execute([$supplierId, $companyId]);
+if (!$__sc->fetchColumn()) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid supplier']);
+    exit;
+}
 $creditNumber = trim($header['credit_number']);
 $issueDate    = $header['issue_date'];
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $issueDate)) {

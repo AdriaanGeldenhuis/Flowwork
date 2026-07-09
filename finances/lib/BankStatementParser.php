@@ -508,46 +508,32 @@ class BankStatementParser
     {
         $raw = trim($raw);
 
-        // YYYY-MM-DD
-        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $raw)) {
-            return $raw;
+        // Strict per-format parsing with a year-range guard. Without it,
+        // DateTime::createFromFormat('d/m/Y', '01/02/26') reads the 2-digit '26'
+        // as year 0026 (PHP's Y token is greedy) and the 2-digit-year branches
+        // below were never reached — Standard Bank statements (2-digit years)
+        // were mis-dated to year 26, so every row sorted out of view and was
+        // blocked by period locks. Require a 4-digit year (>= 1000) for the
+        // Y-token formats; the y-token formats accept the century-pivoted 2-digit
+        // year (>= 100). A parse warning/error (e.g. day/month overflow) rejects
+        // the candidate. Formats are tried in d/m-first (SA) order.
+        $formats = [
+            'Y-m-d' => 1000, 'd/m/Y' => 1000, 'd-m-Y' => 1000, 'Y/m/d' => 1000,
+            'd M Y' => 1000, 'j M Y' => 1000,
+            'd/m/y' => 100, 'd-m-y' => 100, 'd M y' => 100, 'j M y' => 100,
+        ];
+        foreach ($formats as $fmt => $minYear) {
+            $d = DateTime::createFromFormat('!' . $fmt, $raw);
+            $errs = DateTime::getLastErrors();
+            $clean = ($errs === false) || ($errs['warning_count'] === 0 && $errs['error_count'] === 0);
+            if ($d && $clean && (int)$d->format('Y') >= $minYear) {
+                return $d->format('Y-m-d');
+            }
         }
 
-        // DD/MM/YYYY or DD-MM-YYYY
-        $d = DateTime::createFromFormat('d/m/Y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        $d = DateTime::createFromFormat('d-m-Y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        // YYYY/MM/DD
-        $d = DateTime::createFromFormat('Y/m/d', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        // DD/MM/YY (2-digit year)
-        $d = DateTime::createFromFormat('d/m/y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        $d = DateTime::createFromFormat('d-m-y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        // DD Mon YYYY
-        $d = DateTime::createFromFormat('d M Y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        $d = DateTime::createFromFormat('j M Y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        // DD Mon YY
-        $d = DateTime::createFromFormat('d M y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        $d = DateTime::createFromFormat('j M y', $raw);
-        if ($d) return $d->format('Y-m-d');
-
-        // Try PHP's strtotime as last resort
+        // Last resort for exotic formats — but never accept a year < 100.
         $ts = strtotime($raw);
-        if ($ts !== false && $ts > 0) {
+        if ($ts !== false && $ts > 0 && (int)date('Y', $ts) >= 100) {
             return date('Y-m-d', $ts);
         }
 

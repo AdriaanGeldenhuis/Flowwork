@@ -81,24 +81,29 @@ try {
         JOIN journal_entries je ON je.id = jl.journal_id
         JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
         WHERE je.company_id = ? AND je.status = 'posted' AND je.entry_date BETWEEN ? AND ?
+          -- Exclude year-end close journals (they roll P&L to retained earnings).
+          AND (je.module IS NULL OR je.module <> 'year_end')
     ");
     $stmt->execute([$companyId, $monthStart, $monthEnd]);
     $net_income = (float)$stmt->fetchColumn();
     $pl_month_cents = (int)round($net_income * 100);
 
-    // 5. VAT Due – Output VAT minus Input VAT across all transactions
+    // 5. VAT Due – live net VAT position from the VAT-control subtype accounts
+    // (output + input + control all carry account_subtype='vat_control'). Summing
+    // by subtype is invariant across filing: the settlement journal just moves the
+    // balance from the output/input accounts into the control account, all within
+    // the subtype. The old output_code-minus-input_code query read ~0 after filing
+    // because it did not include the control account the settlement moved into.
     $stmt = $DB->prepare("
-        SELECT
-            COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.credit - jl.debit) ELSE 0 END),0) AS output_vat,
-            COALESCE(SUM(CASE WHEN ga.account_code = ? THEN (jl.debit - jl.credit) ELSE 0 END),0) AS input_vat
+        SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS net_vat
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.journal_id
         JOIN gl_accounts ga ON ga.company_id = je.company_id AND ga.account_code = jl.account_code
         WHERE je.company_id = ? AND je.status = 'posted'
+          AND ga.account_subtype = 'vat_control'
     ");
-    $stmt->execute([$vatOutCode, $vatInCode, $companyId]);
-    $vatRow = $stmt->fetch(PDO::FETCH_ASSOC);
-    $vatDue = (float)($vatRow['output_vat'] ?? 0) - (float)($vatRow['input_vat'] ?? 0);
+    $stmt->execute([$companyId]);
+    $vatDue = (float)$stmt->fetchColumn();
     $vat_due_cents = (int)round($vatDue * 100);
 
     // 6. Bank transactions to reconcile – count unmatched bank transactions

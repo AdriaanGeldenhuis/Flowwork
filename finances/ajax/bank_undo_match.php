@@ -53,6 +53,15 @@ try {
     if (empty($tx['matched']) || intval($tx['matched']) === 0 || empty($tx['journal_id'])) {
         throw new Exception('Transaction is not matched');
     }
+    // A transaction inside a CLOSED reconciliation must not be undone — that
+    // would silently change an already-reconciled balance. Reconciliation close
+    // advances gl_bank_accounts.last_reconciled_date; refuse to undo on/before it.
+    $recStmt = $DB->prepare("SELECT last_reconciled_date FROM gl_bank_accounts WHERE id = ? AND company_id = ?");
+    $recStmt->execute([$tx['bank_account_id'], $companyId]);
+    $lastRec = $recStmt->fetchColumn();
+    if ($lastRec && $tx['tx_date'] <= $lastRec) {
+        throw new Exception('Cannot undo a reconciled transaction (dated ' . $tx['tx_date'] . ', on or before the last reconciliation date ' . $lastRec . ').');
+    }
     $periodService = new PeriodService($DB, $companyId);
     // Do not allow undo in locked period
     if ($periodService->isLocked($tx['tx_date'])) {

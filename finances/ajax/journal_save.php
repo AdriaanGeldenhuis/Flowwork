@@ -98,7 +98,12 @@ try {
 
     if ($isUpdate && $journalId) {
         // --- UPDATE existing draft ---
-        $stmt = $DB->prepare("SELECT status, reference, description, entry_date FROM journal_entries WHERE id = ? AND company_id = ?");
+        // FOR UPDATE closes a check-then-act race: without the row lock a
+        // concurrent approve/post could flip the journal to 'approved'/'posted'
+        // between this SELECT and the UPDATE+line-rewrite below, silently
+        // rewriting the lines of a posted (immutable) journal. Under the lock the
+        // status check here is authoritative, and the UPDATE re-asserts it.
+        $stmt = $DB->prepare("SELECT status, reference, description, entry_date FROM journal_entries WHERE id = ? AND company_id = ? FOR UPDATE");
         $stmt->execute([$journalId, $companyId]);
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$existing) { throw new Exception('Journal not found'); }
@@ -113,7 +118,7 @@ try {
         $stmt = $DB->prepare("
             UPDATE journal_entries
             SET entry_date = ?, reference = ?, description = ?
-            WHERE id = ? AND company_id = ?
+            WHERE id = ? AND company_id = ? AND status = 'draft'
         ");
         $stmt->execute([$entryDate, $reference, $memo, $journalId, $companyId]);
 

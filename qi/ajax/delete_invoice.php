@@ -3,6 +3,7 @@
 // Delete a draft invoice (or soft-delete / force-delete in admin mode).
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/InvoiceDeleteHelper.php';
 
 header('Content-Type: application/json');
@@ -31,6 +32,28 @@ try {
     $isAdmin = !empty($_SESSION['is_admin']) || ($_SESSION['role'] ?? '') === 'admin';
 
     if ($mode === 'soft') {
+        // A draft has no journal, so hiding it is harmless. A POSTED invoice
+        // hidden by soft-delete keeps its revenue/VAT/AR-debit in the GL while
+        // vanishing from every AR view — so it may only be soft-deleted by an
+        // admin, with no payments/credits still allocated, and its journal
+        // reversed in the same transaction. Void / Write Off are the normal
+        // routes for an issued invoice.
+        if ($invoice['status'] !== 'draft') {
+            if (!$isAdmin) {
+                throw new Exception('Only an admin can delete an issued invoice. Use Void, Write Off or Archive instead.');
+            }
+            $allocated = (float)$DB->query("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = " . (int)$invoiceId)->fetchColumn()
+                       + (float)$DB->query("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = " . (int)$invoiceId)->fetchColumn();
+            if ($allocated > 0) {
+                throw new Exception('Unapply payments and credit notes before deleting this invoice.');
+            }
+            // A partial write-off's separate Cr AR journal is not touched by
+            // reverseJournal (which only reverses the invoice journal).
+            if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+                throw new Exception('Reverse the write-off posted against this invoice before deleting it.');
+            }
+            InvoiceDeleteHelper::reverseJournal($DB, $companyId, $userId, $invoiceId);
+        }
         $stmt = $DB->prepare("
             UPDATE invoices
                SET deleted_at = NOW(), deleted_by = ?, delete_reason = ?
@@ -50,6 +73,17 @@ try {
     if ($mode === 'force') {
         if (!$isAdmin) {
             throw new Exception('Admin privileges required for force delete');
+        }
+        // Force-delete reverses only the invoice journal; its payment and
+        // credit-note journals (Cr AR) would stay posted and strand AR control
+        // negative. Require them unapplied first.
+        $allocated = (float)$DB->query("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = " . (int)$invoiceId)->fetchColumn()
+                   + (float)$DB->query("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = " . (int)$invoiceId)->fetchColumn();
+        if ($allocated > 0) {
+            throw new Exception('Unapply all payments and credit notes before force-deleting this invoice.');
+        }
+        if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+            throw new Exception('Reverse the write-off posted against this invoice before force-deleting it.');
         }
         InvoiceDeleteHelper::reverseJournal($DB, $companyId, $userId, $invoiceId);
         InvoiceDeleteHelper::purgeChildren($DB, $invoiceId, $companyId);

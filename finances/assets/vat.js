@@ -390,9 +390,15 @@
     if (msg) {
       msg.innerHTML = '';
     }
+    // Fresh idempotency nonce per modal open. The same token rides every submit
+    // attempt for this adjustment, so a double-click dedups server-side to one
+    // journal instead of posting two.
+    adjustNonce = (window.FinanceUI && FinanceUI.nonce) ? FinanceUI.nonce() : String(periodId) + '-' + Date.now();
     // Open the adjustment modal
     FinanceModal.open('vatAdjustModal');
   }
+  // Idempotency nonce for the currently-open adjustment (see openVatAdjustModal).
+  let adjustNonce = '';
 
   // expose function globally so renderVAT201Form can call it
   window.openVatAdjustModal = openVatAdjustModal;
@@ -415,6 +421,7 @@
     }
     const payload = {
       period_id: parseInt(periodId, 10),
+      client_ref: adjustNonce,
       lines: [
         {
           account: accountType,
@@ -423,7 +430,10 @@
         }
       ]
     };
-    const result = await FinanceAPI.request('/finances/ajax/vat_adjust_post.php', 'POST', payload);
+    const submitBtn = e.submitter || document.querySelector('#vatAdjustForm button[type="submit"]');
+    const result = window.FinanceUI && FinanceUI.busy
+      ? await FinanceUI.busy(submitBtn, () => FinanceAPI.request('/finances/ajax/vat_adjust_post.php', 'POST', payload), 'Saving…')
+      : await FinanceAPI.request('/finances/ajax/vat_adjust_post.php', 'POST', payload);
     if (result && result.ok) {
       showMessage('adjustMessage', 'Adjustment saved successfully', 'success');
       // After a short delay, close modal and reload the VAT201 form

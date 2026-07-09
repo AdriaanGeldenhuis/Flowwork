@@ -131,8 +131,12 @@ try {
                 if ($ruleTaxCodeId) {
                     $tcStmt = $DB->prepare("SELECT rate_percent FROM gl_tax_codes WHERE tax_code_id = ? AND company_id = ? AND is_active = 1");
                     $tcStmt->execute([$ruleTaxCodeId, $companyId]);
-                    $rate = (float)$tcStmt->fetchColumn();
-                    if ($rate > 0.005) {
+                    $rateRaw = $tcStmt->fetchColumn();
+                    if ($rateRaw === false) {
+                        // No active tax code with that id — drop the tag entirely.
+                        $ruleTaxCodeId = null;
+                    } elseif ((float)$rateRaw > 0.005) {
+                        $rate = (float)$rateRaw;
                         $vatC = (int)round($amountC * $rate / (100 + $rate));
                         $netC = $amountC - $vatC;
                         require_once __DIR__ . '/../lib/AccountsMap.php';
@@ -140,16 +144,15 @@ try {
                         $vatLegCode = $isMoneyIn
                             ? $accountsMap->code('finance_vat_output_account_id')
                             : $accountsMap->code('finance_vat_input_account_id');
-                    } else {
-                        // Tax code invalid/zero-rated for this company — don't tag.
-                        $ruleTaxCodeId = null;
+                        // Can't resolve a VAT account: fall back to a gross 2-line
+                        // posting so the journal always balances.
+                        if ($vatC > 0 && !$vatLegCode) {
+                            $netC = $amountC;
+                            $vatC = 0;
+                        }
                     }
-                    // Can't resolve a VAT account: fall back to a gross 2-line
-                    // posting so the journal always balances.
-                    if ($vatC > 0 && !$vatLegCode) {
-                        $netC = $amountC;
-                        $vatC = 0;
-                    }
+                    // A valid ZERO-rated / EXEMPT code (rate 0) keeps its tag on the
+                    // net line (no VAT leg) so the zero/exempt base isn't dropped.
                 }
                 $fmt = fn(int $c) => number_format($c / 100, 2, '.', '');
 
@@ -166,12 +169,19 @@ try {
                         $DB->rollBack();
                         break; // already matched by a concurrent run
                     }
-                    // Create journal entry for this match (status=posted for SARS compliance)
+                    // Create journal entry for this match (status=posted for SARS compliance).
+                    // ref_type MUST be 'bank_tx' — the payments-basis VAT201
+                    // (VatCalculator) and the VAT audit file (VatAuditFile) select
+                    // bank VAT legs by je.ref_type = 'bank_tx' only. Posting these
+                    // rule matches as 'bank_rule' hid their output/input VAT from
+                    // the return and the substantiation CSV. source_type stays
+                    // 'bank_rule' so the origin (auto-rule vs manual match) is still
+                    // traceable.
                     $stmtJ = $DB->prepare(
                         "INSERT INTO journal_entries (
                             company_id, entry_date, reference, description, module, ref_type, ref_id,
                             source_type, source_id, created_by, created_at, status, posted_by, posted_at
-                        ) VALUES (?, ?, ?, ?, 'fin', 'bank_rule', ?, 'bank_rule', ?, ?, NOW(), 'posted', ?, NOW())"
+                        ) VALUES (?, ?, ?, ?, 'fin', 'bank_tx', ?, 'bank_rule', ?, ?, NOW(), 'posted', ?, NOW())"
                     );
                     $stmtJ->execute([
                         $companyId,

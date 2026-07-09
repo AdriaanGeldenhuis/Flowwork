@@ -88,24 +88,34 @@ function fw_bank_normalize_amount(string $raw): ?float
  */
 function fw_bank_parse_date(string $rawDate): ?string
 {
-    $dateObj = DateTime::createFromFormat('Y-m-d', $rawDate);
-    if ($dateObj && $dateObj->format('Y-m-d') === $rawDate) {
-        return $rawDate;
+    $rawDate = trim($rawDate);
+    // Strict per-format parsing. createFromFormat('d/m/Y', '01/02/26') otherwise
+    // silently reads the 2-digit '26' as year 0026 (PHP's Y token is greedy) and
+    // the 2-digit branch is never reached — Standard Bank statements (2-digit
+    // years) were mis-dated to year 26, so every row sorted out of view and was
+    // blocked by period locks. Require a 4-digit year (>= 1000) for the Y-token
+    // formats; the y-token formats accept the century-pivoted 2-digit year. A
+    // parse warning/error (e.g. an overflowed month in m/d) rejects the value.
+    $formats = ['Y-m-d' => 1000, 'd/m/Y' => 1000, 'm/d/Y' => 1000, 'd/m/y' => 100, 'm/d/y' => 100];
+    foreach ($formats as $fmt => $minYear) {
+        $d = DateTime::createFromFormat('!' . $fmt, $rawDate);
+        $errs = DateTime::getLastErrors();
+        $clean = ($errs === false) || ($errs['warning_count'] === 0 && $errs['error_count'] === 0);
+        if ($d && $clean && (int)$d->format('Y') >= $minYear) {
+            return $d->format('Y-m-d');
+        }
     }
-    $dateObj = DateTime::createFromFormat('d/m/Y', $rawDate);
-    if (!$dateObj) {
-        $dateObj = DateTime::createFromFormat('m/d/Y', $rawDate);
-    }
-    return $dateObj ? $dateObj->format('Y-m-d') : null;
+    return null;
 }
 
 try {
     $DB->beginTransaction();
 
     // Verify bank account belongs to company
-    $stmt = $DB->prepare("SELECT name FROM gl_bank_accounts WHERE id = ? AND company_id = ?");
+    $stmt = $DB->prepare("SELECT name, last_reconciled_date FROM gl_bank_accounts WHERE id = ? AND company_id = ?");
     $stmt->execute([$bankAccountId, $companyId]);
     $bankAccount = $stmt->fetch();
+    $lastReconciled = $bankAccount['last_reconciled_date'] ?? null;
 
     if (!$bankAccount) {
         throw new Exception('Bank account not found');
@@ -134,6 +144,7 @@ try {
     $file = fopen($_FILES['csv_file']['tmp_name'], 'r');
     $rows = [];
     $skippedInvalid = 0;
+    $skippedReconciled = 0;
     $isFirstRow = true;
 
     while (($row = fgetcsv($file)) !== false) {
@@ -160,6 +171,14 @@ try {
                 continue; // Header row — discard without counting as skipped
             }
             $skippedInvalid++;
+            continue;
+        }
+
+        // Do not import a row into a CLOSED reconciliation period — back-dating a
+        // transaction on/before the last reconciled date would silently change an
+        // already-reconciled balance.
+        if ($lastReconciled && $txDate <= $lastReconciled) {
+            $skippedReconciled++;
             continue;
         }
 
@@ -248,7 +267,7 @@ try {
         }
     }
 
-    $skippedCount = $skippedInvalid + $skippedExisting;
+    $skippedCount = $skippedInvalid + $skippedExisting + $skippedReconciled;
 
     // Update bank account balance
     $stmt = $DB->prepare("
@@ -283,7 +302,8 @@ try {
             'imported'         => $importCount,
             'skipped'          => $skippedCount,
             'skipped_existing' => $skippedExisting,
-            'skipped_invalid'  => $skippedInvalid
+            'skipped_invalid'  => $skippedInvalid,
+            'skipped_reconciled' => $skippedReconciled
         ]
     ]);
 

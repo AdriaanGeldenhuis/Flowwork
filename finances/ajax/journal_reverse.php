@@ -38,13 +38,33 @@ if ($reversalDateIn !== '') {
 
 try {
     // Verify the journal is posted and not already reversed
-    $stmt = $DB->prepare("SELECT status, reversed_by_journal_id, entry_date, description FROM journal_entries WHERE id = ? AND company_id = ?");
+    $stmt = $DB->prepare("SELECT status, reversed_by_journal_id, entry_date, description, module, ref_type FROM journal_entries WHERE id = ? AND company_id = ?");
     $stmt->execute([$journalId, $companyId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) { json_error('Journal not found', 404); }
     if ($row['status'] !== 'posted') { json_error('Only posted journals can be reversed', 409); }
     if ($row['reversed_by_journal_id']) { json_error('Journal has already been reversed (by #' . $row['reversed_by_journal_id'] . ')', 409); }
+
+    // System/engine-owned journals must be backed out through their own flow —
+    // void/revert an invoice, undo a bank match, unfile a VAT return, reopen a
+    // year-end close. A blind manual reversal here would desync the owning
+    // document (and, for vat_settle / year_end, the filing / close state) from
+    // the GL. Gate on BOTH module and ref_type: some engine journals are
+    // identified only by module — year_end has no ref_type, payroll uses
+    // ref_type='pay_run', bad-debt write-offs use module='bad_debt', and the
+    // VAT-settlement clearing journal uses module='vat_settle' with the SHARED
+    // ref_type='vat_adjustment'. Manual journals (module='manual', ref_type NULL)
+    // and manual VAT adjustments (module='vat_adjust') stay reversible.
+    $ENGINE_MODULES = ['payroll', 'vat_settle', 'year_end', 'bad_debt'];
+    $ENGINE_REF_TYPES = [
+        'invoice', 'payment', 'credit_note', 'ap_bill', 'ap_payment', 'vendor_credit',
+        'pay_run', 'depreciation', 'fa_disposal', 'bank_tx', 'reversal', 'invoice_write_off',
+    ];
+    if (in_array($row['module'], $ENGINE_MODULES, true) || in_array($row['ref_type'], $ENGINE_REF_TYPES, true)) {
+        $label = $row['ref_type'] ?: $row['module'];
+        json_error('This is a system journal (' . $label . '). Reverse it through its own flow (void / undo-match / unfile / reopen), not manual reversal.', 409);
+    }
 
     // Resolve the reversal date: explicit payload date wins; otherwise use the
     // original entry_date when its period is still open, else fall back to today

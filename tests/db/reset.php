@@ -12,7 +12,7 @@ $tables = [
     'credit_note_lines', 'credit_note_allocations', 'credit_notes',
     'payment_allocations', 'payments',
     'ap_bill_lines', 'ap_bills', 'ap_payment_allocations', 'ap_payments',
-    'ap_match_links', 'vendor_credits', 'vendor_credit_allocations',
+    'ap_match_links', 'vendor_credit_lines', 'vendor_credits', 'vendor_credit_allocations',
     'inventory_movements',
     'gl_vat_periods', 'gl_period_locks',
     'pay_run_employees', 'pay_runs',

@@ -49,7 +49,7 @@ class ReversalService
         }
         try {
             $stmt = $this->db->prepare(
-                "SELECT id, entry_date, description, reversed_by_journal_id
+                "SELECT id, entry_date, description, module, reversed_by_journal_id
                    FROM journal_entries WHERE id = ? AND company_id = ? FOR UPDATE"
             );
             $stmt->execute([$journalId, $this->companyId]);
@@ -78,14 +78,20 @@ class ReversalService
             }
             $desc = 'Reversal of #' . $journalId . ' - ' . $reason;
             $reference = 'REV-' . $journalId;
+            // Carry the ORIGINAL journal's module onto the reversal. VatCalculator
+            // buckets VAT by module (vat_settle is excluded; vat_adjust / bad_debt
+            // are measured separately), so hardcoding module='fin' put the reversal
+            // of a VAT-settlement/adjustment/bad-debt journal in the wrong bucket
+            // and corrupted a later period's VAT201.
+            $module = $hdr['module'] ?: 'fin';
             $ins = $this->db->prepare(
                 "INSERT INTO journal_entries
                     (company_id, entry_date, reference, description, module, ref_type, ref_id,
                      source_type, source_id, status, created_by, created_at, posted_by, posted_at,
                      reverses_journal_id)
-                 VALUES (?, ?, ?, ?, 'fin', 'reversal', ?, 'reversal', ?, 'posted', ?, NOW(), ?, NOW(), ?)"
+                 VALUES (?, ?, ?, ?, ?, 'reversal', ?, 'reversal', ?, 'posted', ?, NOW(), ?, NOW(), ?)"
             );
-            $ins->execute([$this->companyId, $date, $reference, $desc, $journalId, $journalId, $userId, $userId, $journalId]);
+            $ins->execute([$this->companyId, $date, $reference, $desc, $module, $journalId, $journalId, $userId, $userId, $journalId]);
             $revId = (int)$this->db->lastInsertId();
 
             // Swap debit/credit; preserve every analytic column so reversals

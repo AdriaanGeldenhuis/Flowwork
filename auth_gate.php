@@ -3,6 +3,31 @@
 require_once __DIR__ . '/init.php';
 require_once __DIR__ . '/includes/companies.php';
 
+// Emit JSON (not a 302 redirect) for XHR / JSON callers so an expired session
+// inside a fetch() surfaces as a proper 401 instead of the browser following the
+// redirect to the HTML login page and the client throwing a misleading "Network
+// error" when it tries to JSON-parse it. Page loads (no XHR/JSON signal) still
+// redirect as before.
+if (!function_exists('fw_wants_json')) {
+    function fw_wants_json(): bool {
+        $xhr = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest';
+        return $xhr || stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false;
+    }
+}
+if (!function_exists('fw_auth_fail')) {
+    function fw_auth_fail(string $redirectUrl): void {
+        if (fw_wants_json()) {
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => false, 'error' => 'Your session has expired. Please sign in again.']);
+            exit;
+        }
+        if (function_exists('redirect')) { redirect($redirectUrl); }
+        header('Location: ' . $redirectUrl);
+        exit;
+    }
+}
+
 if (empty($_SESSION['user_id'])) {
   // Try auto-login via "Remember Me" cookie
   if (!empty($_COOKIE['fw_remember'])) {
@@ -61,8 +86,7 @@ if (empty($_SESSION['user_id'])) {
 
   // If still no session after remember-me attempt, redirect to login
   if (empty($_SESSION['user_id'])) {
-    header('Location: /login.php?redirect=' . urlencode($_SERVER['REQUEST_URI']));
-    exit;
+    fw_auth_fail('/login.php?redirect=' . urlencode($_SERVER['REQUEST_URI']));
   }
 }
 
@@ -75,21 +99,21 @@ $user = $stmt->fetch();
 if (!$user) {
   session_unset();
   session_destroy();
-  redirect('/login.php?msg=invalid_user');
+  fw_auth_fail('/login.php?msg=invalid_user');
 }
 
 // Token mismatch = logged in elsewhere
 if (empty($_SESSION['sess_token']) || $user['session_token'] !== $_SESSION['sess_token']) {
   session_unset();
   session_destroy();
-  redirect('/login.php?msg=session_expired');
+  fw_auth_fail('/login.php?msg=session_expired');
 }
 
 // Suspended user
 if ($user['status'] !== 'active') {
   session_unset();
   session_destroy();
-  redirect('/login.php?msg=account_suspended');
+  fw_auth_fail('/login.php?msg=account_suspended');
 }
 
 // Set company context — honour an active-company switch if the user

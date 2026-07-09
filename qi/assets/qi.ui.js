@@ -7,6 +7,15 @@
     window.fetch = function(url, options) {
         options = options || {};
         const method = (options.method || 'GET').toUpperCase();
+        // Mark every request as XHR so the server emits 401/403 JSON (not a 302
+        // to an HTML page) when the session expires or a role is denied — a
+        // redirect would be JSON-parsed as HTML and surface as "Network error".
+        if (options.headers instanceof Headers) {
+            if (!options.headers.has('X-Requested-With')) options.headers.set('X-Requested-With', 'XMLHttpRequest');
+        } else {
+            options.headers = options.headers || {};
+            if (!options.headers['X-Requested-With']) options.headers['X-Requested-With'] = 'XMLHttpRequest';
+        }
         if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
             if (csrfToken) {

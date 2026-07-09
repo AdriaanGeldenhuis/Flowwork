@@ -341,6 +341,22 @@ class PostingService
             if (!$invoice) {
                 throw new Exception('Invoice not found');
             }
+            // A soft-deleted or cancelled invoice must never inject revenue+VAT
+            // into the GL — this is the central safety net behind the "Sync to
+            // GL" path (finances/ajax/ar_sync_invoice.php), which posts any
+            // invoice whose journal_id is NULL. Draft and the terminal
+            // write-off/refund statuses are intentionally NOT blocked here: the
+            // GL-rebuild tool (finances/tools/repost_all.php) legitimately
+            // reposts issued invoices that were later written off/refunded (the
+            // original sale really happened), and the issue flow reaches this
+            // method only after flipping draft -> sent. The sync endpoint layers
+            // the stricter "only issued statuses" gate on top.
+            if (!empty($invoice['deleted_at'])) {
+                throw new Exception('Cannot post a deleted invoice (#' . $invoiceId . ')');
+            }
+            if ($invoice['status'] === 'cancelled') {
+                throw new Exception('Cannot post a cancelled invoice (#' . $invoiceId . ')');
+            }
             $entryDate = $invoice['issue_date'] ?? date('Y-m-d');
             if ($this->periodService->isLocked($entryDate)) {
                 throw new Exception('Cannot post to locked period (' . $entryDate . ')');
@@ -733,6 +749,138 @@ class PostingService
         });
     }
 
+    /**
+     * Post a customer cash refund — the mirror of postCustomerPayment. The
+     * original receipt booked Dr Bank / Cr AR, so returning the cash books
+     * Dr AR (reinstating the receivable) / Cr Bank (cash out). Without this the
+     * refund lived only in the AR subledger (a negative payment + allocation):
+     * the receipt's Dr Bank / Cr AR stayed posted, so the GL bank was overstated
+     * by the cash paid out and AR control no longer tied to the invoice.
+     *
+     * qi/ajax/refund_invoice.php stores the refund payment and its allocation as
+     * NEGATIVE amounts (so the subledger nets and the payments-basis VAT201
+     * claws back the receipt's output tax via the negative allocation); here we
+     * post the absolute values as positive debit/credit legs so journal_lines
+     * stay non-negative. No VAT leg is booked: this endpoint reopens balance_due
+     * (the sale still stands — the customer still owes), so the s21/credit-note
+     * VAT reversal is a separate flow; the receipt's recognised VAT is unwound by
+     * the negative allocation, not by this journal. FX is symmetric with a
+     * receipt: AR is reinstated at each invoice's captured rate, Bank leaves at
+     * the refund-date rate, and the difference is realised FX gain/loss.
+     */
+    public function postCustomerRefund(int $paymentId): void
+    {
+        $this->withTransaction(function () use ($paymentId) {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM payments WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE"
+            );
+            $stmt->execute([$paymentId, $this->companyId]);
+            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$payment) {
+                throw new Exception('Refund payment not found');
+            }
+            $entryDate = $payment['payment_date'] ?? date('Y-m-d');
+            if ($this->periodService->isLocked($entryDate)) {
+                throw new Exception('Cannot post refund to locked period (' . $entryDate . ')');
+            }
+            if (!empty($payment['journal_id'])) {
+                $this->supersedeJournal((int)$payment['journal_id'],
+                    'Refund #' . $paymentId . ' re-posted', $entryDate);
+            }
+
+            $stmt = $this->db->prepare(
+                "SELECT pa.amount, i.customer_id, i.invoice_number, i.currency, i.exchange_rate
+                   FROM payment_allocations pa
+                   LEFT JOIN invoices i ON pa.invoice_id = i.id
+                  WHERE pa.payment_id = ?"
+            );
+            $stmt->execute([$paymentId]);
+            $allocs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$allocs) {
+                throw new Exception('Refund has no allocations');
+            }
+
+            $bankCode = $this->bankCodeFor($payment['bank_account_id'] ?? null);
+            $arCode = $this->accounts->code('finance_ar_account_id');
+            $reference = $payment['reference'] ?: ('REF' . $paymentId);
+
+            // Dr AR at each invoice's captured rate (reinstate the receivable).
+            $journalLines = [];
+            $arZar = 0.0;
+            $docTotal = 0.0;
+            foreach ($allocs as $al) {
+                [, $rate] = $this->resolveFx($al);
+                $abs = abs((float)$al['amount']);
+                $amt = round($abs * $rate, 2);
+                $arZar += $amt;
+                $docTotal += $abs;
+                $journalLines[] = [
+                    'account_code' => $arCode,
+                    'description'  => 'Accounts Receivable (refund)',
+                    'debit'        => $amt,
+                    'credit'       => 0,
+                    'customer_id'  => $al['customer_id'] ?: null,
+                    'reference'    => $al['invoice_number'] ?: $reference,
+                ];
+            }
+
+            // Cr Bank at the refund-date rate when a foreign invoice was
+            // refunded, otherwise at the AR total.
+            $paymentRate = (float)($payment['exchange_rate'] ?? 0);
+            $bankZar = $arZar;
+            if ($paymentRate > 0) {
+                $candidate = round($docTotal * $paymentRate, 2);
+                foreach ($allocs as $al) {
+                    [$cur] = $this->resolveFx($al);
+                    if ($cur !== 'ZAR') {
+                        $bankZar = $candidate;
+                        break;
+                    }
+                }
+            }
+            array_unshift($journalLines, [
+                'account_code' => $bankCode,
+                'description'  => 'Bank (refund)',
+                'debit'        => 0,
+                'credit'       => $bankZar,
+                'reference'    => $reference,
+            ]);
+
+            // Realised FX on settlement — mirror of postCustomerPayment with the
+            // signs flipped because Bank is the CREDIT leg here: paying out more
+            // ZAR than the receivable reinstated is a loss.
+            $fxDiff = round($bankZar - $arZar, 2);
+            if (abs($fxDiff) >= 0.01) {
+                $journalLines[] = $fxDiff > 0
+                    ? [
+                        'account_code' => $this->accounts->code('finance_fx_loss_account_id'),
+                        'description'  => 'Realised FX loss on refund',
+                        'debit'        => $fxDiff,
+                        'credit'       => 0,
+                    ]
+                    : [
+                        'account_code' => $this->accounts->code('finance_fx_gain_account_id'),
+                        'description'  => 'Realised FX gain on refund',
+                        'debit'        => 0,
+                        'credit'       => -$fxDiff,
+                    ];
+            }
+
+            $journalId = $this->insertJournal([
+                'entry_date'  => $entryDate,
+                'reference'   => $reference,
+                'description' => 'Customer Refund',
+                'ref_type'    => 'payment',
+                'ref_id'      => $paymentId,
+                'source_type' => 'refund',
+                'source_id'   => $paymentId,
+            ], $journalLines);
+
+            $this->db->prepare("UPDATE payments SET journal_id = ? WHERE id = ? AND company_id = ?")
+                ->execute([$journalId, $paymentId, $this->companyId]);
+        });
+    }
+
     /** Back-compat alias used by retargeted QI callers. */
     public function postPayment(int $paymentId): void
     {
@@ -1072,13 +1220,20 @@ class PostingService
     {
         $this->withTransaction(function () use ($billId, $allowRepost) {
             $stmt = $this->db->prepare(
-                "SELECT id, supplier_id, issue_date, vendor_invoice_number, subtotal, tax, total, journal_id, status
+                "SELECT id, supplier_id, issue_date, vendor_invoice_number, subtotal, tax, total, journal_id, status, currency
                    FROM ap_bills WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE"
             );
             $stmt->execute([$billId, $this->companyId]);
             $bill = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$bill) {
                 throw new Exception('AP bill not found');
+            }
+            // AP FX is unimplemented: this method posts the bill's face values as
+            // ZAR. A non-ZAR bill would mis-state the expense, AP control and
+            // input VAT, so refuse to post it (bill_create rejects it up front).
+            $billCurrency = strtoupper(trim((string)($bill['currency'] ?? 'ZAR'))) ?: 'ZAR';
+            if ($billCurrency !== 'ZAR') {
+                throw new Exception('Cannot post a ' . $billCurrency . ' bill — foreign-currency AP is not supported yet');
             }
             if ($bill['status'] === 'paid') {
                 throw new Exception('Bill is already paid — reposting a paid bill is not allowed');

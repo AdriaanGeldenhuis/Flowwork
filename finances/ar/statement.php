@@ -133,11 +133,19 @@ $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (end) params.append('end_date', end);
         const container = document.getElementById('statementResult');
         container.innerHTML = '<div class="fw-finance__loading">Generating statement...</div>';
+        // Escape all server-supplied strings before building innerHTML — invoice
+        // numbers, references and descriptions are user-editable stored values, so
+        // interpolating them raw was a stored-XSS vector.
+        const esc = function (s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        };
         try {
             const res = await fetch('/finances/ajax/ar_statement.php?' + params.toString());
             const data = await res.json();
             if (!data.ok) {
-                container.innerHTML = '<div class="fw-finance__error">Error: ' + (data.error || 'Unknown error') + '</div>';
+                container.innerHTML = '<div class="fw-finance__error">Error: ' + esc(data.error || 'Unknown error') + '</div>';
                 return;
             }
             const opening = parseFloat(data.opening_balance || 0);
@@ -152,10 +160,10 @@ $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 html += '<tbody>';
                 lines.forEach(function(row) {
                     html += '<tr>';
-                    html += '<td>' + row.date + '</td>';
-                    html += '<td>' + row.type + '</td>';
-                    html += '<td>' + row.reference + '</td>';
-                    html += '<td>' + row.description + '</td>';
+                    html += '<td>' + esc(row.date) + '</td>';
+                    html += '<td>' + esc(row.type) + '</td>';
+                    html += '<td>' + esc(row.reference) + '</td>';
+                    html += '<td>' + esc(row.description) + '</td>';
                     html += '<td class="debit">' + (row.debit ? parseFloat(row.debit).toFixed(2) : '') + '</td>';
                     html += '<td class="credit">' + (row.credit ? parseFloat(row.credit).toFixed(2) : '') + '</td>';
                     html += '<td class="balance">' + parseFloat(row.balance).toFixed(2) + '</td>';

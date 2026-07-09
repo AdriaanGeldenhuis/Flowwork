@@ -41,6 +41,14 @@ if (empty($header['supplier_id']) || empty($header['invoice_number']) || empty($
 }
 
 $supplierId  = (int)$header['supplier_id'];
+// The supplier must belong to THIS company — otherwise a crafted payload could
+// create a bill against another tenant's supplier.
+$__sc = $DB->prepare("SELECT id FROM crm_accounts WHERE id = ? AND company_id = ? AND type = 'supplier'");
+$__sc->execute([$supplierId, $companyId]);
+if (!$__sc->fetchColumn()) {
+    echo json_encode(['ok' => false, 'error' => 'Invalid supplier']);
+    exit;
+}
 $invoiceNo   = trim($header['invoice_number']);
 $invoiceDate = $header['invoice_date'];
 
@@ -56,6 +64,14 @@ if ($dueDate && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueDate)) {
 }
 $currency    = $header['currency'] ?? 'ZAR';
 $notes       = $header['notes'] ?? null;
+
+// Foreign-currency AP is not implemented: postApBill has no FX conversion and
+// would post the foreign face value as ZAR, mis-stating the expense, AP control
+// and input VAT (ap_payments.exchange_rate is never captured either). Reject
+// non-ZAR bills until AP FX is built (postApBill enforces the same guard).
+if (strtoupper(trim((string)$currency)) !== 'ZAR' && trim((string)$currency) !== '') {
+    json_error('Foreign-currency bills are not supported yet — capture the bill in ZAR.');
+}
 
 // Recompute header totals from the lines server-side; never trust the
 // client-supplied subtotal/tax/total. Reject if they disagree by > 0.01.

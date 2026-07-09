@@ -36,7 +36,10 @@ try {
     // when their settling payment falls after the as-of date.
     $stmt = $DB->prepare("
         SELECT i.id, i.customer_id, i.due_date,
-               (i.total - COALESCE(pay.paid_tot, 0) - COALESCE(cred.cred_tot, 0)) * COALESCE(NULLIF(i.exchange_rate,0),1) AS balance_zar
+               (i.total - COALESCE(pay.paid_tot, 0) - COALESCE(cred.cred_tot, 0)
+                  - CASE WHEN i.write_off_at IS NOT NULL AND DATE(i.write_off_at) <= ?
+                         THEN COALESCE(i.write_off_amount, 0) ELSE 0 END
+               ) * COALESCE(NULLIF(i.exchange_rate,0),1) AS balance_zar
         FROM invoices i
         LEFT JOIN (
             SELECT pa.invoice_id, SUM(pa.amount) AS paid_tot
@@ -58,7 +61,9 @@ try {
           AND i.status NOT IN ('draft','cancelled','written_off','uncollectible','refunded')
           AND i.issue_date <= ?
     ");
-    $stmt->execute([$companyId, $asOf, $companyId, $asOf, $companyId, $asOf]);
+    // First ? is the write-off as-at gate in the SELECT; the rest follow the
+    // subqueries and the outer WHERE in order.
+    $stmt->execute([$asOf, $companyId, $asOf, $companyId, $asOf, $companyId, $asOf]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $customers = [];

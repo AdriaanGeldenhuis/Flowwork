@@ -16,8 +16,36 @@ header('Content-Type: application/json');
 $companyId = (int)$_SESSION['company_id'];
 
 $status = isset($_GET['status']) ? trim($_GET['status']) : '';
+// Free-text search now runs SERVER-side (invoice # or supplier name) so it sees
+// the whole table — the old client-side row filter only searched the first 200.
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+// Pagination (mirrors journal_list.php)
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = max(1, min(100, (int)($_GET['per_page'] ?? 25)));
+$offset  = ($page - 1) * $perPage;
 
 try {
+    // Shared filter for both the count and the page query.
+    $where  = "WHERE b.company_id = ?";
+    $params = [$companyId];
+    if ($status !== '') {
+        $where .= " AND b.status = ?";
+        $params[] = $status;
+    }
+    if ($search !== '') {
+        $where .= " AND (b.vendor_invoice_number LIKE ? OR c.name LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+
+    $countStmt = $DB->prepare(
+        "SELECT COUNT(*) FROM ap_bills b LEFT JOIN crm_accounts c ON b.supplier_id = c.id $where"
+    );
+    $countStmt->execute($params);
+    $total = (int)$countStmt->fetchColumn();
+    $totalPages = max(1, (int)ceil($total / $perPage));
+
     // Query bills with aggregated paid and credited amounts to compute balance
     $query = "SELECT
                 b.id,
@@ -37,18 +65,16 @@ try {
                 ) AS balance
             FROM ap_bills b
             LEFT JOIN crm_accounts c ON b.supplier_id = c.id
-            WHERE b.company_id = ?";
-    $params = [$companyId];
-    if ($status !== '') {
-        $query .= " AND b.status = ?";
-        $params[] = $status;
-    }
-    $query .= " ORDER BY b.issue_date DESC
-                LIMIT 200";
+            $where
+            ORDER BY b.issue_date DESC, b.id DESC
+            LIMIT $perPage OFFSET $offset";
     $stmt = $DB->prepare($query);
     $stmt->execute($params);
     $bills = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    echo json_encode(['ok' => true, 'data' => $bills]);
+    echo json_encode([
+        'ok' => true, 'data' => $bills,
+        'page' => $page, 'per_page' => $perPage, 'total' => $total, 'total_pages' => $totalPages
+    ]);
 } catch (Exception $e) {
     error_log('AP bill list error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => 'Failed to load bills']);

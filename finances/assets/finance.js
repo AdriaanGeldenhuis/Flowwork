@@ -166,6 +166,39 @@ window.FIN3D = window.FIN3D || {};
     }
   };
 
+  // ========== IN-FLIGHT / IDEMPOTENCY HELPERS ==========
+  // Standardised "disable during request" wrapper. Disables the button (with a
+  // busy label), runs the async work, and always re-enables in finally — so a
+  // money submit can't be double-fired by an impatient double-click.
+  window.FinanceUI = window.FinanceUI || {};
+  window.FinanceUI.busy = async function(btn, fn, busyLabel) {
+    if (btn && btn.disabled) return; // already in flight
+    let original;
+    if (btn) {
+      original = btn.innerHTML;
+      btn.disabled = true;
+      if (busyLabel) btn.innerHTML = busyLabel;
+    }
+    try {
+      return await fn();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        if (busyLabel) btn.innerHTML = original;
+      }
+    }
+  };
+  // Best-effort idempotency nonce for retryable POSTs. crypto.randomUUID when
+  // available, else a timestamp+random fallback.
+  window.FinanceUI.nonce = function() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+    } catch (e) { /* fall through */ }
+    return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  };
+
   // ========== FORMATTERS & HELPERS (contract — do not alter) ==========
 
   // HTML Entity Escaping (XSS protection for dynamic table rendering)

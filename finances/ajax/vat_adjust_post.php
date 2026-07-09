@@ -33,6 +33,15 @@ if (!$companyId || !$userId) {
 $input = json_decode(file_get_contents('php://input'), true);
 $periodId = $input['period_id'] ?? null;
 $lines    = $input['lines'] ?? [];
+// Optional client-supplied idempotency nonce. The adjustment modal generates
+// one token per open and re-sends it on retry, so a double-click (or a network
+// retry) resolves to the SAME journal instead of posting a second adjustment.
+// Sanitised to a short token and stamped into the journal reference (the only
+// dedup key available without a schema change).
+$clientRef = '';
+if (isset($input['client_ref']) && is_string($input['client_ref'])) {
+    $clientRef = substr(preg_replace('/[^A-Za-z0-9_-]/', '', $input['client_ref']), 0, 40);
+}
 
 if (!$periodId || !is_numeric($periodId)) {
     echo json_encode(['ok' => false, 'error' => 'Period ID is required']);
@@ -44,8 +53,12 @@ if (!is_array($lines) || count($lines) === 0) {
 }
 
 try {
-    // Fetch period and validate status
-    $stmt = $DB->prepare("SELECT * FROM gl_vat_periods WHERE id = ? AND company_id = ?");
+    // One transaction from the period read onward. Locking the period row
+    // FOR UPDATE serialises concurrent submits: a double-click's second request
+    // blocks here until the first commits, so the two can no longer interleave
+    // and each post an independent adjustment journal.
+    $DB->beginTransaction();
+    $stmt = $DB->prepare("SELECT * FROM gl_vat_periods WHERE id = ? AND company_id = ? FOR UPDATE");
     $stmt->execute([$periodId, $companyId]);
     $period = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$period) {
@@ -54,6 +67,27 @@ try {
     // Only allow adjustments on prepared or already-adjusted periods
     if (!in_array($period['status'], ['prepared', 'adjusted'])) {
         throw new Exception('Adjustments are only allowed on prepared or adjusted periods');
+    }
+
+    // Reference carries the idempotency nonce when supplied. Under the row lock
+    // above, a duplicate submit sees the journal the first submit already wrote
+    // and short-circuits to it — the endpoint is now idempotent per nonce.
+    $reference = $clientRef !== '' ? ('VAT Adj ' . $clientRef) : 'VAT Adjustment';
+    if ($clientRef !== '') {
+        $dup = $DB->prepare(
+            "SELECT id FROM journal_entries
+              WHERE company_id = ? AND module = 'vat_adjust'
+                AND ref_type = 'vat_period' AND ref_id = ?
+                AND reference = ? AND reversed_by_journal_id IS NULL
+              LIMIT 1"
+        );
+        $dup->execute([$companyId, $periodId, $reference]);
+        $dupId = $dup->fetchColumn();
+        if ($dupId !== false) {
+            $DB->commit();
+            echo json_encode(['ok' => true, 'data' => ['journal_id' => (int)$dupId, 'idempotent' => true]]);
+            exit;
+        }
     }
 
     // Resolve VAT output and input account codes
@@ -110,10 +144,7 @@ try {
 
     // Determine entry date: use period_end for consistency
     $entryDate = $period['period_end'];
-    $reference = 'VAT Adjustment';
     $memo      = 'VAT adjustment for period ' . $period['period_start'] . ' to ' . $period['period_end'];
-
-    $DB->beginTransaction();
 
     // Post through the engine choke point: period-lock check, integer-cents
     // balance assertion, account-existence check, audit trail, status

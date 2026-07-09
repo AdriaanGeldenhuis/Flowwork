@@ -95,7 +95,7 @@ try {
     }
     foreach ($perBill as $bId => $amt) {
         $stmtBal = $DB->prepare(
-            "SELECT b.total, b.supplier_id,
+            "SELECT b.total, b.supplier_id, b.status, b.journal_id,
                     COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = ?), 0) AS paid,
                     COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = ?), 0) AS credited
              FROM ap_bills b WHERE b.id = ? AND b.company_id = ? FOR UPDATE"
@@ -107,6 +107,14 @@ try {
         }
         if ((int)$row['supplier_id'] !== $supplierId) {
             throw new Exception('Bill #' . $bId . ' belongs to a different supplier than this payment');
+        }
+        // The bill must already be posted to the GL (Cr AP + expense/input VAT).
+        // Paying an unposted draft would book Dr AP / Cr Bank with no AP credit
+        // behind it — AP control goes debit, the expense and input VAT are never
+        // recognised, and once the allocation settles the balance the bill flips
+        // to 'paid', after which postApBill permanently refuses to post it.
+        if (!in_array($row['status'], ['posted', 'paid'], true) || empty($row['journal_id'])) {
+            throw new Exception('Bill #' . $bId . ' has not been posted to the GL yet — post the bill before recording a payment against it');
         }
         $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));
         if ($amt > $remaining + 0.01) {

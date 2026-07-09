@@ -88,7 +88,7 @@ try {
     // Validate each bill: must exist in this company, belong to the credit's
     // supplier, and have enough remaining balance. Rows locked FOR UPDATE.
     $stmtBal = $DB->prepare(
-        "SELECT b.total, b.supplier_id,
+        "SELECT b.total, b.supplier_id, b.status, b.journal_id,
                 COALESCE((SELECT SUM(amount) FROM ap_payment_allocations WHERE bill_id = b.id), 0) AS paid,
                 COALESCE((SELECT SUM(amount) FROM vendor_credit_allocations WHERE bill_id = b.id), 0) AS credited
          FROM ap_bills b WHERE b.id = ? AND b.company_id = ? FOR UPDATE"
@@ -104,6 +104,15 @@ try {
         if ((int)$row['supplier_id'] !== $creditSupplierId) {
             $DB->rollBack();
             echo json_encode(['ok' => false, 'error' => 'Bill #' . $bId . ' belongs to a different supplier than this credit']);
+            exit;
+        }
+        // The bill must already be posted (Cr AP behind it). Crediting an
+        // unposted draft would debit AP with no AP credit behind it, and once
+        // the allocation settles the balance the bill flips to 'paid', after
+        // which postApBill permanently refuses to post it.
+        if (!in_array($row['status'], ['posted', 'paid'], true) || empty($row['journal_id'])) {
+            $DB->rollBack();
+            echo json_encode(['ok' => false, 'error' => 'Bill #' . $bId . ' has not been posted to the GL yet — post the bill before applying a credit to it']);
             exit;
         }
         $remaining = floatval($row['total']) - (floatval($row['paid']) + floatval($row['credited']));

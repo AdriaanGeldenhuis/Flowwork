@@ -93,9 +93,13 @@ try {
             ]);
             exit;
         }
-        // Verified: store the reconciled balance (equals the computed balance)
-        $stmtUpd = $DB->prepare("UPDATE gl_bank_accounts SET last_reconciled_date = ?, current_balance_cents = ? WHERE id = ? AND company_id = ?");
-        $stmtUpd->execute([$newDate, $balanceCents, $bankAccountId, $companyId]);
+        // Verified. Advance ONLY the reconciled date — do NOT overwrite
+        // current_balance_cents with the as-at-statement-date figure. That figure
+        // excludes any transactions dated after the statement date, so writing it
+        // here rewound the live book balance whenever later transactions already
+        // existed. Import keeps current_balance_cents = opening + SUM(all tx).
+        $stmtUpd = $DB->prepare("UPDATE gl_bank_accounts SET last_reconciled_date = ? WHERE id = ? AND company_id = ?");
+        $stmtUpd->execute([$newDate, $bankAccountId, $companyId]);
     } else {
         $stmtUpd = $DB->prepare("UPDATE gl_bank_accounts SET last_reconciled_date = ? WHERE id = ? AND company_id = ?");
         $stmtUpd->execute([$newDate, $bankAccountId, $companyId]);

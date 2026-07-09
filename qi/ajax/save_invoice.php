@@ -5,6 +5,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
 require_once __DIR__ . '/../lib/Currencies.php';
 
@@ -335,8 +336,9 @@ try {
     $DB->rollBack();
     error_log("Save invoice error: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
     if ($e instanceof PDOException) {
-        // Include the SQL error code for debugging
-        $safeMsg = 'A database error occurred: ' . $e->getMessage();
+        // Never leak the raw SQL/PDO message to the client (it can expose schema,
+        // data and query structure). It is already logged above for debugging.
+        $safeMsg = 'A database error occurred. Please try again.';
     } else {
         $safeMsg = $e->getMessage();
     }

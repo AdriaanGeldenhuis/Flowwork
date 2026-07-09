@@ -54,9 +54,17 @@ for f in $(ls "$REPO_ROOT/Migrations"/*.sql | sort); do
     echo "    OK   $name"
   else
     case "$name" in
-      2026-07-*)
-        # The finance remediation migrations are the artefact under test —
-        # a failure here must fail the setup, not be skipped silently.
+      *finance-sars-*)
+        # The finance-sars remediation migrations are the artefact under test —
+        # a failure here must fail the setup, not be skipped silently. (They use
+        # idempotent `IF NOT EXISTS` DDL so a legitimate re-run never collides.)
+        # Scope this to the finance-sars files ONLY: the other 2026-07 migrations
+        # (board-performance, crm-*, doc-sequences, pin-legacy) legitimately
+        # collide with keys/rows already applied by hand in the production base
+        # dump and must fail-soft like every other non-finance migration below.
+        # The old `2026-07-*` glob treated those as hard failures, aborting setup
+        # at board-performance (Duplicate key 'uq_item_column') before any
+        # finance-sars migration ran — leaving the whole suite unprovisionable.
         echo "    FAIL $name :: $(echo "$out" | head -1)" >&2
         exit 1
         ;;

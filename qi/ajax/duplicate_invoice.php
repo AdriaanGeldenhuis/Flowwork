@@ -3,6 +3,7 @@
 // Duplicate an existing invoice as a new draft.
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
 
 header('Content-Type: application/json');
@@ -57,13 +58,16 @@ try {
     $ins = $DB->prepare("
         INSERT INTO invoice_lines (
             invoice_id, item_description, quantity, unit, unit_price,
-            discount, tax_rate, tax_code_id, line_total, sort_order, gl_account_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            discount, tax_rate, tax_code_id, line_total, sort_order, gl_account_id, inventory_item_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     foreach ($lines as $l) {
+        // Carry inventory_item_id — without it the duplicated/converted invoice
+        // has no stock link, so posting books no COGS / stock relief.
         $ins->execute([
             $newId, $l['item_description'], $l['quantity'], $l['unit'], $l['unit_price'],
             $l['discount'], $l['tax_rate'], $l['tax_code_id'] ?? null, $l['line_total'], $l['sort_order'], $l['gl_account_id'],
+            $l['inventory_item_id'] ?? null,
         ]);
     }
 

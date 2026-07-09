@@ -64,13 +64,21 @@ try {
     if (!empty($tx['matched']) && intval($tx['matched']) === 1) {
         throw new Exception('Transaction already matched');
     }
-    // Validate the other side account code exists
-    $stmt = $DB->prepare("SELECT account_code FROM gl_accounts WHERE company_id = ? AND account_code = ?");
+    // Validate the other side account code exists AND is not a control account.
+    // Matching a bank line to AR/AP/VAT/bank control breaks the subledger↔control
+    // tie-out (the control balance would move without a corresponding subledger
+    // document). The other side must be an income/expense (or other non-control)
+    // account.
+    $stmt = $DB->prepare("SELECT account_code, is_control FROM gl_accounts WHERE company_id = ? AND account_code = ?");
     $stmt->execute([$companyId, $accountCodeInput]);
-    $validatedAccountCode = $stmt->fetchColumn();
-    if (!$validatedAccountCode) {
+    $acctRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$acctRow) {
         throw new Exception('Account code not found');
     }
+    if (!empty($acctRow['is_control'])) {
+        throw new Exception('Cannot match a bank transaction to a control account (AR / AP / VAT / bank control). Choose an income or expense account.');
+    }
+    $validatedAccountCode = $acctRow['account_code'];
     // Create a journal entry for this match
     $stmt = $DB->prepare(
         "INSERT INTO journal_entries (
@@ -117,9 +125,14 @@ try {
     if ($taxCodeId) {
         $tcStmt = $DB->prepare("SELECT rate_percent FROM gl_tax_codes WHERE tax_code_id = ? AND company_id = ? AND is_active = 1");
         $tcStmt->execute([$taxCodeId, $companyId]);
-        $rate = (float)$tcStmt->fetchColumn();
-        if ($rate > 0.005) {
-            // Tax fraction: VAT = gross * r/(100+r)
+        $rateRaw = $tcStmt->fetchColumn();
+        if ($rateRaw === false) {
+            // No active tax code with that id — drop the tag entirely (a code
+            // that resolves to no rate must not be persisted).
+            $taxCodeId = null;
+        } elseif ((float)$rateRaw > 0.005) {
+            // Standard-rated: tax fraction VAT = gross * r/(100+r).
+            $rate = (float)$rateRaw;
             $vatC = (int)round($amountC * $rate / (100 + $rate));
             $netC = $amountC - $vatC;
             require_once __DIR__ . '/../lib/AccountsMap.php';
@@ -127,17 +140,16 @@ try {
             $vatLegCode = $isMoneyIn
                 ? $accountsMap->code('finance_vat_output_account_id')
                 : $accountsMap->code('finance_vat_input_account_id');
-        } else {
-            // Tax code invalid/inactive for this company — don't tag the line
-            // with a code that resolves to no rate.
-            $taxCodeId = null;
+            // Can't resolve a VAT account: fall back to a gross posting so the
+            // journal always balances.
+            if ($vatC > 0 && !$vatLegCode) {
+                $netC = $amountC;
+                $vatC = 0;
+            }
         }
-        // Can't resolve a VAT account: fall back to a gross posting so the
-        // journal always balances.
-        if ($vatC > 0 && !$vatLegCode) {
-            $netC = $amountC;
-            $vatC = 0;
-        }
+        // A valid ZERO-rated / EXEMPT code (rate 0) KEEPS its tag on the net line
+        // with no VAT leg, so the VAT201 zero-rated (Box 2) / exempt (Box 3) base
+        // includes this bank income instead of dropping it into UNTAGGED.
     }
 
     // Insert journal lines (debits/credits) with tax code for SARS VAT tracking

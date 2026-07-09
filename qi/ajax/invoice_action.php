@@ -4,6 +4,7 @@
 // Complex flows (credit, refund, duplicate, force delete) have their own endpoints.
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/InvoiceDeleteHelper.php';
 
 header('Content-Type: application/json');
@@ -49,9 +50,25 @@ try {
             if ((float)$paidStmt->fetchColumn() > 0) {
                 throw new Exception('Cannot void: payments have been allocated to this invoice. Unapply payments first.');
             }
+            // Applied credit notes also credit AR; voiding the invoice would
+            // reverse only its own journal and strand the credit note's Cr AR.
+            $cnStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = ?");
+            $cnStmt->execute([$invoiceId]);
+            if ((float)$cnStmt->fetchColumn() > 0) {
+                throw new Exception('Cannot void: credit notes have been applied to this invoice. Unapply the credit notes first.');
+            }
+            // A partial write-off posted a SEPARATE journal that also credits AR;
+            // voiding reverses only the invoice journal and would strand that
+            // Cr AR. Require the write-off reversed first.
+            if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+                throw new Exception('Cannot void: a write-off has been posted against this invoice. Reverse the write-off first.');
+            }
+            // Zero the balance so the cancelled invoice is no longer payable
+            // (record_payment.php also refuses cancelled invoices, but a stale
+            // balance_due would still show it as outstanding in AR views).
             $stmt = $DB->prepare("
                 UPDATE invoices
-                   SET status='cancelled', cancellation_reason = ?, updated_at = NOW()
+                   SET status='cancelled', balance_due = 0, cancellation_reason = ?, updated_at = NOW()
                  WHERE id = ? AND company_id = ?
             ");
             $stmt->execute([$reason ?: null, $invoiceId, $companyId]);
@@ -68,11 +85,21 @@ try {
             if (!in_array($status, ['sent','viewed','overdue','cancelled'], true)) {
                 throw new Exception('Only sent/viewed/overdue/cancelled invoices can revert to draft');
             }
-            // Block revert if any payments have been allocated
+            // Block revert if any payments OR credit notes have been allocated —
+            // reverting unposts the invoice journal and would strand their Cr AR.
             $paidStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = ?");
             $paidStmt->execute([$invoiceId]);
             if ((float)$paidStmt->fetchColumn() > 0) {
                 throw new Exception('Cannot revert: payments have been allocated. Unapply first.');
+            }
+            $cnStmt = $DB->prepare("SELECT COALESCE(SUM(amount),0) FROM credit_note_allocations WHERE invoice_id = ?");
+            $cnStmt->execute([$invoiceId]);
+            if ((float)$cnStmt->fetchColumn() > 0) {
+                throw new Exception('Cannot revert: credit notes have been applied. Unapply the credit notes first.');
+            }
+            // A partial write-off's separate Cr AR journal would be stranded too.
+            if ((float)($invoice['write_off_amount'] ?? 0) > 0) {
+                throw new Exception('Cannot revert: a write-off has been posted against this invoice. Reverse the write-off first.');
             }
             $stmt = $DB->prepare("UPDATE invoices SET status='draft', updated_at=NOW() WHERE id=? AND company_id=?");
             $stmt->execute([$invoiceId, $companyId]);
@@ -149,6 +176,21 @@ try {
                 "SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE invoice_id = " . (int)$invoiceId
             )->fetchColumn();
             if ($total <= 0) throw new Exception('No payments to unapply');
+
+            // Deleting the allocations rewrites payments-basis VAT history (the
+            // payments-basis VAT201 is derived from payment_allocations by
+            // payment_date). The allocation tables aren't covered by the period
+            // lock, so refuse when any underlying payment falls in a filed/locked
+            // period — otherwise an already-filed return would silently change.
+            require_once __DIR__ . '/../../finances/lib/PeriodService.php';
+            $periods = new PeriodService($DB, $companyId);
+            $pdStmt = $DB->prepare("SELECT DISTINCT p.payment_date FROM payment_allocations pa JOIN payments p ON p.id = pa.payment_id WHERE pa.invoice_id = ?");
+            $pdStmt->execute([$invoiceId]);
+            foreach ($pdStmt->fetchAll(PDO::FETCH_COLUMN) as $pd) {
+                if ($pd && $periods->isLocked($pd)) {
+                    throw new Exception('Cannot unapply payments: a payment is dated in a filed/locked period (' . $pd . '). Reverse the filing first.');
+                }
+            }
 
             $stmt = $DB->prepare("DELETE FROM payment_allocations WHERE invoice_id = ?");
             $stmt->execute([$invoiceId]);
