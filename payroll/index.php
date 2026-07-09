@@ -6,7 +6,7 @@ require_once __DIR__ . '/../auth_gate.php';
 // DB compatibility check
 if (!isset($pdo) && isset($DB)) { $pdo = $DB; }
 
-define('ASSET_VERSION', '2025-01-21-PAYROLL-1');
+define('ASSET_VERSION', '2026-07-09-PAYROLL-UI-3D');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];

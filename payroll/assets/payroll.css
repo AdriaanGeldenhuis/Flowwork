@@ -1,13 +1,25 @@
 /**
  * ============================================================================
- * FLOWWORK PAYROLL — PREMIUM DESIGN SYSTEM (Projects Visual Language)
- * Matching Projects Module + Payroll Orange Color Scheme + 3D Tilt
+ * FLOWWORK PAYROLL — DIMENSION 3D DESIGN SYSTEM (AMBER EDITION)
+ * True-depth interface ported from the CRM module: perspective scene, layered
+ * elevation shadows, pointer-tracked tilt + specular glare, extruded pressable
+ * controls, carved inputs, aurora environment with grid floor. Payroll keeps
+ * its signature orange/amber accent.
+ *
+ * 3D rules of the road (do not break these):
+ *  - Slab cards use transform-style: preserve-3d so children can pop on Z.
+ *    NEVER add overflow:hidden, backdrop-filter, filter, opacity<1 or
+ *    mix-blend-mode to .kpi themselves — those flatten the 3D context.
+ *  - Tilt is driven by CSS custom properties (--rx, --ry, --mx, --my) set
+ *    per frame from payroll.js (delegated pointer engine).
  * ============================================================================
  */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 /* ===== CSS VARIABLES ===== */
 :root {
-  /* Spacing (same as Projects) */
+  /* Spacing */
   --fw-spacing-xs: 8px;
   --fw-spacing-sm: 12px;
   --fw-spacing-md: 16px;
@@ -15,114 +27,231 @@
   --fw-spacing-xl: 32px;
   --fw-spacing-2xl: 48px;
 
-  /* Border Radius (same as Projects) */
+  /* Border Radius */
   --fw-radius-sm: 8px;
   --fw-radius-md: 12px;
   --fw-radius-lg: 16px;
   --fw-radius-xl: 20px;
   --fw-radius-full: 9999px;
 
-  /* Transitions (same as Projects) */
+  /* Transitions */
   --fw-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  --fw-tilt-ease: 0.16s cubic-bezier(0.33, 1, 0.68, 1);
 
-  /* Neon Colors - PAYROLL ORANGE THEME */
+  /* Neon Colors — PAYROLL ORANGE/AMBER palette */
   --neon-orange: #f97316;
   --neon-orange-glow: rgba(249, 115, 22, 0.3);
   --neon-yellow: #fbbf24;
+  --neon-amber: #f59e0b;
   --neon-green: #10b981;
   --neon-green-glow: rgba(16, 185, 129, 0.3);
   --neon-cyan: #06b6d4;
   --neon-purple: #8b5cf6;
+  --neon-purple-glow: rgba(139, 92, 246, 0.3);
   --neon-pink: #ff1dce;
   --neon-red: #ef4444;
   --neon-aqua: #00ffb5;
   --neon-blue: #3b82f6;
 
-  /* Z-Index (same as Projects) */
+  /* Z-Index */
   --z-base: 1;
   --z-dropdown: 100;
   --z-sticky: 500;
   --z-modal: 2000;
 
+  /* 3D scene */
+  --fw-persp: 1100px;
+  --fw-tilt-max: 6deg;
+
   /* ===== LIGHT THEME ===== */
-  --fw-bg-base: #f5f7fa;
-  --fw-bg-secondary: #e8ecf1;
-  
-  --fw-panel-bg: rgba(255, 255, 255, 0.7);
+  --fw-bg-base: #eef1f5;
+  --fw-bg-secondary: #e2e7ed;
+
+  --fw-card-bg: #ffffff;
+  --fw-card-face: linear-gradient(168deg, #ffffff 0%, #fdfbf9 45%, #f6f1ea 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.95);
+  --fw-panel-bg: rgba(255, 255, 255, 0.82);
+  --fw-panel-solid: #ffffff;
   --fw-panel-border: rgba(255, 255, 255, 0.9);
-  --fw-panel-hover: rgba(248, 250, 252, 1);
-  
-  --fw-text-primary: #1a1d29;
-  --fw-text-secondary: #4b5563;
-  --fw-text-tertiary: #6b7280;
-  --fw-text-muted: #9ca3af;
-  
-  --fw-border-base: rgba(0, 0, 0, 0.08);
-  --fw-border-strong: rgba(0, 0, 0, 0.12);
-  
-  --fw-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --fw-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --fw-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --fw-shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.16);
-  
-  /* PRIMARY COLOR: PAYROLL ORANGE */
+  --fw-panel-hover: rgba(249, 250, 251, 1);
+  --fw-bg-card: #ffffff;
+  --fw-surface-alt: rgba(20, 24, 31, 0.04);
+
+  --fw-text-primary: #1a1d24;
+  --fw-text-secondary: #4a525c;
+  --fw-text-tertiary: #68717c;
+  --fw-text-muted: #99a1ac;
+
+  --fw-border-base: rgba(20, 24, 31, 0.08);
+  --fw-border-strong: rgba(20, 24, 31, 0.14);
+  --fw-border: rgba(20, 24, 31, 0.08);
+
+  --fw-shadow-sm: 0 2px 8px rgba(20, 24, 31, 0.07);
+  --fw-shadow-md: 0 4px 16px rgba(20, 24, 31, 0.09);
+  --fw-shadow-lg: 0 8px 32px rgba(20, 24, 31, 0.13);
+  --fw-shadow-xl: 0 12px 48px rgba(20, 24, 31, 0.17);
+
+  /* PRIMARY: PAYROLL ORANGE */
   --fw-primary: #f97316;
   --fw-primary-hover: #ea580c;
+  --fw-primary-deep: #c2410c;
+  --fw-primary-deeper: #9a3412;
   --fw-primary-glow: rgba(249, 115, 22, 0.25);
   --fw-primary-light: rgba(249, 115, 22, 0.12);
-  
-  /* Accent Colors (matching Projects) */
-  --accent-payroll: #f97316;
-  --accent-payroll-hover: #ea580c;
-  --accent-success: #10b981;
-  --accent-warning: #f59e0b;
-  --accent-danger: #ef4444;
+
+  /* Accent aliases (still referenced by run_view.js / inline styles) */
+  --accent-payroll: var(--fw-primary);
+  --accent-payroll-hover: var(--fw-primary-hover);
+  --accent-success: var(--neon-green);
+  --accent-warning: var(--neon-amber);
+  --accent-danger: var(--neon-red);
   --accent-secondary: #6b7280;
-  
-  --fw-highlight: rgba(255, 255, 255, 0.6);
-  --fw-rim-light: rgba(255, 255, 255, 0.5);
-  --fw-glow: rgba(249, 115, 22, 0.15);
-  
-  --fw-input-bg: #ffffff;
-  --fw-input-border: rgba(0, 0, 0, 0.2);
-  --fw-input-border-hover: rgba(0, 0, 0, 0.3);
-  
-  --fw-modal-overlay: rgba(0, 0, 0, 0.75);
+
+  --fw-highlight: rgba(255, 255, 255, 0.65);
+  --fw-rim-light: rgba(255, 255, 255, 0.85);
+  --fw-glow: rgba(249, 115, 22, 0.16);
+  --fw-glare: rgba(255, 255, 255, 0.5);
+
+  --fw-input-bg: #f6f4f1;
+  --fw-input-border: rgba(20, 24, 31, 0.14);
+  --fw-input-border-hover: rgba(20, 24, 31, 0.26);
+  --fw-input-well:
+    inset 0 2px 4px rgba(20, 24, 31, 0.07),
+    inset 0 1px 2px rgba(20, 24, 31, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.9);
+
+  --fw-modal-overlay: rgba(20, 15, 10, 0.55);
+
+  /* Environment */
+  --fw-grid-line: rgba(249, 115, 22, 0.11);
+  --fw-aurora-a: rgba(249, 115, 22, 0.16);
+  --fw-aurora-b: rgba(139, 92, 246, 0.10);
+  --fw-aurora-c: rgba(251, 191, 36, 0.07);
+
+  /* Card elevation stacks */
+  --fw-card-shadow:
+    0 1px 2px rgba(20, 24, 31, 0.05),
+    0 6px 14px -4px rgba(20, 24, 31, 0.09),
+    0 18px 36px -14px rgba(20, 24, 31, 0.16),
+    0 30px 60px -26px rgba(249, 115, 22, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(20, 24, 31, 0.05);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(20, 24, 31, 0.06),
+    0 12px 24px -6px rgba(20, 24, 31, 0.13),
+    0 32px 56px -16px rgba(20, 24, 31, 0.22),
+    0 48px 90px -28px rgba(249, 115, 22, 0.36),
+    0 0 0 1px rgba(249, 115, 22, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(20, 24, 31, 0.05);
+
+  /* Extruded control edges (hard shadow = visible "side" of the key) */
+  --fw-key-side: rgba(20, 24, 31, 0.16);
+  --fw-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(20, 24, 31, 0.05),
+    0 2px 0 var(--fw-key-side),
+    0 3px 6px rgba(20, 24, 31, 0.10),
+    0 8px 16px -6px rgba(20, 24, 31, 0.14);
+  --fw-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(20, 24, 31, 0.05),
+    0 4px 0 var(--fw-key-side),
+    0 6px 12px rgba(20, 24, 31, 0.12),
+    0 14px 24px -8px rgba(20, 24, 31, 0.18);
+  --fw-key-shadow-active:
+    inset 0 2px 4px rgba(20, 24, 31, 0.14),
+    0 1px 0 var(--fw-key-side);
 }
 
 /* ===== DARK THEME ===== */
 .fw-payroll[data-theme="dark"] {
-  --fw-bg-base: #0a0c12;
-  --fw-bg-secondary: #0f141b;
-  
-  --fw-panel-bg: rgba(18, 24, 36, 0.8);
+  --fw-bg-base: #0a0b0d;
+  --fw-bg-secondary: #101216;
+
+  --fw-card-bg: #191c22;
+  --fw-card-face: linear-gradient(168deg, rgba(42, 40, 44, 0.98) 0%, rgba(30, 28, 30, 0.99) 48%, rgba(20, 19, 22, 1) 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.12);
+  --fw-panel-bg: rgba(24, 22, 26, 0.78);
+  --fw-panel-solid: #17161a;
   --fw-panel-border: rgba(255, 255, 255, 0.1);
-  --fw-panel-hover: rgba(30, 40, 58, 1);
-  
-  --fw-text-primary: #e7ecf2;
-  --fw-text-secondary: #c5d1e0;
-  --fw-text-tertiary: #9fb0c8;
-  --fw-text-muted: #7a8aa3;
-  
+  --fw-panel-hover: rgba(44, 40, 46, 1);
+  --fw-bg-card: #191c22;
+  --fw-surface-alt: rgba(255, 255, 255, 0.05);
+
+  --fw-text-primary: #eeeaf0;
+  --fw-text-secondary: #d0cbce;
+  --fw-text-tertiary: #a49ea6;
+  --fw-text-muted: #7f7982;
+
   --fw-border-base: rgba(255, 255, 255, 0.08);
-  --fw-border-strong: rgba(255, 255, 255, 0.12);
-  
+  --fw-border-strong: rgba(255, 255, 255, 0.14);
+  --fw-border: rgba(255, 255, 255, 0.08);
+
   --fw-shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4);
   --fw-shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5);
   --fw-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6);
   --fw-shadow-xl: 0 16px 64px rgba(0, 0, 0, 0.7);
-  
-  --fw-highlight: rgba(255, 255, 255, 0.15);
-  --fw-rim-light: rgba(255, 255, 255, 0.2);
-  --fw-glow: rgba(249, 115, 22, 0.25);
-  
-  --fw-input-bg: rgba(255, 255, 255, 0.05);
-  --fw-input-border: rgba(255, 255, 255, 0.2);
-  --fw-input-border-hover: rgba(255, 255, 255, 0.3);
-  
-  --fw-modal-overlay: rgba(0, 0, 0, 0.85);
+
+  --fw-primary-glow: rgba(249, 115, 22, 0.38);
+  --fw-primary-light: rgba(249, 115, 22, 0.16);
+
+  --fw-highlight: rgba(255, 255, 255, 0.14);
+  --fw-rim-light: rgba(255, 255, 255, 0.28);
+  --fw-glow: rgba(249, 115, 22, 0.3);
+  --fw-glare: rgba(255, 226, 194, 0.14);
+
+  --fw-input-bg: rgba(8, 6, 4, 0.6);
+  --fw-input-border: rgba(255, 255, 255, 0.14);
+  --fw-input-border-hover: rgba(255, 255, 255, 0.26);
+  --fw-input-well:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+
+  --fw-modal-overlay: rgba(6, 3, 1, 0.78);
+
+  --fw-grid-line: rgba(249, 140, 60, 0.10);
+  --fw-aurora-a: rgba(249, 115, 22, 0.20);
+  --fw-aurora-b: rgba(139, 92, 246, 0.13);
+  --fw-aurora-c: rgba(251, 191, 36, 0.08);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 10px 22px -6px rgba(0, 0, 0, 0.55),
+    0 26px 50px -18px rgba(0, 0, 0, 0.65),
+    0 34px 70px -28px rgba(249, 115, 22, 0.33),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 16px 32px -8px rgba(0, 0, 0, 0.6),
+    0 40px 70px -20px rgba(0, 0, 0, 0.7),
+    0 52px 100px -30px rgba(249, 115, 22, 0.52),
+    0 0 0 1px rgba(249, 115, 22, 0.35),
+    0 0 44px -6px rgba(249, 115, 22, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+
+  --fw-key-side: rgba(0, 0, 0, 0.7);
+  --fw-key-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 var(--fw-key-side),
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    0 8px 18px -6px rgba(0, 0, 0, 0.5);
+  --fw-key-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 4px 0 var(--fw-key-side),
+    0 7px 14px rgba(0, 0, 0, 0.5),
+    0 14px 28px -8px rgba(0, 0, 0, 0.55);
+  --fw-key-shadow-active:
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    0 1px 0 var(--fw-key-side);
 }
 
 /* ===== BASE RESET ===== */
@@ -139,14 +268,72 @@
   font-size: 16px;
   line-height: 1.6;
   color: var(--fw-text-primary);
-  background: 
-    radial-gradient(1400px 700px at 18% -8%, var(--fw-primary-glow), transparent 60%),
-    radial-gradient(1200px 600px at 85% 5%, rgba(249, 115, 22, 0.08), transparent 55%),
+  background:
+    radial-gradient(1400px 700px at 18% -8%, var(--fw-aurora-a), transparent 60%),
+    radial-gradient(1200px 600px at 85% 5%, var(--fw-aurora-b), transparent 55%),
+    radial-gradient(900px 500px at 55% 110%, var(--fw-aurora-c), transparent 60%),
     var(--fw-bg-base);
   min-height: 100vh;
   transition: background 0.4s ease, color 0.3s ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Own stacking context so the fixed environment layers paint above the
+     page background but below content (mirrors CRM's body-level scene). */
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+
+.fw-payroll ::selection {
+  background: var(--fw-primary);
+  color: #fff;
+}
+
+/* ===== ENVIRONMENT: PERSPECTIVE GRID FLOOR + AMBIENT DRIFT ===== */
+.fw-payroll::before {
+  content: '';
+  position: fixed;
+  left: -30%;
+  right: -30%;
+  bottom: -14%;
+  height: 60vh;
+  background-image:
+    linear-gradient(var(--fw-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--fw-grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(620px) rotateX(63deg);
+  transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent 80%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent 80%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.fw-payroll::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(720px 420px at 78% 82%, var(--fw-aurora-b), transparent 70%),
+    radial-gradient(880px 520px at 12% 70%, var(--fw-aurora-a), transparent 70%);
+  opacity: 0.55;
+  animation: fwAuroraDrift 22s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes fwAuroraDrift {
+  from { opacity: 0.3; transform: translateY(0); }
+  to   { opacity: 0.7; transform: translateY(-30px); }
+}
+
+@keyframes fwCardFade {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  to { left: 100%; }
 }
 
 /* ===== SCROLLBAR ===== */
@@ -170,7 +357,13 @@
   background: var(--fw-text-muted);
 }
 
-/* ===== HEADER (matching Projects exactly) ===== */
+/* ===== FOCUS ===== */
+.fw-payroll :focus-visible {
+  outline: 2px solid var(--fw-primary);
+  outline-offset: 2px;
+}
+
+/* ===== HEADER — floating glass slab ===== */
 .fw-payroll__header {
   position: sticky;
   top: 0;
@@ -179,14 +372,18 @@
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--fw-panel-border);
-  box-shadow: 0px 0px 20px var(--fw-primary);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 1px 0 rgba(249, 115, 22, 0.18),
+    0 10px 30px -12px rgba(20, 24, 31, 0.35),
+    0 4px 24px -4px var(--fw-primary-glow);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--fw-spacing-lg);
   height: 70px;
   gap: var(--fw-spacing-lg);
-  position: relative;
+  transition: box-shadow var(--fw-transition-slow);
 }
 
 /* Gloss overlay */
@@ -194,8 +391,19 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255,255,255,.10), transparent 40%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
+}
+
+/* Neon hairline under the header */
+.fw-payroll__header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 4%, var(--fw-primary-glow) 30%, rgba(251, 191, 36, 0.35) 70%, transparent 96%);
   pointer-events: none;
 }
 
@@ -215,10 +423,15 @@
   justify-content: center;
   background: linear-gradient(135deg, var(--fw-primary), var(--neon-yellow));
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 4px 12px var(--fw-primary-glow), inset 0 1px 2px rgba(255,255,255,.3);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.45),
+    inset 0 -3px 6px rgba(120, 50, 0, 0.4),
+    0 3px 0 var(--fw-primary-deeper),
+    0 8px 18px -4px rgba(249, 115, 22, 0.55);
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring);
 }
 
 /* Silver shimmer */
@@ -229,19 +442,15 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
   animation: shimmer 3s infinite;
-}
-
-@keyframes shimmer {
-  to { left: 100%; }
 }
 
 .fw-payroll__logo-tile svg {
   width: 28px;
   height: 28px;
   color: #fff;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,.2));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
   position: relative;
   z-index: 1;
 }
@@ -274,6 +483,7 @@
   font-size: 16px;
   font-weight: 600;
   color: var(--fw-text-secondary);
+  text-shadow: 0 1px 0 var(--fw-highlight);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -283,6 +493,7 @@
 .fw-payroll__greeting-name {
   color: var(--fw-primary);
   font-weight: 700;
+  text-shadow: 0 0 18px var(--fw-primary-glow);
 }
 
 .fw-payroll__controls {
@@ -292,6 +503,7 @@
   z-index: 1;
 }
 
+/* Header icon buttons — mini keys */
 .fw-payroll__home-btn,
 .fw-payroll__back-btn,
 .fw-payroll__theme-toggle,
@@ -300,12 +512,13 @@
   height: 40px;
   display: grid;
   place-items: center;
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-face);
   border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   color: var(--fw-text-primary);
   cursor: pointer;
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
   text-decoration: none;
   flex-shrink: 0;
   position: relative;
@@ -315,9 +528,17 @@
 .fw-payroll__back-btn:hover,
 .fw-payroll__theme-toggle:hover,
 .fw-payroll__kebab-toggle:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+  color: var(--fw-primary);
+}
+
+.fw-payroll__home-btn:active,
+.fw-payroll__back-btn:active,
+.fw-payroll__theme-toggle:active,
+.fw-payroll__kebab-toggle:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
 }
 
 .fw-payroll__home-btn svg,
@@ -349,26 +570,29 @@
   opacity: 1;
 }
 
-/* ===== KEBAB MENU ===== */
+/* ===== KEBAB MENU — 3D flip-down ===== */
 .fw-payroll__menu-wrapper {
   position: relative;
 }
 
 .fw-payroll__kebab-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   right: 0;
   min-width: 200px;
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-md);
-  box-shadow: var(--fw-shadow-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 24px 48px -12px rgba(24, 16, 8, 0.45),
+    0 8px 24px -8px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   padding: 8px;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-8px) scale(0.95);
+  transform: perspective(700px) rotateX(-14deg) translateY(-8px) scale(0.96);
   transform-origin: top right;
   transition: all var(--fw-transition-base);
   z-index: var(--z-dropdown);
@@ -377,7 +601,7 @@
 .fw-payroll__kebab-menu[aria-hidden="false"] {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0) scale(1);
+  transform: perspective(700px) rotateX(0) translateY(0) scale(1);
 }
 
 .fw-payroll__kebab-item {
@@ -394,6 +618,7 @@
 .fw-payroll__kebab-item:hover {
   background: var(--fw-primary-light);
   color: var(--fw-primary);
+  transform: translateX(3px);
 }
 
 /* ===== CONTAINER & MAIN ===== */
@@ -408,23 +633,25 @@
   padding: var(--fw-spacing-lg);
   max-width: 100vw;
   overflow-x: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 /* ===== PAGE HEADER ===== */
 .fw-payroll__page-header {
-  padding: var(--fw-spacing-xl) 0;
+  padding: var(--fw-spacing-xl) var(--fw-spacing-lg) var(--fw-spacing-md);
   text-align: center;
 }
 
 .fw-payroll__page-title {
   font-size: 32px;
   font-weight: 900;
-  color: var(--fw-text-primary);
   margin-bottom: 8px;
-  background: linear-gradient(135deg, var(--fw-primary), var(--neon-yellow));
+  background: linear-gradient(135deg, #fdba74, var(--fw-primary) 45%, var(--neon-amber));
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 12px var(--fw-primary-glow));
 }
 
 .fw-payroll__page-subtitle {
@@ -432,7 +659,20 @@
   color: var(--fw-text-tertiary);
 }
 
-/* ===== TOOLBAR ===== */
+/* ===== SECTIONS ===== */
+.fw-payroll__section {
+  margin-bottom: var(--fw-spacing-2xl);
+}
+
+.fw-payroll__section-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+  margin-bottom: var(--fw-spacing-lg);
+  padding-left: var(--fw-spacing-md);
+}
+
+/* ===== TOOLBAR — floating glass shelf ===== */
 .fw-payroll__toolbar {
   display: flex;
   justify-content: space-between;
@@ -443,11 +683,15 @@
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-md);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   position: relative;
   flex-wrap: wrap;
+  z-index: 2;
 }
 
 /* Rim light */
@@ -458,10 +702,12 @@
   left: 0;
   right: 0;
   height: 2px;
+  border-radius: var(--fw-radius-lg) var(--fw-radius-lg) 0 0;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  pointer-events: none;
 }
 
-/* ===== BUTTONS (matching Projects) ===== */
+/* ===== BUTTONS — extruded pressable keys ===== */
 .fw-payroll__btn {
   display: inline-flex;
   align-items: center;
@@ -474,73 +720,114 @@
   font-size: 14px;
   letter-spacing: 0.3px;
   cursor: pointer;
-  transition: all var(--fw-transition-base);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), background var(--fw-transition-base), color var(--fw-transition-base), border-color var(--fw-transition-base);
   border: 1px solid transparent;
   white-space: nowrap;
   font-family: inherit;
   position: relative;
   overflow: hidden;
+  transform: translateY(0);
+  text-decoration: none;
 }
 
+/* Sheen sweep across any button on hover */
 .fw-payroll__btn::before {
   content: '';
   position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent);
-  opacity: 0;
-  transition: opacity var(--fw-transition-fast);
+  top: 0;
+  left: -80%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.5s ease;
   pointer-events: none;
 }
 
 .fw-payroll__btn:hover::before {
-  opacity: 1;
+  left: 130%;
 }
 
 .fw-payroll__btn--primary {
-  background: linear-gradient(145deg, 
-    color-mix(in srgb, var(--fw-primary) 84%, #fff 16%), 
-    var(--fw-primary)
-  );
+  background: linear-gradient(165deg, #fdba74 0%, var(--fw-primary) 52%, var(--fw-primary-hover) 100%);
   color: #fff;
-  box-shadow: 
-    0 4px 12px var(--fw-primary-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(120, 50, 0, 0.45);
   border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(120, 50, 0, 0.35),
+    0 3px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 14px 28px -8px var(--fw-primary-glow);
 }
 
 .fw-payroll__btn--primary:hover {
   transform: translateY(-2px);
-  box-shadow: 
-    0 6px 20px var(--fw-primary-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(120, 50, 0, 0.35),
+    0 5px 0 var(--fw-primary-deeper),
+    0 10px 22px -2px var(--fw-primary-glow),
+    0 22px 44px -10px var(--fw-primary-glow);
+}
+
+.fw-payroll__btn--primary:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 2px 6px rgba(120, 50, 0, 0.5),
+    0 1px 0 var(--fw-primary-deeper);
 }
 
 .fw-payroll__btn--secondary {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border-strong);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
   color: var(--fw-text-primary);
+  box-shadow: var(--fw-key-shadow);
 }
 
 .fw-payroll__btn--secondary:hover {
-  background: var(--fw-panel-hover);
   border-color: var(--fw-primary);
   color: var(--fw-primary);
   transform: translateY(-2px);
-  box-shadow: var(--fw-shadow-sm);
+  box-shadow: var(--fw-key-shadow-hover);
+}
+
+.fw-payroll__btn--secondary:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
 }
 
 .fw-payroll__btn--success {
-  background: linear-gradient(145deg, #059669, #10b981);
+  background: linear-gradient(165deg, #34d399, var(--neon-green) 55%, #059669);
   color: #fff;
+  text-shadow: 0 1px 2px rgba(4, 60, 40, 0.4);
   border: none;
-  box-shadow: 0 4px 12px var(--neon-green-glow);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(4, 60, 40, 0.35),
+    0 3px 0 #047857,
+    0 6px 14px -2px var(--neon-green-glow);
 }
 
 .fw-payroll__btn--danger {
-  background: linear-gradient(145deg, #dc2626, #ef4444);
+  background: linear-gradient(165deg, #f87171, #ef4444 55%, #dc2626);
   color: #fff;
+  text-shadow: 0 1px 2px rgba(120, 10, 10, 0.4);
   border: none;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.35),
+    0 3px 0 #991b1b,
+    0 6px 14px -2px rgba(239, 68, 68, 0.4);
+}
+
+.fw-payroll__btn--danger:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.35),
+    0 5px 0 #991b1b,
+    0 12px 26px -4px rgba(239, 68, 68, 0.5);
 }
 
 .fw-payroll__btn--large {
@@ -553,9 +840,10 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+  box-shadow: none !important;
 }
 
-/* ===== BADGES ===== */
+/* ===== BADGES — glossy 3D pills ===== */
 .fw-payroll__badge {
   display: inline-flex;
   align-items: center;
@@ -566,18 +854,65 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: #fff;
-  box-shadow: 
-    0 2px 8px rgba(0, 0, 0, 0.2), 
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(165deg, #94a3b8, #64748b 60%, #475569);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.18);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.fw-payroll__badge--draft { background: #6b7280; }
-.fw-payroll__badge--calculated { background: #06b6d4; }
-.fw-payroll__badge--review { background: #f59e0b; }
-.fw-payroll__badge--approved { background: #8b5cf6; }
-.fw-payroll__badge--locked { background: #10b981; }
-.fw-payroll__badge--posted { background: #059669; }
+.fw-payroll__badge--draft {
+  background: linear-gradient(165deg, #94a3b8, #64748b 60%, #475569);
+}
+
+.fw-payroll__badge--calculated {
+  background: linear-gradient(165deg, #67e8f9, var(--neon-cyan) 60%, #0891b2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(0, 90, 105, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px rgba(6, 182, 212, 0.3);
+}
+
+.fw-payroll__badge--review {
+  background: linear-gradient(165deg, #ffc266, var(--neon-amber) 60%, #d97706);
+  color: #3a2400;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(140, 80, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px rgba(245, 158, 11, 0.3);
+}
+
+.fw-payroll__badge--approved {
+  background: linear-gradient(165deg, #a78bfa, var(--neon-purple) 60%, #6d28d9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(50, 20, 110, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 0 18px var(--neon-purple-glow);
+}
+
+.fw-payroll__badge--locked {
+  background: linear-gradient(165deg, #34d399, var(--neon-green) 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px var(--neon-green-glow);
+}
+
+.fw-payroll__badge--posted {
+  background: linear-gradient(165deg, #34d399, #059669 60%, #047857);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px var(--neon-green-glow);
+}
 
 .fw-payroll__badge--large {
   padding: 8px 16px;
@@ -598,24 +933,21 @@
 }
 
 .fw-payroll__stat-card {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   position: relative;
-  overflow: hidden;
 }
 
 .fw-payroll__stat-card::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  left: 8%;
+  right: 8%;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
@@ -624,8 +956,8 @@
 
 .fw-payroll__stat-card:hover {
   transform: translateY(-4px);
-  box-shadow: var(--fw-shadow-lg);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
 }
 
 .fw-payroll__stat-card:hover::before {
@@ -635,8 +967,12 @@
 .fw-payroll__stat-value {
   font-size: 32px;
   font-weight: 900;
-  color: var(--fw-primary);
-  text-shadow: 0 0 20px var(--fw-primary-glow);
+  line-height: 1.15;
+  background: linear-gradient(160deg, #fdba74, var(--fw-primary) 60%, var(--fw-primary-hover));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 6px var(--fw-primary-glow));
   margin-bottom: 8px;
 }
 
@@ -656,7 +992,7 @@
   margin-bottom: var(--fw-spacing-2xl);
 }
 
-/* ===== LIST ITEMS (matching board cards) ===== */
+/* ===== LIST ITEMS — 3D slabs ===== */
 .fw-payroll__list {
   display: flex;
   flex-direction: column;
@@ -668,21 +1004,15 @@
   align-items: center;
   gap: var(--fw-spacing-lg);
   padding: var(--fw-spacing-lg);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   text-decoration: none;
   color: inherit;
   position: relative;
   overflow: hidden;
-  
-  /* 3D Tilt */
-  perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 /* Rim light + gloss */
@@ -714,10 +1044,9 @@
 }
 
 .fw-payroll__list-item:hover {
-  box-shadow: 
-    var(--fw-shadow-lg), 
-    0 0 40px var(--fw-glow);
-  border-color: var(--fw-primary);
+  transform: translateY(-4px);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
 }
 
 .fw-payroll__list-item:hover::before {
@@ -765,44 +1094,42 @@
   color: var(--neon-red);
 }
 
+/* Carved input wells */
 .fw-payroll__input,
 .fw-payroll__textarea,
-.fw-payroll__select,
-.fw-payroll__filter,
-.fw-payroll__search {
+.fw-payroll__select {
   width: 100%;
   padding: 12px 16px;
   background: var(--fw-input-bg);
-  border: 2px solid var(--fw-input-border);
-  border-radius: var(--fw-radius-sm);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-md);
   color: var(--fw-text-primary);
   font-size: 15px;
   font-family: inherit;
+  box-shadow: var(--fw-input-well);
   transition: all var(--fw-transition-base);
 }
 
 .fw-payroll__input::placeholder,
-.fw-payroll__textarea::placeholder,
-.fw-payroll__search::placeholder {
+.fw-payroll__textarea::placeholder {
   color: var(--fw-text-muted);
 }
 
 .fw-payroll__input:hover,
 .fw-payroll__textarea:hover,
-.fw-payroll__select:hover,
-.fw-payroll__filter:hover,
-.fw-payroll__search:hover {
+.fw-payroll__select:hover {
   border-color: var(--fw-input-border-hover);
 }
 
 .fw-payroll__input:focus,
 .fw-payroll__textarea:focus,
-.fw-payroll__select:focus,
-.fw-payroll__filter:focus,
-.fw-payroll__search:focus {
+.fw-payroll__select:focus {
   outline: none;
   border-color: var(--fw-primary);
-  box-shadow: 0 0 0 3px var(--fw-primary-light);
+  box-shadow:
+    var(--fw-input-well),
+    0 0 0 3px var(--fw-primary-light),
+    0 0 18px -2px var(--fw-primary-glow);
 }
 
 .fw-payroll__textarea {
@@ -860,9 +1187,12 @@
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-shadow-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    var(--fw-shadow-xl),
+    0 24px 60px -20px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   max-width: 600px;
   width: 90%;
   max-height: 90vh;
@@ -967,7 +1297,7 @@
   50% { opacity: 1; }
 }
 
-/* ===== OVERVIEW KPI CARDS (matching CRM style) ===== */
+/* ===== OVERVIEW KPI CARDS — true 3D slabs (tilt via payroll.js) ===== */
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -976,40 +1306,80 @@
 }
 
 .kpi {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  padding: var(--fw-spacing-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
   display: flex;
   align-items: center;
   gap: 16px;
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-lg);
+  box-shadow: var(--fw-card-shadow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   position: relative;
-  overflow: hidden;
+  animation: fwCardFade 0.5s ease backwards;
 }
 
+.kpi-row > .kpi:nth-child(2) { animation-delay: 0.06s; }
+.kpi-row > .kpi:nth-child(3) { animation-delay: 0.12s; }
+.kpi-row > .kpi:nth-child(4) { animation-delay: 0.18s; }
+.kpi-row > .kpi:nth-child(n+5) { animation-delay: 0.24s; }
+
+.kpi:hover {
+  --ty: -6px;
+  --s: 1.015;
+  --pop-md: 14px;
+  --pop-sm: 8px;
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
+}
+
+/* Rim light */
 .kpi::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  left: 8%;
+  right: 8%;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
   transition: opacity var(--fw-transition-base);
-}
-
-.kpi:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--fw-shadow-lg);
-  border-color: var(--fw-primary);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .kpi:hover::before {
+  opacity: 1;
+}
+
+/* Specular glare tracked by --mx/--my */
+.kpi::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.kpi:hover::after {
   opacity: 1;
 }
 
@@ -1021,10 +1391,15 @@
   justify-content: center;
   background: linear-gradient(135deg, var(--fw-primary), var(--neon-yellow));
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 4px 12px var(--fw-primary-glow), inset 0 1px 0 rgba(255,255,255,.2);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(120, 50, 0, 0.4),
+    0 5px 12px -2px var(--fw-primary-glow);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
+  transform: translateZ(var(--pop-sm, 0px));
+  transition: transform var(--fw-spring);
 }
 
 .kpi-icon::before {
@@ -1034,27 +1409,34 @@
   left: -120%;
   width: 120%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
   animation: shimmer 3s infinite;
+  pointer-events: none;
 }
 
 .kpi-icon svg {
   width: 24px;
   height: 24px;
   color: #fff;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,.2));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .kpi-main {
   flex: 1;
   min-width: 0;
+  transform: translateZ(var(--pop-md, 0px));
+  transition: transform var(--fw-spring);
 }
 
 .kpi-value {
   font-size: 28px;
   font-weight: 900;
-  color: var(--fw-primary);
-  text-shadow: 0 0 20px var(--fw-primary-glow);
+  line-height: 1.15;
+  background: linear-gradient(160deg, #fdba74, var(--fw-primary) 60%, var(--fw-primary-hover));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 6px var(--fw-primary-glow));
   margin-bottom: 4px;
 }
 
@@ -1066,7 +1448,7 @@
   color: var(--fw-text-muted);
 }
 
-/* ===== CHART CARDS (matching CRM) ===== */
+/* ===== CHART CARDS — glass slabs ===== */
 .fw-grid-3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1075,24 +1457,21 @@
 }
 
 .fw-card {
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   position: relative;
-  overflow: hidden;
 }
 
 .fw-card::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  left: 8%;
+  right: 8%;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
@@ -1101,8 +1480,8 @@
 
 .fw-card:hover {
   transform: translateY(-4px);
-  box-shadow: var(--fw-shadow-lg);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
 }
 
 .fw-card:hover::before {
@@ -1133,7 +1512,7 @@
 }
 
 .fw-table thead {
-  background: var(--fw-primary);
+  background: linear-gradient(165deg, var(--fw-primary), var(--fw-primary-hover));
   color: #fff;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -1161,20 +1540,16 @@
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
-  .fw-payroll__list-item {
-    perspective: none;
-  }
-  
   .fw-payroll__list-item:hover {
     transform: translateY(-4px) !important;
   }
-  
+
   .fw-payroll__header {
     flex-wrap: wrap;
     height: auto;
     padding: 12px 16px;
   }
-  
+
   .fw-payroll__greeting {
     order: -1;
     width: 100%;
@@ -1182,23 +1557,23 @@
     font-size: 14px;
     margin-bottom: 8px;
   }
-  
+
   .fw-payroll__toolbar {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .fw-payroll__main {
     padding: 16px;
   }
-  
+
   .fw-payroll__stats-grid,
   .fw-payroll__quick-actions,
   .kpi-row,
   .fw-grid-3 {
     grid-template-columns: 1fr;
   }
-  
+
   .fw-payroll__form-row {
     grid-template-columns: 1fr;
   }
@@ -1206,14 +1581,14 @@
 
 /* ===== REDUCED MOTION ===== */
 @media (prefers-reduced-motion: reduce) {
-  .fw-payroll__list-item {
-    perspective: none;
+  .kpi {
+    transform: none !important;
   }
-  
+
   .fw-payroll__list-item:hover {
     transform: none !important;
   }
-  
+
   *,
   *::before,
   *::after {
@@ -1232,21 +1607,7 @@ body.fw-modal-open {
   overflow: hidden;
 }
 
-/* ===== ADD TO END OF payroll.css ===== */
-
-/* ===== UPCOMING PAY DATES (Dashboard) ===== */
-.fw-payroll__section {
-  margin-bottom: var(--fw-spacing-2xl);
-}
-
-.fw-payroll__section-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--fw-text-primary);
-  margin-bottom: var(--fw-spacing-lg);
-  padding-left: var(--fw-spacing-md);
-}
-
+/* ===== UPCOMING PAY DATES (Dashboard) — 3D slabs ===== */
 .fw-payroll__upcoming-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -1258,21 +1619,15 @@ body.fw-modal-open {
   flex-direction: column;
   gap: 12px;
   padding: var(--fw-spacing-lg);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   text-decoration: none;
   color: inherit;
   position: relative;
   overflow: hidden;
-  
-  /* 3D Tilt */
-  perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 /* Rim light + gloss */
@@ -1304,10 +1659,8 @@ body.fw-modal-open {
 }
 
 .fw-payroll__upcoming-card:hover {
-  box-shadow: 
-    var(--fw-shadow-lg), 
-    0 0 40px var(--fw-glow);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
   transform: translateY(-4px);
 }
 
@@ -1323,8 +1676,12 @@ body.fw-modal-open {
 .fw-payroll__upcoming-date {
   font-size: 24px;
   font-weight: 900;
-  color: var(--fw-primary);
-  text-shadow: 0 0 20px var(--fw-primary-glow);
+  line-height: 1.15;
+  background: linear-gradient(160deg, #fdba74, var(--fw-primary) 60%, var(--fw-primary-hover));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 6px var(--fw-primary-glow));
   position: relative;
   z-index: 2;
 }
@@ -1352,12 +1709,11 @@ body.fw-modal-open {
   width: 100%;
 }
 
-/* ===== CHART STYLING (Neon Colors) ===== */
+/* ===== CHART STYLING ===== */
 .fw-card canvas {
   max-height: 280px;
 }
 
-/* Override Chart.js defaults for neon theme */
 .fw-payroll canvas {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
 }
@@ -1392,15 +1748,7 @@ body.fw-modal-open {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* No data state */
-.fw-table tbody td[colspan] {
-  text-align: center;
-  padding: 32px;
-  color: var(--fw-text-muted);
-  font-style: italic;
-}
-
-/* ===== REPORTS GRID ===== */
+/* ===== REPORTS GRID — 3D slabs ===== */
 .fw-payroll__reports-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -1413,19 +1761,13 @@ body.fw-modal-open {
   flex-direction: column;
   gap: 16px;
   padding: var(--fw-spacing-xl);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   position: relative;
   overflow: hidden;
-  
-  /* 3D Tilt */
-  perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 /* Rim light + gloss */
@@ -1457,10 +1799,8 @@ body.fw-modal-open {
 }
 
 .fw-payroll__report-card:hover {
-  box-shadow: 
-    var(--fw-shadow-lg), 
-    0 0 40px var(--fw-glow);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
   transform: translateY(-4px);
 }
 
@@ -1481,7 +1821,10 @@ body.fw-modal-open {
   justify-content: center;
   background: linear-gradient(135deg, var(--fw-primary), var(--neon-yellow));
   border-radius: var(--fw-radius-md);
-  box-shadow: 0 4px 12px var(--fw-primary-glow), inset 0 1px 0 rgba(255,255,255,.2);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(120, 50, 0, 0.4),
+    0 5px 12px -2px var(--fw-primary-glow);
   font-size: 28px;
   position: relative;
   overflow: hidden;
@@ -1496,7 +1839,7 @@ body.fw-modal-open {
   left: -120%;
   width: 120%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
   animation: shimmer 3s infinite;
   pointer-events: none;
 }
@@ -1522,7 +1865,7 @@ body.fw-modal-open {
   z-index: 2;
 }
 
-/* ===== WIZARD CARDS (run_new.php) ===== */
+/* ===== WIZARD CARDS (run_new.php) — glass slabs ===== */
 .fw-payroll__wizard {
   max-width: 800px;
   margin: 0 auto;
@@ -1534,9 +1877,12 @@ body.fw-modal-open {
   border-radius: var(--fw-radius-xl);
   padding: var(--fw-spacing-xl);
   margin-bottom: var(--fw-spacing-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
   position: relative;
 }
 
@@ -1547,7 +1893,9 @@ body.fw-modal-open {
   left: 0;
   right: 0;
   height: 2px;
+  border-radius: var(--fw-radius-xl) var(--fw-radius-xl) 0 0;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  pointer-events: none;
 }
 
 .fw-payroll__wizard-card-title {
@@ -1587,26 +1935,32 @@ body.fw-modal-open {
   height: 40px;
   display: grid;
   place-items: center;
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-face);
   border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-md);
   color: var(--fw-text-primary);
   text-decoration: none;
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
   flex-shrink: 0;
 }
 
 .fw-payroll__back-link:hover {
-  background: var(--fw-highlight);
-  box-shadow: var(--fw-shadow-sm);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+  color: var(--fw-primary);
+}
+
+.fw-payroll__back-link:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
 }
 
 .fw-payroll__run-view-status {
   flex-shrink: 0;
 }
 
-/* ===== ACTION BAR ===== */
+/* ===== ACTION BAR — glass shelf ===== */
 .fw-payroll__action-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1616,9 +1970,12 @@ body.fw-modal-open {
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
   position: relative;
 }
 
@@ -1629,7 +1986,9 @@ body.fw-modal-open {
   left: 0;
   right: 0;
   height: 2px;
+  border-radius: var(--fw-radius-lg) var(--fw-radius-lg) 0 0;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  pointer-events: none;
 }
 
 /* ===== ALERTS ===== */
@@ -1653,8 +2012,8 @@ body.fw-modal-open {
 
 .fw-payroll__alert--warning {
   background: rgba(245, 158, 11, 0.1);
-  border-color: var(--neon-yellow);
-  color: var(--neon-yellow);
+  border-color: var(--neon-amber);
+  color: var(--neon-amber);
 }
 
 .fw-payroll__alert--danger {
@@ -1664,12 +2023,12 @@ body.fw-modal-open {
 }
 
 .fw-payroll__alert--info {
-  background: rgba(6, 182, 212, 0.1);
-  border-color: var(--neon-cyan);
-  color: var(--neon-cyan);
+  background: rgba(249, 115, 22, 0.1);
+  border-color: var(--fw-primary);
+  color: var(--fw-primary);
 }
 
-/* ===== SETTINGS CARDS ===== */
+/* ===== SETTINGS CARDS — glass shelves ===== */
 .fw-payroll__settings-container {
   display: flex;
   flex-direction: column;
@@ -1683,9 +2042,12 @@ body.fw-modal-open {
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-xl);
   padding: var(--fw-spacing-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
   position: relative;
 }
 
@@ -1696,7 +2058,9 @@ body.fw-modal-open {
   left: 0;
   right: 0;
   height: 2px;
+  border-radius: var(--fw-radius-xl) var(--fw-radius-xl) 0 0;
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  pointer-events: none;
 }
 
 .fw-payroll__settings-card-title {
@@ -1723,15 +2087,17 @@ body.fw-modal-open {
 }
 
 .fw-payroll__tax-table-card {
-  background: var(--fw-panel-bg);
+  background: var(--fw-card-face);
   border: 1px solid var(--fw-border-base);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-shadow-sm);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), border-color var(--fw-transition-base);
 }
 
 .fw-payroll__tax-table-card:hover {
-  box-shadow: var(--fw-shadow-md);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-card-shadow);
   border-color: var(--fw-primary);
 }
 
@@ -1821,7 +2187,7 @@ body.fw-modal-open {
   border-bottom: none;
 }
 
-/* ===== RUN EMPLOYEES LIST ===== */
+/* ===== RUN EMPLOYEES LIST — glass shelf ===== */
 .fw-payroll__run-employees {
   display: flex;
   flex-direction: column;
@@ -1832,9 +2198,12 @@ body.fw-modal-open {
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
   overflow: hidden;
 }
 
@@ -2062,42 +2431,37 @@ body.fw-modal-open {
 
 /* ===== RESPONSIVE ENHANCEMENTS ===== */
 @media (max-width: 768px) {
-  .fw-payroll__upcoming-card,
-  .fw-payroll__report-card {
-    perspective: none;
-  }
-  
   .fw-payroll__upcoming-card:hover,
   .fw-payroll__report-card:hover {
     transform: translateY(-4px) !important;
   }
-  
+
   .fw-payroll__run-view-header {
     flex-direction: column;
   }
-  
+
   .fw-payroll__action-bar {
     flex-direction: column;
   }
-  
+
   .fw-payroll__action-bar .fw-payroll__btn {
     width: 100%;
   }
-  
+
   .fw-payroll__tax-table-header {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .fw-payroll__tax-table-stats {
     width: 100%;
   }
-  
+
   .fw-payroll__tax-bracket {
     grid-template-columns: 1fr;
     gap: 4px;
   }
-  
+
   .fw-payroll__reports-grid {
     grid-template-columns: 1fr;
   }
@@ -2156,15 +2520,20 @@ body.fw-modal-open {
   .fw-payroll__footer {
     display: none !important;
   }
-  
+
   .fw-payroll {
     background: white !important;
   }
-  
+
+  .fw-payroll::before,
+  .fw-payroll::after {
+    display: none !important;
+  }
+
   .fw-payroll__main {
     padding: 0 !important;
   }
-  
+
   .fw-card,
   .fw-payroll__stats-grid,
   .fw-table {
@@ -2172,134 +2541,185 @@ body.fw-modal-open {
   }
 }
 
-/* ===== ADD TO payroll.css ===== */
-
-/* ===== VIEW TABS (Status Filters) - HORIZONTAL LAYOUT ===== */
+/* ===== VIEW TABS (Status Filters) — segmented control in a carved groove ===== */
 .fw-payroll__view-tabs {
   display: flex;
-  gap: 8px;
-  padding: 0 var(--fw-spacing-lg);
-  margin-top: var(--fw-spacing-lg);
-  margin-bottom: var(--fw-spacing-lg);
-  flex-wrap: wrap;
-  flex-direction: row; /* FORCE HORIZONTAL */
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  margin: var(--fw-spacing-lg) 0;
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-full);
+  box-shadow: var(--fw-input-well);
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
+.fw-payroll__view-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inside the groove, tabs are flat ghosts… */
 .fw-payroll__view-tab {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 18px;
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-border-base);
-  border-radius: var(--fw-radius-sm);
-  color: var(--fw-text-secondary);
+  flex-shrink: 0;
+  padding: 9px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text-tertiary);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--fw-transition-base);
+  box-shadow: none;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base), background var(--fw-transition-base);
   text-decoration: none;
   white-space: nowrap;
 }
 
 .fw-payroll__view-tab:hover {
-  background: var(--fw-panel-hover);
   color: var(--fw-primary);
-  border-color: var(--fw-primary);
-  transform: translateY(-2px);
-  box-shadow: var(--fw-shadow-sm);
+  background: var(--fw-primary-light);
+  transform: none;
+  box-shadow: none;
 }
 
+.fw-payroll__view-tab:active {
+  transform: scale(0.97);
+}
+
+/* …and the active tab is the raised key that pops out of it */
 .fw-payroll__view-tab--active {
-  background: linear-gradient(145deg, 
-    color-mix(in srgb, var(--fw-primary) 88%, #fff 12%), 
-    var(--fw-primary)
-  );
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 
-    0 4px 12px var(--fw-primary-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(165deg, #fdba74 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(120, 50, 0, 0.45);
   font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(120, 50, 0, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 4px 10px -2px var(--fw-primary-glow),
+    0 8px 20px -4px var(--fw-primary-glow);
 }
 
 .fw-payroll__view-tab--active:hover {
-  transform: translateY(-2px);
-  box-shadow: 
-    0 6px 20px var(--fw-primary-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: #fff;
+  background: linear-gradient(165deg, #fdba74 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(120, 50, 0, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 12px 26px -6px var(--fw-primary-glow);
 }
 
-/* ===== FILTER DROPDOWNS (Toolbar) ===== */
-.fw-payroll__filter,
-.fw-payroll__search {
+/* ===== FILTER DROPDOWNS (Toolbar) — extruded keys / carved search ===== */
+.fw-payroll__filter {
   height: 40px;
-  padding: 0 16px;
-  background: var(--fw-input-bg);
-  border: 1px solid var(--fw-input-border);
-  border-radius: var(--fw-radius-md);
+  padding: 0 38px 0 16px;
+  background-color: var(--fw-panel-solid);
+  background-image:
+    linear-gradient(180deg, var(--fw-highlight), transparent 55%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, right 14px center;
+  background-size: 100% 100%, 12px 8px;
+  border: 1px solid var(--fw-border-base);
+  border-radius: var(--fw-radius-full);
   color: var(--fw-text-primary);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), border-color var(--fw-transition-base);
   font-family: inherit;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 36px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.fw-payroll__filter:hover {
+  border-color: var(--fw-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+}
+
+.fw-payroll__filter:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
+}
+
+.fw-payroll__filter:focus {
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow: var(--fw-key-shadow), 0 0 0 3px var(--fw-primary-light);
+}
+
+.fw-payroll__filter option {
+  background: var(--fw-panel-solid);
+  color: var(--fw-text-primary);
+  font-weight: 500;
+  padding: 8px 12px;
 }
 
 .fw-payroll__search {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
-  background-position: left 12px center;
-  padding-left: 40px;
-  padding-right: 16px;
+  height: 40px;
+  padding: 0 16px 0 40px;
+  background-color: var(--fw-input-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 14px center;
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-md);
+  color: var(--fw-text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  box-shadow: var(--fw-input-well);
+  transition: all var(--fw-transition-base);
 }
 
-.fw-payroll__filter:hover,
+.fw-payroll__search::placeholder {
+  color: var(--fw-text-muted);
+}
+
 .fw-payroll__search:hover {
   border-color: var(--fw-input-border-hover);
-  background-color: var(--fw-panel-hover);
 }
 
-.fw-payroll__filter:focus,
 .fw-payroll__search:focus {
   outline: none;
   border-color: var(--fw-primary);
-  box-shadow: 0 0 0 3px var(--fw-primary-light);
+  box-shadow:
+    var(--fw-input-well),
+    0 0 0 3px var(--fw-primary-light),
+    0 0 18px -2px var(--fw-primary-glow);
 }
 
-/* Dark mode dropdown arrow */
-.fw-payroll[data-theme="dark"] .fw-payroll__filter {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239fb0c8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-}
+/* Dark mode dropdown arrow already uses the orange stroke SVG above, which
+   reads well on both themes; the search icon likewise. */
 
-.fw-payroll[data-theme="dark"] .fw-payroll__search {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239fb0c8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
-}
-
-/* ===== RUN CARD (in list) - MATCHING BOARD CARD STYLE ===== */
+/* ===== RUN CARD (in list) — 3D slab ===== */
 .fw-payroll__run-card {
   display: flex;
   gap: var(--fw-spacing-lg);
   padding: var(--fw-spacing-xl);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   text-decoration: none;
   color: inherit;
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   position: relative;
   overflow: hidden;
-  box-shadow: var(--fw-shadow-md);
-  
-  /* 3D Tilt Setup */
-  perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 /* Rim light + gloss */
@@ -2331,10 +2751,8 @@ body.fw-modal-open {
 }
 
 .fw-payroll__run-card:hover {
-  box-shadow: 
-    var(--fw-shadow-lg), 
-    0 0 40px var(--fw-glow);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
   transform: translateY(-4px);
 }
 
@@ -2359,9 +2777,10 @@ body.fw-modal-open {
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
-  box-shadow: 
-    0 4px 12px var(--fw-primary-glow), 
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(120, 50, 0, 0.4),
+    0 5px 12px -2px var(--fw-primary-glow);
   z-index: 2;
 }
 
@@ -2373,7 +2792,7 @@ body.fw-modal-open {
   left: -120%;
   width: 120%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
   animation: shimmer 3s infinite;
   pointer-events: none;
 }
@@ -2436,9 +2855,13 @@ body.fw-modal-open {
 
 .fw-payroll__run-card-stat-value {
   font-size: 20px;
-  font-weight: 700;
-  color: var(--fw-primary);
-  text-shadow: 0 0 12px var(--fw-primary-glow);
+  font-weight: 800;
+  line-height: 1.15;
+  background: linear-gradient(160deg, #fdba74, var(--fw-primary) 60%, var(--fw-primary-hover));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 6px var(--fw-primary-glow));
 }
 
 .fw-payroll__run-card-stat-label {
@@ -2449,28 +2872,22 @@ body.fw-modal-open {
   color: var(--fw-text-muted);
 }
 
-/* ===== EMPLOYEE CARD (in list) ===== */
+/* ===== EMPLOYEE CARD (in list) — 3D slab ===== */
 .fw-payroll__employee-card {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: var(--fw-spacing-lg);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   text-decoration: none;
   color: inherit;
   position: relative;
   overflow: hidden;
   cursor: pointer;
-  
-  /* 3D Tilt Setup */
-  perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 /* Rim light + gloss */
@@ -2502,10 +2919,8 @@ body.fw-modal-open {
 }
 
 .fw-payroll__employee-card:hover {
-  box-shadow: 
-    var(--fw-shadow-lg), 
-    0 0 40px var(--fw-glow);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
   transform: translateY(-4px);
 }
 
@@ -2530,9 +2945,10 @@ body.fw-modal-open {
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: 
-    0 4px 12px var(--fw-primary-glow), 
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(120, 50, 0, 0.4),
+    0 5px 12px -2px var(--fw-primary-glow);
   position: relative;
   overflow: hidden;
   z-index: 2;
@@ -2546,7 +2962,7 @@ body.fw-modal-open {
   left: -120%;
   width: 120%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
   animation: shimmer 3s infinite;
   pointer-events: none;
 }
@@ -2570,26 +2986,20 @@ body.fw-modal-open {
   color: var(--fw-text-tertiary);
 }
 
-/* ===== PAYITEM CARD ===== */
+/* ===== PAYITEM CARD — 3D slab ===== */
 .fw-payroll__payitem-card {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: var(--fw-spacing-lg);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--fw-shadow-md);
-  transition: all var(--fw-transition-base);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  
-  /* 3D Tilt Setup */
-  perspective: 1000px;
-  transform-style: preserve-3d;
 }
 
 /* Rim light + gloss */
@@ -2621,10 +3031,8 @@ body.fw-modal-open {
 }
 
 .fw-payroll__payitem-card:hover {
-  box-shadow: 
-    var(--fw-shadow-lg), 
-    0 0 40px var(--fw-glow);
-  border-color: var(--fw-primary);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
   transform: translateY(-4px);
 }
 
@@ -2673,22 +3081,15 @@ body.fw-modal-open {
 /* ===== RESPONSIVE ENHANCEMENTS ===== */
 @media (max-width: 768px) {
   .fw-payroll__view-tabs {
-    padding: 0 16px;
     margin-top: 16px;
   }
-  
-  .fw-payroll__run-card,
-  .fw-payroll__employee-card,
-  .fw-payroll__payitem-card {
-    perspective: none;
-  }
-  
+
   .fw-payroll__run-card:hover,
   .fw-payroll__employee-card:hover,
   .fw-payroll__payitem-card:hover {
     transform: translateY(-4px) !important;
   }
-  
+
   .fw-payroll__run-card-stats {
     flex-direction: column;
     gap: var(--fw-spacing-sm);
@@ -2713,7 +3114,7 @@ body.fw-modal-open {
 }
 
 .fw-payroll__add-emp-row:hover {
-  background: var(--fw-surface-alt, rgba(0, 0, 0, 0.04));
+  background: var(--fw-surface-alt);
 }
 
 .fw-payroll__add-emp-name {
@@ -2721,6 +3122,6 @@ body.fw-modal-open {
 }
 
 .fw-payroll__add-emp-meta {
-  color: var(--fw-text-muted, #6b7280);
+  color: var(--fw-text-muted);
   font-size: 13px;
 }

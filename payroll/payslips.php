@@ -53,7 +53,7 @@ foreach ($employees as $emp) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payslips – <?= htmlspecialchars($run['name']) ?></title>
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=2026-04-25-PAYROLL-PDF-SLIPS">
+    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=2026-07-09-PAYROLL-UI-3D">
     <style>
         .ps-message { margin: 16px 0; }
         .ps-message.success { color: green; }
