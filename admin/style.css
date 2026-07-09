@@ -2,6 +2,8 @@
    ADMIN AREA – SCOPED TO .fw-admin
    ======================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 .fw-admin {
   /* ========== DESIGN TOKENS ========== */
   --fw-primary: #6366f1;
@@ -1289,3 +1291,288 @@ button.fw-admin__kebab-item {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================
+   DIMENSION 3D OVERRIDES (INDIGO EDITION) — appended so source order upgrades
+   the chrome to the CRM depth system while the admin sidebar layout is kept.
+   ============================================================================ */
+
+.fw-admin {
+  --fw-radius-xl: 16px;
+  --fw-radius-full: 9999px;
+  --fw-spacing-2xl: 40px;
+  --fw-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+
+  --fw-bg-base: #eef1f6;
+  --fw-bg-secondary: #e3e7ef;
+  --fw-card-face: linear-gradient(168deg, #ffffff 0%, #fcfcff 45%, #eef0fb 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.95);
+  --fw-panel-bg: #ffffff;
+  --fw-panel-hover: rgba(248, 249, 253, 1);
+  --fw-surface-alt: rgba(30, 27, 75, 0.04);
+  --fw-text-secondary: #4b5563;
+  --fw-text-tertiary: #6b7280;
+  --fw-border-base: rgba(30, 27, 75, 0.08);
+  --fw-border-strong: rgba(30, 27, 75, 0.14);
+  --fw-shadow-sm: 0 2px 8px rgba(30, 27, 75, 0.07);
+  --fw-shadow-md: 0 4px 16px rgba(30, 27, 75, 0.09);
+  --fw-shadow-lg: 0 8px 32px rgba(30, 27, 75, 0.13);
+  --fw-shadow-xl: 0 12px 48px rgba(30, 27, 75, 0.17);
+
+  --fw-primary: #6366f1;
+  --fw-primary-tint: #a5b4fc;
+  --fw-primary-hover: #4f46e5;
+  --fw-primary-deep: #4338ca;
+  --fw-primary-deeper: #3730a3;
+  --fw-primary-glow: rgba(99, 102, 241, 0.22);
+  --fw-primary-light: rgba(99, 102, 241, 0.10);
+  --fw-on-primary: #ffffff;
+  --fw-ink-a: #818cf8;
+  --fw-ink-c: #3730a3;
+
+  --fw-highlight: rgba(30, 27, 75, 0.05);
+  --fw-rim-light: rgba(255, 255, 255, 0.85);
+  --fw-glare: rgba(255, 255, 255, 0.5);
+  --fw-input-bg: #f2f3fb;
+  --fw-input-border: rgba(30, 27, 75, 0.14);
+  --fw-input-border-hover: rgba(30, 27, 75, 0.26);
+  --fw-input-well: inset 0 2px 4px rgba(30,27,75,0.07), inset 0 1px 2px rgba(30,27,75,0.06), inset 0 -1px 0 rgba(255,255,255,0.9);
+
+  --fw-grid-line: rgba(99, 102, 241, 0.07);
+  --fw-aurora-a: rgba(99, 102, 241, 0.10);
+  --fw-aurora-b: rgba(6, 182, 212, 0.06);
+  --fw-aurora-c: rgba(139, 92, 246, 0.05);
+  --fw-bg-radial:
+    radial-gradient(1400px 700px at 18% -8%, var(--fw-aurora-a), transparent 60%),
+    radial-gradient(1200px 600px at 85% 5%, var(--fw-aurora-b), transparent 55%),
+    radial-gradient(900px 500px at 55% 110%, var(--fw-aurora-c), transparent 60%);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(30,27,75,0.05), 0 6px 14px -4px rgba(30,27,75,0.09),
+    0 18px 36px -14px rgba(30,27,75,0.16), 0 30px 60px -26px rgba(99,102,241,0.20),
+    inset 0 1px 0 rgba(255,255,255,1), inset 0 -2px 6px rgba(30,27,75,0.05);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(30,27,75,0.06), 0 12px 24px -6px rgba(30,27,75,0.13),
+    0 32px 56px -16px rgba(30,27,75,0.22), 0 48px 90px -28px rgba(99,102,241,0.36),
+    0 0 0 1px rgba(99,102,241,0.22), inset 0 1px 0 rgba(255,255,255,1), inset 0 -2px 6px rgba(30,27,75,0.05);
+  --fw-key-side: rgba(30, 27, 75, 0.16);
+  --fw-key-shadow: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -1px 0 rgba(30,27,75,0.05), 0 2px 0 var(--fw-key-side), 0 3px 6px rgba(30,27,75,0.10), 0 8px 16px -6px rgba(30,27,75,0.14);
+  --fw-key-shadow-hover: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -1px 0 rgba(30,27,75,0.05), 0 4px 0 var(--fw-key-side), 0 6px 12px rgba(30,27,75,0.12), 0 14px 24px -8px rgba(30,27,75,0.18);
+  --fw-key-shadow-active: inset 0 2px 4px rgba(30,27,75,0.14), 0 1px 0 var(--fw-key-side);
+}
+
+.fw-admin[data-theme="dark"] {
+  --fw-bg-base: #0a0b12;
+  --fw-bg-secondary: #10121b;
+  --fw-card-face: linear-gradient(168deg, rgba(36,38,54,0.98) 0%, rgba(26,28,42,0.99) 48%, rgba(18,19,30,1) 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.12);
+  --fw-panel-bg: #1a1d29;
+  --fw-panel-hover: rgba(38, 41, 56, 1);
+  --fw-surface-alt: rgba(255, 255, 255, 0.05);
+  --fw-text-secondary: #d1d5db;
+  --fw-text-tertiary: #9ca3af;
+  --fw-border-base: rgba(255, 255, 255, 0.08);
+  --fw-border-strong: rgba(255, 255, 255, 0.14);
+  --fw-shadow-sm: 0 4px 16px rgba(0,0,0,0.4);
+  --fw-shadow-md: 0 8px 32px rgba(0,0,0,0.5);
+  --fw-shadow-lg: 0 12px 48px rgba(0,0,0,0.6);
+  --fw-shadow-xl: 0 16px 64px rgba(0,0,0,0.7);
+
+  --fw-primary: #818cf8;
+  --fw-primary-tint: #c7d2fe;
+  --fw-primary-hover: #6366f1;
+  --fw-primary-deep: #4f46e5;
+  --fw-primary-deeper: #4338ca;
+  --fw-primary-glow: rgba(129, 140, 248, 0.30);
+  --fw-primary-light: rgba(129, 140, 248, 0.16);
+  --fw-ink-a: #c7d2fe;
+  --fw-ink-c: #818cf8;
+
+  --fw-highlight: rgba(255, 255, 255, 0.06);
+  --fw-rim-light: rgba(255, 255, 255, 0.28);
+  --fw-glare: rgba(210, 214, 250, 0.14);
+  --fw-input-bg: rgba(8, 9, 16, 0.6);
+  --fw-input-border: rgba(255, 255, 255, 0.14);
+  --fw-input-border-hover: rgba(255, 255, 255, 0.26);
+  --fw-input-well: inset 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 2px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(255,255,255,0.06);
+
+  --fw-grid-line: rgba(129, 140, 248, 0.08);
+  --fw-aurora-a: rgba(129, 140, 248, 0.16);
+  --fw-aurora-b: rgba(6, 182, 212, 0.09);
+  --fw-aurora-c: rgba(139, 92, 246, 0.07);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(0,0,0,0.5), 0 10px 22px -6px rgba(0,0,0,0.55),
+    0 26px 50px -18px rgba(0,0,0,0.65), 0 34px 70px -28px rgba(99,102,241,0.32),
+    inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -2px 8px rgba(0,0,0,0.4);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(0,0,0,0.5), 0 16px 32px -8px rgba(0,0,0,0.6),
+    0 40px 70px -20px rgba(0,0,0,0.7), 0 52px 100px -30px rgba(99,102,241,0.5),
+    0 0 0 1px rgba(129,140,248,0.35), inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -2px 8px rgba(0,0,0,0.4);
+  --fw-key-side: rgba(0, 0, 0, 0.7);
+  --fw-key-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.35), 0 2px 0 var(--fw-key-side), 0 3px 8px rgba(0,0,0,0.45), 0 8px 18px -6px rgba(0,0,0,0.5);
+  --fw-key-shadow-hover: inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -1px 0 rgba(0,0,0,0.35), 0 4px 0 var(--fw-key-side), 0 7px 14px rgba(0,0,0,0.5), 0 14px 28px -8px rgba(0,0,0,0.55);
+  --fw-key-shadow-active: inset 0 2px 6px rgba(0,0,0,0.6), 0 1px 0 var(--fw-key-side);
+}
+
+/* Base: Inter + aurora (root is <body>, environment works natively) */
+.fw-admin {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--fw-bg-base);
+  background-image: var(--fw-bg-radial);
+  transition: background 0.4s ease, color 0.3s ease;
+}
+.fw-admin ::selection { background: var(--fw-primary); color: var(--fw-on-primary); }
+.fw-admin :focus-visible { outline: 2px solid var(--fw-primary); outline-offset: 2px; }
+
+/* Environment */
+.fw-admin::before {
+  content: ''; position: fixed; left: -30%; right: -30%; bottom: -14%; height: 60vh;
+  background-image: linear-gradient(var(--fw-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--fw-grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(620px) rotateX(63deg); transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.7), transparent 80%);
+  mask-image: linear-gradient(to top, rgba(0,0,0,0.7), transparent 80%);
+  pointer-events: none; z-index: -1;
+}
+.fw-admin::after {
+  content: ''; position: fixed; inset: 0;
+  background: radial-gradient(720px 420px at 78% 82%, var(--fw-aurora-b), transparent 70%), radial-gradient(880px 520px at 12% 70%, var(--fw-aurora-a), transparent 70%);
+  opacity: 0.55; animation: fwAuroraDrift 22s ease-in-out infinite alternate; pointer-events: none; z-index: -1;
+}
+.fw-admin__shell, .fw-admin__header { position: relative; z-index: 1; }
+@keyframes fwAuroraDrift { from { opacity: 0.3; transform: translateY(0); } to { opacity: 0.7; transform: translateY(-30px); } }
+@keyframes fwShimmer { to { left: 100%; } }
+
+/* Header — floating glass slab */
+.fw-admin__header {
+  background: rgba(255,255,255,0.82);
+  border: 1px solid var(--fw-panel-border);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light), 0 10px 30px -12px rgba(30,27,75,0.35), 0 4px 24px -4px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.fw-admin[data-theme="dark"] .fw-admin__header { background: rgba(22,24,34,0.78); }
+.fw-admin__logo-tile {
+  background: linear-gradient(135deg, var(--fw-primary), var(--fw-primary-deep));
+  box-shadow: inset 0 2px 3px rgba(255,255,255,0.3), inset 0 -3px 6px rgba(30,27,75,0.4), 0 3px 0 var(--fw-primary-deeper), 0 8px 18px -4px var(--fw-primary-glow);
+  overflow: hidden; position: relative;
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring);
+}
+.fw-admin__logo-tile::after {
+  content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: fwShimmer 3s infinite;
+}
+.fw-admin__greeting { color: var(--fw-text-secondary); }
+.fw-admin__greeting-name { color: var(--fw-primary); font-weight: 700; }
+
+.fw-admin__home-link, .fw-admin__theme-toggle {
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
+}
+.fw-admin__home-link:hover, .fw-admin__theme-toggle:hover { background: var(--fw-card-face); transform: translateY(-2px); box-shadow: var(--fw-key-shadow-hover); color: var(--fw-primary); }
+.fw-admin__home-link:active, .fw-admin__theme-toggle:active { transform: translateY(1px); box-shadow: var(--fw-key-shadow-active); }
+
+/* Sidebar nav */
+.fw-admin__nav {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-shadow-md);
+}
+.fw-admin__nav-link--active {
+  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary) 55%, var(--fw-primary-deep));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px -2px var(--fw-primary-glow), 0 0 18px -6px var(--fw-primary-glow);
+}
+.fw-admin__nav-link:hover { background: var(--fw-primary-light); color: var(--fw-primary); }
+.fw-admin__nav-link--active:hover { color: #fff; }
+
+/* Page & section headings — gradient ink */
+.fw-admin__page-title,
+.fw-admin__stat-value {
+  background: linear-gradient(135deg, var(--fw-ink-a), var(--fw-primary) 55%, var(--fw-ink-c));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 10px var(--fw-primary-glow));
+}
+
+/* Cards / stat cards / quick actions — 3D slabs */
+.fw-admin__card,
+.fw-admin__stat-card,
+.fw-admin__quick-action {
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+}
+.fw-admin__stat-card:hover,
+.fw-admin__quick-action:hover { transform: translateY(-4px); box-shadow: var(--fw-card-shadow-hover); border-color: var(--fw-primary-glow); }
+
+/* Buttons — extruded pressable keys */
+.fw-admin__btn { font-weight: 700; letter-spacing: 0.2px; }
+.fw-admin__btn--primary {
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-deep) 100%);
+  color: #fff; border: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -2px 3px rgba(30,27,75,0.3), 0 3px 0 var(--fw-primary-deeper), 0 6px 14px -2px var(--fw-primary-glow), 0 14px 28px -8px var(--fw-primary-glow);
+}
+.fw-admin__btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -2px 3px rgba(30,27,75,0.3), 0 5px 0 var(--fw-primary-deeper), 0 10px 22px -2px var(--fw-primary-glow), 0 22px 44px -10px var(--fw-primary-glow);
+}
+.fw-admin__btn--primary:active { transform: translateY(2px); box-shadow: inset 0 2px 6px rgba(30,27,75,0.4), 0 1px 0 var(--fw-primary-deeper); }
+.fw-admin__btn--secondary,
+.fw-admin__btn-icon {
+  background: var(--fw-card-face); border: 1px solid var(--fw-border-base); color: var(--fw-text-primary); box-shadow: var(--fw-key-shadow);
+}
+.fw-admin__btn--secondary:hover,
+.fw-admin__btn-icon:hover { background: var(--fw-card-face); color: var(--fw-primary); border-color: var(--fw-primary); transform: translateY(-2px); box-shadow: var(--fw-key-shadow-hover); }
+.fw-admin__btn--secondary:active,
+.fw-admin__btn-icon:active { transform: translateY(1px); box-shadow: var(--fw-key-shadow-active); }
+
+/* Badges — glossy pills */
+.fw-admin__badge {
+  border-radius: var(--fw-radius-full); font-weight: 700; letter-spacing: 0.3px; color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -2px 3px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.15);
+}
+.fw-admin__badge--admin { background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary) 60%, var(--fw-primary-deep)); }
+.fw-admin__badge--member,
+.fw-admin__badge--active,
+.fw-admin__badge--success { background: linear-gradient(165deg, #34d399, #10b981 60%, #059669); }
+.fw-admin__badge--viewer,
+.fw-admin__badge--muted { background: linear-gradient(165deg, #94a3b8, #64748b 60%, #475569); }
+.fw-admin__badge--pos { background: linear-gradient(165deg, #67e8f9, #06b6d4 60%, #0891b2); }
+.fw-admin__badge--bookkeeper { background: linear-gradient(165deg, #a78bfa, #8b5cf6 60%, #6d28d9); }
+.fw-admin__badge--warning { background: linear-gradient(165deg, #fcd34d, #f59e0b 60%, #d97706); color: #3a2400; }
+.fw-admin__badge--danger { background: linear-gradient(165deg, #f87171, #ef4444 60%, #b91c1c); }
+
+/* Inputs — carved wells */
+.fw-admin__input,
+.fw-admin__select {
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  box-shadow: var(--fw-input-well);
+  transition: all var(--fw-transition-base);
+}
+.fw-admin__input:hover,
+.fw-admin__select:hover { border-color: var(--fw-input-border-hover); }
+.fw-admin__input:focus,
+.fw-admin__select:focus { outline: none; border-color: var(--fw-primary); box-shadow: var(--fw-input-well), 0 0 0 3px var(--fw-primary-light), 0 0 18px -2px var(--fw-primary-glow); }
+
+/* Table header + modal */
+.fw-admin__table thead th { text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; color: var(--fw-text-tertiary); }
+.fw-admin__modal-content {
+  background: var(--fw-panel-bg);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light), var(--fw-shadow-xl), 0 24px 60px -20px var(--fw-primary-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fw-admin *, .fw-admin *::before, .fw-admin *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+@media print { .fw-admin::before, .fw-admin::after { display: none !important; } }

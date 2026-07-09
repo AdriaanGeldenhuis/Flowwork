@@ -752,11 +752,24 @@ document.addEventListener('keydown', (e) => {
   }
 
   // ========== INIT ==========
+  function initLogoTileEffect() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const logoTile = document.querySelector('.fw-suppliers-ai__logo-tile');
+    if (!logoTile) return;
+    logoTile.addEventListener('mouseenter', function() {
+      this.style.transform = 'scale(1.05) rotate(-3deg)';
+    });
+    logoTile.addEventListener('mouseleave', function() {
+      this.style.transform = '';
+    });
+  }
+
   function init() {
     initTheme();
     initKebabMenu();
     initSearch();
     initShortlist();
+    initLogoTileEffect();
   }
 
   if (document.readyState === 'loading') {

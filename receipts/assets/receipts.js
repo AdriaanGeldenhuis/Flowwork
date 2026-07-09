@@ -429,12 +429,26 @@
     });
   }
 
+  // ===== LOGO TILE PLAYFUL TILT =====
+  function initLogoTileEffect() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const logoTile = document.querySelector('.fw-receipts__logo-tile');
+    if (!logoTile) return;
+    logoTile.addEventListener('mouseenter', function() {
+      this.style.transform = 'scale(1.05) rotate(-3deg)';
+    });
+    logoTile.addEventListener('mouseleave', function() {
+      this.style.transform = '';
+    });
+  }
+
   // ===== INIT =====
   function init() {
     initTheme();
     initKebabMenu();
     initReceiptsList();
     initWidgetPicker();                // <-- ensure picker works for "Change widget"
+    initLogoTileEffect();
     const url = new URLSearchParams(window.location.search);
     if ((url.get('tab') || 'overview') === 'overview') initWidgets();
   }

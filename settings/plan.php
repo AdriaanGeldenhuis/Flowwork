@@ -38,37 +38,47 @@ $companyCount = $stmt->fetchColumn();
     <title>Plan & Billing - Werkhub</title>
     <link rel="stylesheet" href="/auth/style.css?v=2025-09-30-1">
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        /* Plan & Billing — Dimension 3D (indigo), scoped to this standalone page */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            background-color: #eef1f6;
+            background-image:
+                radial-gradient(1400px 700px at 18% -8%, rgba(99,102,241,0.10), transparent 60%),
+                radial-gradient(1200px 600px at 85% 5%, rgba(6,182,212,0.06), transparent 55%),
+                radial-gradient(900px 500px at 55% 110%, rgba(139,92,246,0.05), transparent 60%);
+            min-height: 100vh;
+        }
         .fw-billing {
-            padding: 2rem;
-            max-width: 1200px;
+            padding: 2.5rem 2rem;
+            max-width: 1100px;
             margin: 0 auto;
+            color: #1a1d29;
         }
-        .billing-header {
-            margin-bottom: 2rem;
-        }
+        .billing-header { margin-bottom: 2rem; }
         .billing-header h1 {
-            font-size: 2rem;
+            font-size: 2.25rem;
+            font-weight: 900;
             margin: 0 0 0.5rem 0;
+            background: linear-gradient(135deg, #818cf8, #6366f1 55%, #3730a3);
+            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 2px 12px rgba(99,102,241,0.25));
         }
         .status-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 12px;
-            font-size: 0.875rem;
-            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            padding: 0.3rem 0.8rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            color: #fff;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -2px 3px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.15);
         }
-        .status-badge.active {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-        }
-        .status-badge.past-due {
-            background: rgba(245, 158, 11, 0.1);
-            color: #f59e0b;
-        }
-        .status-badge.canceled {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
+        .status-badge.active { background: linear-gradient(165deg, #34d399, #10b981 60%, #059669); }
+        .status-badge.past-due { background: linear-gradient(165deg, #fcd34d, #f59e0b 60%, #d97706); color: #3a2400; }
+        .status-badge.canceled { background: linear-gradient(165deg, #f87171, #ef4444 60%, #b91c1c); }
         .usage-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -76,39 +86,77 @@ $companyCount = $stmt->fetchColumn();
             margin-bottom: 2rem;
         }
         .usage-card {
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
+            background: linear-gradient(168deg, #ffffff 0%, #fcfcff 45%, #eef0fb 100%);
+            border: 1px solid rgba(255,255,255,0.95);
+            border-radius: 16px;
             padding: 1.5rem;
+            box-shadow:
+                0 1px 2px rgba(30,27,75,0.05), 0 6px 14px -4px rgba(30,27,75,0.09),
+                0 18px 36px -14px rgba(30,27,75,0.16), 0 30px 60px -26px rgba(99,102,241,0.20),
+                inset 0 1px 0 rgba(255,255,255,1);
+            transition: transform 0.45s cubic-bezier(0.22,1,0.36,1), box-shadow 0.45s cubic-bezier(0.22,1,0.36,1);
         }
-        .usage-card h3 {
-            margin: 0 0 1rem 0;
-            font-size: 1.125rem;
+        .usage-card:hover {
+            transform: translateY(-4px);
+            box-shadow:
+                0 2px 4px rgba(30,27,75,0.06), 0 12px 24px -6px rgba(30,27,75,0.13),
+                0 32px 56px -16px rgba(30,27,75,0.22), 0 48px 90px -28px rgba(99,102,241,0.36),
+                0 0 0 1px rgba(99,102,241,0.22), inset 0 1px 0 rgba(255,255,255,1);
         }
+        .usage-card h3 { margin: 0 0 1rem 0; font-size: 1.125rem; font-weight: 800; }
         .usage-bar {
-            height: 8px;
-            background: #e5e7eb;
-            border-radius: 4px;
+            height: 10px;
+            background: #f2f3fb;
+            border-radius: 9999px;
             overflow: hidden;
             margin: 0.5rem 0;
+            box-shadow: inset 0 2px 4px rgba(30,27,75,0.10), inset 0 -1px 0 rgba(255,255,255,0.9);
         }
         .usage-bar-fill {
             height: 100%;
-            background: #3b82f6;
+            background: linear-gradient(90deg, #3b82f6, #6366f1);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
             transition: width 0.3s;
         }
-        .usage-bar-fill.warning {
-            background: #f59e0b;
-        }
-        .usage-bar-fill.danger {
-            background: #ef4444;
-        }
+        .usage-bar-fill.warning { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+        .usage-bar-fill.danger { background: linear-gradient(90deg, #f87171, #ef4444); }
         .upgrade-section {
-            background: rgba(59, 130, 246, 0.05);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            border-radius: 12px;
+            background:
+                linear-gradient(135deg, rgba(99,102,241,0.10), transparent 60%),
+                linear-gradient(168deg, #ffffff 0%, #fcfcff 45%, #eef0fb 100%);
+            border: 1px solid rgba(99,102,241,0.35);
+            border-radius: 16px;
             padding: 2rem;
             text-align: center;
+            box-shadow:
+                0 1px 2px rgba(30,27,75,0.05), 0 12px 28px -12px rgba(30,27,75,0.16),
+                0 30px 60px -26px rgba(99,102,241,0.22), inset 0 1px 0 rgba(255,255,255,1);
+        }
+        .upgrade-section h2 { font-weight: 800; margin-top: 0; }
+        .fw-billing .btn-primary {
+            background: linear-gradient(165deg, #a5b4fc 0%, #6366f1 55%, #4338ca 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 0.7rem 1.4rem;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -2px 3px rgba(30,27,75,0.3),
+                0 3px 0 #3730a3, 0 6px 14px -2px rgba(99,102,241,0.35), 0 14px 28px -8px rgba(99,102,241,0.25);
+            transition: transform 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1);
+        }
+        .fw-billing .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -2px 3px rgba(30,27,75,0.3),
+                0 5px 0 #3730a3, 0 10px 22px -2px rgba(99,102,241,0.4), 0 22px 44px -10px rgba(99,102,241,0.3);
+        }
+        .fw-billing .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+        .fw-billing a { color: #4f46e5; font-weight: 600; }
+        @media (prefers-reduced-motion: reduce) {
+            .usage-card, .fw-billing .btn-primary { transition: none !important; }
         }
     </style>
 </head>
