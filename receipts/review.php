@@ -3,7 +3,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../finances/lib/Csrf.php';
 
-define('ASSET_VERSION', '2025-01-21-RECEIPTS-1');
+define('ASSET_VERSION', '2026-07-09-RECEIPTS-UI-3D');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];

@@ -1,3 +1,8 @@
+/* ============================================================================
+   RECEIPTS WIDGETS — Dimension 3D slabs (magenta accent). Scoped to
+   .fw-receipts; relies on tokens defined in receipts.css.
+   ============================================================================ */
+
 /* Grid */
 .fw-receipts__widgets{
   display:grid; gap: var(--fw-spacing-lg);
@@ -10,14 +15,22 @@
 @media (max-width:1100px){ .fw-wslot--sm{grid-column:span 6;} .fw-wslot--md{grid-column:span 12;} }
 @media (max-width:700px){ .fw-wslot--sm,.fw-wslot--md,.fw-wslot--lg{grid-column:span 12;} }
 
-/* Widget container */
+/* Widget container — 3D slab */
 .fw-widget{
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border, var(--accent-silver));
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-md);
   height: 100%;
   display:flex; flex-direction:column;
+  box-shadow: var(--fw-card-shadow);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  position: relative;
+}
+.fw-widget:hover{
+  transform: translateY(-4px);
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
 }
 
 /* Header */
@@ -26,44 +39,66 @@
 .fw-wicon{
   width:32px; height:32px; border-radius:10px;
   display:grid; place-items:center; font-size:18px;
-  background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
-  border:1px solid var(--fw-panel-border, var(--accent-silver));
+  background: linear-gradient(135deg, var(--fw-primary), var(--neon-purple));
+  color:#fff;
+  box-shadow:
+    inset 0 1px 2px rgba(255,255,255,.4),
+    inset 0 -2px 4px rgba(90,0,70,.4),
+    0 4px 10px -2px var(--fw-primary-glow);
 }
 .fw-wtitle{ font-weight:700; color: var(--fw-text-primary); }
 
 /* 3-dot menu */
 .fw-wmenu-wrap{ position:relative; }
 .fw-wmenu-btn{
-  width:32px; height:32px; border-radius:8px; border:1px solid var(--fw-panel-border, var(--accent-silver));
-  background: var(--fw-panel-bg); display:grid; place-items:center; cursor:pointer;
+  width:32px; height:32px; border-radius:8px;
+  border:1px solid var(--fw-border-base);
+  background: var(--fw-card-face); display:grid; place-items:center; cursor:pointer;
+  color: var(--fw-text-secondary);
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
 }
-.fw-wmenu{ position:absolute; right:0; top:36px; min-width:160px;
-  background: var(--fw-panel-bg); border:1px solid var(--fw-panel-border, var(--accent-silver));
-  border-radius:10px; padding:6px; display:none; z-index:3;
-  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+.fw-wmenu-btn:hover{ transform: translateY(-2px); box-shadow: var(--fw-key-shadow-hover); color: var(--fw-primary); }
+.fw-wmenu{ position:absolute; right:0; top:38px; min-width:170px;
+  background: var(--fw-panel-bg);
+  border:1px solid var(--fw-panel-border);
+  border-radius:12px; padding:6px; display:none; z-index:3;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 24px 48px -12px rgba(20, 8, 16, 0.45),
+    0 8px 24px -8px var(--fw-primary-glow);
 }
 .fw-wmenu.open{ display:block; }
 .fw-wmenu-item{
   padding:8px 10px; border-radius:8px; cursor:pointer;
+  color: var(--fw-text-primary); font-size:14px;
+  transition: all var(--fw-transition-fast);
 }
-.fw-wmenu-item:hover{ background: rgba(255,255,255,.06); }
+.fw-wmenu-item:hover{ background: var(--fw-primary-light); color: var(--fw-primary); }
 
 /* Body (ensure enough space for charts) */
 .fw-wbody{ flex:1; min-height:180px; display:block; }
 
 /* Card metric */
 .fw-wcard{ height:100%; display:flex; align-items:center; justify-content:center; }
-.fw-wcard-value{ font-size:28px; font-weight:800; }
+.fw-wcard-value{
+  font-size:32px; font-weight:900; line-height:1.1;
+  background: linear-gradient(160deg, #ff8ae8, var(--fw-primary) 60%, var(--fw-primary-hover));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  filter: drop-shadow(0 2px 6px var(--fw-primary-glow));
+}
 
 /* Table */
 .fw-wtable{ display:flex; flex-direction:column; gap:8px; }
 .fw-wtable-head, .fw-wrow{ display:flex; gap:8px; }
-.fw-wcell{ flex:1 1 0; padding:6px 8px; border-bottom:1px solid var(--fw-panel-border, var(--accent-silver)); }
-.fw-wcell--head{ font-weight:700; }
+.fw-wcell{ flex:1 1 0; padding:6px 8px; border-bottom:1px solid var(--fw-border-base); color: var(--fw-text-secondary); font-size:14px; }
+.fw-wcell--head{ font-weight:700; color: var(--fw-text-tertiary); text-transform:uppercase; font-size:12px; letter-spacing:0.04em; }
 .fw-wcell--right{ text-align:right; }
-.fw-wempty{ padding:12px; opacity:.8; }
+.fw-wempty{ padding:12px; opacity:.8; color: var(--fw-text-muted); }
 
 /* Chart */
 .fw-chart{ width:100%; height:160px; display:block; }
-.fw-bar{ fill: var(--accent-receipts, #8a4bff); opacity:.9; }
+.fw-bar{ fill: var(--fw-primary); opacity:.9; }
 .fw-bar:hover{ opacity:1; }
