@@ -3,6 +3,8 @@
    Aqua/Cyan theme, matches CRM structure
    ======================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 .fw-calendar {
   /* Design tokens */
   --fw-radius-sm: 8px;
@@ -1409,3 +1411,260 @@
     right: -100px;
   }
 }
+
+/* ============================================================================
+   DIMENSION 3D OVERRIDES (AQUA/CYAN EDITION) — appended so source order
+   upgrades the chrome to the CRM depth system while the grid views above stay.
+   ============================================================================ */
+
+.fw-calendar {
+  --fw-spacing-2xl: 48px;
+  --fw-radius-xl: 20px;
+  --fw-radius-full: 9999px;
+  --fw-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+
+  --fw-bg-base: #eef3f7;
+  --fw-bg-secondary: #e2eaf0;
+  --fw-card-face: linear-gradient(168deg, #ffffff 0%, #fbfdfe 45%, #edf4f9 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.95);
+  --fw-panel-bg: rgba(255, 255, 255, 0.82);
+  --fw-panel-solid: #ffffff;
+  --fw-panel-hover: rgba(248, 250, 252, 1);
+  --fw-surface-alt: rgba(21, 39, 50, 0.04);
+  --fw-text-secondary: #46555f;
+  --fw-text-tertiary: #64737d;
+  --fw-border-base: rgba(21, 39, 50, 0.08);
+  --fw-border-strong: rgba(21, 39, 50, 0.14);
+  --fw-shadow-sm: 0 2px 8px rgba(21, 39, 50, 0.07);
+  --fw-shadow-md: 0 4px 16px rgba(21, 39, 50, 0.09);
+  --fw-shadow-lg: 0 8px 32px rgba(21, 39, 50, 0.13);
+  --fw-shadow-xl: 0 12px 48px rgba(21, 39, 50, 0.17);
+
+  --fw-primary: #06b6d4;
+  --fw-primary-tint: #67e8f9;
+  --fw-primary-hover: #0891b2;
+  --fw-primary-deep: #0e7490;
+  --fw-primary-deeper: #155e75;
+  --fw-primary-glow: rgba(6, 182, 212, 0.22);
+  --fw-primary-light: rgba(6, 182, 212, 0.10);
+  --fw-on-primary: #ffffff;
+  --fw-ink-a: #22d3ee;
+  --fw-ink-c: #0e7490;
+  --accent-calendar: var(--fw-primary);
+  --accent-calendar-hover: var(--fw-primary-hover);
+
+  --fw-highlight: rgba(21, 39, 50, 0.05);
+  --fw-rim-light: rgba(255, 255, 255, 0.85);
+  --fw-glare: rgba(255, 255, 255, 0.5);
+  --fw-input-bg: #f2f7fa;
+  --fw-input-border: rgba(21, 39, 50, 0.14);
+  --fw-input-border-hover: rgba(21, 39, 50, 0.26);
+  --fw-input-well: inset 0 2px 4px rgba(21,39,50,0.07), inset 0 1px 2px rgba(21,39,50,0.06), inset 0 -1px 0 rgba(255,255,255,0.9);
+
+  --fw-grid-line: rgba(6, 182, 212, 0.08);
+  --fw-aurora-a: rgba(6, 182, 212, 0.11);
+  --fw-aurora-b: rgba(16, 185, 129, 0.07);
+  --fw-aurora-c: rgba(139, 92, 246, 0.05);
+  --fw-bg-radial:
+    radial-gradient(1400px 700px at 18% -8%, var(--fw-aurora-a), transparent 60%),
+    radial-gradient(1200px 600px at 85% 5%, var(--fw-aurora-b), transparent 55%),
+    radial-gradient(900px 500px at 55% 110%, var(--fw-aurora-c), transparent 60%);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(21,39,50,0.05), 0 6px 14px -4px rgba(21,39,50,0.09),
+    0 18px 36px -14px rgba(21,39,50,0.16), 0 30px 60px -26px rgba(6,182,212,0.22),
+    inset 0 1px 0 rgba(255,255,255,1), inset 0 -2px 6px rgba(21,39,50,0.05);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(21,39,50,0.06), 0 12px 24px -6px rgba(21,39,50,0.13),
+    0 32px 56px -16px rgba(21,39,50,0.22), 0 48px 90px -28px rgba(6,182,212,0.38),
+    0 0 0 1px rgba(6,182,212,0.22), inset 0 1px 0 rgba(255,255,255,1), inset 0 -2px 6px rgba(21,39,50,0.05);
+  --fw-key-side: rgba(21, 39, 50, 0.16);
+  --fw-key-shadow: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -1px 0 rgba(21,39,50,0.05), 0 2px 0 var(--fw-key-side), 0 3px 6px rgba(21,39,50,0.10), 0 8px 16px -6px rgba(21,39,50,0.14);
+  --fw-key-shadow-hover: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -1px 0 rgba(21,39,50,0.05), 0 4px 0 var(--fw-key-side), 0 6px 12px rgba(21,39,50,0.12), 0 14px 24px -8px rgba(21,39,50,0.18);
+  --fw-key-shadow-active: inset 0 2px 4px rgba(21,39,50,0.14), 0 1px 0 var(--fw-key-side);
+}
+
+.fw-calendar[data-theme="dark"] {
+  --fw-bg-base: #060b0f;
+  --fw-bg-secondary: #0b131b;
+  --fw-card-face: linear-gradient(168deg, rgba(30,48,62,0.98) 0%, rgba(19,32,44,0.99) 48%, rgba(11,19,30,1) 100%);
+  --fw-card-edge: rgba(255, 255, 255, 0.12);
+  --fw-panel-bg: rgba(14, 24, 34, 0.78);
+  --fw-panel-solid: #101c28;
+  --fw-panel-hover: rgba(26, 44, 58, 1);
+  --fw-surface-alt: rgba(255, 255, 255, 0.05);
+  --fw-text-secondary: #c3d5dd;
+  --fw-text-tertiary: #9cb4c0;
+  --fw-border-base: rgba(255, 255, 255, 0.08);
+  --fw-border-strong: rgba(255, 255, 255, 0.14);
+  --fw-shadow-sm: 0 4px 16px rgba(0,0,0,0.4);
+  --fw-shadow-md: 0 8px 32px rgba(0,0,0,0.5);
+  --fw-shadow-lg: 0 12px 48px rgba(0,0,0,0.6);
+  --fw-shadow-xl: 0 16px 64px rgba(0,0,0,0.7);
+
+  --fw-primary: #22d3ee;
+  --fw-primary-tint: #7ff0fb;
+  --fw-primary-hover: #06b6d4;
+  --fw-primary-deep: #0891b2;
+  --fw-primary-deeper: #0e7490;
+  --fw-primary-glow: rgba(34, 211, 238, 0.30);
+  --fw-primary-light: rgba(34, 211, 238, 0.16);
+  --fw-on-primary: #062430;
+  --fw-ink-a: #a5f3fc;
+  --fw-ink-c: #22d3ee;
+
+  --fw-highlight: rgba(255, 255, 255, 0.06);
+  --fw-rim-light: rgba(255, 255, 255, 0.28);
+  --fw-glare: rgba(190, 235, 255, 0.14);
+  --fw-input-bg: rgba(4, 10, 16, 0.6);
+  --fw-input-border: rgba(255, 255, 255, 0.14);
+  --fw-input-border-hover: rgba(255, 255, 255, 0.26);
+  --fw-input-well: inset 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 2px rgba(0,0,0,0.4), inset 0 -1px 0 rgba(255,255,255,0.06);
+
+  --fw-grid-line: rgba(0, 224, 214, 0.10);
+  --fw-aurora-a: rgba(6, 182, 212, 0.20);
+  --fw-aurora-b: rgba(16, 185, 129, 0.11);
+  --fw-aurora-c: rgba(139, 92, 246, 0.08);
+
+  --fw-card-shadow:
+    0 1px 2px rgba(0,0,0,0.5), 0 10px 22px -6px rgba(0,0,0,0.55),
+    0 26px 50px -18px rgba(0,0,0,0.65), 0 34px 70px -28px rgba(6,182,212,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -2px 8px rgba(0,0,0,0.4);
+  --fw-card-shadow-hover:
+    0 2px 4px rgba(0,0,0,0.5), 0 16px 32px -8px rgba(0,0,0,0.6),
+    0 40px 70px -20px rgba(0,0,0,0.7), 0 52px 100px -30px rgba(6,182,212,0.55),
+    0 0 0 1px rgba(6,182,212,0.35), inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -2px 8px rgba(0,0,0,0.4);
+  --fw-key-side: rgba(0, 0, 0, 0.7);
+  --fw-key-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.35), 0 2px 0 var(--fw-key-side), 0 3px 8px rgba(0,0,0,0.45), 0 8px 18px -6px rgba(0,0,0,0.5);
+  --fw-key-shadow-hover: inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -1px 0 rgba(0,0,0,0.35), 0 4px 0 var(--fw-key-side), 0 7px 14px rgba(0,0,0,0.5), 0 14px 28px -8px rgba(0,0,0,0.55);
+  --fw-key-shadow-active: inset 0 2px 6px rgba(0,0,0,0.6), 0 1px 0 var(--fw-key-side);
+}
+
+/* Base: Inter (root is <body>, environment works natively) */
+.fw-calendar {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.4s ease, color 0.3s ease;
+}
+
+.fw-calendar__container { position: relative; z-index: 1; }
+.fw-calendar ::selection { background: var(--fw-primary); color: var(--fw-on-primary); }
+.fw-calendar :focus-visible { outline: 2px solid var(--fw-primary); outline-offset: 2px; }
+
+/* Environment */
+.fw-calendar::before {
+  content: ''; position: fixed; left: -30%; right: -30%; bottom: -14%; height: 60vh;
+  background-image: linear-gradient(var(--fw-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--fw-grid-line) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(620px) rotateX(63deg); transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.7), transparent 80%);
+  mask-image: linear-gradient(to top, rgba(0,0,0,0.7), transparent 80%);
+  pointer-events: none; z-index: -1;
+}
+.fw-calendar::after {
+  content: ''; position: fixed; inset: 0;
+  background: radial-gradient(720px 420px at 78% 82%, var(--fw-aurora-b), transparent 70%), radial-gradient(880px 520px at 12% 70%, var(--fw-aurora-a), transparent 70%);
+  opacity: 0.55; animation: fwAuroraDrift 22s ease-in-out infinite alternate; pointer-events: none; z-index: -1;
+}
+@keyframes fwAuroraDrift { from { opacity: 0.3; transform: translateY(0); } to { opacity: 0.7; transform: translateY(-30px); } }
+@keyframes fwShimmer { to { left: 100%; } }
+
+/* Header — floating glass slab */
+.fw-calendar__header {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light), 0 1px 0 rgba(6,182,212,0.18), 0 10px 30px -12px rgba(21,39,50,0.35), 0 4px 24px -4px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.fw-calendar__logo-tile {
+  background: linear-gradient(135deg, var(--accent-calendar), #3b82f6);
+  box-shadow: inset 0 2px 3px rgba(255,255,255,0.45), inset 0 -3px 6px rgba(8,51,82,0.45), 0 3px 0 var(--fw-primary-deeper), 0 8px 18px -4px rgba(6,182,212,0.55);
+  transition: transform var(--fw-spring), box-shadow var(--fw-spring);
+}
+.fw-calendar__logo-tile::after {
+  content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent); animation: fwShimmer 3s infinite;
+}
+.fw-calendar__greeting { color: var(--fw-text-secondary); }
+.fw-calendar__greeting-name { color: var(--fw-primary); font-weight: 700; }
+
+.fw-calendar__home-btn,
+.fw-calendar__theme-toggle,
+.fw-calendar__kebab-toggle {
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base);
+}
+.fw-calendar__home-btn:hover,
+.fw-calendar__theme-toggle:hover,
+.fw-calendar__kebab-toggle:hover { background: var(--fw-card-face); transform: translateY(-2px); box-shadow: var(--fw-key-shadow-hover); color: var(--fw-primary); }
+.fw-calendar__home-btn:active,
+.fw-calendar__theme-toggle:active,
+.fw-calendar__kebab-toggle:active { transform: translateY(1px); box-shadow: var(--fw-key-shadow-active); }
+
+/* Kebab — 3D flip-down */
+.fw-calendar__kebab-menu {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light), 0 24px 48px -12px rgba(8,16,24,0.45), 0 8px 24px -8px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  transform: perspective(700px) rotateX(-14deg) translateY(-8px) scale(0.96);
+  transform-origin: top right;
+}
+.fw-calendar__kebab-menu[aria-hidden="false"] { transform: perspective(700px) rotateX(0) translateY(0) scale(1); }
+
+/* Buttons — extruded pressable keys */
+.fw-calendar__btn {
+  background: var(--fw-card-face); border: 1px solid var(--fw-border-base); color: var(--fw-text-primary);
+  box-shadow: var(--fw-key-shadow); font-weight: 700; letter-spacing: 0.3px;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base), border-color var(--fw-transition-base);
+}
+.fw-calendar__btn:hover { background: var(--fw-card-face); color: var(--fw-primary); border-color: var(--fw-primary); transform: translateY(-2px); box-shadow: var(--fw-key-shadow-hover); }
+.fw-calendar__btn:active { transform: translateY(1px); box-shadow: var(--fw-key-shadow-active); }
+.fw-calendar__btn--primary {
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 52%, var(--fw-primary-hover) 100%);
+  color: #fff; text-shadow: 0 1px 2px rgba(8,51,82,0.45); border: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -2px 3px rgba(8,51,82,0.35), 0 3px 0 var(--fw-primary-deeper), 0 6px 14px -2px var(--fw-primary-glow), 0 14px 28px -8px var(--fw-primary-glow);
+}
+.fw-calendar__btn--primary:hover {
+  color: #fff; border: none; transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), inset 0 -2px 3px rgba(8,51,82,0.35), 0 5px 0 var(--fw-primary-deeper), 0 10px 22px -2px var(--fw-primary-glow), 0 22px 44px -10px var(--fw-primary-glow);
+}
+.fw-calendar__btn--primary:active { transform: translateY(2px); box-shadow: inset 0 2px 6px rgba(8,51,82,0.5), 0 1px 0 var(--fw-primary-deeper); }
+
+/* Badges — glossy pills */
+.fw-calendar__badge {
+  border-radius: var(--fw-radius-full); font-weight: 700; letter-spacing: 0.5px; color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -2px 3px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.15);
+}
+
+/* Inputs — carved wells */
+.fw-calendar__input,
+.fw-calendar__textarea,
+.fw-calendar__select,
+.fw-calendar__search {
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  box-shadow: var(--fw-input-well);
+  transition: all var(--fw-transition-base);
+}
+.fw-calendar__input:hover,
+.fw-calendar__textarea:hover,
+.fw-calendar__select:hover,
+.fw-calendar__search:hover { border-color: var(--fw-input-border-hover); }
+.fw-calendar__input:focus,
+.fw-calendar__textarea:focus,
+.fw-calendar__select:focus,
+.fw-calendar__search:focus { outline: none; border-color: var(--fw-primary); box-shadow: var(--fw-input-well), 0 0 0 3px var(--fw-primary-light), 0 0 18px -2px var(--fw-primary-glow); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fw-calendar *, .fw-calendar *::before, .fw-calendar *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+@media print { .fw-calendar::before, .fw-calendar::after { display: none !important; } }

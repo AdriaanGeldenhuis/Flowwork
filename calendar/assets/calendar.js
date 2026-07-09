@@ -900,9 +900,18 @@
   }
 
   // ========== INIT ==========
+  function initLogoTileEffect() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var logoTile = document.querySelector('.fw-calendar__logo-tile');
+    if (!logoTile) return;
+    logoTile.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.05) rotate(-3deg)'; });
+    logoTile.addEventListener('mouseleave', function() { this.style.transform = ''; });
+  }
+
   function init() {
     initTheme();
     initKebabMenu();
+    initLogoTileEffect();
     initNavigation();
     initNotifications();
     loadCalendarViewReal();
