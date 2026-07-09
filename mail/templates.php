@@ -20,10 +20,16 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Fetch templates
-$stmt = $DB->prepare("SELECT * FROM email_templates WHERE company_id = ? ORDER BY category, name");
-$stmt->execute([$companyId]);
-$templates = $stmt->fetchAll();
+// Fetch templates. The mail schema (email_templates) is provisioned outside the
+// tracked migrations, so degrade gracefully rather than 500 if it is missing.
+$templates = [];
+try {
+    $stmt = $DB->prepare("SELECT * FROM email_templates WHERE company_id = ? ORDER BY category, name");
+    $stmt->execute([$companyId]);
+    $templates = $stmt->fetchAll();
+} catch (Throwable $e) {
+    error_log('[mail/templates] data load failed: ' . $e->getMessage());
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

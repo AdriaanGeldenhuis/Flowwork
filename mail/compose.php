@@ -24,32 +24,42 @@ $companyName = $company['name'] ?? 'Company';
 $mode = $_GET['mode'] ?? 'new'; // new | reply | reply_all | forward
 $emailId = isset($_GET['email_id']) ? (int)$_GET['email_id'] : null;
 
-$replyData = null;
-if ($emailId && in_array($mode, ['reply', 'reply_all', 'forward'])) {
-    $stmt = $DB->prepare("
-        SELECT e.*, a.email_address, a.account_name
-        FROM emails e
-        JOIN email_accounts a ON e.account_id = a.account_id
-        WHERE e.email_id = ? AND a.company_id = ? AND a.user_id = ?
-    ");
-    $stmt->execute([$emailId, $companyId, $userId]);
-    $replyData = $stmt->fetch();
+// Mail data. The mail schema (emails/email_accounts/email_templates/
+// email_signatures) is provisioned outside the tracked migrations, so degrade
+// gracefully rather than returning a 500 if a table is missing here.
+$replyData  = null;
+$accounts   = [];
+$templates  = [];
+$signatures = [];
+try {
+    if ($emailId && in_array($mode, ['reply', 'reply_all', 'forward'])) {
+        $stmt = $DB->prepare("
+            SELECT e.*, a.email_address, a.account_name
+            FROM emails e
+            JOIN email_accounts a ON e.account_id = a.account_id
+            WHERE e.email_id = ? AND a.company_id = ? AND a.user_id = ?
+        ");
+        $stmt->execute([$emailId, $companyId, $userId]);
+        $replyData = $stmt->fetch();
+    }
+
+    // Fetch accounts for "From" dropdown
+    $stmt = $DB->prepare("SELECT account_id, account_name, email_address FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
+    $stmt->execute([$companyId, $userId]);
+    $accounts = $stmt->fetchAll();
+
+    // Fetch templates
+    $stmt = $DB->prepare("SELECT template_id, name FROM email_templates WHERE company_id = ? ORDER BY name");
+    $stmt->execute([$companyId]);
+    $templates = $stmt->fetchAll();
+
+    // Fetch signatures (include is_default flag so we can pre-select default)
+    $stmt = $DB->prepare("SELECT signature_id, name, is_default FROM email_signatures WHERE company_id = ? AND (user_id = ? OR user_id IS NULL) ORDER BY is_default DESC, name");
+    $stmt->execute([$companyId, $userId]);
+    $signatures = $stmt->fetchAll();
+} catch (Throwable $e) {
+    error_log('[mail/compose] data load failed: ' . $e->getMessage());
 }
-
-// Fetch accounts for "From" dropdown
-$stmt = $DB->prepare("SELECT account_id, account_name, email_address FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
-$stmt->execute([$companyId, $userId]);
-$accounts = $stmt->fetchAll();
-
-// Fetch templates
-$stmt = $DB->prepare("SELECT template_id, name FROM email_templates WHERE company_id = ? ORDER BY name");
-$stmt->execute([$companyId]);
-$templates = $stmt->fetchAll();
-
-// Fetch signatures (include is_default flag so we can pre-select default)
-$stmt = $DB->prepare("SELECT signature_id, name, is_default FROM email_signatures WHERE company_id = ? AND (user_id = ? OR user_id IS NULL) ORDER BY is_default DESC, name");
-$stmt->execute([$companyId, $userId]);
-$signatures = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">

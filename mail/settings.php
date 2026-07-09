@@ -20,21 +20,29 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Fetch email accounts
-$stmt = $DB->prepare("
-    SELECT account_id, account_name, email_address, imap_server, smtp_server,
-           is_active, last_sync_at, last_error
-    FROM email_accounts
-    WHERE company_id = ? AND user_id = ?
-    ORDER BY account_name
-");
-$stmt->execute([$companyId, $userId]);
-$accounts = $stmt->fetchAll();
+// Fetch email accounts + mail preferences. The mail schema (email_accounts/
+// user_mail_prefs) is provisioned outside the tracked migrations, so degrade
+// gracefully rather than returning a 500 if a table is missing here.
+$accounts = [];
+$prefs = false;
+try {
+    $stmt = $DB->prepare("
+        SELECT account_id, account_name, email_address, imap_server, smtp_server,
+               is_active, last_sync_at, last_error
+        FROM email_accounts
+        WHERE company_id = ? AND user_id = ?
+        ORDER BY account_name
+    ");
+    $stmt->execute([$companyId, $userId]);
+    $accounts = $stmt->fetchAll();
 
-// Fetch user mail preferences
-$stmt = $DB->prepare("SELECT * FROM user_mail_prefs WHERE company_id = ? AND user_id = ?");
-$stmt->execute([$companyId, $userId]);
-$prefs = $stmt->fetch();
+    // Fetch user mail preferences
+    $stmt = $DB->prepare("SELECT * FROM user_mail_prefs WHERE company_id = ? AND user_id = ?");
+    $stmt->execute([$companyId, $userId]);
+    $prefs = $stmt->fetch();
+} catch (Throwable $e) {
+    error_log('[mail/settings] data load failed: ' . $e->getMessage());
+}
 if (!$prefs) {
     $prefs = [
         'sla_default_hours' => 24,

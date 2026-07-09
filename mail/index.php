@@ -20,19 +20,27 @@ $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 $companyName = $company['name'] ?? 'Company';
 
-// Fetch accounts count
-$stmt = $DB->prepare("SELECT COUNT(*) FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
-$stmt->execute([$companyId, $userId]);
-$accountCount = (int)$stmt->fetchColumn();
+// Fetch account + unread counts. The mail schema (email_accounts/emails) is
+// provisioned outside the tracked migrations, so if a table is missing on this
+// environment we degrade to the empty state instead of failing the whole page
+// with a 500 (mirrors the "table may not exist yet" handling in auth_gate.php).
+$accountCount = 0;
+$unreadCount  = 0;
+try {
+    $stmt = $DB->prepare("SELECT COUNT(*) FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
+    $stmt->execute([$companyId, $userId]);
+    $accountCount = (int)$stmt->fetchColumn();
 
-// Fetch unread count
-$stmt = $DB->prepare("
-  SELECT COUNT(*) FROM emails e
-  JOIN email_accounts a ON e.account_id = a.account_id
-  WHERE a.company_id = ? AND a.user_id = ? AND e.is_read = 0 AND e.direction = 'incoming'
-");
-$stmt->execute([$companyId, $userId]);
-$unreadCount = (int)$stmt->fetchColumn();
+    $stmt = $DB->prepare("
+      SELECT COUNT(*) FROM emails e
+      JOIN email_accounts a ON e.account_id = a.account_id
+      WHERE a.company_id = ? AND a.user_id = ? AND e.is_read = 0 AND e.direction = 'incoming'
+    ");
+    $stmt->execute([$companyId, $userId]);
+    $unreadCount = (int)$stmt->fetchColumn();
+} catch (Throwable $e) {
+    error_log('[mail/index] mailbox count query failed: ' . $e->getMessage());
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
