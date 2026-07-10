@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-SHOP-UI-3D');
+define('ASSET_VERSION', '2026-07-10-shopping-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -34,13 +34,15 @@ $firstName = $user['first_name'] ?? 'User';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Templates – Shopping AI</title>
+    <title>Templates – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/shopping/assets/shopping.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-shopping">
-        <div class="fw-shopping__container">
-            
+<body class="fw-shopping">
+    <div class="fw-shopping__container">
+
             <!-- Header -->
             <header class="fw-shopping__header">
                 <div class="fw-shopping__brand">
@@ -52,7 +54,7 @@ $firstName = $user['first_name'] ?? 'User';
                     </div>
                     <div class="fw-shopping__brand-text">
                         <div class="fw-shopping__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-shopping__app-name">Shopping AI</div>
+                        <div class="fw-shopping__app-name">Shopping AI – Templates</div>
                     </div>
                 </div>
 
@@ -63,40 +65,78 @@ $firstName = $user['first_name'] ?? 'User';
                 <div class="fw-shopping__controls">
                     <a href="/shopping/" class="fw-shopping__home-btn" title="Back">
                         <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </a>
-                    
+
                     <a href="/" class="fw-shopping__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </a>
 
                     <button class="fw-shopping__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                         <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--light" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
+                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         </svg>
                         <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/>
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
+
+                    <div class="fw-shopping__menu-wrapper">
+                        <button class="fw-shopping__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                            </svg>
+                        </button>
+                        <nav class="fw-shopping__kebab-menu" id="kebabMenu" aria-hidden="true">
+                            <a href="/shopping/" class="fw-shopping__kebab-item">Shopping Lists</a>
+                            <a href="/shopping/templates.php" class="fw-shopping__kebab-item">Templates</a>
+                            <a href="/shopping/preferences.php" class="fw-shopping__kebab-item">Preferences</a>
+                        </nav>
+                    </div>
                 </div>
             </header>
 
+            <!-- Main Content -->
+            <main class="fw-shopping__main">
+            <div class="fw-shopping__content">
+
+            <div class="fw-shopping__page-header">
+                <h1 class="fw-shopping__page-title">List Templates</h1>
+                <p class="fw-shopping__page-subtitle">Reusable lists for the things you buy again and again</p>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="fw-shopping__view-tabs">
+                <a href="/shopping/" class="fw-shopping__view-tab">Lists</a>
+                <a href="/shopping/templates.php" class="fw-shopping__view-tab fw-shopping__view-tab--active">Templates</a>
+                <a href="/shopping/preferences.php" class="fw-shopping__view-tab">Preferences</a>
+            </div>
+
             <!-- Templates -->
             <div class="fw-shopping__section">
-                <h2 class="fw-shopping__section-title">List Templates</h2>
 
                 <?php if (empty($templates)): ?>
-                    <div style="padding: 48px; text-align: center; color: var(--fw-text-muted);">
-                        <div style="font-size: 48px; margin-bottom: 16px;">📋</div>
-                        <p style="font-size: 16px;">No templates yet</p>
-                        <p style="font-size: 14px; margin-top: 8px;">
+                    <div class="fw-shopping__empty-state">
+                        <div class="fw-shopping__empty-state-icon">📋</div>
+                        <p>No templates yet</p>
+                        <small>
                             Templates let you quickly create lists from predefined items.<br>
                             Create a list, then save it as a template from the list menu.
-                        </p>
+                        </small>
                     </div>
                 <?php else: ?>
                     <div class="fw-shopping__lists-grid">
@@ -131,13 +171,16 @@ $firstName = $user['first_name'] ?? 'User';
                 <?php endif; ?>
             </div>
 
-        </div>
+            </div>
+            </main>
 
-        <footer class="fw-shopping__footer">
-            <span>Shopping AI v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
-        </footer>
-    </main>
+            <!-- Footer -->
+            <footer class="fw-shopping__footer">
+                <span>Shopping AI v<?= ASSET_VERSION ?></span>
+                <span id="themeIndicator">Theme: Dark</span>
+            </footer>
+
+    </div>
 
     <script src="/shopping/assets/shopping.js?v=<?= ASSET_VERSION ?>"></script>
 </body>

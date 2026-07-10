@@ -29,29 +29,33 @@
     return 'R' + (cents / 100).toFixed(2);
   }
 
+  // showToast(message, 'info' | 'success' | 'error') — non-blocking feedback.
+  // Toasts stack bottom-right inside the module root (CRM parity recipe);
+  // colors come from the class-based variants in shopping.css.
   function showToast(message, type = 'info') {
-    // Simple toast notification
+    if (type !== 'error' && type !== 'success') type = 'info';
+    const root = document.querySelector('.fw-shopping') || document.body;
+    let stack = document.getElementById('shoppingToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'shoppingToastStack';
+      stack.className = 'fw-shopping__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      root.appendChild(stack);
+    }
     const toast = document.createElement('div');
     toast.className = 'fw-shopping__toast fw-shopping__toast--' + type;
     toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 16px 24px;
-      background: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#192f59'};
-      color: white;
-      border-radius: 12px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-      z-index: 9999;
-      animation: slideIn 0.3s ease;
-    `;
-    document.body.appendChild(toast);
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-shopping__toast--visible'));
     setTimeout(() => {
-      toast.style.animation = 'slideOut 0.3s ease';
+      toast.classList.remove('fw-shopping__toast--visible');
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 3500);
   }
+
+  // Inline page scripts (e.g. list.php Create PO) call showToast directly.
+  window.showToast = showToast;
 
   function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -81,7 +85,7 @@
     const body = document.querySelector('.fw-shopping');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || THEME_LIGHT;
+    let theme = getCookie(THEME_COOKIE) || THEME_DARK;
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
@@ -222,13 +226,13 @@
       if (result.ok) {
         renderLists(result.lists);
       } else {
-        container.innerHTML = '<div class="fw-shopping__loading">Error: ' + (result.error || 'Failed to load') + '</div>';
+        container.innerHTML = '<div class="fw-shopping__empty-state">Error: ' + (result.error || 'Failed to load') + '</div>';
       }
     }
 
     function renderLists(lists) {
       if (lists.length === 0) {
-        container.innerHTML = '<div class="fw-shopping__loading">No lists yet. Create one above!</div>';
+        container.innerHTML = '<div class="fw-shopping__empty-state">No lists yet. Create one above!</div>';
         return;
       }
 
@@ -293,7 +297,7 @@ window.ShoppingListPage = {
     if (!tbody) return;
 
     if (items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color: var(--fw-text-muted);">No items yet. Add one above!</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="fw-shopping__empty-state">No items yet. Add one above!</td></tr>';
       return;
     }
 
@@ -312,7 +316,7 @@ window.ShoppingListPage = {
           </td>
           <td>
             <div class="fw-shopping__item-name">${item.name_raw}</div>
-            ${item.notes ? '<div style="font-size: 12px; color: var(--fw-text-muted);">' + item.notes + '</div>' : ''}
+            ${item.notes ? '<div class="fw-shopping__item-notes">' + item.notes + '</div>' : ''}
           </td>
           <td class="fw-shopping__item-qty">${item.qty} ${item.unit}</td>
           <td><span class="fw-shopping__item-priority ${priorityClass}"></span></td>
@@ -574,9 +578,74 @@ window.ShoppingListPage = {
   }
 };
   
+  // ========== DIMENSION 3D ENGINE ==========
+  const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Delegated pointer engine: works for cards rendered at any time (lists and
+  // store suggestions load via fetch, so per-card binding at DOMContentLoaded
+  // never sees them). Instead of writing inline transforms, it feeds the CSS
+  // custom properties (--rx/--ry for tilt, --mx/--my for the specular glare)
+  // that shopping.css composes into the card transform.
+  function init3DTilt() {
+    if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-shopping__stat-card, .fw-shopping__list-card, .fw-shopping__store-card';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
+
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
+
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
+    });
+  }
+
   // ========== LOGO TILE HOVER ==========
   function initLogoTileEffect() {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (REDUCE_MOTION) return;
     const logoTile = document.querySelector('.fw-shopping__logo-tile');
     if (!logoTile) return;
     logoTile.addEventListener('mouseenter', function() {
@@ -593,6 +662,7 @@ window.ShoppingListPage = {
     initKebabMenu();
     initQuickAdd();
     initMyLists();
+    init3DTilt();
     initLogoTileEffect();
   }
 
