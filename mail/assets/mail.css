@@ -9,13 +9,15 @@
    3D rules of the road:
    1. Glass (backdrop-filter) panels and preserve-3d tilt slabs are separate
       families — a surface is one or the other, never both.
-   2. .fw-mail is the root scope and sits on <main>, so it establishes its own
+   2. .fw-mail is the root scope and sits on <body> (CRM skeleton:
+      container → header → main → footer), so it establishes its own
       stacking context (position:relative; z-index:0) and the environment
       layers hang off it as fixed pseudo-elements.
    3. Theme contract: dark scope is .fw-mail[data-theme="dark"] ONLY
       (JS sets data-theme on the .fw-mail root).
    4. Kebab is aria-driven (.fw-mail__kebab-menu[aria-hidden="false"]);
-      modals are class-driven (.fw-mail__modal-overlay--active);
+      modals are aria-driven too (JS mirrors the --active class with
+      aria-hidden — CRM display contract);
       settings tabs are class-driven (__tab--active / __tab-panel--active).
    ============================================================================ */
 
@@ -48,6 +50,7 @@
   --neon-purple-glow: rgba(139, 92, 246, 0.3);
   --neon-cyan: #06b6d4;
   --neon-green: #10b981;
+  --neon-green-glow: rgba(16, 185, 129, 0.3);
   --neon-orange: #f59e0b;
   --neon-red: #ef4444;
   --neon-blue: #3b82f6;
@@ -60,6 +63,8 @@
 
   /* 3D scene */
   --fw-persp: 1100px;
+  --fw-tilt-max: 6deg;
+  --fw-tilt-ease: 0.16s cubic-bezier(0.33, 1, 0.68, 1);
 
   /* ----- Light theme ----- */
   --fw-bg-base: #eef3f7;
@@ -150,14 +155,10 @@
     inset 0 2px 4px rgba(21, 39, 50, 0.14),
     0 1px 0 var(--fw-key-side);
 
-  /* Modals & dropdowns — glass, same-theme (CRM-style, no longer inverse).
-     Literal values per theme: an alias to a theme-varying var declared only
-     on :root would compute once here (light) and freeze that value. */
-  --fw-modal-bg: #ffffff;
+  /* Modal text ink — literal values per theme: an alias to a theme-varying
+     var declared only on :root would compute once here (light) and freeze
+     that value. Panel/inputs now use the shared glass + well tokens. */
   --fw-modal-text: #16212b;
-  --fw-modal-border: rgba(21, 39, 50, 0.10);
-  --fw-modal-input-bg: #f7f2f3;
-  --fw-modal-input-border: rgba(21, 39, 50, 0.14);
 
   /* Semantic accent aliases (used across mail components) */
   --accent-mail: #8b0000;
@@ -209,11 +210,7 @@
   --fw-modal-overlay: rgba(1, 6, 12, 0.78);
 
   /* Modal / accent aliases re-declared with dark literals (see :root note) */
-  --fw-modal-bg: #101c28;
   --fw-modal-text: #e7f0f4;
-  --fw-modal-border: rgba(255, 255, 255, 0.12);
-  --fw-modal-input-bg: rgba(4, 10, 16, 0.6);
-  --fw-modal-input-border: rgba(255, 255, 255, 0.14);
   --accent-mail: #ff4d4d;
   --accent-mail-hover: #e63939;
 
@@ -274,11 +271,10 @@
   box-sizing: border-box;
 }
 
-/* The mail root lives on <main>; neutralise the host <body> margin so the
-   glass layout sits flush to the viewport like the other modules. */
-body { margin: 0; }
-
+/* The mail root class lives on <body>, so the aurora canvas paints
+   edge-to-edge and overscroll never flashes UA-white in dark mode. */
 .fw-mail {
+  margin: 0;
   position: relative;
   z-index: 0;
   display: block;
@@ -372,19 +368,51 @@ body { margin: 0; }
 
 /* ===== CONTAINER ===== */
 .fw-mail__container {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: var(--fw-spacing-lg);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+/* Main is a flex column so the 3-pane layout can stretch to fill the
+   viewport between the sticky header and the footer. */
+.fw-mail__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--fw-spacing-lg);
+  max-width: 100vw;
+  overflow-x: hidden;
   position: relative;
   z-index: 1;
 }
 
-/* ===== HEADER — floating glass slab ===== */
+/* ===== PAGE HEADER ===== */
+.fw-mail__page-header {
+  padding: var(--fw-spacing-xl) var(--fw-spacing-lg) var(--fw-spacing-md);
+  text-align: center;
+}
+
+.fw-mail__page-title {
+  font-size: 32px;
+  font-weight: 900;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--fw-primary-tint), var(--fw-primary) 45%, var(--fw-primary-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 12px var(--fw-primary-glow));
+}
+
+.fw-mail__page-subtitle {
+  font-size: 16px;
+  color: var(--fw-text-tertiary);
+}
+
+/* ===== HEADER — sticky full-bleed glass slab ===== */
 .fw-mail__header {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -394,23 +422,33 @@ body { margin: 0; }
   background: var(--fw-panel-bg);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
+  border-bottom: 1px solid var(--fw-panel-border);
   box-shadow:
     inset 0 1px 0 var(--fw-rim-light),
     0 1px 0 rgba(139, 0, 0, 0.18),
     0 10px 30px -12px rgba(21, 39, 50, 0.35),
     0 4px 24px -4px var(--fw-primary-glow);
-  margin-bottom: var(--fw-spacing-xl);
-  z-index: var(--z-sticky);
+  transition: box-shadow var(--fw-transition-slow);
 }
 
+/* Gloss overlay */
 .fw-mail__header::after {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: var(--fw-radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
+}
+
+/* Neon hairline under the header — maroon glow */
+.fw-mail__header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 4%, var(--fw-primary-glow) 30%, rgba(139, 92, 246, 0.35) 70%, transparent 96%);
   pointer-events: none;
 }
 
@@ -519,6 +557,7 @@ body { margin: 0; }
 
 /* Header icon buttons — mini keys */
 .fw-mail__home-btn,
+.fw-mail__back-btn,
 .fw-mail__theme-toggle,
 .fw-mail__kebab-toggle {
   width: 40px;
@@ -539,6 +578,7 @@ body { margin: 0; }
 }
 
 .fw-mail__home-btn:hover,
+.fw-mail__back-btn:hover,
 .fw-mail__theme-toggle:hover,
 .fw-mail__kebab-toggle:hover {
   transform: translateY(-2px);
@@ -547,6 +587,7 @@ body { margin: 0; }
 }
 
 .fw-mail__home-btn:active,
+.fw-mail__back-btn:active,
 .fw-mail__theme-toggle:active,
 .fw-mail__kebab-toggle:active {
   transform: translateY(1px);
@@ -554,6 +595,7 @@ body { margin: 0; }
 }
 
 .fw-mail__home-btn svg,
+.fw-mail__back-btn svg,
 .fw-mail__theme-toggle svg,
 .fw-mail__kebab-toggle svg {
   width: 20px;
@@ -637,6 +679,9 @@ body { margin: 0; }
   gap: var(--fw-spacing-lg);
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 1600px;
+  margin: var(--fw-spacing-lg) auto 0;
 }
 
 /* Glass panels */
@@ -700,6 +745,12 @@ body { margin: 0; }
   box-shadow:
     inset 0 2px 6px rgba(50, 0, 0, 0.5),
     0 1px 0 var(--fw-primary-deeper);
+}
+
+.fw-mail__compose-btn svg {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
 }
 
 .fw-mail__folder-list {
@@ -795,9 +846,8 @@ body { margin: 0; }
   gap: var(--fw-spacing-sm);
 }
 
-/* Carved search + filter wells */
-.fw-mail__search,
-.fw-mail__filter {
+/* Carved search well */
+.fw-mail__search {
   padding: 9px var(--fw-spacing-md);
   background: var(--fw-input-bg);
   border: 1px solid var(--fw-input-border);
@@ -813,17 +863,77 @@ body { margin: 0; }
 
 .fw-mail__search::placeholder { color: var(--fw-text-muted); }
 
-.fw-mail__search:hover,
-.fw-mail__filter:hover { border-color: var(--fw-input-border-hover); }
+.fw-mail__search:hover { border-color: var(--fw-input-border-hover); }
 
-.fw-mail__search:focus,
-.fw-mail__filter:focus {
+.fw-mail__search:focus {
   outline: none;
   border-color: var(--fw-primary);
   box-shadow:
     var(--fw-input-well),
     0 0 0 3px var(--fw-primary-light),
     0 0 18px -2px var(--fw-primary-glow);
+}
+
+/* ===== SELECTS — extruded 3D pills with custom maroon chevron ===== */
+.fw-mail__filter,
+select.fw-mail__input {
+  height: 40px;
+  padding: 0 38px 0 16px;
+  background-color: var(--fw-panel-solid);
+  background-image:
+    linear-gradient(180deg, var(--fw-highlight), transparent 55%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238b0000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, right 14px center;
+  background-size: 100% 100%, 12px 8px;
+  border: 1px solid var(--fw-border-base);
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--fw-key-shadow);
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), border-color var(--fw-transition-base);
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+/* Dark theme re-inks the chevron so it reads on near-black */
+.fw-mail[data-theme="dark"] .fw-mail__filter,
+.fw-mail[data-theme="dark"] select.fw-mail__input {
+  background-image:
+    linear-gradient(180deg, var(--fw-highlight), transparent 55%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23ff4d4d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.fw-mail__filter:hover,
+select.fw-mail__input:hover {
+  border-color: var(--fw-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--fw-key-shadow-hover);
+}
+
+.fw-mail__filter:active,
+select.fw-mail__input:active {
+  transform: translateY(1px);
+  box-shadow: var(--fw-key-shadow-active);
+}
+
+.fw-mail__filter:focus,
+select.fw-mail__input:focus {
+  outline: none;
+  border-color: var(--fw-primary);
+  box-shadow: var(--fw-key-shadow), 0 0 0 3px var(--fw-primary-light);
+}
+
+.fw-mail__filter option,
+select.fw-mail__input option {
+  background: var(--fw-panel-solid);
+  color: var(--fw-text-primary);
+  font-weight: 500;
+  padding: 8px 12px;
 }
 
 .fw-mail__threads {
@@ -952,11 +1062,6 @@ body { margin: 0; }
   color: #f59e0b;
 }
 
-.fw-mail__thread-badge--sla {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
 /* ===== PREVIEW PANE ===== */
 .fw-mail__preview {
   overflow-y: auto;
@@ -971,6 +1076,12 @@ body { margin: 0; }
   color: var(--fw-text-muted);
   text-align: center;
   padding: var(--fw-spacing-xl);
+}
+
+.fw-mail__preview-empty svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.3;
 }
 
 .fw-mail__preview-header {
@@ -1128,8 +1239,9 @@ body { margin: 0; }
 
 /* ===== COMPOSE PAGE ===== */
 .fw-mail__compose-container {
+  width: 100%;
   max-width: 900px;
-  margin: 0 auto;
+  margin: var(--fw-spacing-lg) auto 0;
 }
 
 .fw-mail__compose-form {
@@ -1202,58 +1314,105 @@ body { margin: 0; }
 
 /* ===== SETTINGS PAGE ===== */
 .fw-mail__settings-container {
+  width: 100%;
   max-width: 1200px;
-  margin: 0 auto;
+  margin: var(--fw-spacing-lg) auto 0;
 }
 
-/* Settings tabs — segmented control in a carved groove */
+/* ===== VIEW TABS — segmented control in a carved groove =====
+   .fw-mail__view-tabs = cross-page nav (Inbox | Templates | Settings);
+   .fw-mail__tabs = settings' in-page JS control. Same CRM recipe for both:
+   flat ghosts inside the groove, active tab = raised maroon key. */
+.fw-mail__view-tabs,
 .fw-mail__tabs {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   padding: 5px;
-  margin-bottom: var(--fw-spacing-lg);
   background: var(--fw-input-bg);
   border: 1px solid var(--fw-input-border);
   border-radius: var(--fw-radius-full);
   box-shadow: var(--fw-input-well);
   width: fit-content;
-  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
+.fw-mail__view-tabs {
+  margin: var(--fw-spacing-lg) var(--fw-spacing-lg) 0;
+  max-width: calc(100% - 2 * var(--fw-spacing-lg));
+}
+
+.fw-mail__tabs {
+  margin-bottom: var(--fw-spacing-lg);
+  max-width: 100%;
+}
+
+.fw-mail__view-tabs::-webkit-scrollbar,
 .fw-mail__tabs::-webkit-scrollbar { display: none; }
 
+.fw-mail__view-tab,
 .fw-mail__tab {
-  padding: 9px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fw-text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 9px 16px;
   background: transparent;
   border: none;
   border-radius: var(--fw-radius-full);
+  color: var(--fw-text-tertiary);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  transition: color var(--fw-transition-base), background var(--fw-transition-base);
+  box-shadow: none;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base), background var(--fw-transition-base);
+  text-decoration: none;
   white-space: nowrap;
-  flex-shrink: 0;
+  font-family: inherit;
 }
 
+.fw-mail__view-tab:hover,
 .fw-mail__tab:hover {
   color: var(--fw-primary);
   background: var(--fw-primary-light);
+  transform: none;
+  box-shadow: none;
 }
 
+.fw-mail__view-tab:active,
+.fw-mail__tab:active {
+  transform: scale(0.97);
+}
+
+/* …and the active tab is the raised key that pops out of the groove */
+.fw-mail__view-tab--active,
 .fw-mail__tab--active {
-  color: #ffffff;
   background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  color: #fff !important;
   text-shadow: 0 1px 2px rgba(50, 0, 0, 0.45);
   font-weight: 700;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
     0 2px 0 var(--fw-primary-deeper),
-    0 4px 10px -2px var(--fw-primary-glow);
+    0 4px 10px -2px var(--fw-primary-glow),
+    0 8px 20px -4px var(--fw-primary-glow);
+}
+
+.fw-mail__view-tab--active:hover,
+.fw-mail__tab--active:hover {
+  color: #fff;
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 12px 26px -6px var(--fw-primary-glow);
 }
 
 .fw-mail__tab-panel { display: none; }
@@ -1274,15 +1433,13 @@ body { margin: 0; }
   margin: 0;
 }
 
-.fw-mail__accounts-list,
-.fw-mail__signatures-list,
-.fw-mail__rules-list {
+.fw-mail__accounts-list {
   display: flex;
   flex-direction: column;
   gap: var(--fw-spacing-lg);
 }
 
-/* Cards */
+/* Cards — preserve-3d tilt slabs (JS feeds --rx/--ry/--mx/--my) */
 .fw-mail__account-card,
 .fw-mail__template-card {
   background: var(--fw-card-face);
@@ -1290,13 +1447,70 @@ body { margin: 0; }
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
+  position: relative;
 }
 
 .fw-mail__account-card:hover,
 .fw-mail__template-card:hover {
-  transform: translateY(-3px);
+  --ty: -8px;
+  --s: 1.012;
   box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
+}
+
+/* Top rim light */
+.fw-mail__account-card::before,
+.fw-mail__template-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  opacity: 0;
+  transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fw-mail__account-card:hover::before,
+.fw-mail__template-card:hover::before {
+  opacity: 1;
+}
+
+/* Pointer-tracking specular glare */
+.fw-mail__account-card::after,
+.fw-mail__template-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.fw-mail__account-card:hover::after,
+.fw-mail__template-card:hover::after {
+  opacity: 1;
 }
 
 .fw-mail__account-card-header,
@@ -1471,40 +1685,63 @@ body { margin: 0; }
   flex-wrap: wrap;
 }
 
-/* ===== BADGES — glossy pills ===== */
+/* ===== BADGES — glossy gradient 3D pills ===== */
 .fw-mail__badge {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
   border-radius: var(--fw-radius-full);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
-  display: inline-block;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary) 60%, var(--fw-primary-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 0 18px var(--fw-primary-glow);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .fw-mail__badge--active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: linear-gradient(165deg, #34d399, var(--neon-green) 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px var(--neon-green-glow);
 }
 
 .fw-mail__badge--inactive {
-  background: rgba(100, 116, 139, 0.15);
-  color: #64748b;
+  background: linear-gradient(165deg, #94a3b8, #64748b 60%, #475569);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(20, 30, 45, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
-/* ===== MODALS — deep glass ===== */
+/* ===== MODALS — deep glass with 3D entrance ===== */
 .fw-mail__modal-overlay {
   position: fixed;
   inset: 0;
-  background: var(--fw-modal-overlay);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: var(--z-modal);
   display: none;
   align-items: center;
   justify-content: center;
-  padding: var(--fw-spacing-lg);
+  background: var(--fw-modal-overlay);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  z-index: var(--z-modal);
+  padding: 20px;
+  perspective: 1400px;
+  animation: fwFadeIn 0.2s ease;
+}
+
+@keyframes fwFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .fw-mail__modal-overlay--active {
@@ -1512,33 +1749,48 @@ body { margin: 0; }
 }
 
 .fw-mail__modal {
-  background: var(--fw-modal-bg);
-  border: 1px solid var(--fw-modal-border);
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
   box-shadow:
     inset 0 1px 0 var(--fw-rim-light),
-    0 30px 80px -20px rgba(0, 0, 0, 0.6),
-    0 12px 32px -8px var(--fw-primary-glow);
+    0 40px 80px -24px rgba(4, 12, 18, 0.6),
+    0 24px 60px -12px var(--fw-primary-glow);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   max-width: 600px;
-  width: 100%;
+  width: 90%;
   max-height: 90vh;
-  overflow-y: auto;
-  animation: fwModalSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: auto;
+  animation: fwModalRise 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
 }
 
 .fw-mail__modal--large { max-width: 900px; }
 
-@keyframes fwModalSlideIn {
-  from { opacity: 0; transform: perspective(900px) translateY(-24px) rotateX(-6deg) scale(0.96); }
-  to   { opacity: 1; transform: perspective(900px) translateY(0) rotateX(0) scale(1); }
+@keyframes fwModalRise {
+  from {
+    opacity: 0;
+    transform: translateY(36px) rotateX(-8deg) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotateX(0) scale(1);
+  }
 }
 
 .fw-mail__modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--fw-spacing-lg);
-  border-bottom: 1px solid var(--fw-modal-border);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--fw-border-base);
+  position: sticky;
+  top: 0;
+  background: var(--fw-panel-bg);
+  z-index: 10;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 .fw-mail__modal-title {
@@ -1559,18 +1811,45 @@ body { margin: 0; }
   border-radius: var(--fw-radius-sm);
   color: var(--fw-modal-text);
   cursor: pointer;
-  transition: background var(--fw-transition-base), opacity var(--fw-transition-base);
+  transition: all var(--fw-transition-fast);
   font-size: 24px;
   opacity: 0.7;
 }
 
 .fw-mail__modal-close:hover {
+  color: var(--fw-primary);
   background: var(--fw-primary-light);
   opacity: 1;
+  transform: rotate(90deg);
 }
 
 .fw-mail__modal-body {
-  padding: var(--fw-spacing-lg);
+  padding: 24px;
+  overflow-y: auto;
+  max-height: calc(90vh - 140px);
+}
+
+.fw-mail__modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px 24px;
+  border-top: 1px solid var(--fw-border-base);
+  position: sticky;
+  bottom: 0;
+  background: var(--fw-panel-bg);
+  z-index: 10;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* ===== MODAL DISPLAY CONTRACT (JS drives aria-hidden) ===== */
+.fw-mail__modal-overlay {
+  display: none !important;
+}
+
+.fw-mail__modal-overlay[aria-hidden="false"] {
+  display: flex !important;
 }
 
 /* ===== FORMS ===== */
@@ -1584,24 +1863,9 @@ body { margin: 0; }
   gap: var(--fw-spacing-md);
 }
 
-/* Modal inputs — carved wells, same theme */
-.fw-mail__modal .fw-mail__input,
-.fw-mail__modal .fw-mail__textarea {
-  background: var(--fw-modal-input-bg);
-  border-color: var(--fw-modal-input-border);
-  color: var(--fw-modal-text);
-}
-
+/* Modal inputs inherit the standard carved wells — modals sit inside the
+   .fw-mail body scope now, so theme vars resolve without local overrides. */
 .fw-mail__modal .fw-mail__label { color: var(--fw-modal-text); }
-
-.fw-mail__modal .fw-mail__input:focus,
-.fw-mail__modal .fw-mail__textarea:focus {
-  outline: none;
-  border-color: var(--fw-primary);
-  box-shadow:
-    var(--fw-input-well),
-    0 0 0 3px var(--fw-primary-light);
-}
 
 .fw-mail__required { color: var(--accent-danger); }
 
@@ -1620,6 +1884,11 @@ body { margin: 0; }
   color: var(--fw-text-primary);
   cursor: pointer;
   margin-bottom: var(--fw-spacing-sm);
+  user-select: none;
+}
+
+.fw-mail__checkbox-wrapper .fw-mail__label {
+  margin-bottom: 0;
 }
 
 .fw-mail__checkbox {
@@ -1658,8 +1927,9 @@ body { margin: 0; }
 
 /* ===== TEMPLATES PAGE ===== */
 .fw-mail__templates-container {
+  width: 100%;
   max-width: 1200px;
-  margin: 0 auto;
+  margin: var(--fw-spacing-lg) auto 0;
 }
 
 .fw-mail__templates-grid {
@@ -1699,39 +1969,7 @@ body { margin: 0; }
   color: var(--fw-text-tertiary);
 }
 
-.fw-mail__spinner {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--fw-border-base);
-  border-top-color: var(--fw-primary);
-  border-radius: 50%;
-  animation: fwSpin 0.6s linear infinite;
-}
-
-@keyframes fwSpin {
-  to { transform: rotate(360deg); }
-}
-
-/* ===== MODAL EXTRAS (rules / signatures / selects / colour pickers) ===== */
-.fw-mail__modal select {
-  background: var(--fw-modal-input-bg);
-  border: 1px solid var(--fw-modal-input-border);
-  color: var(--fw-modal-text);
-  padding: 11px var(--fw-spacing-md);
-  border-radius: var(--fw-radius-md);
-  font-size: 14px;
-  font-family: inherit;
-  width: 100%;
-  box-shadow: var(--fw-input-well);
-}
-
-.fw-mail__modal select:focus {
-  outline: none;
-  border-color: var(--fw-primary);
-  box-shadow: var(--fw-input-well), 0 0 0 3px var(--fw-primary-light);
-}
-
+/* ===== MODAL EXTRAS (rule builder rows) ===== */
 .fw-mail__modal input::placeholder,
 .fw-mail__modal textarea::placeholder {
   color: var(--fw-text-muted);
@@ -1739,22 +1977,13 @@ body { margin: 0; }
 
 .fw-mail__modal .fw-mail__checkbox { accent-color: var(--fw-primary); }
 
-.fw-mail__color-picker {
-  width: 60px;
-  height: 40px;
-  border: 1px solid var(--fw-input-border);
+/* Signature preview well (rendered from mail.js signature list) */
+.fw-mail__signature-preview {
+  max-height: 100px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--fw-highlight);
   border-radius: var(--fw-radius-sm);
-  cursor: pointer;
-  background: var(--fw-input-bg);
-}
-
-.fw-mail__rule-conditions,
-.fw-mail__rule-actions {
-  margin-bottom: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md);
-  background: var(--fw-primary-light);
-  border-radius: var(--fw-radius-md);
-  border: 1px solid var(--fw-border-base);
 }
 
 .fw-mail__rule-item {
@@ -1782,27 +2011,81 @@ body { margin: 0; }
   flex-shrink: 0;
 }
 
-.fw-mail__rule-add-btn {
-  padding: 9px 16px;
-  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary));
-  color: white;
-  border: none;
-  border-radius: var(--fw-radius-sm);
-  cursor: pointer;
+/* ===== FOOTER — glass bar ===== */
+.fw-mail__footer {
+  padding: var(--fw-spacing-lg);
+  text-align: center;
   font-size: 13px;
-  font-weight: 700;
-  margin-top: var(--fw-spacing-sm);
-  box-shadow: 0 2px 8px -2px var(--fw-primary-glow);
-  transition: transform var(--fw-transition-base);
+  color: var(--fw-text-tertiary);
+  border-top: 1px solid var(--fw-panel-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light);
+  position: relative;
+  z-index: 1;
 }
 
-.fw-mail__rule-add-btn:hover { transform: translateY(-1px); }
+/* ===== TOASTS ===== */
+.fw-mail__toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
 
-/* ===== UTILITIES ===== */
-.fw-mail__text-center { text-align: center; }
-.fw-mail__mt-md { margin-top: var(--fw-spacing-md); }
-.fw-mail__mb-md { margin-bottom: var(--fw-spacing-md); }
-.fw-mail__hidden { display: none !important; }
+.fw-mail__toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.fw-mail__toast--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.fw-mail__toast--success {
+  background: linear-gradient(165deg, #34d399, #10b981 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--neon-green-glow);
+}
+
+.fw-mail__toast--error {
+  background: linear-gradient(165deg, #f87171, #ef4444 60%, #dc2626);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px rgba(239, 68, 68, 0.35);
+}
+
+/* Info toast — department maroon */
+.fw-mail__toast--info {
+  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary) 60%, var(--fw-primary-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(50, 0, 0, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--fw-primary-glow);
+}
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1200px) {
@@ -1824,7 +2107,21 @@ body { margin: 0; }
 }
 
 @media (max-width: 768px) {
-  .fw-mail__container { padding: var(--fw-spacing-md); }
+  .fw-mail__main { padding: var(--fw-spacing-md); }
+
+  /* Kill the grid floor + tilt on small screens */
+  .fw-mail::before { display: none; }
+
+  .fw-mail__account-card,
+  .fw-mail__template-card {
+    transform: none;
+    transform-style: flat;
+  }
+
+  .fw-mail__account-card:hover,
+  .fw-mail__template-card:hover {
+    transform: translateY(-4px);
+  }
 
   .fw-mail__header {
     height: auto;
@@ -1858,7 +2155,8 @@ body { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   .fw-mail::after { animation: none; }
   .fw-mail__logo-tile::before { animation: none; }
-  .fw-mail__loading,
-  .fw-mail__spinner { animation: none; }
+  .fw-mail__loading { animation: none; }
+  .fw-mail__modal-overlay,
+  .fw-mail__modal { animation: none; }
   .fw-mail * { transition-duration: 0.01ms !important; }
 }

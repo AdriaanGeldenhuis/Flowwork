@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-MAIL-2');
+define('ASSET_VERSION', '2026-07-10-mail-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -60,6 +60,18 @@ try {
 } catch (Throwable $e) {
     error_log('[mail/compose] data load failed: ' . $e->getMessage());
 }
+
+// Prefill subject for reply/forward. Built as ONE value so the attribute never
+// picks up stray whitespace (two consecutive echoes inside value="…" used to
+// leak a newline + indentation into the field).
+$subjectValue = '';
+if ($replyData) {
+    if (in_array($mode, ['reply', 'reply_all'])) {
+        $subjectValue = 'Re: ' . $replyData['subject'];
+    } elseif ($mode === 'forward') {
+        $subjectValue = 'Fwd: ' . $replyData['subject'];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -73,59 +85,89 @@ try {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/mail/assets/mail.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-mail">
-        <div class="fw-mail__container">
-            
-            <!-- Header -->
-            <header class="fw-mail__header">
-                <div class="fw-mail__brand">
-                    <div class="fw-mail__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div class="fw-mail__brand-text">
-                        <div class="fw-mail__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-mail__app-name">Compose</div>
-                    </div>
-                </div>
+<body class="fw-mail">
+    <div class="fw-mail__container">
 
-                <div class="fw-mail__greeting">
-                    Hello, <span class="fw-mail__greeting-name"><?= htmlspecialchars($firstName) ?></span>
+        <!-- Header -->
+        <header class="fw-mail__header">
+            <div class="fw-mail__brand">
+                <div class="fw-mail__logo-tile">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                 </div>
+                <div class="fw-mail__brand-text">
+                    <div class="fw-mail__company-name"><?= htmlspecialchars($companyName) ?></div>
+                    <div class="fw-mail__app-name">Mail – Compose</div>
+                </div>
+            </div>
 
-                <div class="fw-mail__controls">
-                    <a href="/mail/" class="fw-mail__home-btn" title="Back to Mail">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-mail__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-mail__theme-icon fw-mail__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-mail__theme-icon fw-mail__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <div class="fw-mail__greeting">
+                Hello, <span class="fw-mail__greeting-name"><?= htmlspecialchars($firstName) ?></span>
+            </div>
+
+            <div class="fw-mail__controls">
+                <a href="/mail/" class="fw-mail__back-btn" title="Back to Mail">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+
+                <a href="/" class="fw-mail__home-btn" title="Home">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+
+                <button class="fw-mail__theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <svg class="fw-mail__theme-icon fw-mail__theme-icon--light" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
+                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <svg class="fw-mail__theme-icon fw-mail__theme-icon--dark" viewBox="0 0 24 24" fill="none">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+
+                <div class="fw-mail__menu-wrapper">
+                    <button class="fw-mail__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
                         </svg>
                     </button>
+                    <nav class="fw-mail__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="/mail/" class="fw-mail__kebab-item">Inbox</a>
+                        <a href="/mail/compose.php" class="fw-mail__kebab-item">Compose</a>
+                        <a href="/mail/templates.php" class="fw-mail__kebab-item">Templates</a>
+                        <a href="/mail/settings.php" class="fw-mail__kebab-item">Settings</a>
+                    </nav>
                 </div>
-            </header>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="fw-mail__main">
+
+            <div class="fw-mail__page-header">
+                <h1 class="fw-mail__page-title">Compose</h1>
+                <p class="fw-mail__page-subtitle">Write and send email from your connected accounts</p>
+            </div>
 
             <!-- Compose Form -->
             <div class="fw-mail__compose-container">
                 <form id="composeForm" class="fw-mail__compose-form">
-                    
+
                     <div class="fw-mail__compose-row">
                         <label class="fw-mail__label">From</label>
                         <select name="account_id" class="fw-mail__input" required>
@@ -138,7 +180,7 @@ try {
 
                     <div class="fw-mail__compose-row">
                         <label class="fw-mail__label">To</label>
-                        <input type="text" name="to" class="fw-mail__input" placeholder="recipient@example.com" required 
+                        <input type="text" name="to" class="fw-mail__input" placeholder="recipient@example.com" required
                             value="<?= $replyData && $mode === 'reply' ? htmlspecialchars($replyData['sender']) : '' ?>">
                     </div>
 
@@ -154,9 +196,7 @@ try {
 
                     <div class="fw-mail__compose-row">
                         <label class="fw-mail__label">Subject</label>
-                        <input type="text" name="subject" class="fw-mail__input" placeholder="Subject" required
-                            value="<?= $replyData && in_array($mode, ['reply','reply_all']) ? 'Re: ' . htmlspecialchars($replyData['subject']) : '' ?>
-                            <?= $replyData && $mode === 'forward' ? 'Fwd: ' . htmlspecialchars($replyData['subject']) : '' ?>">
+                        <input type="text" name="subject" class="fw-mail__input" placeholder="Subject" required value="<?= htmlspecialchars($subjectValue) ?>">
                     </div>
 
                     <div class="fw-mail__compose-row">
@@ -200,8 +240,15 @@ try {
                 </form>
             </div>
 
-        </div>
-    </main>
+        </main>
+
+        <!-- Footer -->
+        <footer class="fw-mail__footer">
+            <span>Mail v<?= ASSET_VERSION ?></span>
+            <span id="themeIndicator">Theme: Dark</span>
+        </footer>
+
+    </div>
 
     <script src="/mail/assets/mail.js?v=<?= ASSET_VERSION ?>"></script>
 </body>
