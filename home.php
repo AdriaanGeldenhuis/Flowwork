@@ -5,7 +5,7 @@ require_once __DIR__ . '/auth_gate.php';
 require_once __DIR__ . '/includes/companies.php';
 
 // Asset version for cache busting
-define('ASSET_VERSION', '2025-01-21-3');
+define('ASSET_VERSION', '2026-07-10-home-crm-parity');
 
 // Fetch user data from session
 $firstName = $_SESSION['user_first_name'] ?? 'Welcome';
@@ -23,6 +23,10 @@ $businessType = $company['business_type'] ?? 'construction';
 $companyLogo  = null; // TODO: implement logo upload
 $userCompanies = fw_user_companies($userId);
 $csrfToken     = Csrf::token();
+
+// Time-based greeting for the hero
+$hour = (int)date('G');
+$dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -31,6 +35,9 @@ $csrfToken     = Csrf::token();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flowwork – <?= htmlspecialchars($companyName) ?></title>
     <meta name="csrf-token" content="<?= htmlspecialchars($csrfToken) ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/home/style.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-home">
@@ -117,6 +124,11 @@ $csrfToken     = Csrf::token();
 
         <!-- Main Grid -->
         <main class="fw-home__main">
+            <div class="fw-home__content">
+            <div class="fw-home__hero">
+                <h1 class="fw-home__hero-title"><?= $dayGreeting ?>, <?= htmlspecialchars($firstName) ?></h1>
+                <p class="fw-home__hero-sub"><?= date('l, j F Y') ?> · <?= htmlspecialchars($companyName) ?></p>
+            </div>
             <div class="fw-home__grid">
                 <!-- Projects -->
                 <a href="/projects/" class="fw-home__tile" data-accent="projects">
@@ -299,12 +311,13 @@ $csrfToken     = Csrf::token();
                     </div>
                 </a>
             </div>
+            </div>
         </main>
 
         <!-- Footer -->
         <footer class="fw-home__footer">
-            <span>Version <?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
+            <span>Flowwork v<?= ASSET_VERSION ?></span>
+            <span id="themeIndicator">Theme: Dark</span>
         </footer>
     </div>
 
