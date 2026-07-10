@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-SAI-UI-3D');
+define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -232,12 +232,14 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Settings – Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
+    <title>Settings – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-suppliers-ai">
-        <div class="fw-suppliers-ai__container">
+<body class="fw-suppliers-ai">
+    <div class="fw-suppliers-ai__container">
             
             <!-- Header -->
             <header class="fw-suppliers-ai__header">
@@ -251,7 +253,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                     </div>
                     <div class="fw-suppliers-ai__brand-text">
                         <div class="fw-suppliers-ai__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-suppliers-ai__app-name">Suppliers AI Settings</div>
+                        <div class="fw-suppliers-ai__app-name">Suppliers AI – Settings</div>
                     </div>
                 </div>
 
@@ -290,8 +292,43 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
+
+                    <div class="fw-suppliers-ai__menu-wrapper">
+                        <button class="fw-suppliers-ai__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                            </svg>
+                        </button>
+                        <nav class="fw-suppliers-ai__kebab-menu" id="kebabMenu" aria-hidden="true">
+                            <a href="/suppliers_ai/" class="fw-suppliers-ai__kebab-item">New Search</a>
+                            <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__kebab-item">History</a>
+                            <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__kebab-item">Help</a>
+                            <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__kebab-item">Settings</a>
+                        </nav>
+                    </div>
                 </div>
             </header>
+
+            <!-- Main Content -->
+            <main class="fw-suppliers-ai__main">
+            <div class="fw-suppliers-ai__content">
+
+            <div class="fw-suppliers-ai__page-header">
+                <h1 class="fw-suppliers-ai__page-title">Suppliers AI Settings</h1>
+                <p class="fw-suppliers-ai__page-subtitle">
+                    Configure AI search, scoring, and integration options
+                </p>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="fw-suppliers-ai__view-tabs">
+                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab">Search</a>
+                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab">History</a>
+                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab">Help</a>
+                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">Settings</a>
+            </div>
 
             <?php if ($message): ?>
             <div class="fw-suppliers-ai__alert fw-suppliers-ai__alert--<?= $messageType ?>">
@@ -310,7 +347,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                     
                     <div class="fw-suppliers-ai__section">
                         <h2 class="fw-suppliers-ai__section-title">🤖 OpenAI Configuration</h2>
-                        <p class="fw-suppliers-ai__help-text" style="margin-bottom: 16px;">
+                        <p class="fw-suppliers-ai__help-text fw-suppliers-ai__help-text--lead">
                             Enable AI-powered query parsing, intelligent matching, and RFQ generation
                         </p>
 
@@ -325,7 +362,7 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
 
                         <div class="fw-suppliers-ai__form-grid">
                             <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">OpenAI API Key <span style="color: var(--accent-danger);">*</span></label>
+                                <label class="fw-suppliers-ai__label">OpenAI API Key <span class="fw-suppliers-ai__required">*</span></label>
                                 <input type="password" name="openai_api_key" class="fw-suppliers-ai__input" 
                                        value="<?= htmlspecialchars($apiKeys['openai_api_key'] ?? '') ?>" 
                                        placeholder="sk-proj-xxxxx...">
@@ -352,9 +389,9 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                             </div>
                         </div>
 
-                        <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--fw-border);">
+                        <hr class="fw-suppliers-ai__divider">
 
-                        <h3 style="font-size: 16px; margin-bottom: 12px;">Optional: External Directory APIs</h3>
+                        <h3 class="fw-suppliers-ai__subsection-title">Optional: External Directory APIs</h3>
 
                         <div class="fw-suppliers-ai__form-grid">
                             <div class="fw-suppliers-ai__form-group">
@@ -461,13 +498,12 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
                     
                     <div class="fw-suppliers-ai__section">
                         <h2 class="fw-suppliers-ai__section-title">AI Rules (JSON)</h2>
-                        <p class="fw-suppliers-ai__help-text" style="margin-bottom: 16px;">
+                        <p class="fw-suppliers-ai__help-text fw-suppliers-ai__help-text--lead">
                             Configure synonyms, category mappings, allow/deny lists
                         </p>
 
                         <div class="fw-suppliers-ai__form-group">
-                            <textarea name="rules_json" class="fw-suppliers-ai__textarea" rows="20" 
-                                      style="font-family: monospace; font-size: 13px;"><?= htmlspecialchars($rulesDisplay) ?></textarea>
+                            <textarea name="rules_json" class="fw-suppliers-ai__textarea fw-suppliers-ai__textarea--code" rows="20"><?= htmlspecialchars($rulesDisplay) ?></textarea>
                         </div>
 
                         <div class="fw-suppliers-ai__form-actions">
@@ -484,14 +520,16 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
 
             </div>
 
+            </div>
+            </main>
+
             <!-- Footer -->
             <footer class="fw-suppliers-ai__footer">
                 <span>Suppliers AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Light</span>
+                <span id="themeIndicator">Theme: Dark</span>
             </footer>
 
-        </div>
-    </main>
+    </div>
 
     <script src="/suppliers_ai/suppliers_ai.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
@@ -521,90 +559,5 @@ $rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETT
         }
     }
     </script>
-    <style>
-        .fw-suppliers-ai__settings-panel {
-            display: flex;
-            flex-direction: column;
-            gap: var(--fw-spacing-xl);
-        }
-        .fw-suppliers-ai__settings-form {
-            background: var(--fw-panel-bg);
-            border: 1px solid var(--fw-panel-border);
-            border-radius: var(--fw-radius-lg);
-            padding: var(--fw-spacing-xl);
-            box-shadow: var(--fw-shadow-md);
-            backdrop-filter: blur(12px);
-        }
-        .fw-suppliers-ai__form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: var(--fw-spacing-lg);
-            margin-bottom: var(--fw-spacing-lg);
-        }
-        .fw-suppliers-ai__form-group {
-            display: flex;
-            flex-direction: column;
-            gap: var(--fw-spacing-xs);
-        }
-        .fw-suppliers-ai__textarea {
-            width: 100%;
-            padding: var(--fw-spacing-md);
-            background: var(--fw-panel-bg);
-            border: 1px solid var(--fw-border);
-            border-radius: var(--fw-radius-md);
-            color: var(--fw-text-primary);
-            font-family: inherit;
-            resize: vertical;
-        }
-        .fw-suppliers-ai__textarea:focus {
-            outline: none;
-            border-color: var(--accent-ai-primary);
-            box-shadow: 0 0 0 3px var(--accent-ai-glow);
-        }
-        .fw-suppliers-ai__checkbox-wrapper {
-            display: flex;
-            align-items: center;
-            gap: var(--fw-spacing-sm);
-            font-size: 14px;
-            color: var(--fw-text-primary);
-            cursor: pointer;
-        }
-        .fw-suppliers-ai__checkbox {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-        .fw-suppliers-ai__form-actions {
-            display: flex;
-            gap: var(--fw-spacing-md);
-            padding-top: var(--fw-spacing-lg);
-            border-top: 1px solid var(--fw-border);
-        }
-        .fw-suppliers-ai__alert {
-            padding: var(--fw-spacing-md) var(--fw-spacing-lg);
-            border-radius: var(--fw-radius-md);
-            margin-bottom: var(--fw-spacing-lg);
-            font-size: 14px;
-            font-weight: 600;
-        }
-        .fw-suppliers-ai__alert--success {
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #10b981;
-        }
-        .fw-suppliers-ai__alert--error {
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #ef4444;
-        }
-        .fw-suppliers-ai__help-text a {
-            color: var(--accent-ai-primary);
-            text-decoration: none;
-            font-weight: 600;
-        }
-        .fw-suppliers-ai__help-text a:hover {
-            text-decoration: underline;
-        }
-    </style>
 </body>
 </html>

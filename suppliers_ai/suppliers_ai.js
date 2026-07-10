@@ -43,31 +43,28 @@
     return div.innerHTML;
   }
 
+  // Class-driven toasts (CRM recipe): stack lives INSIDE the module root so
+  // the scoped tokens resolve; variants are pure CSS classes.
   function showToast(message, type = 'info') {
+    if (!['success', 'error', 'warning', 'info'].includes(type)) type = 'info';
+    const root = document.querySelector('.fw-suppliers-ai') || document.body;
+    let stack = document.getElementById('saiToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'saiToastStack';
+      stack.className = 'fw-suppliers-ai__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      root.appendChild(stack);
+    }
     const toast = document.createElement('div');
-    toast.className = `fw-suppliers-ai__toast fw-suppliers-ai__toast--${type}`;
+    toast.className = 'fw-suppliers-ai__toast fw-suppliers-ai__toast--' + type;
     toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 16px 24px;
-      background: var(--fw-panel-bg);
-      border: 1px solid var(--fw-panel-border);
-      border-radius: 12px;
-      box-shadow: var(--fw-shadow-lg);
-      backdrop-filter: blur(12px);
-      z-index: 10000;
-      animation: slideIn 0.3s ease;
-      max-width: 400px;
-      font-weight: 600;
-      color: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : 'var(--fw-text-primary)'};
-    `;
-    document.body.appendChild(toast);
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-suppliers-ai__toast--visible'));
     setTimeout(() => {
-      toast.style.animation = 'slideOut 0.3s ease';
+      toast.classList.remove('fw-suppliers-ai__toast--visible');
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 3500);
   }
 
   // ========== THEME TOGGLE ==========
@@ -77,7 +74,7 @@
     const body = document.querySelector('.fw-suppliers-ai');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || THEME_LIGHT;
+    let theme = getCookie(THEME_COOKIE) || THEME_DARK;
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
@@ -214,7 +211,7 @@
           // Show error in results area so user can see it clearly
           const resultsList = document.getElementById('resultsList');
           if (resultsList) {
-            resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state" style="color: var(--accent-danger, #ef4444);">' +
+            resultsList.innerHTML = '<div class="fw-suppliers-ai__empty-state fw-suppliers-ai__empty-state--error">' +
               (data.error || 'Search failed') + '</div>';
           }
           resultsArea.style.display = 'block';
@@ -246,10 +243,10 @@
     if (candidates.length === 0) {
       let errorHtml = '';
 
-      // Show source errors prominently
+      // Show source errors prominently (token-driven alert component)
       if (sourceErrors && sourceErrors.length > 0) {
-        errorHtml += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin-bottom:16px;">';
-        errorHtml += '<strong style="color:#dc2626;">Search Errors:</strong><ul style="margin:8px 0 0 0;padding-left:20px;color:#991b1b;">';
+        errorHtml += '<div class="fw-suppliers-ai__alert fw-suppliers-ai__alert--error">';
+        errorHtml += '<strong>Search Errors:</strong><ul class="fw-suppliers-ai__alert-list">';
         sourceErrors.forEach(err => {
           errorHtml += '<li>' + escapeHtml(err) + '</li>';
         });
@@ -264,7 +261,7 @@
         if (debug.post_scoring_count !== undefined) details.push(debug.post_scoring_count + ' passed filters');
         if (debug.filter_compliance) details.push('Compliance filter: ' + debug.filter_compliance);
         if (details.length > 0) {
-          errorHtml += '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">';
+          errorHtml += '<div class="fw-suppliers-ai__alert fw-suppliers-ai__alert--warn">';
           errorHtml += details.join(' · ');
           errorHtml += '</div>';
         }
@@ -751,6 +748,69 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
+  // ========== DIMENSION 3D ENGINE (ported from crm.js) ==========
+  // Delegated pointer engine: works for cards rendered at any time (results
+  // render via fetch, so per-card binding at DOMContentLoaded never sees
+  // them). Instead of writing inline transforms, it feeds the CSS custom
+  // properties (--rx/--ry for tilt, --mx/--my for the specular glare) that
+  // style.css composes into the card transform.
+  function init3DTilt() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-suppliers-ai__supplier-card, .fw-suppliers-ai__stat-card, .fw-suppliers-ai__history-card';
+    const MAX_TILT = 6; // degrees (matches --fw-tilt-max)
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
+
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
+
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
+    });
+  }
+
   // ========== INIT ==========
   function initLogoTileEffect() {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -770,6 +830,7 @@ document.addEventListener('keydown', (e) => {
     initSearch();
     initShortlist();
     initLogoTileEffect();
+    init3DTilt();
   }
 
   if (document.readyState === 'loading') {

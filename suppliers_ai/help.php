@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-SAI-UI-3D');
+define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -23,12 +23,14 @@ $companyName = $company['name'] ?? 'Company';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Help – Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
+    <title>Help – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-suppliers-ai">
-        <div class="fw-suppliers-ai__container">
+<body class="fw-suppliers-ai">
+    <div class="fw-suppliers-ai__container">
             
             <!-- Header -->
             <header class="fw-suppliers-ai__header">
@@ -42,7 +44,7 @@ $companyName = $company['name'] ?? 'Company';
                     </div>
                     <div class="fw-suppliers-ai__brand-text">
                         <div class="fw-suppliers-ai__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-suppliers-ai__app-name">Help & Documentation</div>
+                        <div class="fw-suppliers-ai__app-name">Suppliers AI – Help</div>
                     </div>
                 </div>
 
@@ -81,8 +83,43 @@ $companyName = $company['name'] ?? 'Company';
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
+
+                    <div class="fw-suppliers-ai__menu-wrapper">
+                        <button class="fw-suppliers-ai__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                            </svg>
+                        </button>
+                        <nav class="fw-suppliers-ai__kebab-menu" id="kebabMenu" aria-hidden="true">
+                            <a href="/suppliers_ai/" class="fw-suppliers-ai__kebab-item">New Search</a>
+                            <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__kebab-item">History</a>
+                            <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__kebab-item">Help</a>
+                            <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__kebab-item">Settings</a>
+                        </nav>
+                    </div>
                 </div>
             </header>
+
+            <!-- Main Content -->
+            <main class="fw-suppliers-ai__main">
+            <div class="fw-suppliers-ai__content">
+
+            <div class="fw-suppliers-ai__page-header">
+                <h1 class="fw-suppliers-ai__page-title">Help & Documentation</h1>
+                <p class="fw-suppliers-ai__page-subtitle">
+                    Learn how to get the best results from Suppliers AI
+                </p>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="fw-suppliers-ai__view-tabs">
+                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab">Search</a>
+                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab">History</a>
+                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">Help</a>
+                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab">Settings</a>
+            </div>
 
             <!-- Help Content -->
             <div class="fw-suppliers-ai__help-panel">
@@ -281,96 +318,17 @@ $companyName = $company['name'] ?? 'Company';
 
             </div>
 
+            </div>
+            </main>
+
             <!-- Footer -->
             <footer class="fw-suppliers-ai__footer">
                 <span>Suppliers AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Light</span>
+                <span id="themeIndicator">Theme: Dark</span>
             </footer>
 
-        </div>
-    </main>
+    </div>
 
     <script src="/suppliers_ai/suppliers_ai.js?v=<?= ASSET_VERSION ?>"></script>
-    <style>
-        .fw-suppliers-ai__help-panel {
-            display: flex;
-            flex-direction: column;
-            gap: var(--fw-spacing-xl);
-        }
-        .fw-suppliers-ai__help-section {
-            background: var(--fw-panel-bg);
-            border: 1px solid var(--fw-panel-border);
-            border-radius: var(--fw-radius-lg);
-            padding: var(--fw-spacing-xl);
-            box-shadow: var(--fw-shadow-md);
-            backdrop-filter: blur(12px);
-        }
-        .fw-suppliers-ai__help-title {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--fw-text-primary);
-            margin: 0 0 var(--fw-spacing-lg) 0;
-            padding-bottom: var(--fw-spacing-md);
-            border-bottom: 2px solid var(--fw-border);
-        }
-        .fw-suppliers-ai__help-content {
-            font-size: 15px;
-            line-height: 1.7;
-            color: var(--fw-text-secondary);
-        }
-        .fw-suppliers-ai__help-content h3 {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--fw-text-primary);
-            margin: var(--fw-spacing-lg) 0 var(--fw-spacing-sm) 0;
-        }
-        .fw-suppliers-ai__help-content p {
-            margin: 0 0 var(--fw-spacing-md) 0;
-        }
-        .fw-suppliers-ai__help-list {
-            margin: var(--fw-spacing-md) 0;
-            padding-left: var(--fw-spacing-xl);
-        }
-        .fw-suppliers-ai__help-list li {
-            margin-bottom: var(--fw-spacing-sm);
-        }
-        .fw-suppliers-ai__help-list code {
-            background: var(--fw-highlight);
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 13px;
-            color: var(--accent-ai-primary);
-        }
-        .fw-suppliers-ai__badge-examples {
-            display: flex;
-            flex-direction: column;
-            gap: var(--fw-spacing-md);
-            margin-top: var(--fw-spacing-md);
-        }
-        .fw-suppliers-ai__badge-example {
-            display: flex;
-            align-items: center;
-            gap: var(--fw-spacing-md);
-        }
-        .fw-suppliers-ai__help-faq dt {
-            font-weight: 600;
-            color: var(--fw-text-primary);
-            margin-top: var(--fw-spacing-lg);
-            margin-bottom: var(--fw-spacing-sm);
-        }
-        .fw-suppliers-ai__help-faq dd {
-            margin: 0 0 var(--fw-spacing-md) var(--fw-spacing-lg);
-            color: var(--fw-text-secondary);
-        }
-        .fw-suppliers-ai__help-content a {
-            color: var(--accent-ai-primary);
-            text-decoration: none;
-            font-weight: 600;
-        }
-        .fw-suppliers-ai__help-content a:hover {
-            text-decoration: underline;
-        }
-    </style>
 </body>
 </html>

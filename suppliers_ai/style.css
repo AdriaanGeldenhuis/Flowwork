@@ -4,10 +4,10 @@
    perspective grid floor, layered elevation shadows, extruded pressable
    controls, carved inputs, glass slabs. Suppliers AI keeps its signature
    grey / black / white monochrome identity — the accent flips graphite in
-   light mode and silver-white in dark mode. Scoped to .fw-suppliers-ai.
+   light mode and silver-white in dark mode. Scoped to .fw-suppliers-ai
+   (the module class lives on <body>, CRM-parity skeleton).
+   Inter is loaded via <link> in each page head (no @import).
    ============================================================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 .fw-suppliers-ai {
   /* Spacing */
@@ -39,9 +39,16 @@
   --neon-purple: #8b5cf6;
   --neon-blue: #3b82f6;
 
-  /* Z-index */
+  /* Z-index layers */
+  --z-base: 1;
   --z-dropdown: 100;
-  --z-modal: 10000;
+  --z-sticky: 500;
+  --z-modal: 2000;
+
+  /* 3D tilt scene (fed by suppliers_ai.js via --rx/--ry/--mx/--my) */
+  --fw-persp: 1100px;
+  --fw-tilt-max: 6deg;
+  --fw-tilt-ease: 0.16s cubic-bezier(0.33, 1, 0.68, 1);
 
   /* ===== LIGHT THEME (graphite accent) ===== */
   --fw-bg-base: #eef1f5;
@@ -245,26 +252,21 @@
     0 1px 0 var(--fw-key-side);
 }
 
-/* ===== BASE ===== */
+/* ===== BASE (module class on <body>: aurora, grid floor + drift paint on
+   body exactly like the CRM root; the container flexes header/main/footer) ===== */
 .fw-suppliers-ai {
   margin: 0;
   padding: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--fw-text-primary);
   background: var(--fw-bg-base);
   background-image: var(--fw-bg-radial);
-  min-height: 100vh;
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.4s ease, color 0.3s ease;
-  /* Own stacking context so the fixed environment layers paint above the page
-     background but below content (this root is a <main>, not <body>). */
-  position: relative;
-  z-index: 0;
-  isolation: isolate;
 }
 
 .fw-suppliers-ai *,
@@ -328,55 +330,195 @@
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-/* Toast animations (toast is inline-styled by JS on <body>; keyframes are global) */
-@keyframes slideIn  { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes slideOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(40px); } }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
 
-/* ===== SCROLLBAR ===== */
+/* ===== SCROLLBAR — graphite gradient thumb in an inset track ===== */
 .fw-suppliers-ai ::-webkit-scrollbar { width: 12px; height: 12px; }
-.fw-suppliers-ai ::-webkit-scrollbar-track { background: var(--fw-bg-secondary); border-radius: var(--fw-radius-sm); }
-.fw-suppliers-ai ::-webkit-scrollbar-thumb { background: var(--fw-border-strong); border-radius: var(--fw-radius-sm); border: 2px solid var(--fw-bg-secondary); }
-.fw-suppliers-ai ::-webkit-scrollbar-thumb:hover { background: var(--fw-text-muted); }
+.fw-suppliers-ai ::-webkit-scrollbar-track {
+  background: var(--fw-bg-secondary);
+  border-radius: var(--fw-radius-sm);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.fw-suppliers-ai ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--fw-primary), var(--fw-primary-deep));
+  border-radius: var(--fw-radius-sm);
+  border: 3px solid var(--fw-bg-secondary);
+}
+.fw-suppliers-ai ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--fw-primary-hover), var(--fw-primary));
+}
 
-/* ===== CONTAINER ===== */
+/* ===== SKELETON: container → header → main(flex:1) → footer ===== */
 .fw-suppliers-ai__container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: var(--fw-spacing-lg);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  position: relative;
-  z-index: 1;
 }
 
-/* ===== HEADER — floating glass slab ===== */
+.fw-suppliers-ai__main {
+  flex: 1;
+  padding: var(--fw-spacing-lg);
+  max-width: 100vw;
+  overflow-x: hidden;
+  position: relative;
+  z-index: var(--z-base);
+}
+
+/* 1400px content column kept from the old layout — lives INSIDE __main
+   (header/footer stay full-bleed) */
+.fw-suppliers-ai__content {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ===== PAGE HEADER — gradient-ink centered title ===== */
+.fw-suppliers-ai__page-header {
+  padding: var(--fw-spacing-xl) var(--fw-spacing-lg) var(--fw-spacing-md);
+  text-align: center;
+}
+
+.fw-suppliers-ai__page-title {
+  font-size: 32px;
+  font-weight: 900;
+  margin: 0 0 8px;
+  background: linear-gradient(135deg, var(--fw-ink-a), var(--fw-primary) 45%, var(--fw-ink-c));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 12px var(--fw-primary-glow));
+}
+
+.fw-suppliers-ai__page-subtitle {
+  font-size: 16px;
+  color: var(--fw-text-tertiary);
+  margin: 0;
+}
+
+/* ===== VIEW TABS — segmented control in a carved groove ===== */
+.fw-suppliers-ai__view-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  margin: 0 0 var(--fw-spacing-xl);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-full);
+  box-shadow: var(--fw-input-well);
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fw-suppliers-ai__view-tabs::-webkit-scrollbar { display: none; }
+
+/* Inside the groove, tabs are flat ghosts… */
+.fw-suppliers-ai__view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 9px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text-tertiary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base), background var(--fw-transition-base);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.fw-suppliers-ai__view-tab:hover {
+  color: var(--fw-primary);
+  background: var(--fw-primary-light);
+  transform: none;
+  box-shadow: none;
+}
+
+.fw-suppliers-ai__view-tab:active { transform: scale(0.97); }
+
+/* …and the active tab is the raised graphite key that pops out of it */
+.fw-suppliers-ai__view-tab--active {
+  background: linear-gradient(165deg, var(--fw-primary-hover) 0%, var(--fw-primary) 55%, var(--fw-primary-deep) 100%);
+  color: var(--fw-on-primary) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 4px 10px -2px var(--fw-primary-glow),
+    0 8px 20px -4px var(--fw-primary-glow);
+}
+
+.fw-suppliers-ai__view-tab--active:hover {
+  color: var(--fw-on-primary);
+  background: linear-gradient(165deg, var(--fw-primary-hover) 0%, var(--fw-primary) 55%, var(--fw-primary-deep) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 12px 26px -6px var(--fw-primary-glow);
+}
+
+/* ===== HEADER — sticky full-bleed glass slab ===== */
 .fw-suppliers-ai__header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--fw-panel-border);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 1px 0 var(--fw-primary-glow),
+    0 10px 30px -12px rgba(20, 24, 31, 0.35),
+    0 4px 24px -4px var(--fw-primary-glow);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 var(--fw-spacing-lg);
+  height: 70px;
   gap: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
-  background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  box-shadow:
-    inset 0 1px 0 var(--fw-rim-light),
-    0 10px 30px -12px rgba(20, 24, 31, 0.35),
-    0 4px 24px -4px var(--fw-primary-glow);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  margin-bottom: var(--fw-spacing-xl);
-  position: relative;
-  z-index: 999;
+  transition: box-shadow var(--fw-transition-slow);
 }
 
+/* Gloss overlay */
 .fw-suppliers-ai__header::after {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
+}
+
+/* Graphite hairline under the header */
+.fw-suppliers-ai__header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 4%, var(--fw-primary-glow) 30%, rgba(120, 130, 145, 0.35) 70%, transparent 96%);
   pointer-events: none;
 }
 
@@ -604,7 +746,18 @@
   padding: var(--fw-spacing-lg);
   text-align: center;
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   position: relative;
 }
 
@@ -618,10 +771,13 @@
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
   transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .fw-suppliers-ai__stat-card:hover {
-  transform: translateY(-4px);
+  --ty: -4px;
+  --s: 1.012;
   box-shadow: var(--fw-card-shadow-hover);
   border-color: var(--fw-primary-glow);
 }
@@ -663,24 +819,8 @@
   position: relative;
 }
 
-.fw-suppliers-ai__search-header { margin-bottom: var(--fw-spacing-lg); }
-
-.fw-suppliers-ai__search-title {
-  font-size: 28px;
-  font-weight: 900;
-  margin: 0 0 var(--fw-spacing-xs) 0;
-  background: linear-gradient(135deg, var(--fw-ink-a), var(--fw-primary) 55%, var(--fw-ink-c));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 2px 12px var(--fw-primary-glow));
-}
-
-.fw-suppliers-ai__search-subtitle {
-  font-size: 15px;
-  color: var(--fw-text-muted);
-  margin: 0;
-}
+/* (The old __search-header/__search-title moved into the page-header — the
+   gradient-ink ramp now lives on __page-title.) */
 
 .fw-suppliers-ai__search-box {
   display: flex;
@@ -955,9 +1095,19 @@
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   position: relative;
-  overflow: hidden;
 }
 
 .fw-suppliers-ai__supplier-card::before {
@@ -970,15 +1120,42 @@
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
   transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .fw-suppliers-ai__supplier-card:hover {
   border-color: var(--fw-primary-glow);
   box-shadow: var(--fw-card-shadow-hover);
-  transform: translateY(-4px);
+  --ty: -4px;
+  --s: 1.008;
 }
 
 .fw-suppliers-ai__supplier-card:hover::before { opacity: 1; }
+
+/* Pointer-tracking specular glare shared by the tilt slabs */
+.fw-suppliers-ai__stat-card::after,
+.fw-suppliers-ai__supplier-card::after,
+.fw-suppliers-ai__history-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.fw-suppliers-ai__stat-card:hover::after,
+.fw-suppliers-ai__supplier-card:hover::after,
+.fw-suppliers-ai__history-card:hover::after {
+  opacity: 1;
+}
 
 .fw-suppliers-ai__supplier-card--selected {
   border-color: var(--fw-primary);
@@ -1289,23 +1466,31 @@
 .fw-suppliers-ai__shortlist-item-remove:hover { background: rgba(239, 68, 68, 0.15); }
 .fw-suppliers-ai__shortlist-item-remove svg { width: 16px; height: 16px; }
 
-/* ===== EMPTY STATE / LOADING ===== */
-.fw-suppliers-ai__empty-state {
+/* ===== LOADING & EMPTY STATES ===== */
+.fw-suppliers-ai__loading {
   text-align: center;
-  padding: var(--fw-spacing-xl);
+  padding: 60px 20px;
   color: var(--fw-text-muted);
   font-size: 14px;
+  animation: pulse 2s ease-in-out infinite;
 }
 
-.fw-suppliers-ai__loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--fw-spacing-md);
-  padding: var(--fw-spacing-xl);
+.fw-suppliers-ai__empty-state {
+  text-align: center;
+  padding: 60px 20px;
   color: var(--fw-text-muted);
   font-size: 14px;
+  line-height: 1.6;
 }
+
+.fw-suppliers-ai__empty-state small {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--fw-text-tertiary);
+}
+
+.fw-suppliers-ai__empty-state--error { color: var(--neon-red); }
 
 .fw-suppliers-ai__spinner {
   display: inline-block;
@@ -1317,16 +1502,22 @@
   animation: spin 0.6s linear infinite;
 }
 
-/* ===== FOOTER ===== */
+/* ===== FOOTER — full-bleed glass bar pinned via __main flex:1 ===== */
 .fw-suppliers-ai__footer {
-  margin-top: var(--fw-spacing-xl);
-  padding: var(--fw-spacing-md);
+  padding: var(--fw-spacing-lg);
+  text-align: center;
+  font-size: 13px;
+  color: var(--fw-text-tertiary);
+  border-top: 1px solid var(--fw-panel-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--fw-text-muted);
-  border-top: 1px solid var(--fw-border);
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light);
+  position: relative;
+  z-index: var(--z-base);
 }
 
 /* ===== EMAIL MODAL — glass ===== */
@@ -1453,13 +1644,484 @@
 
 .fw-suppliers-ai__modal .fw-suppliers-ai__textarea { resize: vertical; min-height: 100px; }
 
-/* Prevent body scroll when modal open (body is outside the scoped root) */
+/* Prevent body scroll when modal open (body carries the module class) */
 body.fw-suppliers-ai__modal-open { overflow: hidden; }
+
+/* ===== ALERTS (page banners + JS-injected error/debug boxes) ===== */
+.fw-suppliers-ai__alert {
+  padding: 14px 18px;
+  border-radius: var(--fw-radius-md);
+  margin-bottom: var(--fw-spacing-lg);
+  font-size: 14px;
+  font-weight: 600;
+  border-left: 4px solid;
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--fw-shadow-sm);
+  animation: slideDown 0.3s ease;
+}
+
+.fw-suppliers-ai__alert--success {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: 0 0 24px -8px var(--neon-green-glow);
+}
+
+.fw-suppliers-ai__alert--error {
+  border-color: var(--neon-red);
+  color: var(--neon-red);
+  background: rgba(239, 68, 68, 0.08);
+  box-shadow: 0 0 24px -8px rgba(239, 68, 68, 0.35);
+}
+
+.fw-suppliers-ai__alert--warn,
+.fw-suppliers-ai__alert--warning {
+  border-color: var(--neon-amber);
+  color: var(--neon-amber);
+  background: rgba(245, 158, 11, 0.08);
+  box-shadow: 0 0 24px -8px rgba(245, 158, 11, 0.3);
+}
+
+.fw-suppliers-ai__alert-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-weight: 500;
+}
+
+/* ===== TOASTS — stack mounted inside the module root, bottom-right ===== */
+.fw-suppliers-ai__toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.fw-suppliers-ai__toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.fw-suppliers-ai__toast--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.fw-suppliers-ai__toast--success {
+  background: linear-gradient(165deg, #34d399, var(--neon-green) 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--neon-green-glow);
+}
+
+.fw-suppliers-ai__toast--error {
+  background: linear-gradient(165deg, #f87171, var(--neon-red) 60%, #dc2626);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px rgba(239, 68, 68, 0.35);
+}
+
+.fw-suppliers-ai__toast--warning {
+  background: linear-gradient(165deg, #fcd34d, var(--neon-amber) 60%, #d97706);
+  color: #3a2400;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(120, 70, 5, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px rgba(245, 158, 11, 0.35);
+}
+
+/* Info rides the department (graphite ⇄ silver) key */
+.fw-suppliers-ai__toast--info {
+  background: linear-gradient(165deg, var(--fw-primary-hover), var(--fw-primary) 60%, var(--fw-primary-deep));
+  color: var(--fw-on-primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.3),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--fw-primary-glow);
+}
+
+/* ===== HISTORY (hoisted from history.php) ===== */
+.fw-suppliers-ai__history-panel {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-xl);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.fw-suppliers-ai__history-header {
+  margin-bottom: var(--fw-spacing-lg);
+  padding-bottom: var(--fw-spacing-md);
+  border-bottom: 2px solid var(--fw-border);
+}
+
+.fw-suppliers-ai__history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-md);
+}
+
+/* History cards — proper 3D slabs on the card-face/card-shadow tokens */
+.fw-suppliers-ai__history-card {
+  padding: var(--fw-spacing-lg);
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-card-edge);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
+  position: relative;
+}
+
+.fw-suppliers-ai__history-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  opacity: 0;
+  transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fw-suppliers-ai__history-card:hover {
+  --ty: -4px;
+  --s: 1.008;
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
+}
+
+.fw-suppliers-ai__history-card:hover::before { opacity: 1; }
+
+.fw-suppliers-ai__history-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--fw-spacing-md);
+  margin-bottom: var(--fw-spacing-sm);
+}
+
+.fw-suppliers-ai__history-query {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin: 0;
+  flex: 1;
+}
+
+.fw-suppliers-ai__history-time {
+  font-size: 13px;
+  color: var(--fw-text-muted);
+  white-space: nowrap;
+}
+
+.fw-suppliers-ai__history-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fw-spacing-md);
+  font-size: 13px;
+  color: var(--fw-text-secondary);
+}
+
+/* ===== PAGINATION — mini keys (info left, keys right) ===== */
+.fw-suppliers-ai__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--fw-spacing-md) 0;
+  margin-top: var(--fw-spacing-md);
+  flex-wrap: wrap;
+  gap: var(--fw-spacing-sm);
+}
+
+.fw-suppliers-ai__pagination-info {
+  font-size: 0.85rem;
+  color: var(--fw-text-secondary);
+}
+
+.fw-suppliers-ai__pagination-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fw-suppliers-ai__pagination-btns .fw-suppliers-ai__btn {
+  padding: 6px 12px;
+  height: 34px;
+  font-size: 0.8rem;
+  min-width: 36px;
+  text-align: center;
+  border-radius: var(--fw-radius-sm);
+}
+
+/* ===== HELP (hoisted from help.php) ===== */
+.fw-suppliers-ai__help-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-xl);
+}
+
+.fw-suppliers-ai__help-section {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-xl);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.fw-suppliers-ai__help-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+  margin: 0 0 var(--fw-spacing-lg) 0;
+  padding-bottom: var(--fw-spacing-md);
+  border-bottom: 2px solid var(--fw-border);
+}
+
+.fw-suppliers-ai__help-content {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--fw-text-secondary);
+}
+
+.fw-suppliers-ai__help-content h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin: var(--fw-spacing-lg) 0 var(--fw-spacing-sm) 0;
+}
+
+.fw-suppliers-ai__help-content p {
+  margin: 0 0 var(--fw-spacing-md) 0;
+}
+
+.fw-suppliers-ai__help-list {
+  margin: var(--fw-spacing-md) 0;
+  padding-left: var(--fw-spacing-xl);
+}
+
+.fw-suppliers-ai__help-list li {
+  margin-bottom: var(--fw-spacing-sm);
+}
+
+.fw-suppliers-ai__help-list code {
+  background: var(--fw-highlight);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  color: var(--accent-ai-primary);
+}
+
+.fw-suppliers-ai__badge-examples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-md);
+  margin-top: var(--fw-spacing-md);
+}
+
+.fw-suppliers-ai__badge-example {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-md);
+}
+
+.fw-suppliers-ai__help-faq dt {
+  font-weight: 600;
+  color: var(--fw-text-primary);
+  margin-top: var(--fw-spacing-lg);
+  margin-bottom: var(--fw-spacing-sm);
+}
+
+.fw-suppliers-ai__help-faq dd {
+  margin: 0 0 var(--fw-spacing-md) var(--fw-spacing-lg);
+  color: var(--fw-text-secondary);
+}
+
+.fw-suppliers-ai__help-content a {
+  color: var(--accent-ai-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.fw-suppliers-ai__help-content a:hover { text-decoration: underline; }
+
+/* ===== SETTINGS (hoisted from settings.php) ===== */
+.fw-suppliers-ai__settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-xl);
+}
+
+.fw-suppliers-ai__settings-form {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-xl);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.fw-suppliers-ai__form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--fw-spacing-lg);
+  margin-bottom: var(--fw-spacing-lg);
+}
+
+.fw-suppliers-ai__form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fw-spacing-xs);
+}
+
+/* Width/resize for the carved textarea well (base look comes from the shared
+   input rules above) */
+.fw-suppliers-ai__textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.fw-suppliers-ai .fw-suppliers-ai__textarea--code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.fw-suppliers-ai__checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-spacing-sm);
+  font-size: 14px;
+  color: var(--fw-text-primary);
+  cursor: pointer;
+}
+
+.fw-suppliers-ai__checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.fw-suppliers-ai__form-actions {
+  display: flex;
+  gap: var(--fw-spacing-md);
+  padding-top: var(--fw-spacing-lg);
+  border-top: 1px solid var(--fw-border);
+}
+
+.fw-suppliers-ai__help-text {
+  font-size: 12px;
+  color: var(--fw-text-muted);
+}
+
+.fw-suppliers-ai__help-text--lead {
+  font-size: 14px;
+  margin: 0 0 var(--fw-spacing-md);
+}
+
+.fw-suppliers-ai__help-text a {
+  color: var(--accent-ai-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.fw-suppliers-ai__help-text a:hover { text-decoration: underline; }
+
+/* Small utilities (replacing audit-flagged inline styles) */
+.fw-suppliers-ai__required { color: var(--accent-danger); }
+
+.fw-suppliers-ai__divider {
+  margin: var(--fw-spacing-lg) 0;
+  border: none;
+  border-top: 1px solid var(--fw-border);
+}
+
+.fw-suppliers-ai__subsection-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fw-text-primary);
+  margin: 0 0 var(--fw-spacing-sm);
+}
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
-  .fw-suppliers-ai__header { flex-direction: column; gap: var(--fw-spacing-md); }
-  .fw-suppliers-ai__greeting { order: -1; text-align: left; }
+  /* Kill the grid floor + tilt on small screens */
+  .fw-suppliers-ai::before { display: none; }
+
+  .fw-suppliers-ai__stat-card,
+  .fw-suppliers-ai__supplier-card,
+  .fw-suppliers-ai__history-card {
+    transform: none;
+    transform-style: flat;
+  }
+
+  .fw-suppliers-ai__stat-card:hover,
+  .fw-suppliers-ai__supplier-card:hover,
+  .fw-suppliers-ai__history-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .fw-suppliers-ai__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 12px 16px;
+  }
+
+  .fw-suppliers-ai__greeting {
+    order: -1;
+    width: 100%;
+    text-align: left;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .fw-suppliers-ai__main { padding: 16px; }
   .fw-suppliers-ai__search-box { flex-direction: column; }
   .fw-suppliers-ai__search-btn { min-height: 56px; }
   .fw-suppliers-ai__stats { grid-template-columns: 1fr 1fr; }
