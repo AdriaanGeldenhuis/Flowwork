@@ -38,15 +38,23 @@
   }
 
   // ========== AJAX HELPERS ==========
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
   async function fetchJSON(url, options = {}) {
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers
-        }
-      });
+      const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+      };
+      const method = (options.method || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD') {
+        const token = getCsrfToken();
+        if (token) headers['X-CSRF-TOKEN'] = token;
+      }
+      const response = await fetch(url, { ...options, headers });
       return await response.json();
     } catch (error) {
       console.error('Fetch error:', error);
@@ -61,7 +69,10 @@
     const body = document.querySelector('.fw-calendar');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || THEME_LIGHT;
+    // Mark the toggle so per-page scripts don't double-bind a second handler
+    toggle.dataset.themeBound = '1';
+
+    let theme = getCookie(THEME_COOKIE) || THEME_DARK;
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
@@ -225,7 +236,7 @@
       CalendarState.calendars = data.calendars;
       renderCalendarList(data.calendars);
     } else {
-      calendarList.innerHTML = '<div style="color: var(--accent-danger); font-size: 13px;">Failed to load calendars</div>';
+      calendarList.innerHTML = '<div class="fw-calendar__empty-state">Failed to load calendars</div>';
     }
   }
 
@@ -234,23 +245,19 @@
     if (!calendarList) return;
 
     if (calendars.length === 0) {
-      calendarList.innerHTML = '<div style="font-size: 13px; color: var(--fw-text-muted);">No calendars yet</div>';
+      calendarList.innerHTML = '<div class="fw-calendar__empty-state">No calendars yet</div>';
       return;
     }
 
     const html = calendars.map(cal => `
-      <label style="display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-radius: 6px; transition: all 0.2s;" 
-             class="fw-calendar__calendar-item" 
-             onmouseenter="this.style.background='var(--fw-highlight)'" 
-             onmouseleave="this.style.background='transparent'">
-        <input type="checkbox" 
-               checked 
-               data-calendar-id="${cal.id}" 
-               class="fw-calendar__calendar-toggle"
-               style="width: 16px; height: 16px; cursor: pointer;">
-        <span style="width: 12px; height: 12px; background: ${cal.color}; border-radius: 50%; flex-shrink: 0;"></span>
-        <span style="font-size: 14px; color: var(--fw-text-primary); flex: 1;">${cal.name}</span>
-        <span style="font-size: 11px; color: var(--fw-text-muted);">${cal.event_count}</span>
+      <label class="fw-calendar__calendar-item">
+        <input type="checkbox"
+               checked
+               data-calendar-id="${cal.id}"
+               class="fw-calendar__calendar-toggle">
+        <span class="fw-calendar__calendar-dot" style="background: ${cal.color};"></span>
+        <span class="fw-calendar__calendar-name">${cal.name}</span>
+        <span class="fw-calendar__calendar-count">${cal.event_count}</span>
       </label>
     `).join('');
 
@@ -334,7 +341,7 @@
         renderYearView(viewContainer);
       }
     } else {
-      viewContainer.innerHTML = '<div style="color: var(--accent-danger); padding: 20px;">Failed to load calendar data</div>';
+      viewContainer.innerHTML = '<div class="fw-calendar__empty-state">Failed to load calendar data</div>';
     }
   }
 
@@ -399,7 +406,7 @@
                       ${event.title}
                     </div>
                   `).join('')}
-                  ${dayEvents.length > 3 ? `<div style="font-size: 11px; color: var(--fw-text-muted); padding: 2px;">+${dayEvents.length - 3} more</div>` : ''}
+                  ${dayEvents.length > 3 ? `<div class="fw-calendar__month-more">+${dayEvents.length - 3} more</div>` : ''}
                 </div>
               </div>
             `;
@@ -452,7 +459,7 @@
           ${days.map((day, idx) => {
             const isToday = day.toDateString() === new Date().toDateString();
             return `
-              <div class="fw-calendar__month-header" style="${isToday ? 'background: rgba(6, 182, 212, 0.1); font-weight: 700;' : ''}">
+              <div class="fw-calendar__month-header" style="${isToday ? 'background: var(--fw-primary-light); font-weight: 700;' : ''}">
                 ${dayNames[idx]}<br>
                 <span style="font-size: 18px;">${day.getDate()}</span>
               </div>
@@ -617,11 +624,7 @@
 
     // For now, show placeholder
     setTimeout(() => {
-      myDayPane.innerHTML = `
-        <div style="font-size: 13px; color: var(--fw-text-muted);">
-          No tasks for today
-        </div>
-      `;
+      myDayPane.innerHTML = '<div class="fw-calendar__empty-state">No tasks for today</div>';
     }, 500);
   }
 
@@ -655,7 +658,7 @@
       dayElement.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        dayElement.style.background = 'rgba(6, 182, 212, 0.1)';
+        dayElement.style.background = 'var(--fw-primary-light)';
       });
 
       dayElement.addEventListener('dragleave', (e) => {
@@ -875,34 +878,95 @@
   }
 
   function showNotification(message, type = 'info') {
-    // Simple toast notification
+    let stack = document.getElementById('calendarToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'calendarToastStack';
+      stack.className = 'fw-calendar__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    const variant = (type === 'success' || type === 'error') ? type : 'info';
     const toast = document.createElement('div');
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 16px 24px;
-      background: ${type === 'success' ? 'var(--accent-task)' : type === 'error' ? 'var(--accent-danger)' : 'var(--accent-calendar)'};
-      color: white;
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-      z-index: 10000;
-      animation: slideIn 0.3s ease;
-      font-weight: 600;
-    `;
+    toast.className = 'fw-calendar__toast fw-calendar__toast--' + variant;
     toast.textContent = message;
-    document.body.appendChild(toast);
-
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-calendar__toast--visible'));
     setTimeout(() => {
-      toast.style.animation = 'slideOut 0.3s ease';
+      toast.classList.remove('fw-calendar__toast--visible');
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 3500);
+  }
+
+  // ========== DIMENSION 3D TILT ENGINE ==========
+  const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Delegated pointer engine (ported from crm.js): works for cards rendered at
+  // any time (views re-render via fetch, so per-card binding never sees them).
+  // Feeds the CSS custom properties (--rx/--ry for tilt, --mx/--my for the
+  // specular glare) that calendar.css composes into the card transform.
+  function init3DTilt() {
+    if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-calendar__agenda-item, .fw-calendar__info-card, .fw-calendar__year-month';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
+
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
+
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
+    });
   }
 
   // ========== INIT ==========
   function init() {
     initTheme();
     initKebabMenu();
+    init3DTilt();
     initNavigation();
     initNotifications();
     loadCalendarViewReal();
@@ -940,20 +1004,6 @@
       });
     }
   }
-
-  // Add CSS for animations
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-  `;
-  document.head.appendChild(style);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

@@ -14,15 +14,23 @@
     document.cookie = name + '=' + value + ';expires=' + date.toUTCString() + ';path=/;SameSite=Lax';
   }
 
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
   async function fetchJSON(url, options = {}) {
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers
-        }
-      });
+      const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+      };
+      const method = (options.method || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD') {
+        const token = getCsrfToken();
+        if (token) headers['X-CSRF-TOKEN'] = token;
+      }
+      const response = await fetch(url, { ...options, headers });
       return await response.json();
     } catch (error) {
       console.error('Fetch error:', error);
@@ -31,27 +39,24 @@
   }
 
   function showNotification(message, type = 'info') {
+    let stack = document.getElementById('calendarToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'calendarToastStack';
+      stack.className = 'fw-calendar__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    const variant = (type === 'success' || type === 'error') ? type : 'info';
     const toast = document.createElement('div');
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 16px 24px;
-      background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#06b6d4'};
-      color: white;
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-      z-index: 10000;
-      animation: slideIn 0.3s ease;
-      font-weight: 600;
-    `;
+    toast.className = 'fw-calendar__toast fw-calendar__toast--' + variant;
     toast.textContent = message;
-    document.body.appendChild(toast);
-
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-calendar__toast--visible'));
     setTimeout(() => {
-      toast.style.animation = 'slideOut 0.3s ease';
+      toast.classList.remove('fw-calendar__toast--visible');
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 3500);
   }
 
   function initTheme() {
@@ -60,7 +65,11 @@
     const body = document.querySelector('.fw-calendar');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || 'light';
+    // calendar.js already wired this toggle — don't double-bind
+    if (toggle.dataset.themeBound) return;
+    toggle.dataset.themeBound = '1';
+
+    let theme = getCookie(THEME_COOKIE) || 'dark';
     body.setAttribute('data-theme', theme);
     if (indicator) indicator.textContent = 'Theme: ' + (theme === 'dark' ? 'Dark' : 'Light');
 
@@ -179,19 +188,6 @@
     initFormSubmit();
     initIntegrations();
   }
-
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-  `;
-  document.head.appendChild(style);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

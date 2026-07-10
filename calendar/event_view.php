@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-CAL-2');
+define('ASSET_VERSION', '2026-07-10-calendar-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -87,10 +87,11 @@ $links = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($event['title']) ?> – Calendar</title>
+    <title><?= htmlspecialchars($event['title']) ?> – <?= htmlspecialchars($companyName) ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/calendar/assets/calendar.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-calendar">
@@ -105,35 +106,68 @@ $links = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="8" cy="14" r="1" fill="currentColor"/>
+                        <circle cx="12" cy="14" r="1" fill="currentColor"/>
+                        <circle cx="16" cy="14" r="1" fill="currentColor"/>
+                        <circle cx="8" cy="18" r="1" fill="currentColor"/>
+                        <circle cx="12" cy="18" r="1" fill="currentColor"/>
                     </svg>
                 </div>
                 <div class="fw-calendar__brand-text">
                     <div class="fw-calendar__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-calendar__app-name">Calendar</div>
+                    <div class="fw-calendar__app-name">Calendar – Event</div>
                 </div>
             </div>
 
             <div class="fw-calendar__greeting">
-                Event Details
+                Hello, <span class="fw-calendar__greeting-name"><?= htmlspecialchars($firstName) ?></span>
             </div>
 
             <div class="fw-calendar__controls">
-                <a href="/calendar/" class="fw-calendar__home-btn" title="Back to Calendar">
-                    <svg viewBox="0 0 24 24" fill="none">
+                <a href="/calendar/" class="fw-calendar__back-btn" title="Back to Calendar">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </a>
-                
+
+                <a href="/" class="fw-calendar__home-btn" title="Home">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+
                 <button class="fw-calendar__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                     <svg class="fw-calendar__theme-icon fw-calendar__theme-icon--light" viewBox="0 0 24 24" fill="none">
                         <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
                         <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     </svg>
                     <svg class="fw-calendar__theme-icon fw-calendar__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/>
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </button>
+
+                <div class="fw-calendar__menu-wrapper">
+                    <button class="fw-calendar__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <nav class="fw-calendar__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="/calendar/" class="fw-calendar__kebab-item">Calendar</a>
+                        <a href="/calendar/event_new.php" class="fw-calendar__kebab-item">New Event</a>
+                        <a href="/calendar/settings.php" class="fw-calendar__kebab-item">Settings</a>
+                    </nav>
+                </div>
             </div>
         </header>
 
@@ -166,7 +200,7 @@ $links = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <button class="fw-calendar__btn fw-calendar__btn--secondary" id="btnEdit">
                             Edit
                         </button>
-                        <button class="fw-calendar__btn" style="background: var(--accent-danger); color: white;" id="btnDelete">
+                        <button class="fw-calendar__btn fw-calendar__btn--danger" id="btnDelete">
                             Delete
                         </button>
                     </div>
@@ -303,7 +337,7 @@ $links = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php endforeach; ?>
                             </div>
                             <?php else: ?>
-                            <div style="font-size: 13px; color: var(--fw-text-muted); padding: 12px 0;">
+                            <div class="fw-calendar__empty-state fw-calendar__empty-state--compact">
                                 No attachments
                             </div>
                             <?php endif; ?>
@@ -358,8 +392,8 @@ $links = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         <!-- Footer -->
         <footer class="fw-calendar__footer">
-            <span>Event ID: <?= $eventId ?></span>
-            <span id="themeIndicator">Theme: Light</span>
+            <span>Calendar v<?= ASSET_VERSION ?></span>
+            <span id="themeIndicator">Theme: Dark</span>
         </footer>
 
     </div>

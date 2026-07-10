@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-CAL-2');
+define('ASSET_VERSION', '2026-07-10-calendar-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -36,6 +36,7 @@ if (!in_array($activeView, $allowedViews)) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="/calendar/assets/calendar.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-calendar">
@@ -101,6 +102,7 @@ if (!in_array($activeView, $allowedViews)) {
                         </svg>
                     </button>
                     <nav class="fw-calendar__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="/calendar/" class="fw-calendar__kebab-item">Calendar</a>
                         <a href="/calendar/event_new.php" class="fw-calendar__kebab-item">New Event</a>
                         <a href="/calendar/settings.php" class="fw-calendar__kebab-item">Settings</a>
                         <button class="fw-calendar__kebab-item" id="btnSyncCalendars">Sync Calendars</button>
@@ -112,7 +114,15 @@ if (!in_array($activeView, $allowedViews)) {
 
         <!-- Main Layout -->
         <main class="fw-calendar__main">
-            
+            <div class="fw-calendar__main-inner">
+
+            <div class="fw-calendar__page-header">
+                <h1 class="fw-calendar__page-title">Calendar</h1>
+                <p class="fw-calendar__page-subtitle">
+                    Company events, meetings and reminders
+                </p>
+            </div>
+
             <!-- Toolbar -->
             <div class="fw-calendar__toolbar">
                 <div class="fw-calendar__nav">
@@ -170,12 +180,14 @@ if (!in_array($activeView, $allowedViews)) {
 
             </div>
 
+            </div>
+
         </main>
 
         <!-- Footer -->
         <footer class="fw-calendar__footer">
             <span>Calendar v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
+            <span id="themeIndicator">Theme: Dark</span>
         </footer>
 
     </div>

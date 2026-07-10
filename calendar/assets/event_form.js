@@ -17,15 +17,23 @@
     document.cookie = name + '=' + value + ';expires=' + date.toUTCString() + ';path=/;SameSite=Lax';
   }
 
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
   async function fetchJSON(url, options = {}) {
     try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers
-        }
-      });
+      const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+      };
+      const method = (options.method || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD') {
+        const token = getCsrfToken();
+        if (token) headers['X-CSRF-TOKEN'] = token;
+      }
+      const response = await fetch(url, { ...options, headers });
       return await response.json();
     } catch (error) {
       console.error('Fetch error:', error);
@@ -34,27 +42,24 @@
   }
 
   function showNotification(message, type = 'info') {
+    let stack = document.getElementById('calendarToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'calendarToastStack';
+      stack.className = 'fw-calendar__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    const variant = (type === 'success' || type === 'error') ? type : 'info';
     const toast = document.createElement('div');
-    toast.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      padding: 16px 24px;
-      background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#06b6d4'};
-      color: white;
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-      z-index: 10000;
-      animation: slideIn 0.3s ease;
-      font-weight: 600;
-    `;
+    toast.className = 'fw-calendar__toast fw-calendar__toast--' + variant;
     toast.textContent = message;
-    document.body.appendChild(toast);
-
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-calendar__toast--visible'));
     setTimeout(() => {
-      toast.style.animation = 'slideOut 0.3s ease';
+      toast.classList.remove('fw-calendar__toast--visible');
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 3500);
   }
 
   // ========== THEME TOGGLE ==========
@@ -64,7 +69,11 @@
     const body = document.querySelector('.fw-calendar');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || 'light';
+    // calendar.js already wired this toggle — don't double-bind
+    if (toggle.dataset.themeBound) return;
+    toggle.dataset.themeBound = '1';
+
+    let theme = getCookie(THEME_COOKIE) || 'dark';
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
@@ -197,7 +206,7 @@
 
     function renderParticipants() {
       if (participantsData.length === 0) {
-        participantsList.innerHTML = '<div style="font-size: 13px; color: var(--fw-text-muted); padding: 12px 0;">No participants added</div>';
+        participantsList.innerHTML = '<div class="fw-calendar__empty-state fw-calendar__empty-state--compact">No participants added</div>';
         return;
       }
 
@@ -219,7 +228,7 @@
               <option value="required" ${p.role === 'required' ? 'selected' : ''}>Required</option>
               <option value="optional" ${p.role === 'optional' ? 'selected' : ''}>Optional</option>
             </select>
-            <button type="button" class="fw-calendar__btn fw-calendar__btn--small" style="background: var(--accent-danger); color: white;" onclick="removeParticipant(${index})">
+            <button type="button" class="fw-calendar__btn fw-calendar__btn--danger fw-calendar__btn--small" onclick="removeParticipant(${index})">
               Remove
             </button>
           </div>
@@ -263,12 +272,12 @@
 
     function renderReminders() {
       if (remindersData.length === 0) {
-        remindersList.innerHTML = '<div style="font-size: 13px; color: var(--fw-text-muted); padding: 12px 0;">No reminders set</div>';
+        remindersList.innerHTML = '<div class="fw-calendar__empty-state fw-calendar__empty-state--compact">No reminders set</div>';
         return;
       }
 
       const html = remindersData.map((r, index) => `
-        <div class="fw-calendar__reminder-item" style="display: flex; gap: 12px; align-items: center; padding: 12px; background: var(--fw-highlight); border-radius: 8px; margin-bottom: 8px;">
+        <div class="fw-calendar__reminder-item">
           <select class="fw-calendar__input" style="flex: 1;" onchange="updateReminderTime(${index}, this.value)">
             <option value="0" ${r.minutes_before == 0 ? 'selected' : ''}>At time of event</option>
             <option value="5" ${r.minutes_before == 5 ? 'selected' : ''}>5 minutes before</option>
@@ -283,7 +292,7 @@
             <option value="in_app" ${r.channel === 'in_app' ? 'selected' : ''}>In-app</option>
             <option value="email" ${r.channel === 'email' ? 'selected' : ''}>Email</option>
           </select>
-          <button type="button" class="fw-calendar__btn fw-calendar__btn--small" style="background: var(--accent-danger); color: white;" onclick="removeReminder(${index})">
+          <button type="button" class="fw-calendar__btn fw-calendar__btn--danger fw-calendar__btn--small" onclick="removeReminder(${index})">
             Remove
           </button>
         </div>
@@ -453,20 +462,6 @@
     initReminders();
     initFormSubmit();
   }
-
-  // Add CSS animations
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-  `;
-  document.head.appendChild(style);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
