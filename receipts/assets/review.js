@@ -194,6 +194,8 @@
         if (linesData.length > 1) {
           linesData.splice(idx, 1);
           renderLines();
+        } else if (window.ReceiptsToast) {
+          window.ReceiptsToast('At least one line item is required', 'error');
         } else {
           alert('At least one line item is required');
         }

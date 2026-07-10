@@ -25,6 +25,67 @@
     };
   }
 
+  // ========== CSRF ==========
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
+  // Auto-inject the CSRF token into all fetch POST/PUT/DELETE/PATCH requests
+  // (receipts/api/*.php validates X-CSRF-TOKEN on every state-changing call).
+  // If the caller already set a token header (review.js does, as
+  // "X-CSRF-Token"), leave it alone: appending a second record key that
+  // normalizes to the same header name would combine into "tok, tok" and
+  // fail hash_equals server-side.
+  const _origFetch = window.fetch;
+  window.fetch = function(url, options) {
+    options = options || {};
+    const method = (options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      const token = getCsrfToken();
+      if (token) {
+        if (options.headers instanceof Headers) {
+          options.headers.set('X-CSRF-TOKEN', token);
+        } else if (Array.isArray(options.headers)) {
+          if (!options.headers.some(h => String(h && h[0]).toLowerCase() === 'x-csrf-token')) {
+            options.headers.push(['X-CSRF-TOKEN', token]);
+          }
+        } else {
+          options.headers = options.headers || {};
+          if (!Object.keys(options.headers).some(k => k.toLowerCase() === 'x-csrf-token')) {
+            options.headers['X-CSRF-TOKEN'] = token;
+          }
+        }
+      }
+    }
+    return _origFetch.call(window, url, options);
+  };
+
+  // ========== TOASTS ==========
+  // ReceiptsToast('Saved', 'success' | 'error' | 'info') — non-blocking
+  // feedback for async actions, stacked bottom-right inside the module root.
+  window.ReceiptsToast = function(message, type) {
+    type = (type === 'error' || type === 'info') ? type : 'success';
+    const root = document.querySelector('.fw-receipts') || document.body;
+    let stack = document.getElementById('receiptsToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'receiptsToastStack';
+      stack.className = 'fw-receipts__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      root.appendChild(stack);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'fw-receipts__toast fw-receipts__toast--' + type;
+    toast.textContent = message;
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-receipts__toast--visible'));
+    setTimeout(() => {
+      toast.classList.remove('fw-receipts__toast--visible');
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  };
+
   // ========== THEME TOGGLE ==========
   function initTheme() {
     const toggle = document.getElementById('themeToggle');
@@ -32,7 +93,7 @@
     const body = document.querySelector('.fw-receipts');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || THEME_LIGHT;
+    let theme = getCookie(THEME_COOKIE) || THEME_DARK;
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
@@ -123,9 +184,30 @@
         });
     }
 
+    // Map receipt/bill statuses to glossy badge variants
+    // (green=approved/success, red=failed/exception, cyan=processing, amber=pending).
+    function statusBadgeClass(status) {
+      const s = String(status || '').toLowerCase();
+      if (['approved', 'posted', 'paid', 'sent', 'viewed', 'completed', 'success', 'matched'].includes(s)) {
+        return ' fw-receipts__badge--success';
+      }
+      if (['failed', 'error', 'exception', 'blocked', 'cancelled', 'expired'].includes(s)) {
+        return ' fw-receipts__badge--failed';
+      }
+      if (['processing', 'parsed', 'ocr', 'matching', 'review'].includes(s)) {
+        return ' fw-receipts__badge--processing';
+      }
+      if (['pending', 'draft', 'awaiting', 'queued'].includes(s)) {
+        return ' fw-receipts__badge--pending';
+      }
+      return '';
+    }
+
     function renderReceipts(receipts) {
       if (receipts.length === 0) {
-        listContainer.innerHTML = '<div class="fw-receipts__loading">No receipts found</div>';
+        listContainer.innerHTML =
+          '<div class="fw-receipts__empty-state">No receipts found' +
+          '<small>Upload a receipt or adjust your search filters.</small></div>';
         return;
       }
 
@@ -150,7 +232,7 @@
               </div>
               <div class="fw-receipts__receipt-date">${escapeHtml(date)}</div>
             </div>
-            ${status ? `<div class="fw-receipts__receipt-status">${escapeHtml(status)}</div>` : ''}
+            ${status ? `<span class="fw-receipts__badge${statusBadgeClass(status)}">${escapeHtml(status)}</span>` : ''}
           </a>
         `;
       }).join('');
@@ -414,6 +496,8 @@
     modal.setAttribute('aria-hidden','true');
     document.body.style.overflow = '';
   }
+  // index.php's picker Close button calls this via inline onclick.
+  window.closeWidgetPicker = closeWidgetPicker;
 
   function selectWidget(widgetKey) {
     const modal = document.getElementById('widgetPickerModal');
@@ -429,9 +513,74 @@
     });
   }
 
+  // ========== DIMENSION 3D ENGINE ==========
+  const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Delegated pointer engine: works for cards rendered at any time (receipt
+  // lists and widgets load via fetch, so per-card binding at DOMContentLoaded
+  // never sees them). Instead of writing inline transforms, it feeds the CSS
+  // custom properties (--rx/--ry for tilt, --mx/--my for the specular glare)
+  // that receipts.css/widgets.css compose into the card transform.
+  function init3DTilt() {
+    if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-receipts__receipt-card, .fw-widget';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
+
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
+
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
+    });
+  }
+
   // ===== LOGO TILE PLAYFUL TILT =====
   function initLogoTileEffect() {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (REDUCE_MOTION) return;
     const logoTile = document.querySelector('.fw-receipts__logo-tile');
     if (!logoTile) return;
     logoTile.addEventListener('mouseenter', function() {
@@ -449,6 +598,7 @@
     initReceiptsList();
     initWidgetPicker();                // <-- ensure picker works for "Change widget"
     initLogoTileEffect();
+    init3DTilt();
     const url = new URLSearchParams(window.location.search);
     if ((url.get('tab') || 'overview') === 'overview') initWidgets();
   }

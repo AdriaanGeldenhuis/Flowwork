@@ -6,7 +6,7 @@
    pink/magenta accent. Scoped entirely to .fw-receipts.
    ============================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+/* Inter is loaded via <link rel="preconnect"> + stylesheet links in each page head. */
 
 .fw-receipts {
   /* Spacing */
@@ -29,18 +29,26 @@
   --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  --fw-tilt-ease: 0.16s cubic-bezier(0.33, 1, 0.68, 1);
+
+  /* 3D scene */
+  --fw-persp: 1100px;
+  --fw-tilt-max: 6deg;
 
   /* Neon palette */
   --neon-pink: #ff1dce;
   --neon-purple: #a855f7;
   --neon-purple-glow: rgba(168, 85, 247, 0.3);
   --neon-cyan: #06b6d4;
+  --neon-blue: #3b82f6;
   --neon-green: #10b981;
   --neon-green-glow: rgba(16, 185, 129, 0.3);
   --neon-amber: #f59e0b;
+  --neon-orange: #f59e0b;
   --neon-red: #ef4444;
 
   /* Z-index */
+  --z-base: 1;
   --z-dropdown: 100;
   --z-sticky: 500;
   --z-modal: 2000;
@@ -306,11 +314,6 @@
   to   { opacity: 0.7; transform: translateY(-30px); }
 }
 
-@keyframes fwCardFade {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes shimmer {
   to { left: 100%; }
 }
@@ -323,42 +326,49 @@
 .fw-receipts ::-webkit-scrollbar-track {
   background: var(--fw-bg-secondary);
   border-radius: var(--fw-radius-sm);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 .fw-receipts ::-webkit-scrollbar-thumb {
-  background: var(--fw-border-strong);
+  background: linear-gradient(180deg, var(--fw-primary), var(--fw-primary-deep));
   border-radius: var(--fw-radius-sm);
-  border: 2px solid var(--fw-bg-secondary);
+  border: 3px solid var(--fw-bg-secondary);
 }
 .fw-receipts ::-webkit-scrollbar-thumb:hover {
-  background: var(--fw-text-muted);
+  background: linear-gradient(180deg, #ff8ae8, var(--fw-primary));
 }
 
 /* ===== CONTAINER ===== */
+/* Full-bleed column: header/footer span the viewport, __main carries padding. */
 .fw-receipts__container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: var(--fw-spacing-lg);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  position: relative;
-  z-index: 1;
 }
 
-.fw-receipts__container--wide {
+/* Max-width content column lives INSIDE __main (never on the container). */
+.fw-receipts__content {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.fw-receipts__content--wide {
   max-width: 1800px;
 }
 
-/* ===== HEADER — floating glass slab ===== */
+/* ===== HEADER — sticky full-bleed glass slab ===== */
 .fw-receipts__header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
+  padding: 0 var(--fw-spacing-lg);
+  height: 70px;
   background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
+  border-bottom: 1px solid var(--fw-panel-border);
   box-shadow:
     inset 0 1px 0 var(--fw-rim-light),
     0 1px 0 rgba(255, 29, 206, 0.18),
@@ -366,8 +376,7 @@
     0 4px 24px -4px var(--fw-primary-glow);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  margin-bottom: var(--fw-spacing-xl);
-  position: relative;
+  transition: box-shadow var(--fw-transition-slow);
 }
 
 /* Gloss overlay */
@@ -375,8 +384,19 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
+}
+
+/* Neon hairline under the header */
+.fw-receipts__header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 4%, var(--fw-primary-glow) 30%, rgba(168, 85, 247, 0.35) 70%, transparent 96%);
   pointer-events: none;
 }
 
@@ -581,11 +601,17 @@
 /* ===== MAIN CONTENT ===== */
 .fw-receipts__main {
   flex: 1;
+  padding: var(--fw-spacing-lg);
+  max-width: 100vw;
+  overflow-x: hidden;
+  position: relative;
+  z-index: var(--z-base);
 }
 
 /* ===== PAGE HEADER ===== */
 .fw-receipts__page-header {
-  padding: var(--fw-spacing-md) 0 var(--fw-spacing-lg);
+  padding: var(--fw-spacing-xl) var(--fw-spacing-lg) var(--fw-spacing-md);
+  text-align: center;
 }
 
 .fw-receipts__page-title {
@@ -741,7 +767,7 @@
   padding: 0 var(--fw-spacing-lg);
   height: 40px;
   border: 1px solid transparent;
-  border-radius: var(--fw-radius-full);
+  border-radius: var(--fw-radius-md);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.3px;
@@ -880,7 +906,10 @@
   margin-bottom: var(--fw-spacing-md);
 }
 
-/* ===== RECEIPT CARDS — 3D slabs ===== */
+/* ===== RECEIPT CARDS — true 3D slabs =====
+   Tilt driven by --rx/--ry (from receipts.js), glare by --mx/--my.
+   NEVER add overflow:hidden / filter / backdrop-filter to the card itself —
+   that flattens the preserve-3d context. Clip children individually. */
 .fw-receipts__receipt-card {
   display: flex;
   align-items: center;
@@ -893,11 +922,22 @@
   box-shadow: var(--fw-card-shadow);
   text-decoration: none;
   color: var(--fw-text-primary);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   position: relative;
-  overflow: hidden;
 }
 
+/* Top rim light */
 .fw-receipts__receipt-card::before {
   content: '';
   position: absolute;
@@ -908,15 +948,38 @@
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
   transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .fw-receipts__receipt-card:hover {
-  transform: translateY(-3px);
+  --ty: -3px;
+  --s: 1.008;
   box-shadow: var(--fw-card-shadow-hover);
   border-color: var(--fw-primary-glow);
 }
 
 .fw-receipts__receipt-card:hover::before { opacity: 1; }
+
+/* Pointer-tracking specular glare */
+.fw-receipts__receipt-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.fw-receipts__receipt-card:hover::after {
+  opacity: 1;
+}
 
 .fw-receipts__receipt-icon {
   display: flex;
@@ -956,32 +1019,112 @@
   color: var(--fw-text-muted);
 }
 
-.fw-receipts__receipt-status {
-  font-size: 12px;
-  padding: 4px 10px;
+/* ===== BADGES — glossy 3D pills (magenta default) ===== */
+.fw-receipts__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
   border-radius: var(--fw-radius-full);
-  background: var(--fw-primary-light);
-  color: var(--fw-primary);
+  font-size: 11px;
   font-weight: 700;
-  align-self: flex-start;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: linear-gradient(165deg, #ff8ae8, var(--fw-primary) 60%, var(--fw-primary-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(90, 0, 70, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 0 18px var(--fw-primary-glow);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
+.fw-receipts__badge--approved,
+.fw-receipts__badge--success {
+  background: linear-gradient(165deg, #34d399, var(--neon-green) 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px var(--neon-green-glow);
+}
+
+.fw-receipts__badge--failed,
+.fw-receipts__badge--exception,
+.fw-receipts__badge--danger {
+  background: linear-gradient(165deg, #f87171, var(--neon-red) 60%, #b91c1c);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.2),
+    0 0 18px rgba(239, 68, 68, 0.3);
+}
+
+.fw-receipts__badge--processing {
+  background: linear-gradient(165deg, #67e8f9, var(--neon-cyan) 60%, var(--neon-blue));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(0, 90, 105, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px rgba(6, 182, 212, 0.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.fw-receipts__badge--pending {
+  background: linear-gradient(165deg, #fcd34d, var(--neon-amber) 60%, #b45309);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(120, 60, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 0 18px rgba(245, 158, 11, 0.3);
+}
+
+/* ===== LOADING & EMPTY STATES ===== */
 .fw-receipts__loading {
   text-align: center;
-  padding: var(--fw-spacing-xl);
+  padding: 60px 20px;
   color: var(--fw-text-muted);
+  font-size: 14px;
+  animation: pulse 2s ease-in-out infinite;
 }
 
-/* ===== FOOTER ===== */
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.fw-receipts__empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--fw-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.fw-receipts__empty-state small {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--fw-text-tertiary);
+}
+
+/* ===== FOOTER — glass bar ===== */
 .fw-receipts__footer {
-  margin-top: var(--fw-spacing-xl);
-  padding: var(--fw-spacing-md);
+  padding: var(--fw-spacing-lg);
+  text-align: center;
+  font-size: 13px;
+  color: var(--fw-text-tertiary);
+  border-top: 1px solid var(--fw-panel-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--fw-text-muted);
-  border-top: 1px solid var(--fw-border);
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light);
+  position: relative;
+  z-index: var(--z-base);
 }
 
 /* ===== REVIEW STEPPER ===== */
@@ -1204,24 +1347,29 @@
 }
 
 .fw-receipts__alert--error {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.08);
   border-color: var(--neon-red);
-  color: #dc2626;
+  color: var(--neon-red);
+  box-shadow: 0 0 24px -8px rgba(239, 68, 68, 0.35);
 }
-.fw-receipts__alert--warn {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: var(--neon-amber);
-  color: #d97706;
+.fw-receipts__alert--warn,
+.fw-receipts__alert--warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: var(--neon-orange);
+  color: var(--neon-orange);
+  box-shadow: 0 0 24px -8px rgba(245, 158, 11, 0.3);
 }
 .fw-receipts__alert--info {
   background: rgba(255, 29, 206, 0.08);
   border-color: var(--fw-primary);
   color: var(--fw-primary);
+  box-shadow: 0 0 24px -8px var(--fw-primary-glow);
 }
 .fw-receipts__alert--success {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.08);
   border-color: var(--neon-green);
-  color: #059669;
+  color: var(--neon-green);
+  box-shadow: 0 0 24px -8px var(--neon-green-glow);
 }
 
 /* ===== UPLOAD ZONE ===== */
@@ -1381,18 +1529,25 @@
   color: var(--fw-text-muted);
 }
 
-/* ===== MODAL ===== */
+/* ===== MODALS — deep glass with 3D entrance ===== */
 .fw-receipts__modal-overlay {
   position: fixed;
   inset: 0;
   background: var(--fw-modal-overlay);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
   z-index: var(--z-modal);
   display: none;
   align-items: center;
   justify-content: center;
   padding: var(--fw-spacing-lg);
+  perspective: 1400px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .fw-receipts__modal-overlay[aria-hidden="false"] {
@@ -1405,24 +1560,31 @@
   border-radius: var(--fw-radius-lg);
   box-shadow:
     inset 0 1px 0 var(--fw-rim-light),
-    var(--fw-shadow-xl),
-    0 24px 60px -20px var(--fw-primary-glow);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+    0 40px 80px -24px rgba(20, 4, 15, 0.6),
+    0 24px 60px -12px var(--fw-primary-glow);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   max-width: 800px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  animation: modalSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: modalRise 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
 }
 
 .fw-receipts__modal--large {
   max-width: 1200px;
 }
 
-@keyframes modalSlideIn {
-  from { opacity: 0; transform: translateY(20px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+@keyframes modalRise {
+  from {
+    opacity: 0;
+    transform: translateY(36px) rotateX(-8deg) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotateX(0) scale(1);
+  }
 }
 
 .fw-receipts__modal-header {
@@ -1431,6 +1593,12 @@
   align-items: center;
   padding: var(--fw-spacing-lg);
   border-bottom: 1px solid var(--fw-border);
+  position: sticky;
+  top: 0;
+  background: var(--fw-panel-bg);
+  z-index: 10;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 .fw-receipts__modal-title {
@@ -1475,6 +1643,12 @@
   gap: var(--fw-spacing-sm);
   padding: var(--fw-spacing-lg);
   border-top: 1px solid var(--fw-border);
+  position: sticky;
+  bottom: 0;
+  background: var(--fw-panel-bg);
+  z-index: 10;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 /* ===== FORMS ===== */
@@ -1652,12 +1826,17 @@
 .fw-receipts__form-message--success {
   background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #059669;
+  color: var(--neon-green);
 }
 .fw-receipts__form-message--error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #dc2626;
+  color: var(--neon-red);
+}
+.fw-receipts__form-message--warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--neon-orange);
 }
 .fw-receipts__form-message--info {
   background: rgba(255, 29, 206, 0.08);
@@ -1665,43 +1844,7 @@
   color: var(--fw-primary);
 }
 
-/* ===== WIDGET GRID (base index page) ===== */
-.fw-receipts__widgets {
-  display: grid;
-  gap: var(--fw-spacing-md);
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  margin-bottom: var(--fw-spacing-lg);
-}
-
-.fw-receipts__widget-slot {
-  position: relative;
-  height: 180px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--fw-card-face);
-  border: 1px solid var(--fw-card-edge);
-  border-radius: var(--fw-radius-lg);
-  box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
-  cursor: pointer;
-}
-
-.fw-receipts__widget-slot:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--fw-card-shadow-hover);
-  border-color: var(--fw-primary-glow);
-}
-
-.fw-receipts__widget-content {
-  width: 100%;
-  height: 100%;
-  padding: var(--fw-spacing-md);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-}
+/* Widget grid lives in widgets.css (.fw-receipts__widgets, .fw-wslot, .fw-widget). */
 
 .fw-receipts__add-widget {
   background: var(--fw-card-face);
@@ -1726,22 +1869,26 @@
   box-shadow: var(--fw-shadow-sm);
 }
 
-/* Widget picker modal */
+/* Widget picker modal — same glass panel + 3D entrance as __modal */
 .fw-receipts__widget-picker {
   background: var(--fw-panel-bg);
   border: 1px solid var(--fw-panel-border);
   border-radius: var(--fw-radius-lg);
   box-shadow:
     inset 0 1px 0 var(--fw-rim-light),
-    var(--fw-shadow-xl),
-    0 24px 60px -20px var(--fw-primary-glow);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+    0 40px 80px -24px rgba(20, 4, 15, 0.6),
+    0 24px 60px -12px var(--fw-primary-glow);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   max-width: 420px;
   width: 100%;
   margin: var(--fw-spacing-xl) auto;
   padding: var(--fw-spacing-lg);
   color: var(--fw-text-primary);
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalRise 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
 }
 
 .fw-receipts__widget-picker-title {
@@ -1772,6 +1919,101 @@
   transform: translateX(3px);
 }
 
+/* ===== TOASTS ===== */
+.fw-receipts__toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.fw-receipts__toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.fw-receipts__toast--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.fw-receipts__toast--success {
+  background: linear-gradient(165deg, #34d399, #10b981 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--neon-green-glow);
+}
+
+.fw-receipts__toast--error {
+  background: linear-gradient(165deg, #f87171, #ef4444 60%, #dc2626);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px rgba(239, 68, 68, 0.35);
+}
+
+.fw-receipts__toast--info {
+  background: linear-gradient(165deg, #ff8ae8, var(--fw-primary) 60%, var(--fw-primary-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(90, 0, 70, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--fw-primary-glow);
+}
+
+/* ===== OCR TEST RESULT — carved mono well ===== */
+.fw-receipts__ocr-result {
+  margin-top: var(--fw-spacing-md);
+  padding: var(--fw-spacing-md);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-sm);
+  box-shadow: var(--fw-input-well);
+  color: var(--fw-text-secondary);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Mono', Consolas, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.fw-receipts__ocr-result:empty {
+  display: none;
+}
+
+/* ===== UTILITIES ===== */
+.fw-receipts--hidden {
+  display: none !important;
+}
+
+.fw-receipts__link {
+  color: var(--fw-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fw-receipts__link:hover {
+  text-decoration: underline;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1024px) {
   .fw-receipts__split-view {
@@ -1786,14 +2028,41 @@
 }
 
 @media (max-width: 768px) {
-  .fw-receipts__header {
-    flex-direction: column;
-    gap: var(--fw-spacing-md);
+  /* Kill the grid floor + tilt on small screens */
+  .fw-receipts::before {
+    display: none;
   }
+
+  /* .fw-receipts prefix keeps these winning over the base rules in
+     widgets.css, which loads after this sheet on index.php. */
+  .fw-receipts .fw-receipts__receipt-card,
+  .fw-receipts .fw-widget {
+    transform: none;
+    transform-style: flat;
+  }
+
+  .fw-receipts .fw-receipts__receipt-card:hover {
+    transform: translateY(-3px);
+  }
+
+  .fw-receipts .fw-widget:hover {
+    transform: translateY(-4px);
+  }
+
+  .fw-receipts__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 12px 16px;
+  }
+
   .fw-receipts__greeting {
     order: -1;
+    width: 100%;
     text-align: left;
+    font-size: 14px;
+    margin-bottom: 8px;
   }
+
   .fw-receipts__toolbar {
     flex-direction: column;
   }

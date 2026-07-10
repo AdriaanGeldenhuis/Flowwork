@@ -3,7 +3,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../finances/lib/Csrf.php';
 
-define('ASSET_VERSION', '2026-07-09-RECEIPTS-UI-3D');
+define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -115,12 +115,15 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Review Receipt – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-receipts">
-    <div class="fw-receipts__container fw-receipts__container--wide">
+    <div class="fw-receipts__container">
         
         <!-- Header -->
         <header class="fw-receipts__header">
@@ -132,7 +135,7 @@ try {
                 </div>
                 <div class="fw-receipts__brand-text">
                     <div class="fw-receipts__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-receipts__app-name">Review Receipt</div>
+                    <div class="fw-receipts__app-name">Receipts – Review</div>
                 </div>
             </div>
 
@@ -141,14 +144,16 @@ try {
             </div>
 
             <div class="fw-receipts__controls">
+                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back</a>
+
                 <a href="/" class="fw-receipts__home-btn" title="Home">
                     <svg viewBox="0 0 24 24" fill="none">
                         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
                         <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
                     </svg>
                 </a>
-                
-                <button class="fw-receipts__theme-toggle" id="themeToggle">
+
+                <button class="fw-receipts__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                     <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--light" viewBox="0 0 24 24" fill="none">
                         <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
                         <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -165,13 +170,35 @@ try {
                     </svg>
                 </button>
 
-                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back</a>
+                <div class="fw-receipts__menu-wrapper">
+                    <button class="fw-receipts__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <nav class="fw-receipts__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="upload.php" class="fw-receipts__kebab-item">Upload Receipt</a>
+                        <a href="settings.php" class="fw-receipts__kebab-item">Settings</a>
+                        <a href="index.php" class="fw-receipts__kebab-item">Back to Receipts</a>
+                    </nav>
+                </div>
             </div>
         </header>
 
-        <!-- Split View -->
-        <main class="fw-receipts__split-view">
-            
+        <!-- Main Content -->
+        <main class="fw-receipts__main">
+            <div class="fw-receipts__content fw-receipts__content--wide">
+
+            <div class="fw-receipts__page-header">
+                <h1 class="fw-receipts__page-title">Review Receipt</h1>
+                <p class="fw-receipts__page-subtitle">Verify the scanned details, resolve policy checks and post the bill</p>
+            </div>
+
+            <!-- Split View -->
+            <div class="fw-receipts__split-view">
+
             <!-- Left: Document Viewer -->
             <div class="fw-receipts__viewer">
                 <div class="fw-receipts__viewer-toolbar">
@@ -217,7 +244,7 @@ try {
                                     <?php endforeach; ?>
                                 </select>
                                 <small class="fw-receipts__help-text">
-                                    Not found? <a href="/crm/account_new.php?type=supplier" target="_blank" style="color:var(--accent-receipts);">Create new supplier</a>
+                                    Not found? <a href="/crm/account_new.php?type=supplier" target="_blank" class="fw-receipts__link">Create new supplier</a>
                                 </small>
                             <!-- Compliance status will be inserted here -->
                             <div id="supplierComplianceMsg" style="margin-top:8px;"></div>
@@ -337,7 +364,15 @@ try {
 
             </div>
 
+            </div><!-- /split-view -->
+            </div><!-- /content -->
         </main>
+
+        <!-- Footer -->
+        <footer class="fw-receipts__footer">
+            <span>Receipts v<?= ASSET_VERSION ?></span>
+            <span id="themeIndicator">Theme: Dark</span>
+        </footer>
 
     </div>
 

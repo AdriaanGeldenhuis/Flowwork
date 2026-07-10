@@ -4,6 +4,16 @@
 
   function $el(tag, cls, txt){ const n=document.createElement(tag); if(cls) n.className=cls; if(txt!==undefined) n.textContent=txt; return n; }
 
+  // Map receipt/bill statuses to glossy badge variants (see receipts.css).
+  function statusBadgeClass(status){
+    const s = String(status || '').toLowerCase();
+    if (['approved','posted','paid','sent','viewed','completed','success','matched'].includes(s)) return ' fw-receipts__badge--success';
+    if (['failed','error','exception','blocked','cancelled','expired'].includes(s)) return ' fw-receipts__badge--failed';
+    if (['processing','parsed','ocr','matching','review'].includes(s)) return ' fw-receipts__badge--processing';
+    if (['pending','draft','awaiting','queued'].includes(s)) return ' fw-receipts__badge--pending';
+    return '';
+  }
+
   function renderCard(root, value) {
     root.innerHTML = '';
     const wrap = $el('div','fw-wcard');
@@ -31,7 +41,12 @@
         cols.forEach(c=>{
           const raw = r[c.key];
           const val = c.format ? c.format(raw, r) : (raw ?? '');
-          const td = $el('div','fw-wcell'+(c.align?(' fw-wcell--'+c.align):''), String(val));
+          const td = $el('div','fw-wcell'+(c.align?(' fw-wcell--'+c.align):''));
+          if (c.badge && val !== '' && val != null) {
+            td.append($el('span','fw-receipts__badge'+statusBadgeClass(raw), String(val)));
+          } else {
+            td.textContent = String(val);
+          }
           if (c.grow) td.style.flexGrow = c.grow;
           row.append(td);
         });
@@ -113,7 +128,7 @@
         { key:'vendor_name',   label:'Vendor',  grow:2 },
         { key:'invoice_number',label:'Invoice #' },
         { key:'uploaded_at',   label:'Uploaded' },
-        { key:'ocr_status',    label:'Status' }
+        { key:'ocr_status',    label:'Status', badge:true }
       ],
       render: (root, data)=>renderTable(root, window.ReceiptsWidgets.recent_receipts.columns, data?.recent_receipts || [])
     },
