@@ -15,7 +15,9 @@
 @media (max-width:1100px){ .fw-wslot--sm{grid-column:span 6;} .fw-wslot--md{grid-column:span 12;} }
 @media (max-width:700px){ .fw-wslot--sm,.fw-wslot--md,.fw-wslot--lg{grid-column:span 12;} }
 
-/* Widget container — 3D slab */
+/* Widget container — true 3D slab.
+   Tilt driven by --rx/--ry (receipts.js engine), glare by --mx/--my.
+   Do NOT add overflow:hidden / filter to .fw-widget — it flattens preserve-3d. */
 .fw-widget{
   background: var(--fw-card-face);
   border: 1px solid var(--fw-card-edge);
@@ -24,13 +26,43 @@
   height: 100%;
   display:flex; flex-direction:column;
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   position: relative;
 }
 .fw-widget:hover{
-  transform: translateY(-4px);
+  --ty: -4px;
+  --s: 1.008;
   box-shadow: var(--fw-card-shadow-hover);
   border-color: var(--fw-primary-glow);
+}
+/* Pointer-tracking specular glare */
+.fw-widget::after{
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.fw-widget:hover::after{
+  opacity: 1;
 }
 
 /* Header */

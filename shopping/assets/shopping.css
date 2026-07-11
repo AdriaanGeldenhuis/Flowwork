@@ -4,10 +4,9 @@
    perspective grid floor, layered elevation shadows, extruded pressable
    controls, carved inputs, glass slabs. Shopping AI keeps its signature
    dark kings-blue / steel accent (lightened to steel in dark mode so it stays
-   legible on near-black). Scoped to .fw-shopping.
+   legible on near-black). Scoped to .fw-shopping (carried by <body>).
+   Inter is loaded via <link> in each page head (no @import here).
    ============================================================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 .fw-shopping {
   /* Spacing */
@@ -30,6 +29,7 @@
   --fw-transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --fw-transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --fw-spring: 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  --fw-tilt-ease: 0.16s cubic-bezier(0.33, 1, 0.68, 1);
 
   /* Semantic (badge/state) colours */
   --neon-green: #10b981;
@@ -40,8 +40,14 @@
   --neon-slate: #64748b;
 
   /* Z-index */
+  --z-base: 1;
   --z-dropdown: 100;
   --z-sticky: 500;
+  --z-modal: 2000;
+
+  /* 3D scene */
+  --fw-persp: 1100px;
+  --fw-tilt-max: 6deg;
 
   /* ===== LIGHT THEME (kings blue) ===== */
   --fw-bg-base: #eef1f5;
@@ -83,13 +89,8 @@
   --fw-ink-c: #0e1c38;
   --fw-secondary: #4682b4;
 
-  /* Accent aliases kept for existing / inline rules */
-  --accent-shopping: var(--fw-primary);
-  --accent-shopping-hover: var(--fw-primary-hover);
-  --accent-secondary: var(--fw-secondary);
+  /* Accent alias kept for existing rules (store/basket prices) */
   --accent-success: var(--neon-green);
-  --accent-warning: var(--neon-amber);
-  --accent-danger: var(--neon-red);
 
   --fw-highlight: rgba(20, 24, 31, 0.05);
   --fw-rim-light: rgba(255, 255, 255, 0.85);
@@ -259,8 +260,9 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background 0.4s ease, color 0.3s ease;
-  /* Own stacking context so the fixed environment layers paint above the page
-     background but below content (this root is a <main>, not <body>). */
+  /* Root class lives on <body>: the aurora background, ::before grid floor and
+     ::after drift all paint on the body itself (no white UA ring / overscroll).
+     Own stacking context keeps the fixed environment layers below content. */
   position: relative;
   z-index: 0;
   isolation: isolate;
@@ -315,56 +317,188 @@
 @keyframes shimmer { to { left: 100%; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes fadeOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-20px); } }
-/* Toast (inline-styled by JS on <body>; keyframes are global) */
-@keyframes slideIn  { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes slideOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(40px); } }
+@keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* ===== SCROLLBAR ===== */
+/* ===== SCROLLBAR — kings-blue gradient thumb in an inset track ===== */
 .fw-shopping ::-webkit-scrollbar { width: 12px; height: 12px; }
-.fw-shopping ::-webkit-scrollbar-track { background: var(--fw-bg-secondary); border-radius: var(--fw-radius-sm); }
-.fw-shopping ::-webkit-scrollbar-thumb { background: var(--fw-border-strong); border-radius: var(--fw-radius-sm); border: 2px solid var(--fw-bg-secondary); }
-.fw-shopping ::-webkit-scrollbar-thumb:hover { background: var(--fw-text-muted); }
+.fw-shopping ::-webkit-scrollbar-track {
+  background: var(--fw-bg-secondary);
+  border-radius: var(--fw-radius-sm);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.fw-shopping ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--fw-primary), var(--fw-primary-deep));
+  border-radius: var(--fw-radius-sm);
+  border: 3px solid var(--fw-bg-secondary);
+}
+.fw-shopping ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--fw-primary-tint), var(--fw-primary));
+}
 
-/* ===== CONTAINER ===== */
+/* ===== CONTAINER — full-height flex column (header / main / footer) ===== */
 .fw-shopping__container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: var(--fw-spacing-lg);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+.fw-shopping__main {
+  flex: 1;
+  padding: var(--fw-spacing-lg);
+  max-width: 100vw;
+  overflow-x: hidden;
   position: relative;
   z-index: 1;
 }
 
-/* ===== HEADER — floating glass slab ===== */
+/* Max-width content column lives INSIDE __main (header/footer stay full-bleed) */
+.fw-shopping__content {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ===== PAGE HEADER ===== */
+.fw-shopping__page-header {
+  padding: var(--fw-spacing-xl) var(--fw-spacing-lg) var(--fw-spacing-md);
+  text-align: center;
+}
+
+.fw-shopping__page-title {
+  font-size: 32px;
+  font-weight: 900;
+  margin: 0 0 8px 0;
+  background: linear-gradient(135deg, var(--fw-ink-a), var(--fw-primary) 55%, var(--fw-ink-c));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 12px var(--fw-primary-glow));
+}
+
+.fw-shopping__page-subtitle {
+  font-size: 16px;
+  color: var(--fw-text-tertiary);
+  margin: 0;
+}
+
+/* ===== VIEW TABS — segmented control in a carved groove ===== */
+.fw-shopping__view-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  margin: var(--fw-spacing-lg) var(--fw-spacing-lg) var(--fw-spacing-xl);
+  background: var(--fw-input-bg);
+  border: 1px solid var(--fw-input-border);
+  border-radius: var(--fw-radius-full);
+  box-shadow: var(--fw-input-well);
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--fw-spacing-lg));
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fw-shopping__view-tabs::-webkit-scrollbar { display: none; }
+
+/* Inside the groove, tabs are flat ghosts… */
+.fw-shopping__view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 9px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--fw-radius-full);
+  color: var(--fw-text-tertiary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform var(--fw-transition-base), box-shadow var(--fw-transition-base), color var(--fw-transition-base), background var(--fw-transition-base);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.fw-shopping__view-tab:hover {
+  color: var(--fw-primary);
+  background: var(--fw-primary-light);
+  transform: none;
+  box-shadow: none;
+}
+
+.fw-shopping__view-tab:active { transform: scale(0.97); }
+
+/* …and the active tab is the raised kings-blue key that pops out of it */
+.fw-shopping__view-tab--active {
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(9, 20, 40, 0.45);
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(9, 20, 40, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 4px 10px -2px var(--fw-primary-glow),
+    0 8px 20px -4px var(--fw-primary-glow);
+}
+
+.fw-shopping__view-tab--active:hover {
+  color: #fff;
+  background: linear-gradient(165deg, var(--fw-primary-tint) 0%, var(--fw-primary) 55%, var(--fw-primary-hover) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 3px rgba(9, 20, 40, 0.35),
+    0 2px 0 var(--fw-primary-deeper),
+    0 6px 14px -2px var(--fw-primary-glow),
+    0 12px 26px -6px var(--fw-primary-glow);
+}
+
+/* ===== HEADER — sticky full-bleed glass slab ===== */
 .fw-shopping__header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--fw-spacing-lg);
-  padding: var(--fw-spacing-md) var(--fw-spacing-lg);
+  padding: 0 var(--fw-spacing-lg);
+  height: 70px;
   background: var(--fw-panel-bg);
-  border: 1px solid var(--fw-panel-border);
-  border-radius: var(--fw-radius-lg);
-  box-shadow:
-    inset 0 1px 0 var(--fw-rim-light),
-    0 10px 30px -12px rgba(20, 24, 31, 0.35),
-    0 4px 24px -4px var(--fw-primary-glow);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  margin-bottom: var(--fw-spacing-xl);
-  position: relative;
-  z-index: 999;
+  border-bottom: 1px solid var(--fw-panel-border);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 1px 0 var(--fw-primary-glow),
+    0 10px 30px -12px rgba(20, 24, 31, 0.35),
+    0 4px 24px -4px var(--fw-primary-glow);
+  transition: box-shadow var(--fw-transition-slow);
 }
 
+/* Gloss overlay */
 .fw-shopping__header::after {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 45%);
+  pointer-events: none;
+}
+
+/* Kings-blue neon hairline under the header */
+.fw-shopping__header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 4%, var(--fw-primary-glow) 30%, rgba(70, 130, 180, 0.35) 70%, transparent 96%);
   pointer-events: none;
 }
 
@@ -542,7 +676,18 @@
   padding: var(--fw-spacing-lg);
   text-align: center;
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   position: relative;
 }
 
@@ -556,15 +701,35 @@
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
   transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Pointer-tracking specular glare (fed by --mx/--my from shopping.js) */
+.fw-shopping__stat-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
 }
 
 .fw-shopping__stat-card:hover {
-  transform: translateY(-4px);
+  --ty: -4px;
+  --s: 1.012;
   box-shadow: var(--fw-card-shadow-hover);
   border-color: var(--fw-primary-glow);
 }
 
 .fw-shopping__stat-card:hover::before { opacity: 1; }
+.fw-shopping__stat-card:hover::after { opacity: 1; }
 
 .fw-shopping__stat-value {
   font-size: 36px;
@@ -756,20 +921,31 @@
   gap: var(--fw-spacing-md);
 }
 
+/* overflow:hidden dropped for preserve-3d tilt — nothing inside needs clipping */
 .fw-shopping__list-card {
   background: var(--fw-card-face);
   border: 1px solid var(--fw-card-edge);
   border-radius: var(--fw-radius-lg);
   padding: var(--fw-spacing-lg);
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
   text-decoration: none;
   color: inherit;
   display: flex;
   flex-direction: column;
   gap: var(--fw-spacing-md);
   position: relative;
-  overflow: hidden;
 }
 
 .fw-shopping__list-card::before {
@@ -782,10 +958,34 @@
   background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
   opacity: 0;
   transition: opacity var(--fw-transition-base);
+  z-index: 2;
+  pointer-events: none;
 }
 
-.fw-shopping__list-card:hover { box-shadow: var(--fw-card-shadow-hover); transform: translateY(-4px); border-color: var(--fw-primary-glow); }
+/* Pointer-tracking specular glare */
+.fw-shopping__list-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.fw-shopping__list-card:hover {
+  --ty: -4px;
+  --s: 1.012;
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
+}
 .fw-shopping__list-card:hover::before { opacity: 1; }
+.fw-shopping__list-card:hover::after { opacity: 1; }
 
 .fw-shopping__list-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--fw-spacing-sm); }
 
@@ -821,23 +1021,85 @@
 
 .fw-shopping__list-stat-label { font-size: 11px; color: var(--fw-text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
-/* ===== LOADING / FOOTER ===== */
-.fw-shopping__loading { text-align: center; padding: var(--fw-spacing-xl); color: var(--fw-text-muted); }
+/* ===== LOADING & EMPTY STATES ===== */
+.fw-shopping__loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--fw-text-muted);
+  font-size: 14px;
+  animation: pulse 2s ease-in-out infinite;
+}
 
+.fw-shopping__empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--fw-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.fw-shopping__empty-state p { margin: 0; font-size: 16px; }
+
+.fw-shopping__empty-state small {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--fw-text-tertiary);
+}
+
+.fw-shopping__empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+
+/* ===== FOOTER — pinned glass bar ===== */
 .fw-shopping__footer {
-  margin-top: var(--fw-spacing-xl);
-  padding: var(--fw-spacing-md);
+  padding: var(--fw-spacing-lg);
+  text-align: center;
+  font-size: 13px;
+  color: var(--fw-text-tertiary);
+  border-top: 1px solid var(--fw-panel-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
-  color: var(--fw-text-muted);
-  border-top: 1px solid var(--fw-border);
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--fw-rim-light);
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 768px) {
-  .fw-shopping__header { flex-direction: column; gap: var(--fw-spacing-md); }
-  .fw-shopping__greeting { order: -1; text-align: left; }
+  /* Kill the grid floor + tilt on small screens */
+  .fw-shopping::before { display: none; }
+
+  .fw-shopping__stat-card,
+  .fw-shopping__list-card,
+  .fw-shopping__store-card {
+    transform: none;
+    transform-style: flat;
+  }
+
+  .fw-shopping__stat-card:hover,
+  .fw-shopping__list-card:hover { transform: translateY(-4px); }
+  .fw-shopping__store-card:hover { transform: translateY(-3px); }
+
+  .fw-shopping__header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 12px 16px;
+  }
+
+  .fw-shopping__greeting {
+    order: -1;
+    width: 100%;
+    text-align: left;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .fw-shopping__main { padding: var(--fw-spacing-md); }
+  .fw-shopping__page-header { padding: 20px 16px 8px; }
+  .fw-shopping__page-title { font-size: 22px; }
+  .fw-shopping__page-subtitle { font-size: 14px; }
   .fw-shopping__stats-grid { grid-template-columns: 1fr; }
   .fw-shopping__lists-grid { grid-template-columns: 1fr; }
 }
@@ -885,13 +1147,12 @@
 .fw-shopping__list-meta-item { font-size: 14px; color: var(--fw-text-muted); }
 .fw-shopping__list-actions { display: flex; gap: var(--fw-spacing-sm); flex-wrap: wrap; align-items: center; }
 
-.fw-shopping__btn--stop-buying {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: none;
+/* PO supplier select spacing (was inline on list.php) */
+.fw-shopping__po-supplier-select {
+  margin-left: 12px;
+  margin-right: 8px;
+  min-width: 180px;
 }
-.fw-shopping__btn--stop-buying:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-1px); }
 
 /* ===== LIST LAYOUT ===== */
 .fw-shopping__list-layout {
@@ -939,6 +1200,14 @@
   border-bottom: 1px solid var(--fw-border);
 }
 
+/* Column widths (were inline on list.php th elements) */
+.fw-shopping__col-check { width: 40px; }
+.fw-shopping__col-qty { width: 100px; }
+.fw-shopping__col-priority { width: 40px; }
+.fw-shopping__col-date { width: 120px; }
+.fw-shopping__col-project { width: 150px; }
+.fw-shopping__col-actions { width: 150px; }
+
 .fw-shopping__items-table tbody tr { border-bottom: 1px solid var(--fw-border); transition: all var(--fw-transition-slow); }
 .fw-shopping__items-table tbody tr:hover { background: var(--fw-panel-hover); }
 .fw-shopping__items-table tbody tr.fw-shopping__item-row--bought { opacity: 0.6; }
@@ -946,8 +1215,15 @@
 
 .fw-shopping__items-table tbody td { padding: var(--fw-spacing-sm); font-size: 14px; color: var(--fw-text-primary); vertical-align: middle; }
 
+/* Empty row (needs the extra specificity to beat the td rule above) */
+.fw-shopping__items-table tbody td.fw-shopping__empty-state {
+  padding: var(--fw-spacing-lg);
+  color: var(--fw-text-muted);
+}
+
 .fw-shopping__item-checkbox { width: 20px; height: 20px; cursor: pointer; accent-color: var(--fw-primary); }
 .fw-shopping__item-name { font-weight: 600; }
+.fw-shopping__item-notes { font-size: 12px; color: var(--fw-text-muted); }
 .fw-shopping__item-qty { white-space: nowrap; }
 .fw-shopping__item-priority { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
 .fw-shopping__item-priority--low { background: var(--neon-slate); }
@@ -981,7 +1257,7 @@
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   padding: var(--fw-spacing-lg);
   position: sticky;
-  top: var(--fw-spacing-lg);
+  top: calc(70px + var(--fw-spacing-lg)); /* clears the sticky header */
 }
 
 .fw-shopping__ai-panel-header {
@@ -1035,11 +1311,45 @@
   border-radius: var(--fw-radius-md);
   padding: var(--fw-spacing-md);
   box-shadow: var(--fw-card-shadow);
-  transition: transform var(--fw-spring), box-shadow var(--fw-spring), border-color var(--fw-transition-slow);
+  transform-style: preserve-3d;
+  transform:
+    perspective(var(--fw-persp))
+    translate3d(0, var(--ty, 0px), 0)
+    rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg))
+    scale3d(var(--s, 1), var(--s, 1), 1);
+  transition:
+    transform var(--fw-tilt-ease),
+    box-shadow var(--fw-spring),
+    border-color var(--fw-transition-slow);
+  will-change: transform;
+  position: relative;
   animation: slideInRight 0.3s ease;
 }
 
-.fw-shopping__store-card:hover { box-shadow: var(--fw-card-shadow-hover); transform: translateY(-3px); border-color: var(--fw-primary-glow); }
+/* Pointer-tracking specular glare */
+.fw-shopping__store-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 42%),
+    var(--fw-glare),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.fw-shopping__store-card:hover {
+  --ty: -3px;
+  --s: 1.012;
+  box-shadow: var(--fw-card-shadow-hover);
+  border-color: var(--fw-primary-glow);
+}
+.fw-shopping__store-card:hover::after { opacity: 1; }
 
 .fw-shopping__store-card--selected {
   border: 1px solid var(--fw-primary);
@@ -1155,7 +1465,6 @@
 
 .fw-shopping__buying-mode-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fw-spacing-md); }
 .fw-shopping__buying-mode-title { font-size: 20px; font-weight: 800; margin: 0; display: flex; align-items: center; gap: var(--fw-spacing-sm); }
-.fw-shopping__buying-mode-store { font-size: 14px; opacity: 0.9; }
 
 .fw-shopping__buying-mode-progress { height: 8px; background: rgba(255, 255, 255, 0.3); border-radius: var(--fw-radius-full); overflow: hidden; margin-bottom: var(--fw-spacing-sm); }
 .fw-shopping__buying-mode-progress-fill { height: 100%; background: #ffffff; transition: width 0.3s ease; }
@@ -1214,6 +1523,158 @@
 .fw-shopping__badge--procurement { background: linear-gradient(165deg, #a78bfa, var(--neon-purple) 60%, #6d28d9); }
 .fw-shopping__badge--groceries { background: linear-gradient(165deg, #34d399, var(--neon-green) 60%, #059669); }
 .fw-shopping__badge--general { background: linear-gradient(165deg, #94a3b8, var(--neon-slate) 60%, #475569); }
+
+/* ===== FORMS — glass card + sections (preferences page) ===== */
+.fw-shopping__form { display: block; }
+
+.fw-shopping__form-card {
+  background: var(--fw-panel-bg);
+  border: 1px solid var(--fw-panel-border);
+  border-radius: var(--fw-radius-lg);
+  padding: var(--fw-spacing-xl);
+  margin-bottom: var(--fw-spacing-lg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 var(--fw-rim-light),
+    0 12px 28px -12px rgba(20, 24, 31, 0.3),
+    0 24px 48px -24px var(--fw-primary-glow);
+  position: relative;
+}
+
+.fw-shopping__form-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: var(--fw-radius-lg) var(--fw-radius-lg) 0 0;
+  background: linear-gradient(90deg, transparent, var(--fw-rim-light), transparent);
+  pointer-events: none;
+}
+
+.fw-shopping__form-section { margin-bottom: var(--fw-spacing-xl); }
+
+/* Stacked groups inside a form section (list.php's grid row spaces via gap) */
+.fw-shopping__form-section .fw-shopping__form-group { margin-bottom: 20px; }
+.fw-shopping__form-section .fw-shopping__form-group:last-child { margin-bottom: 0; }
+
+.fw-shopping__form-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fw-primary);
+  margin: 0 0 var(--fw-spacing-md) 0;
+  padding-bottom: var(--fw-spacing-sm);
+  border-bottom: 1px solid var(--fw-border-base);
+}
+
+.fw-shopping__form-help {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--fw-text-muted);
+  line-height: 1.5;
+}
+
+/* "Coming soon" placeholder wells */
+.fw-shopping__form-placeholder {
+  padding: var(--fw-spacing-md);
+  background: var(--fw-highlight);
+  border-radius: var(--fw-radius-sm);
+  color: var(--fw-text-muted);
+  font-size: 14px;
+}
+
+.fw-shopping__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: var(--fw-spacing-lg);
+  padding-top: var(--fw-spacing-md);
+  border-top: 1px solid var(--fw-border-base);
+}
+
+/* ===== ALERTS (page-level banners) ===== */
+.fw-shopping__alert {
+  padding: 14px 18px;
+  border-radius: var(--fw-radius-md);
+  margin: 0 0 var(--fw-spacing-lg);
+  font-size: 14px;
+  font-weight: 600;
+  border-left: 4px solid;
+  background: var(--fw-panel-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--fw-shadow-sm);
+  animation: slideDown 0.3s ease;
+}
+
+.fw-shopping__alert--success {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: 0 0 24px -8px var(--neon-green-glow);
+}
+
+/* ===== TOASTS — stacked glass keys, bottom-right ===== */
+.fw-shopping__toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.fw-shopping__toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.fw-shopping__toast--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.fw-shopping__toast--success {
+  background: linear-gradient(165deg, #34d399, var(--neon-green) 60%, #059669);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 3px rgba(4, 90, 60, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--neon-green-glow);
+}
+
+.fw-shopping__toast--error {
+  background: linear-gradient(165deg, #f87171, var(--neon-red) 60%, #dc2626);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(120, 10, 10, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px rgba(239, 68, 68, 0.35);
+}
+
+/* Info = kings-blue key (theme-aware; steel in dark mode) */
+.fw-shopping__toast--info {
+  background: linear-gradient(165deg, var(--fw-primary-tint), var(--fw-primary) 60%, var(--fw-primary-deep));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 3px rgba(9, 20, 40, 0.4),
+    0 8px 24px rgba(0, 0, 0, .25),
+    0 0 24px -6px var(--fw-primary-glow);
+}
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1024px) {

@@ -1,6 +1,18 @@
 (function() {
   'use strict';
 
+  // CSRF token for the raw XMLHttpRequest uploads (fetch calls are covered by
+  // the global wrapper in receipts.js; XHR needs the header set explicitly).
+  const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+  function notify(message, type) {
+    if (window.ReceiptsToast) {
+      window.ReceiptsToast(message, type || 'error');
+    } else {
+      alert(message);
+    }
+  }
+
   const uploadZone = document.getElementById('uploadZone');
   const fileInput = document.getElementById('fileInput');
   const browseBtn = document.getElementById('browseBtn');
@@ -62,7 +74,7 @@
   function handleFiles(files) {
     if (files.length === 0) return;
 
-    uploadList.style.display = 'block';
+    uploadList.classList.remove('fw-receipts--hidden');
 
     Array.from(files).forEach(file => {
       if (!validateFile(file)) return;
@@ -72,11 +84,11 @@
 
   function validateFile(file) {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      alert('Invalid file type: ' + file.name);
+      notify('Invalid file type: ' + file.name, 'error');
       return false;
     }
     if (file.size > MAX_SIZE_BYTES) {
-      alert('File too large: ' + file.name + ' (max ' + (MAX_SIZE_BYTES / 1024 / 1024) + 'MB)');
+      notify('File too large: ' + file.name + ' (max ' + (MAX_SIZE_BYTES / 1024 / 1024) + 'MB)', 'error');
       return false;
     }
     return true;
@@ -86,7 +98,7 @@
   function validateBulkFile(file) {
     const ext = file.name.split('.').pop().toLowerCase();
     if (ext !== 'zip') {
-      alert('Invalid ZIP file: ' + file.name);
+      notify('Invalid ZIP file: ' + file.name, 'error');
       return false;
     }
     return true;
@@ -95,7 +107,7 @@
   // Handle bulk import of a ZIP archive
   function handleBulkFile(zipFile) {
     if (!validateBulkFile(zipFile)) return;
-    bulkList.style.display = 'block';
+    bulkList.classList.remove('fw-receipts--hidden');
     const itemId = 'bulk-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     const itemHtml = `
       <div class="fw-receipts__upload-item" id="${itemId}">
@@ -181,6 +193,7 @@
       }
     });
     xhr.open('POST', 'api/bulk_import.php', true);
+    if (CSRF_TOKEN) xhr.setRequestHeader('X-CSRF-TOKEN', CSRF_TOKEN);
     xhr.send(formData);
   }
 
@@ -258,6 +271,7 @@
 
     // Upload to new API endpoint
     xhr.open('POST', 'api/upload_start.php', true);
+    if (CSRF_TOKEN) xhr.setRequestHeader('X-CSRF-TOKEN', CSRF_TOKEN);
     xhr.send(formData);
   }
 
@@ -327,7 +341,7 @@
       cameraModal.setAttribute('aria-hidden', 'false');
       document.body.style.overflow = 'hidden';
     } catch (err) {
-      alert('Camera access denied or unavailable');
+      notify('Camera access denied or unavailable', 'error');
       console.error(err);
     }
   });

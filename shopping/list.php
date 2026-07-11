@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-SHOP-UI-3D');
+define('ASSET_VERSION', '2026-07-10-shopping-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -84,13 +84,15 @@ $firstName = $user['first_name'] ?? 'User';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title><?= htmlspecialchars($list['name']) ?> – Shopping AI</title>
+    <title><?= htmlspecialchars($list['name']) ?> – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/shopping/assets/shopping.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-shopping">
-        <div class="fw-shopping__container">
-            
+<body class="fw-shopping">
+    <div class="fw-shopping__container">
+
             <!-- Header -->
             <header class="fw-shopping__header">
                 <div class="fw-shopping__brand">
@@ -113,25 +115,31 @@ $firstName = $user['first_name'] ?? 'User';
                 <div class="fw-shopping__controls">
                     <a href="/shopping/" class="fw-shopping__home-btn" title="Back to Lists">
                         <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </a>
 
                     <a href="/" class="fw-shopping__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </a>
-                    
+
                     <button class="fw-shopping__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                         <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--light" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         </svg>
                         <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/>
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
 
@@ -152,6 +160,10 @@ $firstName = $user['first_name'] ?? 'User';
                     </div>
                 </div>
             </header>
+
+            <!-- Main Content -->
+            <main class="fw-shopping__main">
+            <div class="fw-shopping__content">
 
             <!-- List Header -->
             <div class="fw-shopping__list-header">
@@ -191,7 +203,7 @@ $firstName = $user['first_name'] ?? 'User';
                             🔄 Refresh
                         </button>
                         <?php if (in_array($userRole, ['admin','bookkeeper'])): ?>
-                            <select id="poSupplierSelect" class="fw-shopping__form-select" style="margin-left:12px; margin-right:8px; min-width:180px;">
+                            <select id="poSupplierSelect" class="fw-shopping__form-select fw-shopping__po-supplier-select">
                                 <option value="">— Select Supplier —</option>
                                 <?php foreach ($suppliers as $sup): ?>
                                     <option value="<?= (int)$sup['id'] ?>"><?= htmlspecialchars($sup['name']) ?></option>
@@ -277,19 +289,19 @@ $firstName = $user['first_name'] ?? 'User';
                     <table class="fw-shopping__items-table">
                         <thead>
                             <tr>
-                                <th style="width: 40px;">✓</th>
+                                <th class="fw-shopping__col-check">✓</th>
                                 <th>Item</th>
-                                <th style="width: 100px;">Qty</th>
-                                <th style="width: 40px;">!</th>
-                                <th style="width: 120px;">Needed By</th>
-                                <th style="width: 150px;">Project</th>
-                                <th style="width: 150px;">Actions</th>
+                                <th class="fw-shopping__col-qty">Qty</th>
+                                <th class="fw-shopping__col-priority">!</th>
+                                <th class="fw-shopping__col-date">Needed By</th>
+                                <th class="fw-shopping__col-project">Project</th>
+                                <th class="fw-shopping__col-actions">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($items)): ?>
                                 <tr>
-                                    <td colspan="7" style="text-align: center; padding: 24px; color: var(--fw-text-muted);">
+                                    <td colspan="7" class="fw-shopping__empty-state">
                                         No items yet. Add one above!
                                     </td>
                                 </tr>
@@ -310,7 +322,7 @@ $firstName = $user['first_name'] ?? 'User';
                                         <td>
                                             <div class="fw-shopping__item-name"><?= htmlspecialchars($item['name_raw']) ?></div>
                                             <?php if (!empty($item['notes'])): ?>
-                                                <div style="font-size: 12px; color: var(--fw-text-muted);">
+                                                <div class="fw-shopping__item-notes">
                                                     <?= htmlspecialchars($item['notes']) ?>
                                                 </div>
                                             <?php endif; ?>
@@ -370,13 +382,16 @@ $firstName = $user['first_name'] ?? 'User';
 
             </div>
 
-        </div>
+            </div>
+            </main>
 
-        <footer class="fw-shopping__footer">
-            <span>Shopping AI v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
-        </footer>
-    </main>
+            <!-- Footer -->
+            <footer class="fw-shopping__footer">
+                <span>Shopping AI v<?= ASSET_VERSION ?></span>
+                <span id="themeIndicator">Theme: Dark</span>
+            </footer>
+
+    </div>
 
     <script src="/shopping/assets/shopping.js?v=<?= ASSET_VERSION ?>"></script>
     <script>

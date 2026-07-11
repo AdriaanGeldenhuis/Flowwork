@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-RECEIPTS-UI-3D');
+define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -66,7 +66,11 @@ $counts['all'] = (int)$stmt->fetchColumn();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipts & Bills – <?= htmlspecialchars($companyName) ?></title>
+    <title>Receipts – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
     <!-- Additional styles for widgets -->
     <link rel="stylesheet" href="assets/widgets.css?v=<?= ASSET_VERSION ?>">
@@ -135,6 +139,13 @@ $counts['all'] = (int)$stmt->fetchColumn();
 
         <!-- Main Content -->
         <main class="fw-receipts__main">
+            <div class="fw-receipts__content">
+
+            <div class="fw-receipts__page-header">
+                <h1 class="fw-receipts__page-title">Receipts & Bills</h1>
+                <p class="fw-receipts__page-subtitle">Scan, review and post supplier receipts</p>
+            </div>
+
             <!-- Action bar: Upload button above tabs -->
             <div class="fw-receipts__actions">
                 <button class="fw-receipts__btn fw-receipts__btn--primary" onclick="location.href='upload.php'">+ Upload Receipt</button>
@@ -191,12 +202,13 @@ $counts['all'] = (int)$stmt->fetchColumn();
                 </div>
             <?php endif; ?>
 
+            </div>
         </main>
 
         <!-- Footer -->
         <footer class="fw-receipts__footer">
             <span>Receipts v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
+            <span id="themeIndicator">Theme: Dark</span>
         </footer>
 
     </div>

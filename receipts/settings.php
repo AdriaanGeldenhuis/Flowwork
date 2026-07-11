@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-RECEIPTS-UI-3D');
+define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -134,6 +134,10 @@ $firstName = $user['first_name'] ?? 'User';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Receipt Settings – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-receipts">
@@ -149,7 +153,7 @@ $firstName = $user['first_name'] ?? 'User';
                 </div>
                 <div class="fw-receipts__brand-text">
                     <div class="fw-receipts__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-receipts__app-name">Settings</div>
+                    <div class="fw-receipts__app-name">Receipts – Settings</div>
                 </div>
             </div>
 
@@ -158,14 +162,16 @@ $firstName = $user['first_name'] ?? 'User';
             </div>
 
             <div class="fw-receipts__controls">
+                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back to Receipts</a>
+
                 <a href="/" class="fw-receipts__home-btn" title="Home">
                     <svg viewBox="0 0 24 24" fill="none">
                         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
                         <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
                     </svg>
                 </a>
-                
-                <button class="fw-receipts__theme-toggle" id="themeToggle">
+
+                <button class="fw-receipts__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                     <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--light" viewBox="0 0 24 24" fill="none">
                         <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
                         <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -182,13 +188,27 @@ $firstName = $user['first_name'] ?? 'User';
                     </svg>
                 </button>
 
-                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back to Receipts</a>
+                <div class="fw-receipts__menu-wrapper">
+                    <button class="fw-receipts__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <nav class="fw-receipts__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="upload.php" class="fw-receipts__kebab-item">Upload Receipt</a>
+                        <a href="settings.php" class="fw-receipts__kebab-item">Settings</a>
+                        <a href="index.php" class="fw-receipts__kebab-item">Back to Receipts</a>
+                    </nav>
+                </div>
             </div>
         </header>
 
         <!-- Main Content -->
         <main class="fw-receipts__main">
-            
+            <div class="fw-receipts__content">
+
             <div class="fw-receipts__page-header">
                 <h1 class="fw-receipts__page-title">Receipt Settings</h1>
                 <p class="fw-receipts__page-subtitle">Configure policies, tolerances & OCR settings</p>
@@ -326,17 +346,18 @@ $firstName = $user['first_name'] ?? 'User';
 
                     <!-- Hidden file input and result container for OCR test -->
                     <input type="file" id="ocrTestFile" accept="image/*,application/pdf" style="display:none">
-                    <pre id="ocrTestResult" class="fw-receipts__ocr-result" style="margin-top:1rem; overflow-x:auto;"></pre>
+                    <pre id="ocrTestResult" class="fw-receipts__ocr-result"></pre>
 
                 </div>
             </form>
 
+            </div>
         </main>
 
         <!-- Footer -->
         <footer class="fw-receipts__footer">
             <span>Receipts v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
+            <span id="themeIndicator">Theme: Dark</span>
         </footer>
 
     </div>

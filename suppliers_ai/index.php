@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-SAI-UI-3D');
+define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -81,11 +81,13 @@ $stats = $stmt->fetch();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <title>Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-suppliers-ai">
-        <div class="fw-suppliers-ai__container">
+<body class="fw-suppliers-ai">
+    <div class="fw-suppliers-ai__container">
             
             <!-- Header -->
             <header class="fw-suppliers-ai__header">
@@ -151,6 +153,25 @@ $stats = $stmt->fetch();
                 </div>
             </header>
 
+            <!-- Main Content -->
+            <main class="fw-suppliers-ai__main">
+            <div class="fw-suppliers-ai__content">
+
+            <div class="fw-suppliers-ai__page-header">
+                <h1 class="fw-suppliers-ai__page-title">AI Supplier Search</h1>
+                <p class="fw-suppliers-ai__page-subtitle">
+                    Natural language search: "Need 3 plumbers in Vanderbijlpark for geysers tomorrow under R5k"
+                </p>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="fw-suppliers-ai__view-tabs">
+                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">Search</a>
+                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab">History</a>
+                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab">Help</a>
+                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab">Settings</a>
+            </div>
+
             <!-- Stats Bar -->
             <div class="fw-suppliers-ai__stats">
                 <div class="fw-suppliers-ai__stat-card">
@@ -173,13 +194,6 @@ $stats = $stmt->fetch();
 
             <!-- Search Panel -->
             <div class="fw-suppliers-ai__search-panel">
-                <div class="fw-suppliers-ai__search-header">
-                    <h2 class="fw-suppliers-ai__search-title">🤖 Find Suppliers with AI</h2>
-                    <p class="fw-suppliers-ai__search-subtitle">
-                        Natural language search: "Need 3 plumbers in Vanderbijlpark for geysers tomorrow under R5k"
-                    </p>
-                </div>
-
                 <div class="fw-suppliers-ai__search-box">
                     <textarea 
                         id="nlSearchInput" 
@@ -250,7 +264,16 @@ $stats = $stmt->fetch();
                 </div>
             </div>
 
-            <!-- Shortlist Panel -->
+            </div>
+            </main>
+
+            <!-- Footer -->
+            <footer class="fw-suppliers-ai__footer">
+                <span>Suppliers AI v<?= ASSET_VERSION ?></span>
+                <span id="themeIndicator">Theme: Dark</span>
+            </footer>
+
+            <!-- Shortlist Panel (fixed drawer — lives outside __main like CRM overlays) -->
             <aside class="fw-suppliers-ai__shortlist" id="shortlistPanel" aria-hidden="true">
                 <div class="fw-suppliers-ai__shortlist-header">
                     <h3 class="fw-suppliers-ai__shortlist-title">Shortlist</h3>
@@ -308,14 +331,7 @@ $stats = $stmt->fetch();
                 </div>
             </div>
 
-            <!-- Footer -->
-            <footer class="fw-suppliers-ai__footer">
-                <span>Suppliers AI v<?= ASSET_VERSION ?> 🤖 Powered by OpenAI</span>
-                <span id="themeIndicator">Theme: Light</span>
-            </footer>
-
-        </div>
-    </main>
+    </div>
 
     <script>
     // Global state for email modal

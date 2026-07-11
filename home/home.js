@@ -27,8 +27,8 @@
 
     if (!toggleButton || !body) return;
 
-    // Initialize theme from cookie or default to light
-    let currentTheme = getCookie(THEME_COOKIE_NAME) || THEME_LIGHT;
+    // Initialize theme from cookie or default to dark (matches CRM + modules)
+    let currentTheme = getCookie(THEME_COOKIE_NAME) || THEME_DARK;
     applyTheme(currentTheme);
 
     toggleButton.addEventListener('click', function() {

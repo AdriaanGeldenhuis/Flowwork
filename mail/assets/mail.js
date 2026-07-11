@@ -5,6 +5,32 @@
   const THEME_DARK = 'dark';
   const THEME_LIGHT = 'light';
 
+  // ========== TOASTS ==========
+  // Mail.toast('Saved', 'success' | 'error' | 'info') — non-blocking feedback
+  // for async actions (replaces blocking alert() notifications). The stack is
+  // mounted inside the .fw-mail root so theme vars resolve.
+  window.Mail = window.Mail || {};
+  window.Mail.toast = function(message, type) {
+    type = (type === 'error' || type === 'info') ? type : 'success';
+    let stack = document.getElementById('mailToastStack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'mailToastStack';
+      stack.className = 'fw-mail__toast-stack';
+      stack.setAttribute('aria-live', 'polite');
+      (document.querySelector('.fw-mail') || document.body).appendChild(stack);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'fw-mail__toast fw-mail__toast--' + type;
+    toast.textContent = message;
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('fw-mail__toast--visible'));
+    setTimeout(() => {
+      toast.classList.remove('fw-mail__toast--visible');
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  };
+
   // ========== UTILITIES ==========
   function getCsrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -43,10 +69,11 @@
   // ========== THEME TOGGLE ==========
   function initTheme() {
     const toggle = document.getElementById('themeToggle');
+    const indicator = document.getElementById('themeIndicator');
     const body = document.querySelector('.fw-mail');
     if (!toggle || !body) return;
 
-    let theme = getCookie(THEME_COOKIE) || THEME_LIGHT;
+    let theme = getCookie(THEME_COOKIE) || THEME_DARK;
     applyTheme(theme);
 
     toggle.addEventListener('click', () => {
@@ -57,6 +84,9 @@
 
     function applyTheme(t) {
       body.setAttribute('data-theme', t);
+      if (indicator) {
+        indicator.textContent = 'Theme: ' + (t === THEME_DARK ? 'Dark' : 'Light');
+      }
     }
   }
 
@@ -109,6 +139,107 @@
           panel.classList.add('fw-mail__tab-panel--active');
         }
       });
+    });
+  }
+
+  // ========== MODAL SYSTEM ==========
+  // The stylesheet's display contract is aria-driven (CRM pattern:
+  // .fw-mail__modal-overlay { display:none !important } and
+  // [aria-hidden="false"] { display:flex !important }), so open/close MUST
+  // drive aria-hidden alongside the legacy --active class.
+  function openModalOverlay(modal) {
+    if (typeof modal === 'string') modal = document.getElementById(modal);
+    if (!modal) return;
+    modal.classList.add('fw-mail__modal-overlay--active');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModalOverlay(modal) {
+    if (typeof modal === 'string') modal = document.getElementById(modal);
+    if (!modal) return;
+    modal.classList.remove('fw-mail__modal-overlay--active');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  // Close modals on overlay click
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('fw-mail__modal-overlay')) {
+      closeModalOverlay(e.target);
+    }
+  });
+
+  // Close modals on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.fw-mail__modal-overlay--active').forEach(closeModalOverlay);
+    }
+  });
+
+  // ========== DIMENSION 3D ENGINE ==========
+  const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Delegated pointer engine ported from crm.js: works for cards rendered at
+  // any time (signature/rule cards load via fetch, so per-card binding at
+  // DOMContentLoaded never sees them). Instead of writing inline transforms,
+  // it feeds the CSS custom properties (--rx/--ry for tilt, --mx/--my for the
+  // specular glare) that mail.css composes into the card transform.
+  // Thread rows stay flat by design — only the slab card grids tilt.
+  function init3DTilt() {
+    if (REDUCE_MOTION) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+
+    const SELECTOR = '.fw-mail__account-card, .fw-mail__template-card';
+    const MAX_TILT = 6; // degrees
+    let activeCard = null;
+    let lastEvent = null;
+    let rafId = 0;
+
+    function applyFrame() {
+      rafId = 0;
+      if (!activeCard || !lastEvent) return;
+
+      const rect = activeCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const px = (lastEvent.clientX - rect.left) / rect.width;
+      const py = (lastEvent.clientY - rect.top) / rect.height;
+      const rx = (0.5 - py) * MAX_TILT;
+      const ry = (px - 0.5) * MAX_TILT;
+
+      activeCard.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+      activeCard.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      activeCard.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+    }
+
+    function resetCard(card) {
+      if (!card) return;
+      card.style.removeProperty('--rx');
+      card.style.removeProperty('--ry');
+      card.style.removeProperty('--mx');
+      card.style.removeProperty('--my');
+    }
+
+    document.addEventListener('pointermove', function(e) {
+      if (e.buttons > 0) return; // don't tilt mid-drag / text selection
+      const card = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+
+      if (card !== activeCard) {
+        resetCard(activeCard);
+        activeCard = card;
+      }
+      if (!card) return;
+
+      lastEvent = e;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    }, { passive: true });
+
+    // Pointer left the page entirely (no pointermove fires on the way out)
+    document.documentElement.addEventListener('pointerleave', function() {
+      resetCard(activeCard);
+      activeCard = null;
     });
   }
 
@@ -367,15 +498,15 @@
         .then(res => res.json())
         .then(data => {
           if (data.ok) {
-            alert('Sync completed: ' + data.message);
+            Mail.toast('Sync completed: ' + data.message, 'success');
             this.loadFolders();
           } else {
-            alert('Sync failed: ' + (data.error || 'Unknown error'));
+            Mail.toast('Sync failed: ' + (data.error || 'Unknown error'), 'error');
           }
         })
         .catch(err => {
           console.error(err);
-          alert('Sync error');
+          Mail.toast('Sync error', 'error');
         })
         .finally(() => {
           btn.disabled = false;
@@ -398,53 +529,6 @@
       this.initAccountForm();
       this.initSignatureForm();
       this.initRuleForm();
-      this.bindButtons();
-    },
-
-    bindButtons: function() {
-      console.log('Binding buttons...');
-      
-      document.querySelectorAll('[data-action="add-account"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          console.log('Add account clicked');
-          this.showAccountModal(null);
-        });
-      });
-
-      document.querySelectorAll('[data-action="edit-account"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          const id = parseInt(btn.getAttribute('data-id'));
-          console.log('Edit account clicked:', id);
-          this.editAccount(id);
-        });
-      });
-
-      document.querySelectorAll('[data-action="add-signature"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          console.log('Add signature clicked');
-          this.showSignatureModal(null);
-        });
-      });
-
-      document.querySelectorAll('[data-action="add-rule"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          console.log('Add rule clicked');
-          this.showRuleModal(null);
-        });
-      });
-
-      document.querySelectorAll('[data-action="close-modal"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          const modalId = btn.getAttribute('data-modal');
-          console.log('Close modal:', modalId);
-          this.closeModal(modalId);
-        });
-      });
     },
 
     showAccountModal: function(accountId) {
@@ -468,17 +552,11 @@
         document.getElementById('accountId').value = '';
       }
 
-      modal.classList.add('fw-mail__modal-overlay--active');
-      document.body.style.overflow = 'hidden';
+      openModalOverlay(modal);
     },
 
     closeModal: function(modalId) {
-      console.log('closeModal:', modalId);
-      const modal = document.getElementById(modalId);
-      if (modal) {
-        modal.classList.remove('fw-mail__modal-overlay--active');
-        document.body.style.overflow = '';
-      }
+      closeModalOverlay(modalId);
     },
 
     loadAccount: function(accountId) {
@@ -566,13 +644,13 @@
       .then(res => res.json())
       .then(data => {
         if (data.ok) {
-          alert('✓ Connection successful!\n\nIMAP: ' + data.imap + '\nSMTP: ' + data.smtp);
+          Mail.toast('Connection successful — IMAP: ' + data.imap + ', SMTP: ' + data.smtp, 'success');
         } else {
-          alert('✗ Connection failed:\n\n' + (data.error || 'Unknown error'));
+          Mail.toast('Connection failed: ' + (data.error || 'Unknown error'), 'error');
         }
       })
       .catch(err => {
-        alert('✗ Network error');
+        Mail.toast('Network error', 'error');
         console.error(err);
       })
       .finally(() => {
@@ -624,7 +702,7 @@
                     ${sig.is_default ? '<span class="fw-mail__badge fw-mail__badge--active">Default</span>' : ''}
                   </div>
                   <div class="fw-mail__account-card-body">
-                    <div style="max-height:100px;overflow:auto;padding:8px;background:var(--fw-highlight);border-radius:8px;">${sig.content_html || '(Empty)'}</div>
+                    <div class="fw-mail__signature-preview">${sig.content_html || '(Empty)'}</div>
                   </div>
                   <div class="fw-mail__card-actions">
                     <button class="fw-mail__btn fw-mail__btn--small" onclick="window.MailSettings.editSignature(${sig.signature_id})">Edit</button>
@@ -665,8 +743,7 @@
         document.getElementById('signatureId').value = '';
       }
 
-      modal.classList.add('fw-mail__modal-overlay--active');
-      document.body.style.overflow = 'hidden';
+      openModalOverlay(modal);
     },
 
     loadSignature: function(signatureId) {
@@ -750,11 +827,11 @@
         if (data.ok) {
           this.loadSignatures();
         } else {
-          alert('Error: ' + (data.error || 'Unknown error'));
+          Mail.toast('Error: ' + (data.error || 'Unknown error'), 'error');
         }
       })
       .catch(err => {
-        alert('Network error');
+        Mail.toast('Network error', 'error');
         console.error(err);
       });
     },
@@ -822,8 +899,7 @@
         document.getElementById('actionsContainer').innerHTML = this.renderAction(null);
       }
 
-      modal.classList.add('fw-mail__modal-overlay--active');
-      document.body.style.overflow = 'hidden';
+      openModalOverlay(modal);
     },
 
     loadRule: function(ruleId) {
@@ -987,11 +1063,11 @@
         if (data.ok) {
           this.loadRules();
         } else {
-          alert('Error: ' + (data.error || 'Unknown error'));
+          Mail.toast('Error: ' + (data.error || 'Unknown error'), 'error');
         }
       })
       .catch(err => {
-        alert('Network error');
+        Mail.toast('Network error', 'error');
         console.error(err);
       });
     },
@@ -1054,16 +1130,11 @@
         document.getElementById('templateId').value = '';
       }
 
-      modal.classList.add('fw-mail__modal-overlay--active');
-      document.body.style.overflow = 'hidden';
+      openModalOverlay(modal);
     },
 
     closeModal: function() {
-      const modal = document.getElementById('templateModal');
-      if (modal) {
-        modal.classList.remove('fw-mail__modal-overlay--active');
-        document.body.style.overflow = '';
-      }
+      closeModalOverlay('templateModal');
     },
 
     loadTemplate: function(templateId) {
@@ -1103,7 +1174,7 @@
         if (data.ok) {
           location.reload();
         } else {
-          alert('Error: ' + (data.error || 'Unknown error'));
+          Mail.toast('Error: ' + (data.error || 'Unknown error'), 'error');
         }
       });
     }
@@ -1219,10 +1290,10 @@
 
   // ========== INIT ==========
   function init() {
-    console.log('🚀 Mail app init...');
     initTheme();
     initKebabMenu();
     initTabs();
+    init3DTilt();
 
     if (document.getElementById('folderList')) {
       MailApp.init();
@@ -1233,9 +1304,6 @@
     if (document.getElementById('composeForm')) {
       MailCompose.init();
     }
-
-    console.log('✅ MailSettings exposed:', typeof window.MailSettings);
-    console.log('✅ MailApp exposed:', typeof window.MailApp);
   }
 
   if (document.readyState === 'loading') {

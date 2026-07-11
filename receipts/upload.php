@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-RECEIPTS-UI-3D');
+define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -35,6 +35,10 @@ $maxSizeBytes = $maxSizeMB * 1024 * 1024;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload Receipt – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
     <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
 </head>
 <body class="fw-receipts">
@@ -50,7 +54,7 @@ $maxSizeBytes = $maxSizeMB * 1024 * 1024;
                 </div>
                 <div class="fw-receipts__brand-text">
                     <div class="fw-receipts__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-receipts__app-name">Upload Receipt</div>
+                    <div class="fw-receipts__app-name">Receipts – Upload</div>
                 </div>
             </div>
 
@@ -59,13 +63,15 @@ $maxSizeBytes = $maxSizeMB * 1024 * 1024;
             </div>
 
             <div class="fw-receipts__controls">
+                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back to Receipts</a>
+
                 <a href="/" class="fw-receipts__home-btn" title="Home">
                     <svg viewBox="0 0 24 24" fill="none">
                         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
                         <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
                     </svg>
                 </a>
-                
+
                 <button class="fw-receipts__theme-toggle" id="themeToggle" aria-label="Toggle theme">
                     <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--light" viewBox="0 0 24 24" fill="none">
                         <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
@@ -83,13 +89,27 @@ $maxSizeBytes = $maxSizeMB * 1024 * 1024;
                     </svg>
                 </button>
 
-                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back to Receipts</a>
+                <div class="fw-receipts__menu-wrapper">
+                    <button class="fw-receipts__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                    <nav class="fw-receipts__kebab-menu" id="kebabMenu" aria-hidden="true">
+                        <a href="upload.php" class="fw-receipts__kebab-item">Upload Receipt</a>
+                        <a href="settings.php" class="fw-receipts__kebab-item">Settings</a>
+                        <a href="index.php" class="fw-receipts__kebab-item">Back to Receipts</a>
+                    </nav>
+                </div>
             </div>
         </header>
 
         <!-- Main Content -->
         <main class="fw-receipts__main">
-            
+            <div class="fw-receipts__content">
+
             <div class="fw-receipts__page-header">
                 <h1 class="fw-receipts__page-title">Upload Receipts</h1>
                 <p class="fw-receipts__page-subtitle">Drag & drop files, or capture with your camera</p>
@@ -124,23 +144,24 @@ $maxSizeBytes = $maxSizeMB * 1024 * 1024;
             </div>
 
             <!-- Upload Progress -->
-            <div class="fw-receipts__upload-list" id="uploadList" style="display:none;">
+            <div class="fw-receipts__upload-list fw-receipts--hidden" id="uploadList">
                 <h3 class="fw-receipts__section-title">Uploading Files</h3>
                 <div id="uploadItems"></div>
             </div>
 
             <!-- Bulk Import Progress -->
-            <div class="fw-receipts__upload-list" id="bulkList" style="display:none;">
+            <div class="fw-receipts__upload-list fw-receipts--hidden" id="bulkList">
                 <h3 class="fw-receipts__section-title">Bulk Import</h3>
                 <div id="bulkItems"></div>
             </div>
 
+            </div>
         </main>
 
         <!-- Footer -->
         <footer class="fw-receipts__footer">
             <span>Receipts v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Light</span>
+            <span id="themeIndicator">Theme: Dark</span>
         </footer>
 
     </div>

@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2026-07-09-SAI-UI-3D');
+define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -57,12 +57,14 @@ $totalPages = ceil($totalQueries / $perPage);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search History – Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
+    <title>Search History – <?= htmlspecialchars($companyName) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
 </head>
-<body>
-    <main class="fw-suppliers-ai">
-        <div class="fw-suppliers-ai__container">
+<body class="fw-suppliers-ai">
+    <div class="fw-suppliers-ai__container">
             
             <!-- Header -->
             <header class="fw-suppliers-ai__header">
@@ -76,7 +78,7 @@ $totalPages = ceil($totalQueries / $perPage);
                     </div>
                     <div class="fw-suppliers-ai__brand-text">
                         <div class="fw-suppliers-ai__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-suppliers-ai__app-name">Search History</div>
+                        <div class="fw-suppliers-ai__app-name">Suppliers AI – History</div>
                     </div>
                 </div>
 
@@ -115,8 +117,43 @@ $totalPages = ceil($totalQueries / $perPage);
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
+
+                    <div class="fw-suppliers-ai__menu-wrapper">
+                        <button class="fw-suppliers-ai__kebab-toggle" id="kebabToggle" aria-label="Menu">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+                            </svg>
+                        </button>
+                        <nav class="fw-suppliers-ai__kebab-menu" id="kebabMenu" aria-hidden="true">
+                            <a href="/suppliers_ai/" class="fw-suppliers-ai__kebab-item">New Search</a>
+                            <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__kebab-item">History</a>
+                            <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__kebab-item">Help</a>
+                            <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__kebab-item">Settings</a>
+                        </nav>
+                    </div>
                 </div>
             </header>
+
+            <!-- Main Content -->
+            <main class="fw-suppliers-ai__main">
+            <div class="fw-suppliers-ai__content">
+
+            <div class="fw-suppliers-ai__page-header">
+                <h1 class="fw-suppliers-ai__page-title">Search History</h1>
+                <p class="fw-suppliers-ai__page-subtitle">
+                    Review past AI supplier searches and what they found
+                </p>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="fw-suppliers-ai__view-tabs">
+                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab">Search</a>
+                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">History</a>
+                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab">Help</a>
+                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab">Settings</a>
+            </div>
 
             <!-- History List -->
             <div class="fw-suppliers-ai__history-panel">
@@ -146,102 +183,34 @@ $totalPages = ceil($totalQueries / $perPage);
                         <?php endforeach; ?>
                     </div>
 
-                    <!-- Pagination -->
+                    <!-- Pagination — mini keys: info left, keys right -->
                     <?php if ($totalPages > 1): ?>
                     <div class="fw-suppliers-ai__pagination">
-                        <?php if ($page > 1): ?>
-                            <a href="?page=<?= $page - 1 ?>" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary">← Previous</a>
-                        <?php endif; ?>
-                        
                         <span class="fw-suppliers-ai__pagination-info">Page <?= $page ?> of <?= $totalPages ?></span>
-                        
-                        <?php if ($page < $totalPages): ?>
-                            <a href="?page=<?= $page + 1 ?>" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary">Next →</a>
-                        <?php endif; ?>
+                        <div class="fw-suppliers-ai__pagination-btns">
+                            <?php if ($page > 1): ?>
+                                <a href="?page=<?= $page - 1 ?>" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary">← Previous</a>
+                            <?php endif; ?>
+                            <?php if ($page < $totalPages): ?>
+                                <a href="?page=<?= $page + 1 ?>" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary">Next →</a>
+                            <?php endif; ?>
+                        </div>
                     </div>
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
 
+            </div>
+            </main>
+
             <!-- Footer -->
             <footer class="fw-suppliers-ai__footer">
                 <span>Suppliers AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Light</span>
+                <span id="themeIndicator">Theme: Dark</span>
             </footer>
 
-        </div>
-    </main>
+    </div>
 
     <script src="/suppliers_ai/suppliers_ai.js?v=<?= ASSET_VERSION ?>"></script>
-    <style>
-        .fw-suppliers-ai__history-panel {
-            background: var(--fw-panel-bg);
-            border: 1px solid var(--fw-panel-border);
-            border-radius: var(--fw-radius-lg);
-            padding: var(--fw-spacing-xl);
-            box-shadow: var(--fw-shadow-md);
-            backdrop-filter: blur(12px);
-        }
-        .fw-suppliers-ai__history-header {
-            margin-bottom: var(--fw-spacing-lg);
-            padding-bottom: var(--fw-spacing-md);
-            border-bottom: 2px solid var(--fw-border);
-        }
-        .fw-suppliers-ai__history-list {
-            display: flex;
-            flex-direction: column;
-            gap: var(--fw-spacing-md);
-        }
-        .fw-suppliers-ai__history-card {
-            padding: var(--fw-spacing-lg);
-            background: var(--fw-highlight);
-            border: 1px solid var(--fw-border);
-            border-radius: var(--fw-radius-md);
-            transition: all 0.2s ease;
-        }
-        .fw-suppliers-ai__history-card:hover {
-            box-shadow: var(--fw-shadow-sm);
-            transform: translateY(-2px);
-        }
-        .fw-suppliers-ai__history-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: var(--fw-spacing-md);
-            margin-bottom: var(--fw-spacing-sm);
-        }
-        .fw-suppliers-ai__history-query {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--fw-text-primary);
-            margin: 0;
-            flex: 1;
-        }
-        .fw-suppliers-ai__history-time {
-            font-size: 13px;
-            color: var(--fw-text-muted);
-            white-space: nowrap;
-        }
-        .fw-suppliers-ai__history-card-meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: var(--fw-spacing-md);
-            font-size: 13px;
-            color: var(--fw-text-secondary);
-        }
-        .fw-suppliers-ai__pagination {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: var(--fw-spacing-lg);
-            margin-top: var(--fw-spacing-xl);
-            padding-top: var(--fw-spacing-lg);
-            border-top: 1px solid var(--fw-border);
-        }
-        .fw-suppliers-ai__pagination-info {
-            font-size: 14px;
-            color: var(--fw-text-muted);
-        }
-    </style>
 </body>
 </html>
