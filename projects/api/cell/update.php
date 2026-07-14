@@ -209,21 +209,21 @@ try {
     http_response_code(500);
     echo json_encode([
         'ok' => false,
-        'error' => 'Database error: ' . $e->getMessage()
+        'error' => 'Database error'
     ]);
-    
+
 } catch (Exception $e) {
     // General error
     while (ob_get_level() > 0) ob_end_clean();
-    
+
     error_log("Cell Update Error: " . $e->getMessage());
     error_log("Stack trace: " . $e->getTraceAsString());
-    
+
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(500);
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage()
+        'error' => 'Failed to update cell'
     ]);
 }
 

@@ -131,12 +131,10 @@ try {
     error_log("Column delete error: " . $e->getMessage());
     error_log("Stack trace: " . $e->getTraceAsString());
     
-    // Return error response
+    // Return a generic error — details are logged server-side, not exposed.
     http_response_code(500);
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage(),
-        'file' => basename($e->getFile()),
-        'line' => $e->getLine()
+        'error' => 'Failed to delete column'
     ]);
 }

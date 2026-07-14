@@ -7,6 +7,19 @@
 // Pick a legible text color (black/white) for a given background, so status
 // badges meet WCAG contrast instead of always using white. Defined once
 // (this file is included per-cell in a loop).
+// Only allow http/https hrefs. A stored value like "javascript:alert(1)" would
+// otherwise render as a clickable link and run on click (htmlspecialchars does
+// NOT neutralise the javascript: scheme). Scheme-less values get https://.
+if (!function_exists('fw_safe_url')) {
+    function fw_safe_url($url) {
+        $url = trim((string)$url);
+        if ($url === '') return null;
+        if (preg_match('#^https?://#i', $url)) return $url;
+        if (preg_match('#^[a-z][a-z0-9+.\-]*:#i', $url)) return null; // some other scheme → unsafe
+        return 'https://' . $url; // scheme-less → assume https
+    }
+}
+
 if (!function_exists('fw_readable_text')) {
     function fw_readable_text($hex) {
         $hex = ltrim((string)$hex, '#');
@@ -220,11 +233,14 @@ elseif ($col['type'] === 'tags'):
 
 // Link Cell
 elseif ($col['type'] === 'link'):
-    if ($value): ?>
+    $safeHref = $value ? fw_safe_url($value) : null;
+    if ($safeHref): ?>
         <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
-            <a href="<?= htmlspecialchars($value) ?>" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 <?= htmlspecialchars(preg_replace('#^https?://#', '', $value)) ?></a>
+            <a href="<?= htmlspecialchars($safeHref) ?>" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 <?= htmlspecialchars(preg_replace('#^https?://#', '', $safeHref)) ?></a>
             <button type="button" class="fw-cell-edit-btn" title="Edit link" style="background:none;border:none;cursor:pointer;opacity:0.5;font-size:12px;padding:2px 4px;">✏️</button>
         </div>
+    <?php elseif ($value !== null && $value !== ''): /* non-http value — show as plain text, never as a clickable link */ ?>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($value) ?></span>
     <?php else: ?>
         <button class="fw-cell-empty">+</button>
     <?php endif;

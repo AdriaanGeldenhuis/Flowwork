@@ -92,7 +92,7 @@ try {
     if (isset($_POST['width'])) {
         $width = (int)$_POST['width'];
         if ($width < 30) $width = 30;
-        if ($width > 150) $width = 150;
+        if ($width > 600) $width = 600;
         $updates[] = "width = ?";
         $params[] = $width;
         error_log("Updating width to: $width");
@@ -152,24 +152,25 @@ try {
     while (ob_get_level()) ob_end_clean();
     error_log("Column Update DB Error: " . $e->getMessage());
     error_log("Stack trace: " . $e->getTraceAsString());
-    
+
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(500);
+    // Don't leak DB internals to the client; details are in the server log.
     echo json_encode([
         'ok' => false,
-        'error' => 'Database error: ' . $e->getMessage()
+        'error' => 'Database error'
     ]);
-    
+
 } catch (Exception $e) {
     while (ob_get_level()) ob_end_clean();
     error_log("Column Update Error: " . $e->getMessage());
     error_log("Stack trace: " . $e->getTraceAsString());
-    
+
     header('Content-Type: application/json; charset=utf-8');
     http_response_code(500);
     echo json_encode([
         'ok' => false,
-        'error' => 'Failed to update column: ' . $e->getMessage()
+        'error' => 'Failed to update column'
     ]);
 }
 exit;

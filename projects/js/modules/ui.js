@@ -19,21 +19,33 @@
     menu.className = 'fw-dropdown';
     menu.innerHTML = html;
     menu.style.position = 'fixed';
+    menu.style.zIndex = '9999';
+
+    // Append first (off-screen) so we can measure the real menu size, then
+    // clamp it inside the viewport — otherwise it overflows the right/bottom
+    // edge on a phone.
+    menu.style.visibility = 'hidden';
+    menu.style.left = '-9999px';
+    menu.style.top = '0px';
+    const container = document.querySelector('.fw-proj') || document.body;
+    container.appendChild(menu);
 
     const rect = target.getBoundingClientRect();
-    let left = rect.left - 200;
-    let top = rect.bottom + 8;
+    const mw = menu.offsetWidth || 200;
+    const mh = menu.offsetHeight || 250;
+    const margin = 8;
 
-    if (left < 20) left = rect.left;
-    if (top + 250 > window.innerHeight) top = rect.top - 260;
+    // Prefer right-aligned under the button; flip up if it won't fit below.
+    let left = rect.right - mw;
+    let top = rect.bottom + margin;
+    if (top + mh > window.innerHeight - margin) top = rect.top - mh - margin;
+    // Final clamp to the viewport on both axes.
+    left = Math.max(margin, Math.min(left, window.innerWidth - mw - margin));
+    top = Math.max(margin, Math.min(top, window.innerHeight - mh - margin));
 
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
-    menu.style.zIndex = '9999';
-
-    // ✅ FIX: Append to .fw-proj instead of body
-    const container = document.querySelector('.fw-proj') || document.body;
-    container.appendChild(menu);
+    menu.style.visibility = '';
 
     setTimeout(() => {
       document.addEventListener('click', () => menu.remove(), { once: true });
