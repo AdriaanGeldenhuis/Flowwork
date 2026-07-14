@@ -301,7 +301,8 @@
       addInput.value = '';
       addInput.disabled = false;
       addInput.dataset.groupId = String(gid);
-      addInput.setAttribute('onkeydown', `if(event.key==='Enter') BoardApp.quickAddItem(this, ${gid})`);
+      addInput.setAttribute('enterkeyhint', 'done');
+      addInput.setAttribute('onkeydown', `if(event.key==='Enter'&&!event.isComposing) BoardApp.quickAddItem(this, ${gid})`);
     }
 
     const totals = boardContainer.querySelector('.fw-board-totals-group');

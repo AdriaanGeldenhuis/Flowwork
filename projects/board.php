@@ -805,6 +805,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                        class="fw-item-title"
                                                        value="<?= htmlspecialchars($item['title']) ?>"
                                                        aria-label="Item title"
+                                                       enterkeyhint="done"
+                                                       onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();this.blur();}"
                                                        onblur="BoardApp.updateItemTitle(<?= $item['id'] ?>, this.value)" />
                                                 <?php $cCount = $commentCountsMap[(int)$item['id']] ?? 0; ?>
                                                 <button type="button"
@@ -933,7 +935,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                placeholder="+ Add item"
                                                aria-label="Add item to <?= htmlspecialchars($group['name']) ?>"
                                                data-group-id="<?= $group['id'] ?>"
-                                               onkeydown="if(event.key==='Enter') BoardApp.quickAddItem(this, <?= $group['id'] ?>)" />
+                                               enterkeyhint="done"
+                                               onkeydown="if(event.key==='Enter'&&!event.isComposing) BoardApp.quickAddItem(this, <?= $group['id'] ?>)" />
                                     </td>
                                 </tr>
                             </tbody>

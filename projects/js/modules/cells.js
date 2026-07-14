@@ -125,6 +125,9 @@
     if (kind === 'number') input.step = 'any';
     if (kind === 'longtext') input.rows = 3;
     input.className = 'fw-cell-inline-input';
+    // "done" instead of the default "next" so mobile keyboards commit the edit
+    // on Enter rather than jumping focus to the next field.
+    if (kind !== 'longtext') input.enterKeyHint = 'done';
     input.value = currentValue;
 
     cellElement.innerHTML = '';
