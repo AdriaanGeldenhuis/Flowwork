@@ -504,10 +504,64 @@
     `);
   }
 
+  // Re-render a files cell's "📎 N files" pill from the current attachment count.
+  function renderFilesCell(itemId, columnId) {
+    const cell = document.querySelector(`td[data-item-id="${itemId}"][data-column-id="${columnId}"]`);
+    if (!cell) return;
+    const list = (window.BOARD_DATA.attachments && window.BOARD_DATA.attachments[itemId]) || [];
+    const n = list.length;
+    if (n > 0) {
+      const names = list.map(f => f.file_name || f.filename || f.name || 'file').join('\n');
+      cell.innerHTML = `<div class="fw-files-pill" title="${esc(names)}"><span>📎</span><span style="font-weight:600;">${n} file${n > 1 ? 's' : ''}</span></div>`;
+    } else {
+      cell.innerHTML = '<button class="fw-cell-empty">+</button>';
+    }
+  }
+
   window.BoardApp.handleFileUpload = function(itemId, columnId, files) {
-    console.log('📁 Upload files:', itemId, columnId, files);
-    alert('File upload functionality will be implemented soon');
-    document.querySelector('.fw-modal-overlay')?.remove();
+    if (!files || !files.length) return;
+
+    const fd = new FormData();
+    fd.append('item_id', itemId);
+    for (const f of files) fd.append('files[]', f);
+
+    const progress = document.getElementById('uploadProgress');
+    if (progress) { progress.style.display = 'block'; progress.textContent = '⏳ Uploading…'; }
+
+    const token = document.querySelector('meta[name="csrf-token"]')?.content
+      || (window.BOARD_DATA && window.BOARD_DATA.csrfToken) || '';
+
+    fetch('/projects/api/file.upload.php', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': token },
+      body: fd
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) throw new Error(data.error || 'Upload failed');
+
+        // Update the local attachment cache so the cell (and re-renders) match.
+        window.BOARD_DATA.attachments = window.BOARD_DATA.attachments || {};
+        const list = window.BOARD_DATA.attachments[itemId] = window.BOARD_DATA.attachments[itemId] || [];
+        (data.uploaded || []).forEach(name => list.push({ file_name: name }));
+        renderFilesCell(itemId, columnId);
+
+        document.querySelector('.fw-modal-overlay')?.remove();
+
+        const okN = (data.uploaded || []).length;
+        const rej = (data.rejected || []);
+        if (window.BoardApp.showToast) {
+          if (okN) window.BoardApp.showToast(`${okN} file${okN > 1 ? 's' : ''} uploaded`, 'success');
+          if (rej.length) window.BoardApp.showToast(`${rej.length} file(s) skipped (type/size)`, 'error');
+        } else if (rej.length && !okN) {
+          alert('Files skipped: only documents/images up to 10MB are allowed.');
+        }
+      })
+      .catch(err => {
+        console.error('📁 Upload error:', err);
+        if (progress) { progress.style.display = 'block'; progress.textContent = '⚠️ ' + err.message; }
+        else alert('Upload failed: ' + err.message);
+      });
   };
 
   // ===== SAVE CELL VALUE =====
