@@ -113,6 +113,24 @@ try {
     require_once __DIR__ . '/../_guard.php';
     require_board_role($boardId, 'member');
 
+    // Per-type value validation / normalisation (skip when clearing the cell).
+    if ($value !== null && $value !== '') {
+        if ($columnType === 'number') {
+            if (!is_numeric($value)) {
+                http_response_code(400);
+                die(json_encode(['ok' => false, 'error' => 'This column only accepts numbers']));
+            }
+        } elseif ($columnType === 'progress') {
+            if (!is_numeric($value)) {
+                http_response_code(400);
+                die(json_encode(['ok' => false, 'error' => 'Progress must be a number']));
+            }
+            $value = (string)max(0, min(100, (int)round((float)$value))); // clamp 0..100
+        } elseif ($columnType === 'checkbox') {
+            $value = ($value === '1' || $value === 1 || $value === true || $value === 'true') ? '1' : '0';
+        }
+    }
+
     // Start transaction
     $DB->beginTransaction();
 

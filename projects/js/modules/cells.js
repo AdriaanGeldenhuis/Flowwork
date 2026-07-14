@@ -1029,16 +1029,10 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
     // ✅ FIX: Append to .fw-proj instead of body
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
-    
-    // Add close on Escape
-    const escHandler = (e) => {
-      if (e.key === 'Escape') {
-        modal.remove();
-        document.removeEventListener('keydown', escHandler);
-      }
-    };
-    document.addEventListener('keydown', escHandler);
-    
+
+    // Dialog semantics, focus trap, Escape-to-close, focus restoration.
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
+
     return modal;
   }
 

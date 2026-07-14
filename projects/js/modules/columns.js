@@ -34,6 +34,7 @@
     const columnTypes = [
       // Basic
       { type: 'text', icon: '📝', label: 'Text', description: 'Plain text or notes', color: '#64748b' },
+      { type: 'longtext', icon: '📄', label: 'Long Text', description: 'Multi-line notes', color: '#64748b' },
       { type: 'number', icon: '🔢', label: 'Number', description: 'Numeric values', color: '#3b82f6' },
       { type: 'checkbox', icon: '☑️', label: 'Checkbox', description: 'Yes/No or Done/Not Done', color: '#10b981' },
       
@@ -65,7 +66,7 @@
     ];
     
     const categorizedTypes = {
-      'Basic': columnTypes.filter(t => ['text', 'number', 'checkbox'].includes(t.type)),
+      'Basic': columnTypes.filter(t => ['text', 'longtext', 'number', 'checkbox'].includes(t.type)),
       'Status & Progress': columnTypes.filter(t => ['status', 'priority', 'progress'].includes(t.type)),
       'People & Teams': columnTypes.filter(t => ['people', 'supplier'].includes(t.type)),
       'Dates & Time': columnTypes.filter(t => ['date', 'timeline'].includes(t.type)),
@@ -181,6 +182,7 @@ window.BoardApp.showAggregationSettings = function() {
   
   const container = document.querySelector('.fw-proj') || document.body;
   container.appendChild(modal);
+  if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
 };
 
 // ===== SAVE AGGREGATION SETTINGS =====
@@ -796,7 +798,8 @@ Option 3</textarea>
     
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
-    
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
+
     setTimeout(() => document.getElementById('formulaInput')?.focus(), 100);
   };
 
@@ -1038,6 +1041,7 @@ Option 3</textarea>
     
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
   };
 
   // ===== SAVE COLUMN SETTINGS =====
@@ -1196,15 +1200,9 @@ Option 3</textarea>
     
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
-    
-    const escHandler = (e) => {
-      if (e.key === 'Escape') {
-        modal.remove();
-        document.removeEventListener('keydown', escHandler);
-      }
-    };
-    document.addEventListener('keydown', escHandler);
-    
+
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
+
     return modal;
   }
 

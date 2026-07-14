@@ -56,6 +56,54 @@
     document.querySelectorAll('.fw-dropdown').forEach(m => m.remove());
   };
 
+  // Make a modal overlay keyboard-accessible: dialog semantics, initial focus,
+  // a Tab focus-trap, Escape-to-close, and focus restoration on close. Safe to
+  // call once per overlay (guarded by a flag).
+  window.BoardApp.setupModalA11y = function(overlay) {
+    if (!overlay || overlay.__a11y) return;
+    overlay.__a11y = true;
+
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    const prevFocus = document.activeElement;
+    const focusables = () => Array.from(overlay.querySelectorAll(
+      'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )).filter(el => el.offsetParent !== null || el === document.activeElement);
+
+    // Focus the first meaningful field once the modal has painted.
+    setTimeout(() => {
+      const f = focusables();
+      (f[0] || overlay).focus && (f[0] || overlay).focus();
+    }, 30);
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.removeEventListener('keydown', onKey, true);
+      mo.disconnect();
+      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (_) {} }
+    };
+
+    const onKey = (e) => {
+      if (!document.body.contains(overlay)) { cleanup(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); overlay.remove(); cleanup(); return; }
+      if (e.key === 'Tab') {
+        const f = focusables();
+        if (!f.length) return;
+        const first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+
+    // Restore focus + unbind when the modal is removed by any means.
+    const mo = new MutationObserver(() => { if (!document.body.contains(overlay)) cleanup(); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('keydown', onKey, true);
+  };
+
   // ===== ESCAPE HTML =====
   window.BoardApp.escapeHtml = function(text) {
     if (text === null || text === undefined) return '';
