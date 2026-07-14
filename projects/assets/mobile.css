@@ -139,10 +139,17 @@
     font-size: var(--font-xs);
   }
 
+  /* Item column stays frozen at roughly a third of the screen; the remaining
+     columns scroll horizontally to the right — matching the desktop layout.
+     The floor/cap live inside width: clamp() because the table is
+     table-layout:fixed, where min-/max-width on columns is ignored. */
+  .fw-board-table colgroup col:nth-child(2) {
+    width: clamp(140px, 34vw, 340px) !important;
+  }
+
+  .fw-board-table thead th.fw-col-item,
   .fw-board-table tbody td.fw-col-item {
-    width: clamp(150px, 25vw, 300px) !important;
-    min-width: 150px !important;
-    max-width: 25vw !important;
+    width: clamp(140px, 34vw, 340px) !important;
     background: var(--bg-leftcolumn) !important;
   }
 
@@ -153,15 +160,11 @@
 
   /* ===== BOARD TOTALS ===== */
   .fw-board-totals-group .fw-board-table colgroup col:nth-child(2) {
-    width: min(25vw, 300px) !important;
-    min-width: 120px !important;
-    max-width: 25vw !important;
+    width: clamp(140px, 34vw, 340px) !important;
   }
 
   .fw-board-totals-group .fw-col-item {
-    width: min(25vw, 300px) !important;
-    min-width: 120px !important;
-    max-width: 25vw !important;
+    width: clamp(140px, 34vw, 340px) !important;
     background: var(--bg-leftcolumn) !important;
   }
 
@@ -328,14 +331,13 @@
     font-size: 11px;
   }
 
+  .fw-board-table colgroup col:nth-child(2),
   .fw-col-item {
-    width: clamp(120px, 25vw, 250px) !important;
-    min-width: 120px !important;
+    width: clamp(130px, 34vw, 300px) !important;
   }
 
   .fw-board-totals-group .fw-col-item {
-    width: clamp(120px, 25vw, 250px) !important;
-    min-width: 120px !important;
+    width: clamp(130px, 34vw, 300px) !important;
   }
 }
 
@@ -396,101 +398,47 @@
   }
 }
 /* ============================================
-   PHONE CARD VIEW (≤600px)
-   The wide table linearizes into stacked, labelled cards per item —
-   cells keep their DOM nodes/handlers, so editors keep working.
+   PHONE TABLE VIEW (≤600px)
+   Same layout as the desktop: the first (Item) column stays frozen at
+   roughly a third of the screen and the remaining columns scroll
+   horizontally to the right. The bottom scroll bar is the touch handle
+   for that horizontal scroll, so it stays visible.
    ============================================ */
 @media (max-width: 600px) {
-  .fw-board-container .fw-board-table,
-  .fw-board-container .fw-board-table tbody,
-  .fw-board-container .fw-board-table tbody tr,
-  .fw-board-container .fw-board-table tbody td {
-    display: block;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
-  }
-
-  .fw-board-container .fw-board-table thead,
-  .fw-board-container .fw-board-table colgroup {
-    display: none;
-  }
-
+  /* The wrapper is the horizontal scroll container. */
   .fw-board-container .fw-table-wrapper {
-    overflow-x: visible;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
   }
 
-  /* Item card */
-  .fw-board-container tr.fw-item-row {
-    position: relative;
-    margin: 0 0 10px;
-    padding: 8px 8px 8px 40px;
-    border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
-    border-radius: 12px;
-    background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  /* Frozen "Item" column ≈ 1/3 of the viewport. The floor/cap live inside
+     width: clamp() because the table is table-layout:fixed, where min-/max-width
+     on columns is ignored. */
+  .fw-board-container .fw-board-table colgroup col:nth-child(2) {
+    width: clamp(140px, 34vw, 320px) !important;
   }
 
-  .fw-board-container td.fw-col-checkbox {
-    position: absolute;
-    top: 10px;
-    left: 8px;
-    padding: 0 !important;
-    background: none !important;
-  }
-
-  .fw-board-container td.fw-col-menu {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    padding: 0 !important;
-  }
-
-  .fw-board-container td.fw-col-item {
-    background: none !important;
-    padding: 2px 36px 6px 0 !important;
-    border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
-    margin-bottom: 4px;
+  .fw-board-container .fw-board-table thead th.fw-col-item,
+  .fw-board-container .fw-board-table tbody td.fw-col-item {
+    width: clamp(140px, 34vw, 320px) !important;
+    position: sticky !important;
+    left: 40px !important;
+    background: var(--bg-leftcolumn) !important;
+    box-shadow: 4px 0 6px rgba(0, 0, 0, 0.15);
   }
 
   .fw-board-container td.fw-col-item .fw-item-title {
-    font-weight: 700;
+    font-weight: 600;
   }
 
-  /* Labelled value rows */
-  .fw-board-container td.fw-cell {
-    display: grid !important;
-    grid-template-columns: 92px 1fr;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 0 !important;
-    border: none;
+  /* Keep the checkbox column frozen to the left edge too. */
+  .fw-board-container .fw-board-table thead th.fw-col-checkbox,
+  .fw-board-container .fw-board-table tbody td.fw-col-checkbox {
+    position: sticky !important;
+    left: 0 !important;
   }
-
-  .fw-board-container td.fw-cell::before {
-    content: attr(data-label);
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted, #94a3b8);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Summary rows and the totals block don't translate to cards */
-  .fw-board-container tr.fw-agg-row,
-  .fw-board-container .fw-board-totals-group {
-    display: none !important;
-  }
-
-  .fw-board-container tr.fw-add-row td {
-    padding: 4px 0 !important;
-  }
-
-  /* Horizontal scroll sync is meaningless in card layout */
-  .fw-scroll-sync-bar {
-    display: none !important;
-  }
+  /* The bottom scroll bar (the horizontal-scroll handle) stays visible on
+     phones via its default layout.css rule; switchView() hides it outside
+     the table view, where it has nothing to scroll. */
 }
