@@ -879,6 +879,14 @@ textarea.fw-cell-inline-input {
   padding-right: 52px;
 }
 
+/* Only keep that 52px reserved when the row actually shows a comment badge;
+   otherwise the title uses the full column width instead of leaving an empty
+   gap on the right. Falls back to the 52px above on browsers without :has().
+   The hidden badge carries style="display:none", the visible one doesn't. */
+.fw-col-item:not(:has(.fw-item-comments-btn:not([style*="none"]))) .fw-item-title {
+  padding-right: var(--spacing-sm);
+}
+
 /* ========== "NEW SINCE LAST VISIT" INDICATOR ========== */
 td.fw-col-item.fw-row-unread::after {
   content: "";

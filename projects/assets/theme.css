@@ -11,7 +11,7 @@
   --bg-surface: #14161f;
   --bg-elevated: #1a1d29;
   --bg-overlay: rgba(10, 12, 18, 0.95);
-  --bg-leftcolumn: rgba(0, 0, 0, 0.74);
+  --bg-leftcolumn: #14161f; /* opaque frozen-column surface (was translucent near-black) */
   
   /* Header Glass Effect */
   --header-glass-bg: rgba(20, 22, 35, 0.85);
@@ -71,7 +71,7 @@
   --bg-surface: #ffffff;
   --bg-elevated: #ffffff;
   --bg-overlay: rgba(255, 255, 255, 0.95);
-  --bg-leftcolumn: rgba(255, 254, 254, 0.74);
+  --bg-leftcolumn: #ffffff; /* opaque frozen-column surface (was translucent) */
   
   --header-glass-bg: rgba(255, 255, 255, 0.90);
   --header-glass-border: rgba(139, 92, 246, 0.15);
