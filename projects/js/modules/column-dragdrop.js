@@ -11,7 +11,9 @@
   let columnDragState = {
     draggedColumn: null,
     draggedElement: null,
-    draggedColumnId: null
+    draggedColumnId: null,
+    overTh: null,
+    before: null
   };
 
   // ===== INIT COLUMN DRAG & DROP =====
@@ -24,122 +26,126 @@
     console.log('✅ Column drag & drop initialized');
   }
 
-  // ===== MAKE COLUMN HEADERS DRAGGABLE =====
+  // ===== MAKE COLUMN HEADERS DRAGGABLE (via a dedicated handle) =====
+  // Only the ⋮⋮ handle starts a reorder — the <th> itself is NOT draggable, so
+  // the rename input stays selectable and the resize handle keeps working.
   function makeColumnsHeadersDraggable() {
     document.querySelectorAll('th[data-column-id]').forEach(th => {
-      if (!th.hasAttribute('draggable')) {
-        th.setAttribute('draggable', 'true');
-        th.style.cursor = 'grab';
-        
-        // Add drag handle indicator
-        const header = th.querySelector('.fw-col-header');
-        if (header && !header.querySelector('.fw-drag-handle')) {
-          const handle = document.createElement('span');
-          handle.className = 'fw-drag-handle';
-          handle.innerHTML = '⋮⋮';
-          handle.style.cssText = `
-            margin-right: 8px;
-            color: var(--text-tertiary);
-            cursor: grab;
-            opacity: 0.5;
-          `;
-          header.insertBefore(handle, header.firstChild);
-        }
+      const header = th.querySelector('.fw-col-header');
+      if (header && !header.querySelector('.fw-drag-handle')) {
+        const handle = document.createElement('span');
+        handle.className = 'fw-drag-handle';
+        handle.setAttribute('aria-label', 'Drag to reorder column');
+        handle.setAttribute('title', 'Drag to reorder');
+        handle.innerHTML = '⋮⋮';
+        handle.style.cssText = `
+          margin-right: 6px;
+          padding: 4px 2px;
+          color: var(--text-tertiary);
+          cursor: grab;
+          opacity: 0.5;
+          touch-action: none;
+          user-select: none;
+        `;
+        header.insertBefore(handle, header.firstChild);
       }
     });
   }
 
-  // ===== SETUP COLUMN DRAG HANDLERS =====
+  const REORDERABLE = (th) => th
+    && !th.classList.contains('fw-col-checkbox')
+    && !th.classList.contains('fw-col-item')
+    && !th.classList.contains('fw-col-add');
+
+  function clearIndicators() {
+    document.querySelectorAll('.fw-col-drag-over-left, .fw-col-drag-over-right')
+      .forEach(el => el.classList.remove('fw-col-drag-over-left', 'fw-col-drag-over-right'));
+  }
+
+  // The header th under the given viewport point, excluding the dragged one and
+  // the fixed (checkbox/item/add) columns.
+  function targetThAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const th = el && el.closest ? el.closest('th[data-column-id]') : null;
+    if (!th || th === columnDragState.draggedElement || !REORDERABLE(th)) return null;
+    return th;
+  }
+
+  // ===== SETUP COLUMN REORDER (Pointer Events: mouse + touch + pen) =====
   function setupColumnDragHandlers() {
-    document.addEventListener('dragstart', (e) => {
-      const th = e.target.closest('th[data-column-id]');
-      if (!th || th.classList.contains('fw-col-checkbox') || th.classList.contains('fw-col-item') || th.classList.contains('fw-col-add')) {
-        return;
-      }
-      
+    document.addEventListener('pointerdown', (e) => {
+      const handle = e.target.closest('.fw-drag-handle');
+      if (!handle) return;
+      const th = handle.closest('th[data-column-id]');
+      if (!REORDERABLE(th)) return;
+
+      e.preventDefault();
       columnDragState.draggedElement = th;
       columnDragState.draggedColumnId = parseInt(th.dataset.columnId);
-      
+      columnDragState.overTh = null;
+      columnDragState.before = null;
+
       th.classList.add('fw-dragging-column');
       th.style.opacity = '0.5';
-      
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', columnDragState.draggedColumnId);
-      
-      console.log('🎯 Column drag started:', columnDragState.draggedColumnId);
+      th.style.pointerEvents = 'none'; // so elementFromPoint returns the column underneath
+      document.body.style.userSelect = 'none';
+      handle.style.cursor = 'grabbing';
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      console.log('🎯 Column reorder started:', columnDragState.draggedColumnId);
     });
 
-    document.addEventListener('dragover', (e) => {
+    document.addEventListener('pointermove', (e) => {
       if (!columnDragState.draggedElement) return;
-      
-      const targetTh = e.target.closest('th[data-column-id]');
-      if (targetTh && targetTh !== columnDragState.draggedElement) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        
-        // Remove previous indicators
-        document.querySelectorAll('.fw-col-drag-over-left, .fw-col-drag-over-right').forEach(el => {
-          el.classList.remove('fw-col-drag-over-left', 'fw-col-drag-over-right');
-        });
-        
-        // Add indicator
-        const rect = targetTh.getBoundingClientRect();
-        const midpoint = rect.left + rect.width / 2;
-        
-        if (e.clientX < midpoint) {
-          targetTh.classList.add('fw-col-drag-over-left');
-        } else {
-          targetTh.classList.add('fw-col-drag-over-right');
+      e.preventDefault();
+      clearIndicators();
+
+      const th = targetThAt(e.clientX, e.clientY);
+      if (!th) { columnDragState.overTh = null; return; }
+
+      const rect = th.getBoundingClientRect();
+      const before = e.clientX < rect.left + rect.width / 2;
+      th.classList.add(before ? 'fw-col-drag-over-left' : 'fw-col-drag-over-right');
+      columnDragState.overTh = th;
+      columnDragState.before = before;
+    });
+
+    const finish = (e) => {
+      if (!columnDragState.draggedElement) return;
+
+      const dragged = columnDragState.draggedElement;
+      const draggedColumnId = columnDragState.draggedColumnId;
+      let targetTh = columnDragState.overTh;
+      let before = columnDragState.before;
+
+      // Reset visual state before the (possibly re-rendering) move.
+      dragged.classList.remove('fw-dragging-column');
+      dragged.style.opacity = '';
+      dragged.style.pointerEvents = '';
+      document.body.style.userSelect = '';
+      document.querySelectorAll('.fw-drag-handle').forEach(h => h.style.cursor = 'grab');
+      clearIndicators();
+
+      // If pointermove didn't land on a target (e.g. quick touch flick), resolve
+      // the drop target from the release point.
+      if (!targetTh) {
+        targetTh = targetThAt(e.clientX, e.clientY);
+        if (targetTh) {
+          const rect = targetTh.getBoundingClientRect();
+          before = e.clientX < rect.left + rect.width / 2;
         }
       }
-    });
 
-    document.addEventListener('drop', (e) => {
-      e.preventDefault();
-      
-      if (!columnDragState.draggedElement) return;
-      
-      const targetTh = e.target.closest('th[data-column-id]');
-      if (!targetTh || targetTh === columnDragState.draggedElement) return;
-      
+      columnDragState = { draggedColumn: null, draggedElement: null, draggedColumnId: null, overTh: null, before: null };
+
+      if (!targetTh || targetTh.dataset.columnId == draggedColumnId) return;
+
       const targetColumnId = parseInt(targetTh.dataset.columnId);
-      const rect = targetTh.getBoundingClientRect();
-      const insertBefore = e.clientX < (rect.left + rect.width / 2);
-      
-      console.log('📍 Drop column:', {
-        draggedColumnId: columnDragState.draggedColumnId,
-        targetColumnId: targetColumnId,
-        insertBefore: insertBefore
-      });
-      
-      // Move column in DOM
-      moveColumnInDOM(columnDragState.draggedElement, targetTh, insertBefore);
-      
-      // Save to server
-      saveColumnOrder(columnDragState.draggedColumnId, targetColumnId, insertBefore);
-      
-      // Clean up
-      document.querySelectorAll('.fw-col-drag-over-left, .fw-col-drag-over-right').forEach(el => {
-        el.classList.remove('fw-col-drag-over-left', 'fw-col-drag-over-right');
-      });
-    });
+      moveColumnInDOM(dragged, targetTh, before);
+      saveColumnOrder(draggedColumnId, targetColumnId, before);
+    };
 
-    document.addEventListener('dragend', (e) => {
-      if (!columnDragState.draggedElement) return;
-      
-      columnDragState.draggedElement.classList.remove('fw-dragging-column');
-      columnDragState.draggedElement.style.opacity = '';
-      
-      document.querySelectorAll('.fw-col-drag-over-left, .fw-col-drag-over-right').forEach(el => {
-        el.classList.remove('fw-col-drag-over-left', 'fw-col-drag-over-right');
-      });
-      
-      columnDragState = {
-        draggedColumn: null,
-        draggedElement: null,
-        draggedColumnId: null
-      };
-    });
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
   }
 
   // ===== MOVE COLUMN IN DOM =====

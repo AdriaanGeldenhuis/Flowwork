@@ -125,6 +125,9 @@
     if (kind === 'number') input.step = 'any';
     if (kind === 'longtext') input.rows = 3;
     input.className = 'fw-cell-inline-input';
+    // "done" instead of the default "next" so mobile keyboards commit the edit
+    // on Enter rather than jumping focus to the next field.
+    if (kind !== 'longtext') input.enterKeyHint = 'done';
     input.value = currentValue;
 
     cellElement.innerHTML = '';
@@ -223,13 +226,13 @@
   // ===== PEOPLE EDITOR =====
   function editPeople(itemId, columnId, cellElement) {
     const users = window.BOARD_DATA.users || [];
-    const currentUserId = cellElement.dataset.userId || '';
-    
+    const currentUserId = cellElement.dataset.value || '';
+
     if (users.length === 0) {
       alert('No users available');
       return;
     }
-    
+
     const options = `
       <button class="fw-picker-option ${!currentUserId ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, '')" data-name="Unassigned">
         <div class="fw-avatar-sm" style="background:#64748b;flex-shrink:0;">?</div>
@@ -237,9 +240,9 @@
         ${!currentUserId ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
       </button>
       ${users.map(u => `
-        <button class="fw-picker-option ${u.id == currentUserId ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, ${u.id})" data-name="${u.first_name} ${u.last_name}">
-          <div class="fw-avatar-sm" style="flex-shrink:0;">${u.first_name.charAt(0)}${u.last_name.charAt(0)}</div>
-          <span style="flex:1;font-weight:600;">${u.first_name} ${u.last_name}</span>
+        <button class="fw-picker-option ${u.id == currentUserId ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, ${u.id})" data-name="${esc(u.first_name + ' ' + u.last_name)}">
+          <div class="fw-avatar-sm" style="flex-shrink:0;">${esc(String(u.first_name).charAt(0))}${esc(String(u.last_name).charAt(0))}</div>
+          <span style="flex:1;font-weight:600;">${esc(u.first_name + ' ' + u.last_name)}</span>
           ${u.id == currentUserId ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
         </button>
       `).join('')}
@@ -280,39 +283,39 @@
   // ===== SUPPLIER EDITOR =====
   function editSupplier(itemId, columnId, cellElement) {
     const suppliers = window.BOARD_DATA.suppliers || [];
-    const currentName = cellElement.querySelector('.fw-supplier-name')?.textContent.trim() || '';
-    
+    const currentId = cellElement.dataset.value || '';
+
     if (suppliers.length === 0) {
       alert('No suppliers available. Add suppliers in CRM first.');
       return;
     }
-    
+
     const options = suppliers.map(s => `
-      <button class="fw-picker-option ${s.name === currentName ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, ${s.id})" data-name="${s.name}">
+      <button class="fw-picker-option ${s.id == currentId ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, ${s.id})" data-name="${esc(s.name)}">
         <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#6c5ce7,#8b5cf6);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:16px;flex-shrink:0;">
           🏢
         </div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:15px;margin-bottom:2px;">${s.name}</div>
+          <div style="font-weight:600;font-size:15px;margin-bottom:2px;">${esc(s.name)}</div>
           ${s.phone || s.email ? `<div style="font-size:12px;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap;">
-            ${s.phone ? `<span>📞 ${s.phone}</span>` : ''}
-            ${s.email ? `<span>✉️ ${s.email}</span>` : ''}
+            ${s.phone ? `<span>📞 ${esc(s.phone)}</span>` : ''}
+            ${s.email ? `<span>✉️ ${esc(s.email)}</span>` : ''}
           </div>` : ''}
         </div>
         ${s.preferred ? '<div style="font-size:24px;flex-shrink:0;">⭐</div>' : ''}
-        ${s.name === currentName ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
+        ${s.id == currentId ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
       </button>
     `).join('');
-    
+
     createModal('Select Supplier', `
       <div class="fw-picker-search">
         <input type="text" class="fw-picker-search-input" placeholder="🔍 Search suppliers..." id="supplierSearchInput" oninput="window.filterPickerOptions(this.value)" />
       </div>
       <div class="fw-picker-options" id="supplierOptionsList">
-        <button class="fw-picker-option ${!currentName ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, '')" data-name="None">
+        <button class="fw-picker-option ${!currentId ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, '')" data-name="None">
           <div style="width:40px;height:40px;border-radius:12px;background:#64748b;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:20px;flex-shrink:0;">?</div>
           <div style="flex:1;"><div style="font-weight:600;font-size:15px;">No Supplier</div></div>
-          ${!currentName ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
+          ${!currentId ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
         </button>
         ${options}
       </div>
@@ -326,13 +329,16 @@
     const column = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
     if (!column) return;
     
-    const config = column.config ? JSON.parse(column.config) : {};
+    const config = safeParseConfig(column.config);
     const options = config.options || ['Option 1', 'Option 2', 'Option 3'];
-    const currentValue = cellElement.textContent.trim().replace('+', '');
-    
+    const currentValue = cellElement.dataset.value || '';
+
+    // The option value is carried in a data-* attribute (escaped for the
+    // attribute context) and read back via this.dataset in the handler, so a
+    // user-defined option label can never break out into the onclick JS.
     const optionsHtml = options.map(opt => `
-      <button class="fw-picker-option ${currentValue === opt ? 'active' : ''}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, '${opt.replace(/'/g, "\\'")}')">
-        <span style="flex:1;font-weight:600;">${opt}</span>
+      <button class="fw-picker-option ${currentValue === opt ? 'active' : ''}" data-optval="${esc(opt)}" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, this.dataset.optval)">
+        <span style="flex:1;font-weight:600;">${esc(opt)}</span>
         ${currentValue === opt ? '<span style="color:var(--accent-primary);">✓</span>' : ''}
       </button>
     `).join('');
@@ -342,26 +348,14 @@
 
   // ===== TIMELINE EDITOR =====
   function editTimeline(itemId, columnId, cellElement) {
-    const currentText = cellElement.textContent.trim().replace('+', '');
+    // Read the raw stored JSON ({start,end}) — NOT the formatted "Jan 5 → Jan 10"
+    // pill text, which loses the year and can drop the end date.
     let startDate = '';
     let endDate = '';
-    
-    if (currentText && currentText.includes('→')) {
-      const parts = currentText.split('→').map(p => p.trim());
-      if (parts[0]) {
-        const parsed = new Date(parts[0]);
-        if (!isNaN(parsed.getTime())) {
-          startDate = parsed.toISOString().split('T')[0];
-        }
-      }
-      if (parts[1]) {
-        const parsed = new Date(parts[1]);
-        if (!isNaN(parsed.getTime())) {
-          endDate = parsed.toISOString().split('T')[0];
-        }
-      }
-    }
-    
+    const stored = safeParseConfig(cellElement.dataset.value);
+    if (stored && stored.start) startDate = String(stored.start).split('T')[0];
+    if (stored && stored.end) endDate = String(stored.end).split('T')[0];
+
     createModal('Set Timeline', `
       <div style="display:grid;gap:16px;">
         <div>
@@ -409,10 +403,11 @@
 
   // ===== TAGS EDITOR =====
   function editTags(itemId, columnId, cellElement) {
-    const currentValue = cellElement.textContent.trim().replace('+', '');
-    
+    // Raw comma-separated value — the pill text drops the commas between tags.
+    const currentValue = cellElement.dataset.value || '';
+
     createModal('Edit Tags', `
-      <input type="text" id="cellTagsInput" class="fw-input" value="${currentValue}" placeholder="tag1, tag2, tag3" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
+      <input type="text" id="cellTagsInput" class="fw-input" value="${esc(currentValue)}" placeholder="tag1, tag2, tag3" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
       <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Separate tags with commas</p>
       <div class="fw-modal-footer">
         <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
@@ -425,10 +420,10 @@
 
   // ===== LINK EDITOR =====
   function editLink(itemId, columnId, cellElement) {
-    const currentValue = cellElement.querySelector('a')?.href || '';
-    
+    const currentValue = cellElement.dataset.value || '';
+
     createModal('Edit Link', `
-      <input type="url" id="cellLinkInput" class="fw-input" value="${currentValue}" placeholder="https://example.com" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
+      <input type="url" id="cellLinkInput" class="fw-input" value="${esc(currentValue)}" placeholder="https://example.com" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
       <div class="fw-modal-footer">
         <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
         <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellLinkInput').value)">Save</button>
@@ -440,10 +435,11 @@
 
   // ===== EMAIL EDITOR =====
   function editEmail(itemId, columnId, cellElement) {
-    const currentValue = cellElement.querySelector('a')?.textContent || cellElement.textContent.trim().replace('+', '');
-    
+    // Raw address — NOT the "✉️ addr" link text (which carries the emoji prefix).
+    const currentValue = cellElement.dataset.value || '';
+
     createModal('Edit Email', `
-      <input type="email" id="cellEmailInput" class="fw-input" value="${currentValue}" placeholder="email@example.com" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
+      <input type="email" id="cellEmailInput" class="fw-input" value="${esc(currentValue)}" placeholder="email@example.com" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
       <div class="fw-modal-footer">
         <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
         <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellEmailInput').value)">Save</button>
@@ -455,10 +451,11 @@
 
   // ===== PHONE EDITOR =====
   function editPhone(itemId, columnId, cellElement) {
-    const currentValue = cellElement.querySelector('a')?.textContent || cellElement.textContent.trim().replace('+', '');
-    
+    // Raw number — NOT the "📞 082 123 4567" link text (emoji + reformatting).
+    const currentValue = cellElement.dataset.value || '';
+
     createModal('Edit Phone', `
-      <input type="tel" id="cellPhoneInput" class="fw-input" value="${currentValue}" placeholder="+1 (555) 123-4567" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
+      <input type="tel" id="cellPhoneInput" class="fw-input" value="${esc(currentValue)}" placeholder="+1 (555) 123-4567" style="width:100%;padding:12px;border:1px solid var(--input-border);border-radius:8px;background:var(--input-bg);color:var(--input-text);font-size:14px;" />
       <div class="fw-modal-footer">
         <button class="fw-btn fw-btn--secondary" onclick="this.closest('.fw-modal-overlay').remove()">Cancel</button>
         <button class="fw-btn fw-btn--primary" onclick="BoardApp.saveCellValue(${itemId}, ${columnId}, document.getElementById('cellPhoneInput').value)">Save</button>
@@ -507,10 +504,64 @@
     `);
   }
 
+  // Re-render a files cell's "📎 N files" pill from the current attachment count.
+  function renderFilesCell(itemId, columnId) {
+    const cell = document.querySelector(`td[data-item-id="${itemId}"][data-column-id="${columnId}"]`);
+    if (!cell) return;
+    const list = (window.BOARD_DATA.attachments && window.BOARD_DATA.attachments[itemId]) || [];
+    const n = list.length;
+    if (n > 0) {
+      const names = list.map(f => f.file_name || f.filename || f.name || 'file').join('\n');
+      cell.innerHTML = `<div class="fw-files-pill" title="${esc(names)}"><span>📎</span><span style="font-weight:600;">${n} file${n > 1 ? 's' : ''}</span></div>`;
+    } else {
+      cell.innerHTML = '<button class="fw-cell-empty">+</button>';
+    }
+  }
+
   window.BoardApp.handleFileUpload = function(itemId, columnId, files) {
-    console.log('📁 Upload files:', itemId, columnId, files);
-    alert('File upload functionality will be implemented soon');
-    document.querySelector('.fw-modal-overlay')?.remove();
+    if (!files || !files.length) return;
+
+    const fd = new FormData();
+    fd.append('item_id', itemId);
+    for (const f of files) fd.append('files[]', f);
+
+    const progress = document.getElementById('uploadProgress');
+    if (progress) { progress.style.display = 'block'; progress.textContent = '⏳ Uploading…'; }
+
+    const token = document.querySelector('meta[name="csrf-token"]')?.content
+      || (window.BOARD_DATA && window.BOARD_DATA.csrfToken) || '';
+
+    fetch('/projects/api/file.upload.php', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': token },
+      body: fd
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) throw new Error(data.error || 'Upload failed');
+
+        // Update the local attachment cache so the cell (and re-renders) match.
+        window.BOARD_DATA.attachments = window.BOARD_DATA.attachments || {};
+        const list = window.BOARD_DATA.attachments[itemId] = window.BOARD_DATA.attachments[itemId] || [];
+        (data.uploaded || []).forEach(name => list.push({ file_name: name }));
+        renderFilesCell(itemId, columnId);
+
+        document.querySelector('.fw-modal-overlay')?.remove();
+
+        const okN = (data.uploaded || []).length;
+        const rej = (data.rejected || []);
+        if (window.BoardApp.showToast) {
+          if (okN) window.BoardApp.showToast(`${okN} file${okN > 1 ? 's' : ''} uploaded`, 'success');
+          if (rej.length) window.BoardApp.showToast(`${rej.length} file(s) skipped (type/size)`, 'error');
+        } else if (rej.length && !okN) {
+          alert('Files skipped: only documents/images up to 10MB are allowed.');
+        }
+      })
+      .catch(err => {
+        console.error('📁 Upload error:', err);
+        if (progress) { progress.style.display = 'block'; progress.textContent = '⚠️ ' + err.message; }
+        else alert('Upload failed: ' + err.message);
+      });
   };
 
   // ===== SAVE CELL VALUE =====
@@ -594,6 +645,15 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
       .replace(/'/g, '&#039;');
   }
 
+  // Tolerant column-config parse: a single malformed config must not throw and
+  // break the whole cell editor / picker.
+  function safeParseConfig(raw) {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw) || {}; }
+    catch (e) { console.warn('Bad column config JSON:', e); return {}; }
+  }
+
   // Legible text color for a solid pill background (mirrors PHP fw_readable_text)
   function readableText(color) {
     const h = String(color || '#8b5cf6').replace('#', '');
@@ -606,7 +666,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
   function renderNumberLike(cell, columnId, value, isFormula) {
     if (value !== '' && value !== null && value !== undefined) {
       const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-      const cfg = col && col.config ? JSON.parse(col.config) : {};
+      const cfg = safeParseConfig(col && col.config);
       const affix = cfg.affix || '';
       const pos = cfg.affixPosition === 'suffix' ? 'suffix' : 'prefix';
       const precision = parseInt(cfg.precision) >= 0 ? parseInt(cfg.precision) : 2;
@@ -658,7 +718,7 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
       case 'status':
         if (value) {
           const statusConfig = window.BOARD_DATA.statusConfig[value] || { label: value, color: '#8b5cf6' };
-          cell.innerHTML = `<span class="fw-status-badge" style="background: ${esc(statusConfig.color)};">${esc(value.toUpperCase())}</span>`;
+          cell.innerHTML = `<span class="fw-status-badge" style="background: ${esc(statusConfig.color)}; color: ${readableText(statusConfig.color)};">${esc(value.toUpperCase())}</span>`;
         } else {
           cell.innerHTML = '<button class="fw-cell-empty">+</button>';
         }
@@ -969,16 +1029,10 @@ window.BoardApp.saveCellValue = function(itemId, columnId, value) {
     // ✅ FIX: Append to .fw-proj instead of body
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
-    
-    // Add close on Escape
-    const escHandler = (e) => {
-      if (e.key === 'Escape') {
-        modal.remove();
-        document.removeEventListener('keydown', escHandler);
-      }
-    };
-    document.addEventListener('keydown', escHandler);
-    
+
+    // Dialog semantics, focus trap, Escape-to-close, focus restoration.
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
+
     return modal;
   }
 

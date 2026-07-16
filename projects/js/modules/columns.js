@@ -10,6 +10,20 @@
   // Store selected type globally
   let selectedColumnType = null;
 
+  // ----- shared helpers -----
+  // HTML-escape for text/attribute contexts (falls back if ui.js absent).
+  const esc = (s) => (window.BoardApp.escapeHtml
+    ? window.BoardApp.escapeHtml(s)
+    : String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'));
+  // Tolerant column-config parse — one malformed config must not break the menu.
+  const parseCfg = (raw) => {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw) || {}; } catch (e) { console.warn('Bad column config:', e); return {}; }
+  };
+  // parseInt that keeps a legitimate 0 (plain `|| fallback` turns 0 into fallback).
+  const intOr = (v, fallback) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : fallback; };
+
   // ===== SHOW ADD COLUMN MODAL =====
   window.BoardApp.showAddColumnModal = function() {
     console.log('➕ Opening add column modal...');
@@ -20,6 +34,7 @@
     const columnTypes = [
       // Basic
       { type: 'text', icon: '📝', label: 'Text', description: 'Plain text or notes', color: '#64748b' },
+      { type: 'longtext', icon: '📄', label: 'Long Text', description: 'Multi-line notes', color: '#64748b' },
       { type: 'number', icon: '🔢', label: 'Number', description: 'Numeric values', color: '#3b82f6' },
       { type: 'checkbox', icon: '☑️', label: 'Checkbox', description: 'Yes/No or Done/Not Done', color: '#10b981' },
       
@@ -51,7 +66,7 @@
     ];
     
     const categorizedTypes = {
-      'Basic': columnTypes.filter(t => ['text', 'number', 'checkbox'].includes(t.type)),
+      'Basic': columnTypes.filter(t => ['text', 'longtext', 'number', 'checkbox'].includes(t.type)),
       'Status & Progress': columnTypes.filter(t => ['status', 'priority', 'progress'].includes(t.type)),
       'People & Teams': columnTypes.filter(t => ['people', 'supplier'].includes(t.type)),
       'Dates & Time': columnTypes.filter(t => ['date', 'timeline'].includes(t.type)),
@@ -124,12 +139,12 @@ window.BoardApp.showAggregationSettings = function() {
   html += '<p style="color: var(--text-muted); margin-bottom: 16px;">Choose how to aggregate each numeric column:</p>';
   
   numericColumns.forEach(col => {
-    const config = col.config ? JSON.parse(col.config) : {};
+    const config = parseCfg(col.config);
     const currentAgg = config.agg || 'sum';
     
     html += `
       <div class="fw-form-group">
-        <label>${col.name}</label>
+        <label>${esc(col.name)}</label>
         <select id="agg_${col.column_id}" class="fw-input">
           <option value="sum" ${currentAgg === 'sum' ? 'selected' : ''}>Sum (Total)</option>
           <option value="avg" ${currentAgg === 'avg' ? 'selected' : ''}>Average</option>
@@ -167,6 +182,7 @@ window.BoardApp.showAggregationSettings = function() {
   
   const container = document.querySelector('.fw-proj') || document.body;
   container.appendChild(modal);
+  if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
 };
 
 // ===== SAVE AGGREGATION SETTINGS =====
@@ -181,7 +197,7 @@ window.BoardApp.saveAggregationSettings = function() {
     const select = document.getElementById(`agg_${col.column_id}`);
     if (select) {
       const newAgg = select.value;
-      const config = col.config ? JSON.parse(col.config) : {};
+      const config = parseCfg(col.config);
       config.agg = newAgg;
       
       updates.push({
@@ -254,8 +270,8 @@ Option 3</textarea>
       );
       
       const columnsHtml = availableColumns.length > 0 ? availableColumns.map(c => `
-        <button type="button" class="fw-formula-col-btn" onclick="document.getElementById('formulaExpression').value += ' {${c.name}} '">
-          {${c.name}}
+        <button type="button" class="fw-formula-col-btn" data-col="${esc(c.name)}" data-target="formulaExpression" onclick="BoardApp.insertFormulaRef(this)">
+          {${esc(c.name)}}
         </button>
       `).join('') : '<p style="color:var(--text-muted);font-size:13px;">No numeric columns available yet</p>';
       
@@ -400,7 +416,7 @@ Option 3</textarea>
       
     } else if (type === 'formula') {
       const formula = document.getElementById('formulaExpression')?.value.trim();
-      const precision = parseInt(document.getElementById('formulaPrecision')?.value) || 2;
+      const precision = intOr(document.getElementById('formulaPrecision')?.value, 2);
       
       if (!formula) {
         alert('Please enter a formula expression');
@@ -426,7 +442,7 @@ Option 3</textarea>
       
     } else if (type === 'number') {
       const format = document.getElementById('numberFormat')?.value || 'decimal';
-      const precision = parseInt(document.getElementById('numberPrecision')?.value) || 2;
+      const precision = intOr(document.getElementById('numberPrecision')?.value, 2);
       data.config = JSON.stringify({ format, precision, agg: 'sum' });
       console.log('Number config:', data.config);
     }
@@ -535,13 +551,17 @@ Option 3</textarea>
         const th = document.createElement('th');
         th.dataset.columnId = String(colId);
         th.dataset.type = column.type;
+        th.setAttribute('scope', 'col');
         th.innerHTML = isTotals ? `
           <div class="fw-col-header">
-            <input type="text" class="fw-col-name-input" value="${esc(column.name)}" readonly />
+            <input type="text" class="fw-col-name-input" value="${esc(column.name)}" aria-label="Column ${esc(column.name)}" readonly />
           </div>
         ` : `
           <div class="fw-col-header">
             <input type="text" class="fw-col-name-input" value="${esc(column.name)}"
+                   aria-label="Rename column ${esc(column.name)}"
+                   enterkeyhint="done"
+                   onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();this.blur();}"
                    onblur="BoardApp.updateColumnName(${colId}, this.value)" />
             <button type="button" class="fw-icon-btn fw-col-menu-btn" aria-label="Column options" onclick="BoardApp.showColumnMenu(${colId}, event)">
               <svg width="14" height="14" fill="currentColor">
@@ -609,8 +629,17 @@ Option 3</textarea>
 
   // ===== UPDATE COLUMN NAME =====
   window.BoardApp.updateColumnName = function(columnId, newName) {
-    if (!newName.trim()) return;
-    
+    // Empty name isn't saved — restore the header inputs to the current name so
+    // the field doesn't sit visibly blank while the data still has a name.
+    if (!newName.trim()) {
+      const column = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+      if (column) {
+        document.querySelectorAll(`th[data-column-id="${columnId}"] .fw-col-name-input`)
+          .forEach(inp => { inp.value = column.name; });
+      }
+      return;
+    }
+
     console.log('📝 Updating column name:', columnId, newName);
     
     window.BoardApp.apiCall('/projects/api/column/update.php', {
@@ -670,7 +699,17 @@ Option 3</textarea>
       `;
     }
     
-    window.BoardApp.showDropdown(event.target, menuItems);
+    // Anchor to the button, not the inner <svg>/<circle> the user may have tapped.
+    const anchor = (event && (event.currentTarget || (event.target && event.target.closest('.fw-col-menu-btn, .fw-icon-btn')))) || event?.target;
+    window.BoardApp.showDropdown(anchor, menuItems);
+  };
+
+  // Insert a {Column Name} reference into a formula input. The column name is
+  // read from the button's data-col attribute (never concatenated into inline
+  // JS), so names with quotes/braces can't break out or inject.
+  window.BoardApp.insertFormulaRef = function(btn) {
+    const input = document.getElementById(btn.dataset.target);
+    if (input) input.value += ' {' + btn.dataset.col + '} ';
   };
 
   // ===== EDIT FORMULA =====
@@ -680,17 +719,17 @@ Option 3</textarea>
     const column = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
     if (!column) return;
     
-    const config = column.config ? JSON.parse(column.config) : {};
+    const config = parseCfg(column.config);
     const currentFormula = config.formula || '';
-    const currentPrecision = config.precision || 2;
-    
-    const availableColumns = window.BOARD_DATA.columns.filter(c => 
+    const currentPrecision = config.precision != null ? config.precision : 2;
+
+    const availableColumns = window.BOARD_DATA.columns.filter(c =>
       c.column_id !== columnId && (c.type === 'number' || c.type === 'formula')
     );
-    
+
     const columnsHtml = availableColumns.map(c => `
-      <button class="fw-formula-col-btn" onclick="document.getElementById('formulaInput').value += ' {${c.name}} '">
-        {${c.name}}
+      <button class="fw-formula-col-btn" data-col="${esc(c.name)}" data-target="formulaInput" onclick="BoardApp.insertFormulaRef(this)">
+        {${esc(c.name)}}
       </button>
     `).join('');
     
@@ -699,14 +738,14 @@ Option 3</textarea>
     modal.innerHTML = `
       <div class="fw-modal-content fw-slide-up" style="max-width: 600px;">
         <div class="fw-modal-header">
-          <h3 style="margin:0;">∑ Edit Formula: ${column.name}</h3>
+          <h3 style="margin:0;">∑ Edit Formula: ${esc(column.name)}</h3>
           <button onclick="this.closest('.fw-modal-overlay').remove()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:24px;">×</button>
         </div>
-        
+
         <div class="fw-modal-body">
           <div class="fw-form-group">
             <label>Formula Expression</label>
-            <input type="text" id="formulaInput" class="fw-input" value="${currentFormula}" placeholder="{Quantity} * {Price/Unit}" />
+            <input type="text" id="formulaInput" class="fw-input" value="${esc(currentFormula)}" placeholder="{Quantity} * {Price/Unit}" />
             <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">
               💡 Click column names below to insert them, or type manually using {Column Name}
             </p>
@@ -759,7 +798,8 @@ Option 3</textarea>
     
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
-    
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
+
     setTimeout(() => document.getElementById('formulaInput')?.focus(), 100);
   };
 
@@ -840,9 +880,11 @@ Option 3</textarea>
     
     const column = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
     if (!column) return;
-    
-    const config = column.config ? JSON.parse(column.config) : {};
-    
+
+    const config = parseCfg(column.config);
+    const nameAttr = esc(column.name);
+    const precVal = config.precision != null ? config.precision : 2;
+
     let settingsHtml = '';
     
     switch (column.type) {
@@ -850,7 +892,7 @@ Option 3</textarea>
         settingsHtml = `
           <div class="fw-form-group">
             <label>Column Name</label>
-            <input type="text" id="settingName" class="fw-input" value="${column.name}" />
+            <input type="text" id="settingName" class="fw-input" value="${nameAttr}" />
           </div>
           
           <div class="fw-form-group">
@@ -864,7 +906,7 @@ Option 3</textarea>
           
           <div class="fw-form-group">
             <label>Decimal Places</label>
-            <input type="number" id="settingPrecision" class="fw-input" value="${config.precision || 2}" min="0" max="10" />
+            <input type="number" id="settingPrecision" class="fw-input" value="${precVal}" min="0" max="10" />
           </div>
 
           <div class="fw-form-group">
@@ -891,7 +933,7 @@ Option 3</textarea>
         settingsHtml = `
           <div class="fw-form-group">
             <label>Column Name</label>
-            <input type="text" id="settingName" class="fw-input" value="${column.name}" />
+            <input type="text" id="settingName" class="fw-input" value="${nameAttr}" />
           </div>
           
           <div class="fw-form-group">
@@ -905,7 +947,7 @@ Option 3</textarea>
         settingsHtml = `
           <div class="fw-form-group">
             <label>Column Name</label>
-            <input type="text" id="settingName" class="fw-input" value="${column.name}" />
+            <input type="text" id="settingName" class="fw-input" value="${nameAttr}" />
           </div>
 
           <div class="fw-form-group">
@@ -916,7 +958,7 @@ Option 3</textarea>
 
           <div class="fw-form-group">
             <label>Decimal Places</label>
-            <input type="number" id="settingPrecision" class="fw-input" value="${config.precision || 2}" min="0" max="10" />
+            <input type="number" id="settingPrecision" class="fw-input" value="${precVal}" min="0" max="10" />
           </div>
 
           <div class="fw-form-group">
@@ -944,7 +986,7 @@ Option 3</textarea>
         settingsHtml = `
           <div class="fw-form-group">
             <label>Column Name</label>
-            <input type="text" id="settingName" class="fw-input" value="${column.name}" />
+            <input type="text" id="settingName" class="fw-input" value="${nameAttr}" />
           </div>
           
           <div class="fw-form-group">
@@ -963,7 +1005,7 @@ Option 3</textarea>
         settingsHtml = `
           <div class="fw-form-group">
             <label>Column Name</label>
-            <input type="text" id="settingName" class="fw-input" value="${column.name}" />
+            <input type="text" id="settingName" class="fw-input" value="${nameAttr}" />
           </div>
           
           <div class="fw-form-group">
@@ -978,7 +1020,7 @@ Option 3</textarea>
     modal.innerHTML = `
       <div class="fw-modal-content fw-slide-up" style="max-width: 500px;">
         <div class="fw-modal-header">
-          <h3 style="margin:0;">⚙️ Column Settings: ${column.name}</h3>
+          <h3 style="margin:0;">⚙️ Column Settings: ${esc(column.name)}</h3>
           <button onclick="this.closest('.fw-modal-overlay').remove()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:24px;">×</button>
         </div>
         
@@ -999,6 +1041,7 @@ Option 3</textarea>
     
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
   };
 
   // ===== SAVE COLUMN SETTINGS =====
@@ -1016,23 +1059,24 @@ Option 3</textarea>
       name: name,
       width: width
     };
-    
+
+    // Preserve the column's existing aggregation (set via Aggregation Settings) —
+    // this modal has no agg control, so it must not silently reset it to 'sum'.
+    const existingCol = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
+    const existingCfg = parseCfg(existingCol && existingCol.config);
+
     if (columnType === 'number') {
       const format = document.getElementById('settingFormat')?.value || 'decimal';
-      const precision = parseInt(document.getElementById('settingPrecision')?.value) || 2;
+      const precision = intOr(document.getElementById('settingPrecision')?.value, 2);
       const affix = document.getElementById('settingAffix')?.value || '';
       const affixPosition = document.getElementById('settingAffixPosition')?.value || 'prefix';
-      data.config = JSON.stringify({ format, precision, agg: 'sum', affix, affixPosition });
+      data.config = JSON.stringify({ format, precision, agg: existingCfg.agg || 'sum', affix, affixPosition });
     } else if (columnType === 'formula') {
-      const existing = (() => {
-        const col = window.BOARD_DATA.columns.find(c => c.column_id == columnId);
-        return col && col.config ? JSON.parse(col.config) : {};
-      })();
-      const formula = document.getElementById('settingFormula')?.value || existing.formula || '';
-      const precision = parseInt(document.getElementById('settingPrecision')?.value) || 2;
+      const formula = document.getElementById('settingFormula')?.value || existingCfg.formula || '';
+      const precision = intOr(document.getElementById('settingPrecision')?.value, 2);
       const affix = document.getElementById('settingAffix')?.value || '';
       const affixPosition = document.getElementById('settingAffixPosition')?.value || 'prefix';
-      data.config = JSON.stringify({ formula, precision, agg: 'sum', affix, affixPosition });
+      data.config = JSON.stringify({ formula, precision, agg: existingCfg.agg || 'sum', affix, affixPosition });
     } else if (columnType === 'dropdown') {
       const optionsText = document.getElementById('settingOptions')?.value || '';
       const options = optionsText.split('\n').map(o => o.trim()).filter(o => o);
@@ -1156,15 +1200,9 @@ Option 3</textarea>
     
     const container = document.querySelector('.fw-proj') || document.body;
     container.appendChild(modal);
-    
-    const escHandler = (e) => {
-      if (e.key === 'Escape') {
-        modal.remove();
-        document.removeEventListener('keydown', escHandler);
-      }
-    };
-    document.addEventListener('keydown', escHandler);
-    
+
+    if (window.BoardApp.setupModalA11y) window.BoardApp.setupModalA11y(modal);
+
     return modal;
   }
 
@@ -1248,8 +1286,8 @@ Option 3</textarea>
         maxW = Math.max(maxW, w);
       });
 
-      // Clamp 30..150
-      const w = Math.max(30, Math.min(150, Math.ceil(maxW || 60)));
+      // Clamp 30..600
+      const w = Math.max(30, Math.min(600, Math.ceil(maxW || 60)));
       console.log(`📐 Column ${id}: maxW=${maxW}, final=${w}px`);
 
       // Apply width to colgroup col elements
@@ -1280,34 +1318,13 @@ Option 3</textarea>
     console.log('📐 Auto-size complete');
   };
 
-  const runAuto = debounce(() => window.BoardApp.autoSizeColumns(), 200);
-
-  // Run after full page load (including images, styles)
-  window.addEventListener('load', () => {
-    console.log('📐 Window loaded, running auto-size...');
-    setTimeout(runAuto, 100);
-  });
-
-  // Also run on DOMContentLoaded as backup
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('📐 DOM ready, scheduling auto-size...');
-      setTimeout(runAuto, 300);
-    });
-  } else {
-    setTimeout(runAuto, 300);
-  }
-
-  // Rerun on resize
-  window.addEventListener('resize', runAuto);
-
-  // Rerun when a cell changes
-  document.addEventListener('cellUpdated', debounce((e) => {
-    const colId = e?.detail?.columnId;
-    if (colId) window.BoardApp.autoSizeColumns(colId);
-  }, 200));
-
-  console.log('📐 Auto-size columns module loaded');
+  // NOTE: auto-size is intentionally NOT run automatically. Each column is
+  // server-rendered at its stored width (board.php) and the user can drag to
+  // resize (persisted via column/update.php). Auto-running on load/resize/cell
+  // change clobbered those saved widths on every page load. autoSizeColumns()
+  // stays exposed on BoardApp so it can be wired to an explicit "fit to content"
+  // action without fighting manual widths.
+  console.log('📐 Auto-size columns module loaded (manual-only; respects saved widths)');
 })();
 
 // ===== MANUAL COLUMN RESIZE (drag to resize) =====
@@ -1318,9 +1335,11 @@ Option 3</textarea>
 
   let resizing = null; // { columnId, startX, startWidth, th, col, tds }
 
+  const MIN_W = 30;
+  const MAX_W = 600; // was 150 — too narrow for Notes/longtext/formula columns
+
   function applyWidth(columnId, width) {
-    // Clamp 30..150
-    const w = Math.max(30, Math.min(150, Math.round(width)));
+    const w = Math.max(MIN_W, Math.min(MAX_W, Math.round(width)));
 
     // Apply to all matching elements
     document.querySelectorAll(`table.fw-board-table col[data-column-id="${columnId}"]`)
@@ -1338,26 +1357,27 @@ Option 3</textarea>
   function saveWidth(columnId, width) {
     console.log(`↔️ Saving column ${columnId} width: ${width}px`);
 
-    const formData = new FormData();
-    formData.append('column_id', columnId);
-    formData.append('width', width);
+    // Use apiCall so the X-CSRF-Token header is sent — a raw fetch() omits it
+    // and update.php rejects the write with 403, so resizes never persisted.
+    const done = window.BoardApp.apiCall
+      ? window.BoardApp.apiCall('/projects/api/column/update.php', { column_id: columnId, width })
+      : Promise.reject(new Error('apiCall unavailable'));
 
-    fetch('/projects/api/column/update.php', {
-      method: 'POST',
-      body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
+    done
+      .then(() => {
+        const col = (window.BOARD_DATA.columns || []).find(c => c.column_id == columnId);
+        if (col) col.width = width; // keep local model in sync so re-renders use the new width
         console.log(`↔️ Column ${columnId} width saved`);
-      } else {
-        console.error('↔️ Failed to save width:', data.error);
-      }
-    })
-    .catch(err => console.error('↔️ Error saving width:', err));
+      })
+      .catch(err => console.error('↔️ Error saving width:', err));
   }
 
-  function onMouseDown(e) {
+  // Read the horizontal position from a mouse, pointer, or touch event.
+  const eventX = (e) => (e.touches && e.touches[0] ? e.touches[0].clientX
+    : e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX
+    : e.clientX);
+
+  function onDown(e) {
     const handle = e.target.closest('.fw-col-resize');
     if (!handle) return;
 
@@ -1374,7 +1394,7 @@ Option 3</textarea>
 
     resizing = {
       columnId,
-      startX: e.clientX,
+      startX: eventX(e),
       startWidth: th.offsetWidth,
       handle
     };
@@ -1382,18 +1402,17 @@ Option 3</textarea>
     console.log(`↔️ Start resize column ${columnId}, startWidth: ${resizing.startWidth}px`);
   }
 
-  function onMouseMove(e) {
+  function onMove(e) {
     if (!resizing) return;
-
-    const delta = e.clientX - resizing.startX;
-    const newWidth = resizing.startWidth + delta;
-    applyWidth(resizing.columnId, newWidth);
+    if (e.cancelable && e.type === 'touchmove') e.preventDefault(); // stop the page scrolling while resizing
+    const delta = eventX(e) - resizing.startX;
+    applyWidth(resizing.columnId, resizing.startWidth + delta);
   }
 
-  function onMouseUp(e) {
+  function onUp(e) {
     if (!resizing) return;
 
-    const delta = e.clientX - resizing.startX;
+    const delta = eventX(e) - resizing.startX;
     const finalWidth = applyWidth(resizing.columnId, resizing.startWidth + delta);
 
     resizing.handle.classList.remove('resizing');
@@ -1402,16 +1421,17 @@ Option 3</textarea>
 
     console.log(`↔️ End resize column ${resizing.columnId}, finalWidth: ${finalWidth}px`);
 
-    // Save to database
     saveWidth(resizing.columnId, finalWidth);
-
     resizing = null;
   }
 
-  // Event listeners
-  document.addEventListener('mousedown', onMouseDown);
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
+  // Mouse + touch so columns can be resized on a phone/tablet too.
+  document.addEventListener('mousedown', onDown);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchstart', onDown, { passive: false });
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onUp);
 
   console.log('↔️ Column resize module loaded');
 })();

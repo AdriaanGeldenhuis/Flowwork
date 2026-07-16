@@ -739,19 +739,23 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                         <input type="checkbox" class="fw-checkbox" aria-label="Select all in <?= htmlspecialchars($group['name']) ?>" onchange="BoardApp.toggleGroupSelection(<?= $group['id'] ?>, this.checked)" />
                                     </th>
                                     
-                                    <th class="fw-col-item">
+                                    <th class="fw-col-item" scope="col">
                                         <div class="fw-col-header">
-                                            <input type="text" class="fw-col-name-input" value="ITEM" readonly />
+                                            <input type="text" class="fw-col-name-input" value="ITEM" aria-label="Item column" readonly />
                                         </div>
                                     </th>
 
                                     <?php foreach ($columns as $col): ?>
                                         <th data-column-id="<?= $col['column_id'] ?>"
-                                            data-type="<?= htmlspecialchars($col['type']) ?>">
+                                            data-type="<?= htmlspecialchars($col['type']) ?>"
+                                            scope="col">
                                             <div class="fw-col-header">
                                                 <input type="text"
                                                        class="fw-col-name-input"
                                                        value="<?= htmlspecialchars($col['name']) ?>"
+                                                       aria-label="Rename column <?= htmlspecialchars($col['name']) ?>"
+                                                       enterkeyhint="done"
+                                                       onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();this.blur();}"
                                                        onblur="BoardApp.updateColumnName(<?= $col['column_id'] ?>, this.value)" />
                                                 <button type="button" class="fw-icon-btn fw-col-menu-btn" aria-label="Column options" onclick="BoardApp.showColumnMenu(<?= $col['column_id'] ?>, event)">
                                                     <svg width="14" height="14" fill="currentColor">
@@ -805,6 +809,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                        class="fw-item-title"
                                                        value="<?= htmlspecialchars($item['title']) ?>"
                                                        aria-label="Item title"
+                                                       enterkeyhint="done"
+                                                       onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();this.blur();}"
                                                        onblur="BoardApp.updateItemTitle(<?= $item['id'] ?>, this.value)" />
                                                 <?php $cCount = $commentCountsMap[(int)$item['id']] ?? 0; ?>
                                                 <button type="button"
@@ -933,7 +939,8 @@ $THEME = ($_COOKIE['fw_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
                                                placeholder="+ Add item"
                                                aria-label="Add item to <?= htmlspecialchars($group['name']) ?>"
                                                data-group-id="<?= $group['id'] ?>"
-                                               onkeydown="if(event.key==='Enter') BoardApp.quickAddItem(this, <?= $group['id'] ?>)" />
+                                               enterkeyhint="done"
+                                               onkeydown="if(event.key==='Enter'&&!event.isComposing) BoardApp.quickAddItem(this, <?= $group['id'] ?>)" />
                                     </td>
                                 </tr>
                             </tbody>

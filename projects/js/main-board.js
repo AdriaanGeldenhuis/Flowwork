@@ -93,6 +93,11 @@ window.BoardApp.switchView = function(viewName) {
 
   selected.style.display = 'block';
 
+  // The bottom horizontal scroll bar only drives the table view; hiding it in
+  // the other views removes a dead "SCROLL 0%" control (desktop + mobile).
+  const scrollBar = document.querySelector('.fw-scroll-sync-bar');
+  if (scrollBar) scrollBar.style.display = (viewName === 'table') ? '' : 'none';
+
   try {
     if (viewName === 'kanban') {
       if (typeof BoardApp.renderKanban === 'function') BoardApp.renderKanban();

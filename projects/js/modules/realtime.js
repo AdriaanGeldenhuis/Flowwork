@@ -99,6 +99,8 @@
       <td class="fw-col-item">
         <input type="text" class="fw-item-title" value="${escapeHtml(item.title)}"
           aria-label="Item title"
+          enterkeyhint="done"
+          onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();this.blur();}"
           onblur="BoardApp.updateItemTitle(${item.id}, this.value)" />
         <button type="button" class="fw-item-comments-btn" data-item-id="${item.id}"
                 aria-label="Comments (0)" style="display:none;"

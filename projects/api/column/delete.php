@@ -77,10 +77,12 @@ try {
         die(json_encode(['ok' => false, 'error' => 'Column not found or access denied']));
     }
 
-    // Authorization: caller must be able to edit this board before destroying a column.
+    // Authorization: deleting a column (and all its data) is destructive and
+    // irreversible, so it needs the same 'manager' level as creating one —
+    // rename/resize/reorder remain available to 'member'.
     $USER_ROLE = $_SESSION['role'] ?? 'viewer';
     require_once __DIR__ . '/../_guard.php';
-    require_board_role((int)$column['board_id'], 'member');
+    require_board_role((int)$column['board_id'], 'manager');
 
     // Start transaction
     $DB->beginTransaction();
@@ -131,12 +133,10 @@ try {
     error_log("Column delete error: " . $e->getMessage());
     error_log("Stack trace: " . $e->getTraceAsString());
     
-    // Return error response
+    // Return a generic error — details are logged server-side, not exposed.
     http_response_code(500);
     echo json_encode([
         'ok' => false,
-        'error' => $e->getMessage(),
-        'file' => basename($e->getFile()),
-        'line' => $e->getLine()
+        'error' => 'Failed to delete column'
     ]);
 }

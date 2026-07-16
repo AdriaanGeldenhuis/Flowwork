@@ -19,21 +19,33 @@
     menu.className = 'fw-dropdown';
     menu.innerHTML = html;
     menu.style.position = 'fixed';
+    menu.style.zIndex = '9999';
+
+    // Append first (off-screen) so we can measure the real menu size, then
+    // clamp it inside the viewport — otherwise it overflows the right/bottom
+    // edge on a phone.
+    menu.style.visibility = 'hidden';
+    menu.style.left = '-9999px';
+    menu.style.top = '0px';
+    const container = document.querySelector('.fw-proj') || document.body;
+    container.appendChild(menu);
 
     const rect = target.getBoundingClientRect();
-    let left = rect.left - 200;
-    let top = rect.bottom + 8;
+    const mw = menu.offsetWidth || 200;
+    const mh = menu.offsetHeight || 250;
+    const margin = 8;
 
-    if (left < 20) left = rect.left;
-    if (top + 250 > window.innerHeight) top = rect.top - 260;
+    // Prefer right-aligned under the button; flip up if it won't fit below.
+    let left = rect.right - mw;
+    let top = rect.bottom + margin;
+    if (top + mh > window.innerHeight - margin) top = rect.top - mh - margin;
+    // Final clamp to the viewport on both axes.
+    left = Math.max(margin, Math.min(left, window.innerWidth - mw - margin));
+    top = Math.max(margin, Math.min(top, window.innerHeight - mh - margin));
 
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
-    menu.style.zIndex = '9999';
-
-    // ✅ FIX: Append to .fw-proj instead of body
-    const container = document.querySelector('.fw-proj') || document.body;
-    container.appendChild(menu);
+    menu.style.visibility = '';
 
     setTimeout(() => {
       document.addEventListener('click', () => menu.remove(), { once: true });
@@ -42,6 +54,54 @@
 
   window.BoardApp.closeAllDropdowns = function() {
     document.querySelectorAll('.fw-dropdown').forEach(m => m.remove());
+  };
+
+  // Make a modal overlay keyboard-accessible: dialog semantics, initial focus,
+  // a Tab focus-trap, Escape-to-close, and focus restoration on close. Safe to
+  // call once per overlay (guarded by a flag).
+  window.BoardApp.setupModalA11y = function(overlay) {
+    if (!overlay || overlay.__a11y) return;
+    overlay.__a11y = true;
+
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    const prevFocus = document.activeElement;
+    const focusables = () => Array.from(overlay.querySelectorAll(
+      'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )).filter(el => el.offsetParent !== null || el === document.activeElement);
+
+    // Focus the first meaningful field once the modal has painted.
+    setTimeout(() => {
+      const f = focusables();
+      (f[0] || overlay).focus && (f[0] || overlay).focus();
+    }, 30);
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.removeEventListener('keydown', onKey, true);
+      mo.disconnect();
+      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (_) {} }
+    };
+
+    const onKey = (e) => {
+      if (!document.body.contains(overlay)) { cleanup(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); overlay.remove(); cleanup(); return; }
+      if (e.key === 'Tab') {
+        const f = focusables();
+        if (!f.length) return;
+        const first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+
+    // Restore focus + unbind when the modal is removed by any means.
+    const mo = new MutationObserver(() => { if (!document.body.contains(overlay)) cleanup(); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('keydown', onKey, true);
   };
 
   // ===== ESCAPE HTML =====

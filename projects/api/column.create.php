@@ -8,7 +8,7 @@ $name    = trim($_POST['name'] ?? '');
 $type    = $_POST['type'] ?? 'text';
 $width   = (int)($_POST['width'] ?? 150);
 if ($width < 30) $width = 30;
-if ($width > 150) $width = 150;
+if ($width > 600) $width = 600;
 
 // Optional config JSON string.  Frontend can pass a JSON string via the
 // `config` field.  If absent, a sane default will be generated based on
