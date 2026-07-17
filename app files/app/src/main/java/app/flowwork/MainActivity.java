@@ -92,8 +92,22 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Load URL
-        webView.loadUrl("https://www.flowwork.app");
+        // Restore the browsing session after a system-initiated recreation
+        // (rotation is already handled by configChanges in the manifest, but
+        // this also survives process death / low-memory kills). Only load
+        // the home page on a genuinely fresh start.
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState);
+        } else {
+            webView.loadUrl("https://www.flowwork.app");
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Preserves the WebView back/forward list and current page.
+        webView.saveState(outState);
     }
 
     private void downloadFile(String url, String contentDisposition, String mimeType) {
