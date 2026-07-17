@@ -84,19 +84,8 @@ class FlowDriveSync
                 return null;
             }
 
-            $typeName = '';
-            try {
-                $stmt = $db->prepare("SELECT name FROM crm_compliance_types WHERE id = ? AND company_id = ?");
-                $stmt->execute([$typeId, $companyId]);
-                $typeName = (string)($stmt->fetchColumn() ?: '');
-            } catch (Throwable $e) {
-                // fall back to the raw filename below
-            }
-
-            $ext   = strtolower(pathinfo($absPath, PATHINFO_EXTENSION));
-            $label = self::sanitizeName($typeName) ?: 'Compliance Document';
-            $ref   = self::sanitizeName($reference);
-            $filename = $label . ($ref !== '' ? ' - ' . $ref : '') . ($ext !== '' ? '.' . $ext : '');
+            $ext = strtolower(pathinfo($absPath, PATHINFO_EXTENSION));
+            $filename = self::complianceFilename($db, $companyId, $typeId, $reference, $ext);
 
             $mimeMap = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png'];
             $mime = $mimeMap[$ext] ?? 'application/octet-stream';
@@ -112,6 +101,46 @@ class FlowDriveSync
             error_log('FlowDriveSync::fileComplianceDoc: ' . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Remove a compliance document's drive copy (the source row/file was
+     * deleted, or its file is being replaced). $ext comes from the stored
+     * file_path so the name matches what fileComplianceDoc published.
+     */
+    public static function removeComplianceDoc(
+        PDO $db,
+        int $companyId,
+        int $accountId,
+        int $typeId,
+        string $reference,
+        string $ext
+    ): void {
+        try {
+            $filename = self::complianceFilename($db, $companyId, $typeId, $reference, strtolower($ext));
+            self::removeAccountDocument($db, $companyId, $accountId, self::CAT_DOCUMENTS, $filename);
+        } catch (Throwable $e) {
+            error_log('FlowDriveSync::removeComplianceDoc: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * The drive filename for a compliance doc: "{Type name} - {reference}.{ext}".
+     * Shared by publish and remove so they always agree.
+     */
+    private static function complianceFilename(PDO $db, int $companyId, int $typeId, string $reference, string $ext): string
+    {
+        $typeName = '';
+        try {
+            $stmt = $db->prepare("SELECT name FROM crm_compliance_types WHERE id = ? AND company_id = ?");
+            $stmt->execute([$typeId, $companyId]);
+            $typeName = (string)($stmt->fetchColumn() ?: '');
+        } catch (Throwable $e) {
+            // fall back to the generic label below
+        }
+        $label = self::sanitizeName($typeName) ?: 'Compliance Document';
+        $ref   = self::sanitizeName($reference);
+        return $label . ($ref !== '' ? ' - ' . $ref : '') . ($ext !== '' ? '.' . $ext : '');
     }
 
     /**

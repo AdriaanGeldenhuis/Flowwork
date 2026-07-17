@@ -120,6 +120,10 @@ try {
 
     $DB->commit();
 
+    // Invoice balance changed — refresh its PDF and drive copy.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId, (int)$userId);
+
     $response = ['ok' => true, 'new_balance' => $newBalance];
     if ($excess > 0.01) {
         $response['warning'] = 'R' . number_format($excess, 2) . ' of the credit note remains unapplied and can be applied to another invoice.';

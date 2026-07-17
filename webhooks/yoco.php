@@ -180,6 +180,16 @@ try {
     $posting->postCustomerPayment((int)$paymentId);
 
     $DB->commit();
+
+    // Online payment applied — refresh the invoice PDF and its FlowWork Drive
+    // copy so the payment history / balance shown there stays current.
+    try {
+        require_once __DIR__ . '/../qi/services/DocumentPdfService.php';
+        DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId);
+    } catch (Throwable $pdfEx) {
+        error_log('Yoco webhook PDF publish failed: ' . $pdfEx->getMessage());
+    }
+
     http_response_code(200);
     echo json_encode(['ok' => true, 'invoice_id' => $invoiceId, 'payment_id' => $paymentId]);
 } catch (Exception $e) {

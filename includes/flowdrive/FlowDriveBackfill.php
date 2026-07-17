@@ -22,7 +22,14 @@ require_once __DIR__ . '/../../qi/services/DocumentPdfService.php';
 
 class FlowDriveBackfill
 {
-    const DONE_FLAG = 'flowdrive_backfill_done';
+    const DONE_FLAG  = 'flowdrive_backfill_done';
+    const SWEEP_FLAG = 'flowdrive_last_sweep';
+
+    /** How often the self-healing sweep may run per company. */
+    const SWEEP_INTERVAL_SECONDS = 86400; // 24h
+
+    /** Upper bound of documents a single sweep will re-publish. */
+    const SWEEP_LIMIT = 100;
 
     /**
      * Publish everything the company already has. Returns
@@ -123,8 +130,13 @@ class FlowDriveBackfill
     }
 
     /**
-     * Run the sweep once per company, ever. Cheap after the first run.
-     * Returns 'ran' | 'skipped' | 'unavailable' (mainly for tests/logging).
+     * Self-heal entry point called on dashboard page loads:
+     *  - first call ever for a company → full backfill;
+     *  - thereafter, at most once a day → light sweep that re-publishes
+     *    documents whose rows changed since the last sweep (catches anything
+     *    a lifecycle hook missed, e.g. a failure mid-webhook).
+     * Cheap on every other load (two flag SELECTs). Never throws.
+     * Returns 'ran' | 'swept' | 'skipped' | 'unavailable' (for tests/logging).
      */
     public static function autoRunOnce(PDO $db, int $companyId): string
     {
@@ -133,7 +145,7 @@ class FlowDriveBackfill
                 return 'unavailable';
             }
             if (self::isDone($db, $companyId)) {
-                return 'skipped';
+                return self::maybeSweep($db, $companyId);
             }
             // Non-blocking lock: if another request is already backfilling,
             // don't make this one wait — it will be done shortly.
@@ -148,6 +160,7 @@ class FlowDriveBackfill
                     return 'skipped';
                 }
                 self::runForCompany($db, $companyId);
+                self::setSetting($db, $companyId, self::SWEEP_FLAG, self::dbNow($db));
                 return 'ran';
             } finally {
                 try {
@@ -163,26 +176,155 @@ class FlowDriveBackfill
         }
     }
 
+    /**
+     * Once-a-day re-publish of documents changed since the last sweep.
+     * The publish path deliberately preserves updated_at (see
+     * DocumentPdfService), so only genuine business changes match here.
+     */
+    private static function maybeSweep(PDO $db, int $companyId): string
+    {
+        $last = self::getSetting($db, $companyId, self::SWEEP_FLAG);
+        if ($last !== null && (time() - strtotime($last)) < self::SWEEP_INTERVAL_SECONDS) {
+            return 'skipped';
+        }
+        $lockName = 'fw_flowdrive_sw_' . $companyId;
+        $stmt = $db->prepare("SELECT GET_LOCK(?, 0)");
+        $stmt->execute([$lockName]);
+        if ((int)$stmt->fetchColumn() !== 1) {
+            return 'skipped';
+        }
+        try {
+            $last = self::getSetting($db, $companyId, self::SWEEP_FLAG);
+            if ($last !== null && (time() - strtotime($last)) < self::SWEEP_INTERVAL_SECONDS) {
+                return 'skipped';
+            }
+            // Stamp first so a failing sweep cannot retry-storm on every load.
+            // The stamp uses the DATABASE clock: it is compared against
+            // updated_at values MySQL wrote with NOW(), so both sides of the
+            // comparison must come from the same clock/timezone.
+            $now = self::dbNow($db);
+            self::setSetting($db, $companyId, self::SWEEP_FLAG, $now);
+            $since = $last ?: date('Y-m-d H:i:s', strtotime($now) - 7 * 86400);
+            self::sweepForCompany($db, $companyId, $since);
+            return 'swept';
+        } finally {
+            try {
+                $rel = $db->prepare("SELECT RELEASE_LOCK(?)");
+                $rel->execute([$lockName]);
+            } catch (Throwable $e) {
+                // connection teardown releases it anyway
+            }
+        }
+    }
+
+    /**
+     * Re-publish every document whose row changed since $since (bounded).
+     */
+    public static function sweepForCompany(PDO $db, int $companyId, string $since): array
+    {
+        $counts = ['ok' => 0, 'fail' => 0];
+        $budget = self::SWEEP_LIMIT;
+
+        $docSets = [
+            ['type' => 'invoice',     'table' => 'invoices'],
+            ['type' => 'quote',       'table' => 'quotes'],
+            ['type' => 'credit_note', 'table' => 'credit_notes'],
+        ];
+        foreach ($docSets as $set) {
+            if ($budget <= 0) {
+                break;
+            }
+            $where = "company_id = ? AND updated_at >= ?";
+            if (self::hasColumn($db, $set['table'], 'deleted_at')) {
+                $where .= " AND deleted_at IS NULL";
+            }
+            try {
+                $stmt = $db->prepare("SELECT id FROM {$set['table']} WHERE $where ORDER BY id LIMIT " . (int)$budget);
+                $stmt->execute([$companyId, $since]);
+                $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            } catch (Throwable $e) {
+                error_log('FlowDriveBackfill::sweep ' . $set['table'] . ': ' . $e->getMessage());
+                continue;
+            }
+            foreach ($ids as $id) {
+                $budget--;
+                $r = DocumentPdfService::generateAndFile($db, $companyId, $set['type'], (int)$id);
+                $counts[$r !== null ? 'ok' : 'fail']++;
+            }
+        }
+
+        if ($budget > 0) {
+            try {
+                $stmt = $db->prepare(
+                    "SELECT id, account_id, type_id, reference_no, file_path
+                       FROM crm_compliance_docs
+                      WHERE company_id = ? AND updated_at >= ?
+                        AND file_path IS NOT NULL AND file_path <> ''
+                      ORDER BY id LIMIT " . (int)$budget
+                );
+                $stmt->execute([$companyId, $since]);
+                $appRoot = dirname(__DIR__, 2);
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $doc) {
+                    $abs = $appRoot . '/' . ltrim((string)$doc['file_path'], '/');
+                    $nodeId = FlowDriveSync::fileComplianceDoc(
+                        $db, $companyId, (int)$doc['account_id'], (int)$doc['type_id'],
+                        (string)($doc['reference_no'] ?? ''), $abs
+                    );
+                    $counts[$nodeId !== null ? 'ok' : 'fail']++;
+                }
+            } catch (Throwable $e) {
+                error_log('FlowDriveBackfill::sweep compliance: ' . $e->getMessage());
+            }
+        }
+
+        return $counts;
+    }
+
     // ------------------------------------------------------------------
 
     private static function isDone(PDO $db, int $companyId): bool
     {
-        $stmt = $db->prepare("SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = ?");
-        $stmt->execute([$companyId, self::DONE_FLAG]);
-        return (string)$stmt->fetchColumn() === '1';
+        return self::getSetting($db, $companyId, self::DONE_FLAG) === '1';
     }
 
     private static function markDone(PDO $db, int $companyId): void
     {
+        self::setSetting($db, $companyId, self::DONE_FLAG, '1');
+    }
+
+    /** The database server's clock — the same source that writes updated_at. */
+    private static function dbNow(PDO $db): string
+    {
+        try {
+            $v = $db->query("SELECT NOW()")->fetchColumn();
+            if (is_string($v) && $v !== '') {
+                return $v;
+            }
+        } catch (Throwable $e) {
+            // fall through to the PHP clock
+        }
+        return date('Y-m-d H:i:s');
+    }
+
+    private static function getSetting(PDO $db, int $companyId, string $key): ?string
+    {
+        $stmt = $db->prepare("SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = ?");
+        $stmt->execute([$companyId, $key]);
+        $v = $stmt->fetchColumn();
+        return $v === false ? null : (string)$v;
+    }
+
+    private static function setSetting(PDO $db, int $companyId, string $key, string $value): void
+    {
         try {
             $stmt = $db->prepare(
                 "INSERT INTO company_settings (company_id, setting_key, setting_value)
-                 VALUES (?, ?, '1')
-                 ON DUPLICATE KEY UPDATE setting_value = '1'"
+                 VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"
             );
-            $stmt->execute([$companyId, self::DONE_FLAG]);
+            $stmt->execute([$companyId, $key, $value]);
         } catch (Throwable $e) {
-            error_log('FlowDriveBackfill::markDone: ' . $e->getMessage());
+            error_log('FlowDriveBackfill::setSetting(' . $key . '): ' . $e->getMessage());
         }
     }
 

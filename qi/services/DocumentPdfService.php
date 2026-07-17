@@ -199,7 +199,10 @@ class DocumentPdfService
         $r = self::store($db, $companyId, 'invoice', $invoice['invoice_number'], $bytes);
         $r['customer_id'] = (int)$invoice['customer_id'];
 
-        $upd = $db->prepare("UPDATE invoices SET pdf_path = ? WHERE id = ? AND company_id = ?");
+        // updated_at = updated_at: publishing a PDF is not a business change;
+        // preserving the timestamp keeps the daily drive sweep (which selects
+        // on updated_at) from re-flagging documents it just published.
+        $upd = $db->prepare("UPDATE invoices SET pdf_path = ?, updated_at = updated_at WHERE id = ? AND company_id = ?");
         $upd->execute([$r['rel_path'], $invoiceId, $companyId]);
 
         return $r;
@@ -258,7 +261,8 @@ class DocumentPdfService
         $r = self::store($db, $companyId, 'quote', $quote['quote_number'], $bytes);
         $r['customer_id'] = (int)$quote['customer_id'];
 
-        $upd = $db->prepare("UPDATE quotes SET pdf_path = ? WHERE id = ? AND company_id = ?");
+        // updated_at preserved — see the matching comment on the invoice update.
+        $upd = $db->prepare("UPDATE quotes SET pdf_path = ?, updated_at = updated_at WHERE id = ? AND company_id = ?");
         $upd->execute([$r['rel_path'], $quoteId, $companyId]);
 
         return $r;
@@ -308,6 +312,7 @@ class DocumentPdfService
         $cn['_footer_text'] = $brand['footer'];
         $cn['_dates'] = [
             'Issue Date' => date('d M Y', strtotime($cn['issue_date'])),
+            'Status'     => ucfirst((string)($cn['status'] ?? '')),
         ];
         if (!empty($cn['linked_invoice_number'])) {
             $cn['_dates']['Invoice'] = $cn['linked_invoice_number'];
