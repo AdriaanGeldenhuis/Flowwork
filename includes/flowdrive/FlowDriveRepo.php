@@ -30,6 +30,9 @@ class FlowDriveRepo
     /** @var bool|null Cached result of the fd_* tables existence check. */
     private static $tablesOk = null;
 
+    /** Last error surfaced by a write — read by the diagnostic. */
+    public static $lastError = null;
+
     /**
      * The fd_* tables live in the same database but belong to the FlowDrive
      * app; skip silently (e.g. in a dev environment restored without them).
@@ -127,7 +130,8 @@ class FlowDriveRepo
 
             return $driveId;
         } catch (Throwable $e) {
-            error_log('FlowDriveRepo::ensureDrive: ' . $e->getMessage());
+            self::$lastError = 'ensureDrive: ' . $e->getMessage() . ' [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+            error_log('FlowDriveRepo::' . self::$lastError);
             return null;
         }
     }
@@ -292,7 +296,8 @@ class FlowDriveRepo
             self::audit($db, $driveId, $nodeId, 'flowwork_generated', ['filename' => $filename], $userId);
             return $nodeId;
         } catch (Throwable $e) {
-            error_log('FlowDriveRepo::putFile("' . $filename . '"): ' . $e->getMessage());
+            self::$lastError = 'putFile("' . $filename . '"): ' . $e->getMessage() . ' [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+            error_log('FlowDriveRepo::' . self::$lastError);
             return null;
         }
     }

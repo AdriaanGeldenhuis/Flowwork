@@ -21,6 +21,9 @@ require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
 
 class DocumentPdfService
 {
+    /** Last error surfaced by render()/fileToDrive() — read by the diagnostic. */
+    public static $lastError = null;
+
     /**
      * Render the document, write it to storage/qi/... and (for invoices and
      * quotes) persist pdf_path on the row.
@@ -43,7 +46,9 @@ class DocumentPdfService
                     return null;
             }
         } catch (Throwable $e) {
-            error_log("DocumentPdfService::render($type #$docId): " . $e->getMessage());
+            self::$lastError = "render($type #$docId): " . $e->getMessage()
+                . ' [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+            error_log("DocumentPdfService::" . self::$lastError);
             return null;
         }
     }
@@ -79,7 +84,9 @@ class DocumentPdfService
                 $userId
             );
         } catch (Throwable $e) {
-            error_log("DocumentPdfService::fileToDrive($type): " . $e->getMessage());
+            self::$lastError = "fileToDrive($type): " . $e->getMessage()
+                . ' [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+            error_log("DocumentPdfService::" . self::$lastError);
         }
     }
 

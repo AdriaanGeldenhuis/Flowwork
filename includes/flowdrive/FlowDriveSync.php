@@ -19,6 +19,9 @@ require_once __DIR__ . '/FlowDriveRepo.php';
 
 class FlowDriveSync
 {
+    /** Last error surfaced by a publish call — read by the diagnostic. */
+    public static $lastError = null;
+
     const CAT_INVOICES     = 'Invoices';
     const CAT_QUOTES       = 'Quotes';
     const CAT_CREDIT_NOTES = 'Credit Notes';
@@ -51,7 +54,9 @@ class FlowDriveSync
                 return FlowDriveRepo::putFile($db, $driveId, $folderId, self::sanitizeFilename($filename), $bytes, $mime, $userId);
             });
         } catch (Throwable $e) {
-            error_log('FlowDriveSync::fileAccountDocument: ' . $e->getMessage());
+            self::$lastError = 'fileAccountDocument: ' . $e->getMessage()
+                . ' [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+            error_log('FlowDriveSync::' . self::$lastError);
             return null;
         }
     }
