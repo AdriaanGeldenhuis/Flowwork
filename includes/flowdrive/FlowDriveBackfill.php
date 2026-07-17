@@ -1,0 +1,255 @@
+<?php
+/**
+ * FlowDriveBackfill — publishes a company's EXISTING documents into FlowWork
+ * Drive: renders PDFs for every invoice / quote / credit note, files stored
+ * compliance uploads, and hides the legacy seeded folder skeleton.
+ *
+ * Two entry points:
+ *  - runForCompany(): the full sweep, used by qi/cron/backfill_flowdrive.php
+ *    (CLI for all companies, browser for the admin's own company).
+ *  - autoRunOnce(): self-healing hook called from the QI dashboard endpoints —
+ *    runs the sweep the FIRST time the dashboard is opened after deployment
+ *    (guarded by a company_settings flag + GET_LOCK) and is a single cheap
+ *    SELECT afterwards. This removes the "someone must remember to run the
+ *    backfill" operational step: the drive populates itself.
+ *
+ * Everything is best-effort and never throws.
+ */
+
+require_once __DIR__ . '/FlowDriveRepo.php';
+require_once __DIR__ . '/FlowDriveSync.php';
+require_once __DIR__ . '/../../qi/services/DocumentPdfService.php';
+
+class FlowDriveBackfill
+{
+    const DONE_FLAG = 'flowdrive_backfill_done';
+
+    /**
+     * Publish everything the company already has. Returns
+     * ['ok' => n, 'fail' => n]. $out receives human-readable progress lines.
+     */
+    public static function runForCompany(PDO $db, int $companyId, ?callable $out = null): array
+    {
+        $out = $out ?: function (string $line) {};
+        $counts = ['ok' => 0, 'fail' => 0];
+
+        $docSets = [
+            ['type' => 'invoice',     'table' => 'invoices',     'number' => 'invoice_number'],
+            ['type' => 'quote',       'table' => 'quotes',       'number' => 'quote_number'],
+            ['type' => 'credit_note', 'table' => 'credit_notes', 'number' => 'credit_note_number'],
+        ];
+
+        foreach ($docSets as $set) {
+            $where = "company_id = ?";
+            if (self::hasColumn($db, $set['table'], 'deleted_at')) {
+                $where .= " AND deleted_at IS NULL";
+            }
+            try {
+                $stmt = $db->prepare("SELECT id, {$set['number']} AS number FROM {$set['table']} WHERE $where ORDER BY id");
+                $stmt->execute([$companyId]);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $out("  {$set['table']}: skipped (" . $e->getMessage() . ")");
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $r = DocumentPdfService::generateAndFile($db, $companyId, $set['type'], (int)$row['id']);
+                if ($r !== null) {
+                    $counts['ok']++;
+                    $out("  {$set['type']} {$row['number']}: OK");
+                } else {
+                    $counts['fail']++;
+                    $out("  {$set['type']} {$row['number']}: FAILED (see error log)");
+                }
+            }
+        }
+
+        // Existing compliance uploads → {Account}/Documents
+        try {
+            $stmt = $db->prepare(
+                "SELECT id, account_id, type_id, reference_no, file_path
+                   FROM crm_compliance_docs
+                  WHERE company_id = ? AND file_path IS NOT NULL AND file_path <> ''"
+            );
+            $stmt->execute([$companyId]);
+            $docs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $docs = [];
+            $out("  compliance docs: skipped (" . $e->getMessage() . ")");
+        }
+
+        $appRoot = dirname(__DIR__, 2);
+        foreach ($docs as $doc) {
+            $rel = ltrim((string)$doc['file_path'], '/');
+            $abs = $appRoot . '/' . $rel;
+            if (!is_file($abs)) {
+                // Rescue: the supplier-portal uploader used to climb one
+                // directory too high (see portal/supplier/upload_compliance.php),
+                // stranding files one level ABOVE the app root. If the file is
+                // there, re-home it to the recorded path.
+                $stranded = dirname($appRoot) . '/' . $rel;
+                if (is_file($stranded)) {
+                    $dir = dirname($abs);
+                    if (!is_dir($dir)) {
+                        @mkdir($dir, 0775, true);
+                    }
+                    if (@copy($stranded, $abs)) {
+                        $out("  compliance doc #{$doc['id']}: rescued stranded file into /$rel");
+                    }
+                }
+            }
+            $nodeId = FlowDriveSync::fileComplianceDoc(
+                $db,
+                $companyId,
+                (int)$doc['account_id'],
+                (int)$doc['type_id'],
+                (string)($doc['reference_no'] ?? ''),
+                $abs
+            );
+            if ($nodeId !== null) {
+                $counts['ok']++;
+                $out("  compliance doc #{$doc['id']}: OK");
+            } else {
+                $counts['fail']++;
+                $out("  compliance doc #{$doc['id']}: FAILED (file missing or drive unavailable)");
+            }
+        }
+
+        self::hideLegacySkeleton($db, $companyId, $out);
+        self::markDone($db, $companyId);
+
+        return $counts;
+    }
+
+    /**
+     * Run the sweep once per company, ever. Cheap after the first run.
+     * Returns 'ran' | 'skipped' | 'unavailable' (mainly for tests/logging).
+     */
+    public static function autoRunOnce(PDO $db, int $companyId): string
+    {
+        try {
+            if ($companyId <= 0 || !FlowDriveRepo::available($db)) {
+                return 'unavailable';
+            }
+            if (self::isDone($db, $companyId)) {
+                return 'skipped';
+            }
+            // Non-blocking lock: if another request is already backfilling,
+            // don't make this one wait — it will be done shortly.
+            $lockName = 'fw_flowdrive_bf_' . $companyId;
+            $stmt = $db->prepare("SELECT GET_LOCK(?, 0)");
+            $stmt->execute([$lockName]);
+            if ((int)$stmt->fetchColumn() !== 1) {
+                return 'skipped';
+            }
+            try {
+                if (self::isDone($db, $companyId)) {
+                    return 'skipped';
+                }
+                self::runForCompany($db, $companyId);
+                return 'ran';
+            } finally {
+                try {
+                    $rel = $db->prepare("SELECT RELEASE_LOCK(?)");
+                    $rel->execute([$lockName]);
+                } catch (Throwable $e) {
+                    // connection teardown releases it anyway
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('FlowDriveBackfill::autoRunOnce: ' . $e->getMessage());
+            return 'unavailable';
+        }
+    }
+
+    // ------------------------------------------------------------------
+
+    private static function isDone(PDO $db, int $companyId): bool
+    {
+        $stmt = $db->prepare("SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = ?");
+        $stmt->execute([$companyId, self::DONE_FLAG]);
+        return (string)$stmt->fetchColumn() === '1';
+    }
+
+    private static function markDone(PDO $db, int $companyId): void
+    {
+        try {
+            $stmt = $db->prepare(
+                "INSERT INTO company_settings (company_id, setting_key, setting_value)
+                 VALUES (?, ?, '1')
+                 ON DUPLICATE KEY UPDATE setting_value = '1'"
+            );
+            $stmt->execute([$companyId, self::DONE_FLAG]);
+        } catch (Throwable $e) {
+            error_log('FlowDriveBackfill::markDone: ' . $e->getMessage());
+        }
+    }
+
+    private static function hasColumn(PDO $db, string $table, string $column): bool
+    {
+        // SHOW statements reject parameter markers under native prepares, so
+        // inline the (internal, quoted) literal.
+        try {
+            $stmt = $db->query("SHOW COLUMNS FROM `$table` LIKE " . $db->quote($column));
+            return (bool)$stmt->fetch();
+        } catch (Throwable $e) {
+            error_log('FlowDriveBackfill::hasColumn: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * The original FlowDrive seed hung an internal/clients skeleton under a
+     * hidden '/' node. The web UI never showed it, but WebDAV (phone app,
+     * desktop mounts) lists it next to the real Customers/Suppliers tree.
+     * Soft-hide it — but ONLY when it contains no genuine files (the seed's
+     * own test file doesn't count). Reversible by clearing deleted_at.
+     */
+    private static function hideLegacySkeleton(PDO $db, int $companyId, callable $out): void
+    {
+        try {
+            $stmt = $db->prepare("SELECT id FROM fd_drives WHERE type='company' AND subtype='flowwork' AND company_id = ? ORDER BY id LIMIT 1");
+            $stmt->execute([$companyId]);
+            $driveId = (int)$stmt->fetchColumn();
+            if (!$driveId) {
+                return;
+            }
+            $stmt = $db->prepare("SELECT id FROM fd_nodes WHERE drive_id = ? AND parent_id IS NULL AND name = '/' AND type = 'folder' AND deleted_at IS NULL LIMIT 1");
+            $stmt->execute([$driveId]);
+            $rootId = (int)$stmt->fetchColumn();
+            if (!$rootId) {
+                return;
+            }
+
+            $stmt = $db->prepare(
+                "WITH RECURSIVE sub AS (
+                     SELECT id FROM fd_nodes WHERE parent_id = ? AND deleted_at IS NULL
+                     UNION ALL
+                     SELECT n.id FROM fd_nodes n JOIN sub s ON n.parent_id = s.id WHERE n.deleted_at IS NULL
+                 )
+                 SELECT s.id, n.type, n.name FROM sub s JOIN fd_nodes n ON n.id = s.id"
+            );
+            $stmt->execute([$rootId]);
+            $nodes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$nodes) {
+                return;
+            }
+
+            foreach ($nodes as $n) {
+                if ($n['type'] === 'file' && $n['name'] !== 'Test_Payslip_001') {
+                    $out("  legacy skeleton kept (contains real file: {$n['name']})");
+                    return;
+                }
+            }
+
+            $ids = array_map('intval', array_column($nodes, 'id'));
+            $in  = implode(',', $ids);
+            $db->exec("UPDATE fd_nodes SET deleted_at = NOW() WHERE id IN ($in)");
+            $out('  legacy internal/clients skeleton hidden (' . count($ids) . ' empty nodes)');
+        } catch (Throwable $e) {
+            error_log('FlowDriveBackfill::hideLegacySkeleton: ' . $e->getMessage());
+            $out('  legacy skeleton cleanup skipped (' . $e->getMessage() . ')');
+        }
+    }
+}

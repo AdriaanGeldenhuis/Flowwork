@@ -7,6 +7,12 @@ header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 
+// One-time self-heal: publish the company's existing documents into FlowWork
+// Drive the first time the dashboard loads after deployment. A single cheap
+// SELECT afterwards (flag in company_settings).
+require_once __DIR__ . '/../../includes/flowdrive/FlowDriveBackfill.php';
+FlowDriveBackfill::autoRunOnce($DB, (int)$companyId);
+
 try {
     // ===== FINANCIAL STATS =====
     // Money aggregates are converted to ZAR (amount × exchange_rate) so
