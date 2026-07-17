@@ -50,6 +50,40 @@ class FlowDriveRepo
     }
 
     /**
+     * Serialise drive/folder creation per company. fd_drives has no unique
+     * key on (type, subtype, company_id) and fd_nodes' uq_parent_name does
+     * not fire for parent_id NULL rows (SQL NULLs never collide), so
+     * SELECT-then-INSERT alone can duplicate the drive or the top-level
+     * folders under concurrency (e.g. backfill running next to live saves).
+     * GET_LOCK is connection-scoped, i.e. a cross-request mutex. On lock
+     * failure the callback still runs — publishing stays best-effort.
+     */
+    public static function withCompanyLock(PDO $db, int $companyId, callable $fn)
+    {
+        $lockName = 'fw_flowdrive_pub_' . $companyId;
+        $locked = false;
+        try {
+            $stmt = $db->prepare("SELECT GET_LOCK(?, 10)");
+            $stmt->execute([$lockName]);
+            $locked = ((int)$stmt->fetchColumn() === 1);
+        } catch (Throwable $e) {
+            error_log('FlowDriveRepo::withCompanyLock acquire: ' . $e->getMessage());
+        }
+        try {
+            return $fn();
+        } finally {
+            if ($locked) {
+                try {
+                    $stmt = $db->prepare("SELECT RELEASE_LOCK(?)");
+                    $stmt->execute([$lockName]);
+                } catch (Throwable $e) {
+                    error_log('FlowDriveRepo::withCompanyLock release: ' . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
      * Find or create the company's "FlowWork Drive" (type=company,
      * subtype=flowwork). Returns the drive id, or null on failure.
      */
@@ -59,7 +93,7 @@ class FlowDriveRepo
             $stmt = $db->prepare(
                 "SELECT id FROM fd_drives
                   WHERE type = 'company' AND subtype = 'flowwork' AND company_id = ?
-                  LIMIT 1"
+                  ORDER BY id LIMIT 1"
             );
             $stmt->execute([$companyId]);
             $driveId = $stmt->fetchColumn();
@@ -109,7 +143,7 @@ class FlowDriveRepo
             $stmt = $db->prepare(
                 "SELECT id, deleted_at FROM fd_nodes
                   WHERE drive_id = ? AND parent_id <=> ? AND name = ? AND type = 'folder'
-                  LIMIT 1"
+                  ORDER BY id LIMIT 1"
             );
             $stmt->execute([$driveId, $parentId, $name]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -138,7 +172,7 @@ class FlowDriveRepo
                 $stmt = $db->prepare(
                     "SELECT id FROM fd_nodes
                       WHERE drive_id = ? AND parent_id <=> ? AND name = ? AND type = 'folder'
-                      LIMIT 1"
+                      ORDER BY id LIMIT 1"
                 );
                 $stmt->execute([$driveId, $parentId, $name]);
                 $id = $stmt->fetchColumn();
@@ -223,7 +257,7 @@ class FlowDriveRepo
                 "SELECT id, blob_id, size_bytes, deleted_at, updated_at, created_at
                    FROM fd_nodes
                   WHERE drive_id = ? AND parent_id <=> ? AND name = ? AND ext = ? AND type = 'file'
-                  LIMIT 1"
+                  ORDER BY id LIMIT 1"
             );
             $stmt->execute([$driveId, $parentId, $name, $ext]);
             $node = $stmt->fetch(PDO::FETCH_ASSOC);

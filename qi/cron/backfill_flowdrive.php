@@ -32,11 +32,14 @@ ignore_user_abort(true);
 
 function backfill_has_column(PDO $db, string $table, string $column): bool
 {
+    // SHOW statements reject parameter markers under native prepares
+    // (db.php sets ATTR_EMULATE_PREPARES=false), so inline the literal.
+    // $table/$column are internal constants, and quote() belts-and-braces it.
     try {
-        $stmt = $db->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
-        $stmt->execute([$column]);
+        $stmt = $db->query("SHOW COLUMNS FROM `$table` LIKE " . $db->quote($column));
         return (bool)$stmt->fetch();
     } catch (Throwable $e) {
+        error_log('backfill_has_column: ' . $e->getMessage());
         return false;
     }
 }

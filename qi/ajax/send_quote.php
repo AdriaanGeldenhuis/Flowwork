@@ -120,6 +120,16 @@ try {
 
 } catch (Exception $e) {
     $DB->rollBack();
+    // Keep the on-disk PDF consistent with the rolled-back row (see the
+    // matching block in send_invoice.php).
+    if (!empty($quoteId)) {
+        try {
+            require_once __DIR__ . '/../services/DocumentPdfService.php';
+            DocumentPdfService::render($DB, (int)$companyId, 'quote', (int)$quoteId);
+        } catch (Throwable $reErr) {
+            error_log('Send quote rollback re-render failed: ' . $reErr->getMessage());
+        }
+    }
     error_log('Send quote error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

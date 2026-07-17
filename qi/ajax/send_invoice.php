@@ -119,6 +119,18 @@ try {
 
 } catch (Exception $e) {
     $DB->rollBack();
+    // The PDF file on disk is written non-transactionally during the send; a
+    // rollback (mail/commit failure) would leave a file claiming the invoice
+    // was issued while the row is back to draft. Re-render best-effort so the
+    // stored file always matches the actual (rolled-back) state.
+    if (!empty($invoiceId)) {
+        try {
+            require_once __DIR__ . '/../services/DocumentPdfService.php';
+            DocumentPdfService::render($DB, (int)$companyId, 'invoice', (int)$invoiceId);
+        } catch (Throwable $reErr) {
+            error_log('Send invoice rollback re-render failed: ' . $reErr->getMessage());
+        }
+    }
     error_log("Send invoice error: " . $e->getMessage());
     $msg = ($e instanceof PDOException) ? 'Failed to send invoice' : $e->getMessage();
     echo json_encode(['ok' => false, 'error' => $msg]);

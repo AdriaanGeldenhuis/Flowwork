@@ -42,12 +42,14 @@ class FlowDriveSync
             if (!FlowDriveRepo::available($db)) {
                 return null;
             }
-            $folderId = self::ensureCategoryFolder($db, $companyId, $accountId, $category);
-            if ($folderId === null) {
-                return null;
-            }
-            [$driveId] = self::driveFor($db, $companyId);
-            return FlowDriveRepo::putFile($db, $driveId, $folderId, self::sanitizeFilename($filename), $bytes, $mime, $userId);
+            return FlowDriveRepo::withCompanyLock($db, $companyId, function () use ($db, $companyId, $accountId, $category, $filename, $bytes, $mime, $userId) {
+                $folderId = self::ensureCategoryFolder($db, $companyId, $accountId, $category);
+                if ($folderId === null) {
+                    return null;
+                }
+                [$driveId] = self::driveFor($db, $companyId);
+                return FlowDriveRepo::putFile($db, $driveId, $folderId, self::sanitizeFilename($filename), $bytes, $mime, $userId);
+            });
         } catch (Throwable $e) {
             error_log('FlowDriveSync::fileAccountDocument: ' . $e->getMessage());
             return null;
@@ -224,8 +226,15 @@ class FlowDriveSync
             $meta  = $sib['meta_json'] ? json_decode($sib['meta_json'], true) : null;
             $sibId = is_array($meta) ? (int)($meta['fw_account_id'] ?? 0) : 0;
             if ($sibId === $accountId) {
-                $mine = $sib;
-            } elseif ($sib['name'] === $wanted && $sib['deleted_at'] === null) {
+                if ($mine === null) {
+                    $mine = $sib;
+                }
+            } elseif ($sibId !== 0 && self::nameKey($sib['name']) === self::nameKey($wanted) && $sib['deleted_at'] === null) {
+                // Compare the way fd_nodes' latin1_swedish_ci collation will
+                // (case/accent-insensitive), not with a byte-exact ===: MySQL
+                // would treat 'ACME' and 'Acme' as the SAME name, and a
+                // byte-exact check would hand this account the other
+                // account's folder.
                 $nameTakenByOther = true;
             }
         }
@@ -249,7 +258,65 @@ class FlowDriveSync
         }
 
         $name = $nameTakenByOther ? ($wanted . ' (' . $accountId . ')') : $wanted;
-        return FlowDriveRepo::ensureFolder($db, $driveId, $topId, $name, ['fw_account_id' => $accountId]);
+        $id = FlowDriveRepo::ensureFolder($db, $driveId, $topId, $name, ['fw_account_id' => $accountId]);
+        return self::claimOrDisambiguate($db, $driveId, $topId, $id, $accountId, $wanted);
+    }
+
+    /**
+     * ensureFolder matches names with MySQL's collation, so the id it returns
+     * can be ANOTHER account's folder even after the PHP-side clash check.
+     * Verify ownership via meta: claim ownerless (legacy) folders, and force a
+     * "(accountId)"-suffixed folder when the returned one belongs to someone
+     * else. This is the invariant that keeps two accounts' documents from
+     * merging into one folder.
+     */
+    private static function claimOrDisambiguate(PDO $db, int $driveId, int $topId, ?int $folderId, int $accountId, string $wanted): ?int
+    {
+        if ($folderId === null) {
+            return null;
+        }
+        try {
+            $stmt = $db->prepare("SELECT meta_json FROM fd_nodes WHERE id = ?");
+            $stmt->execute([$folderId]);
+            $meta = $stmt->fetchColumn();
+            $meta = $meta ? json_decode((string)$meta, true) : null;
+            $owner = is_array($meta) ? (int)($meta['fw_account_id'] ?? 0) : 0;
+
+            if ($owner === $accountId) {
+                return $folderId;
+            }
+            if ($owner === 0) {
+                // Legacy/ownerless folder with a matching name — claim it.
+                $db->prepare("UPDATE fd_nodes SET meta_json = ?, updated_at = NOW() WHERE id = ?")
+                   ->execute([json_encode(['fw_account_id' => $accountId], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $folderId]);
+                return $folderId;
+            }
+
+            // Collation-equal clash with a different account: use a suffixed
+            // name, which cannot collide again (the id makes it unique).
+            $suffixed = $wanted . ' (' . $accountId . ')';
+            $id = FlowDriveRepo::ensureFolder($db, $driveId, $topId, $suffixed, ['fw_account_id' => $accountId]);
+            if ($id !== null && $id !== $folderId) {
+                return $id;
+            }
+            return null;
+        } catch (Throwable $e) {
+            error_log('FlowDriveSync::claimOrDisambiguate: ' . $e->getMessage());
+            return $folderId;
+        }
+    }
+
+    /**
+     * Approximate fd_nodes' latin1_swedish_ci comparison in PHP: lowercase
+     * and accent-fold, so names MySQL considers equal compare equal here.
+     */
+    private static function nameKey(string $name): string
+    {
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $name);
+        if ($ascii !== false) {
+            $name = $ascii;
+        }
+        return mb_strtolower($name);
     }
 
     private static function loadAccount(PDO $db, int $companyId, int $accountId): ?array
