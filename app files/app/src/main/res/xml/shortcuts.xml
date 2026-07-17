@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Long-press shortcut on the FlowDrive launcher icon: a normal tap opens
+   the drives directly once signed in, so the settings/sign-out screen is
+   reached from here.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="flowdrive_settings"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/flowdrive_settings_label">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="app.flowwork"
+            android:targetClass="app.flowwork.drive.DriveSetupActivity">
+            <extra
+                android:name="app.flowwork.drive.SETTINGS"
+                android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

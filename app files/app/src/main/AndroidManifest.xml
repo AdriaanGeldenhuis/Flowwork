@@ -8,20 +8,91 @@
 
     <application
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="Flow Work"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 
+        <!-- configChanges keeps the activity (and its WebView) alive across
+             rotation and fold/unfold, so the app no longer resets to the
+             home page when the screen is turned. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- One-time FlowDrive sign-in screen (its own icon on the launcher).
+             configChanges: keep the in-flight connection check and the typed
+             form alive across rotation. taskAffinity: its own task, so the
+             two launcher icons do not resurface each other's screens. -->
+        <activity
+            android:name=".drive.DriveSetupActivity"
+            android:exported="true"
+            android:label="FlowDrive"
+            android:icon="@mipmap/ic_launcher"
+            android:taskAffinity="app.flowwork.drive.setup"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- "Save to FlowDrive" in every app's Share menu. -->
+        <activity
+            android:name=".drive.DriveSaveActivity"
+            android:exported="true"
+            android:label="Save to FlowDrive"
+            android:icon="@mipmap/ic_launcher"
+            android:taskAffinity="app.flowwork.drive.save"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Makes FlowDrive appear as a location in the Files app and in
+             every app's file picker (Storage Access Framework). -->
+        <provider
+            android:name=".drive.FlowDriveProvider"
+            android:authorities="app.flowwork.drive.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
+        <!-- Shares camera-capture temp files with the camera app (WebView uploads) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="app.flowwork.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

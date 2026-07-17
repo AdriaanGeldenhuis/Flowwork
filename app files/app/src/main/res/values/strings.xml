@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">FlowWork</string>
+    <string name="flowdrive_settings_label">FlowDrive settings</string>
 </resources>
