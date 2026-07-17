@@ -66,9 +66,12 @@ try {
 
     $DB->commit();
 
-    // Remove the document's copy from FlowWork Drive (best-effort).
+    // Remove the document's copy from FlowWork Drive (best-effort). Primary
+    // match is by identity tag; the name-based removal is a fallback for
+    // copies published before identity tagging existed.
     if ($doc['file_path']) {
         require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+        FlowDriveSync::removeComplianceDocById($DB, (int)$companyId, (int)$docId);
         FlowDriveSync::removeComplianceDoc(
             $DB,
             (int)$companyId,

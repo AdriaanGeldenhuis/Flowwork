@@ -104,9 +104,10 @@ $relativePath = '/uploads/company/' . $companyId . '/compliance/' . $filename;
 $stmt->execute([$companyId, $sid, $typeId, $referenceNo, $issueDate, $expiryDate, $relativePath]);
 
 // Publish the uploaded file to FlowWork Drive under the supplier's Documents
-// folder (best-effort; never blocks the upload).
+// folder, identity-tagged with the row id (best-effort; never blocks the upload).
+$complianceDocId = (int)$DB->lastInsertId();
 require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
-FlowDriveSync::fileComplianceDoc($DB, $companyId, (int)$sid, (int)$typeId, (string)$referenceNo, $destPath, null);
+FlowDriveSync::fileComplianceDoc($DB, $companyId, (int)$sid, (int)$typeId, (string)$referenceNo, $destPath, null, $complianceDocId ?: null);
 
 // Redirect back to the portal page with success flag to display message
 header('Location: index.php?sid=' . $sid . '&token=' . urlencode($token) . '&uploaded=1');

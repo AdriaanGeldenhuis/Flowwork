@@ -63,8 +63,11 @@ class FlowDriveSync
 
     /**
      * Publish an uploaded compliance document under the account's Documents
-     * folder, named "{Type name} - {reference|id}.{ext}" so re-uploads of the
-     * same type+reference replace the drive copy. Never throws.
+     * folder, named "{Type name} - {reference|id}.{ext}". When $docId (the
+     * crm_compliance_docs id) is given, the node is tagged with it in
+     * meta_json and any OTHER node carrying that tag is soft-deleted first —
+     * so renaming the reference/type (or moving accounts) replaces the drive
+     * copy instead of orphaning the old one. Never throws.
      */
     public static function fileComplianceDoc(
         PDO $db,
@@ -73,7 +76,8 @@ class FlowDriveSync
         int $typeId,
         string $reference,
         string $absPath,
-        ?int $userId = null
+        ?int $userId = null,
+        ?int $docId = null
     ): ?int {
         try {
             if (!is_file($absPath)) {
@@ -96,10 +100,53 @@ class FlowDriveSync
                 }
             }
 
-            return self::fileAccountDocument($db, $companyId, $accountId, self::CAT_DOCUMENTS, $filename, $bytes, $mime, $userId);
+            // Retire any previous drive copy of THIS document first (identity
+            // match, immune to renames). putFile below restores the node if
+            // the name is unchanged, so remove-then-publish is safe always.
+            if ($docId !== null) {
+                self::removeComplianceDocById($db, $companyId, $docId);
+            }
+
+            if (!FlowDriveRepo::available($db)) {
+                return null;
+            }
+            return FlowDriveRepo::withCompanyLock($db, $companyId, function () use ($db, $companyId, $accountId, $filename, $bytes, $mime, $userId, $docId) {
+                $folderId = self::ensureCategoryFolder($db, $companyId, $accountId, self::CAT_DOCUMENTS);
+                if ($folderId === null) {
+                    return null;
+                }
+                [$driveId] = self::driveFor($db, $companyId);
+                $meta = $docId !== null ? ['fw_compliance_doc_id' => $docId] : null;
+                return FlowDriveRepo::putFile($db, $driveId, $folderId, self::sanitizeFilename($filename), $bytes, $mime, $userId, $meta);
+            });
         } catch (Throwable $e) {
             error_log('FlowDriveSync::fileComplianceDoc: ' . $e->getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Soft-delete every drive node tagged with this crm_compliance_docs id —
+     * matching by identity, so it works regardless of type renames or
+     * reference changes since publishing. Never throws.
+     */
+    public static function removeComplianceDocById(PDO $db, int $companyId, int $docId): void
+    {
+        try {
+            if (!FlowDriveRepo::available($db)) {
+                return;
+            }
+            $stmt = $db->prepare(
+                "UPDATE fd_nodes n
+                   JOIN fd_drives d ON n.drive_id = d.id
+                    SET n.deleted_at = NOW()
+                  WHERE d.company_id = ? AND d.type = 'company' AND d.subtype = 'flowwork'
+                    AND n.type = 'file' AND n.deleted_at IS NULL
+                    AND JSON_EXTRACT(n.meta_json, '$.fw_compliance_doc_id') = ?"
+            );
+            $stmt->execute([$companyId, $docId]);
+        } catch (Throwable $e) {
+            error_log('FlowDriveSync::removeComplianceDocById: ' . $e->getMessage());
         }
     }
 

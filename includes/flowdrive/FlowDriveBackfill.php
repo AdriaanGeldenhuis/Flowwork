@@ -112,7 +112,9 @@ class FlowDriveBackfill
                 (int)$doc['account_id'],
                 (int)$doc['type_id'],
                 (string)($doc['reference_no'] ?? ''),
-                $abs
+                $abs,
+                null,
+                (int)$doc['id']
             );
             if ($nodeId !== null) {
                 $counts['ok']++;
@@ -205,7 +207,16 @@ class FlowDriveBackfill
             $now = self::dbNow($db);
             self::setSetting($db, $companyId, self::SWEEP_FLAG, $now);
             $since = $last ?: date('Y-m-d H:i:s', strtotime($now) - 7 * 86400);
-            self::sweepForCompany($db, $companyId, $since);
+            $res = self::sweepForCompany($db, $companyId, $since);
+            // If the budget ran out, roll the stamp back to the newest
+            // updated_at actually processed: the overflow stays inside the
+            // window (>= is inclusive) and the aged stamp lets the very next
+            // page load continue draining instead of waiting a day — without
+            // this, documents beyond the budget would fall out of the window
+            // forever, since publishing preserves updated_at.
+            if (!empty($res['exhausted']) && !empty($res['max_updated'])) {
+                self::setSetting($db, $companyId, self::SWEEP_FLAG, $res['max_updated']);
+            }
             return 'swept';
         } finally {
             try {
@@ -218,63 +229,75 @@ class FlowDriveBackfill
     }
 
     /**
-     * Re-publish every document whose row changed since $since (bounded).
+     * Re-publish every document whose row changed since $since. Candidates
+     * from all sources are gathered and processed OLDEST-FIRST across one
+     * shared budget (no source can starve another), and the caller learns
+     * whether the budget ran out and how far the sweep actually got
+     * ('max_updated'), so the window is only advanced past work really done.
+     *
+     * @return array{ok:int, fail:int, exhausted:bool, max_updated:?string}
      */
     public static function sweepForCompany(PDO $db, int $companyId, string $since): array
     {
-        $counts = ['ok' => 0, 'fail' => 0];
-        $budget = self::SWEEP_LIMIT;
+        $counts = ['ok' => 0, 'fail' => 0, 'exhausted' => false, 'max_updated' => null];
+        $fetch = self::SWEEP_LIMIT + 1; // +1 per source so overflow is detectable
 
+        $candidates = [];
         $docSets = [
             ['type' => 'invoice',     'table' => 'invoices'],
             ['type' => 'quote',       'table' => 'quotes'],
             ['type' => 'credit_note', 'table' => 'credit_notes'],
         ];
         foreach ($docSets as $set) {
-            if ($budget <= 0) {
-                break;
-            }
             $where = "company_id = ? AND updated_at >= ?";
             if (self::hasColumn($db, $set['table'], 'deleted_at')) {
                 $where .= " AND deleted_at IS NULL";
             }
             try {
-                $stmt = $db->prepare("SELECT id FROM {$set['table']} WHERE $where ORDER BY id LIMIT " . (int)$budget);
+                $stmt = $db->prepare("SELECT id, updated_at FROM {$set['table']} WHERE $where ORDER BY updated_at ASC LIMIT $fetch");
                 $stmt->execute([$companyId, $since]);
-                $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
-            } catch (Throwable $e) {
-                error_log('FlowDriveBackfill::sweep ' . $set['table'] . ': ' . $e->getMessage());
-                continue;
-            }
-            foreach ($ids as $id) {
-                $budget--;
-                $r = DocumentPdfService::generateAndFile($db, $companyId, $set['type'], (int)$id);
-                $counts[$r !== null ? 'ok' : 'fail']++;
-            }
-        }
-
-        if ($budget > 0) {
-            try {
-                $stmt = $db->prepare(
-                    "SELECT id, account_id, type_id, reference_no, file_path
-                       FROM crm_compliance_docs
-                      WHERE company_id = ? AND updated_at >= ?
-                        AND file_path IS NOT NULL AND file_path <> ''
-                      ORDER BY id LIMIT " . (int)$budget
-                );
-                $stmt->execute([$companyId, $since]);
-                $appRoot = dirname(__DIR__, 2);
-                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $doc) {
-                    $abs = $appRoot . '/' . ltrim((string)$doc['file_path'], '/');
-                    $nodeId = FlowDriveSync::fileComplianceDoc(
-                        $db, $companyId, (int)$doc['account_id'], (int)$doc['type_id'],
-                        (string)($doc['reference_no'] ?? ''), $abs
-                    );
-                    $counts[$nodeId !== null ? 'ok' : 'fail']++;
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $candidates[] = ['kind' => $set['type'], 'row' => $row, 'u' => (string)$row['updated_at']];
                 }
             } catch (Throwable $e) {
-                error_log('FlowDriveBackfill::sweep compliance: ' . $e->getMessage());
+                error_log('FlowDriveBackfill::sweep ' . $set['table'] . ': ' . $e->getMessage());
             }
+        }
+        try {
+            $stmt = $db->prepare(
+                "SELECT id, account_id, type_id, reference_no, file_path, updated_at
+                   FROM crm_compliance_docs
+                  WHERE company_id = ? AND updated_at >= ?
+                    AND file_path IS NOT NULL AND file_path <> ''
+                  ORDER BY updated_at ASC LIMIT $fetch"
+            );
+            $stmt->execute([$companyId, $since]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $candidates[] = ['kind' => 'compliance', 'row' => $row, 'u' => (string)$row['updated_at']];
+            }
+        } catch (Throwable $e) {
+            error_log('FlowDriveBackfill::sweep compliance: ' . $e->getMessage());
+        }
+
+        usort($candidates, static function (array $a, array $b) { return strcmp($a['u'], $b['u']); });
+        $counts['exhausted'] = count($candidates) > self::SWEEP_LIMIT;
+        $candidates = array_slice($candidates, 0, self::SWEEP_LIMIT);
+
+        $appRoot = dirname(__DIR__, 2);
+        foreach ($candidates as $c) {
+            if ($c['kind'] === 'compliance') {
+                $doc = $c['row'];
+                $abs = $appRoot . '/' . ltrim((string)$doc['file_path'], '/');
+                $nodeId = FlowDriveSync::fileComplianceDoc(
+                    $db, $companyId, (int)$doc['account_id'], (int)$doc['type_id'],
+                    (string)($doc['reference_no'] ?? ''), $abs, null, (int)$doc['id']
+                );
+                $counts[$nodeId !== null ? 'ok' : 'fail']++;
+            } else {
+                $r = DocumentPdfService::generateAndFile($db, $companyId, $c['kind'], (int)$c['row']['id']);
+                $counts[$r !== null ? 'ok' : 'fail']++;
+            }
+            $counts['max_updated'] = $c['u'];
         }
 
         return $counts;

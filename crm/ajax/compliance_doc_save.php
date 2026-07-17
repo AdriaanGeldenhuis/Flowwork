@@ -61,15 +61,12 @@ try {
     }
     
     if ($docId > 0) {
-        // UPDATE existing — capture the current row first so the old FlowWork
-        // Drive copy can be removed if the replacement files under a new name
-        // (different type, reference or extension).
-        $oldDoc = null;
-        if ($filePath) {
-            $stmtOld = $DB->prepare("SELECT account_id, type_id, reference_no, file_path FROM crm_compliance_docs WHERE id = ? AND company_id = ?");
-            $stmtOld->execute([$docId, $companyId]);
-            $oldDoc = $stmtOld->fetch() ?: null;
-        }
+        // UPDATE existing — capture the current row first: when only the
+        // metadata changes (no re-upload) the drive copy must be republished
+        // from the EXISTING file so it carries the new name.
+        $stmtOld = $DB->prepare("SELECT account_id, type_id, reference_no, file_path FROM crm_compliance_docs WHERE id = ? AND company_id = ?");
+        $stmtOld->execute([$docId, $companyId]);
+        $oldDoc = $stmtOld->fetch() ?: null;
         if ($filePath) {
             // If new file uploaded, update file path too
             $stmt = $DB->prepare("
@@ -90,23 +87,18 @@ try {
             $stmt->execute([$typeId, $referenceNo, $expiryDate ?: null, $notes, $status, $docId, $companyId]);
         }
         
-        // Publish the (re)uploaded file to FlowWork Drive under the
-        // account's Documents folder, and drop the superseded drive copy if
-        // the replacement files under a different name (best-effort).
-        if ($filePath) {
+        // Republish the document's FlowWork Drive copy under its current
+        // name. The publish is identity-tracked (fw_compliance_doc_id in the
+        // node's meta), so any previous copy — even under an old type name or
+        // reference — is retired first. Runs for metadata-only edits too:
+        // renaming the reference without re-uploading must rename the drive
+        // copy as well.
+        $publishPath = $filePath
+            ? $uploadDir . $fileName
+            : (($oldDoc && $oldDoc['file_path']) ? __DIR__ . '/../../' . ltrim((string)$oldDoc['file_path'], '/') : null);
+        if ($publishPath) {
             require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
-            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $uploadDir . $fileName, (int)$userId);
-            if ($oldDoc && $oldDoc['file_path']) {
-                $oldExt = strtolower(pathinfo((string)$oldDoc['file_path'], PATHINFO_EXTENSION));
-                $newExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-                $sameName = (int)$oldDoc['type_id'] === $typeId
-                    && (string)($oldDoc['reference_no'] ?? '') === $referenceNo
-                    && $oldExt === $newExt
-                    && (int)$oldDoc['account_id'] === $accountId;
-                if (!$sameName) {
-                    FlowDriveSync::removeComplianceDoc($DB, (int)$companyId, (int)$oldDoc['account_id'], (int)$oldDoc['type_id'], (string)($oldDoc['reference_no'] ?? ''), $oldExt);
-                }
-            }
+            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $publishPath, (int)$userId, (int)$docId);
         }
 
         echo json_encode([
@@ -136,10 +128,10 @@ try {
         $newId = $DB->lastInsertId();
 
         // Publish the uploaded file to FlowWork Drive under the account's
-        // Documents folder (best-effort).
+        // Documents folder, identity-tagged with the new row id (best-effort).
         if ($filePath) {
             require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
-            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $uploadDir . $fileName, (int)$userId);
+            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $uploadDir . $fileName, (int)$userId, (int)$newId);
         }
 
         echo json_encode([
