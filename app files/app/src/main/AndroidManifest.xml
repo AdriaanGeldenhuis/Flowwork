@@ -29,12 +29,17 @@
             </intent-filter>
         </activity>
 
-        <!-- One-time FlowDrive sign-in screen (its own icon on the launcher). -->
+        <!-- One-time FlowDrive sign-in screen (its own icon on the launcher).
+             configChanges: keep the in-flight connection check and the typed
+             form alive across rotation. taskAffinity: its own task, so the
+             two launcher icons do not resurface each other's screens. -->
         <activity
             android:name=".drive.DriveSetupActivity"
             android:exported="true"
             android:label="FlowDrive"
-            android:icon="@mipmap/ic_launcher">
+            android:icon="@mipmap/ic_launcher"
+            android:taskAffinity="app.flowwork.drive.setup"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

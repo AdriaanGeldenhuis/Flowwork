@@ -248,8 +248,9 @@ public class DavClient {
         resp.close();
     }
 
-    /** Copies a remote file to a local file. */
-    public void download(String relPath, File target, OutputStream progressSink) throws IOException {
+    /** Copies a remote file to a local file, stopping early when cancelled. */
+    public void download(String relPath, File target, android.os.CancellationSignal signal)
+            throws IOException {
         InputStream in = get(relPath);
         try {
             OutputStream out = new java.io.FileOutputStream(target);
@@ -257,10 +258,10 @@ public class DavClient {
                 byte[] buf = new byte[65536];
                 int n;
                 while ((n = in.read(buf)) != -1) {
-                    out.write(buf, 0, n);
-                    if (progressSink != null) {
-                        progressSink.write(buf, 0, n);
+                    if (signal != null && signal.isCanceled()) {
+                        throw new IOException("Download cancelled");
                     }
+                    out.write(buf, 0, n);
                 }
             } finally {
                 out.close();

@@ -129,6 +129,12 @@ public class FlowDriveProvider extends DocumentsProvider {
             String sortOrder) throws FileNotFoundException {
         requireSafeDocId(parentDocumentId);
         MatrixCursor cursor = new MatrixCursor(projection != null ? projection : DOC_PROJECTION);
+        // Register unconditionally (not per row): an empty folder must still
+        // learn about files created/moved/uploaded into it.
+        if (resolver() != null) {
+            cursor.setNotificationUri(resolver(),
+                    DocumentsContract.buildChildDocumentsUri(AUTHORITY, parentDocumentId));
+        }
         String parentPath = toDavPath(parentDocumentId);
         try {
             List<DavEntry> entries = client().list(parentPath);
@@ -236,7 +242,7 @@ public class FlowDriveProvider extends DocumentsProvider {
             if (!wantsWrite || !truncates) {
                 DavEntry entry = client().stat(davPath);
                 if (entry != null && !entry.directory) {
-                    client().download(davPath, tmp, null);
+                    client().download(davPath, tmp, signal);
                 } else if (entry == null && !wantsWrite) {
                     throw new FileNotFoundException("Not found on FlowDrive: " + documentId);
                 }
@@ -352,7 +358,13 @@ public class FlowDriveProvider extends DocumentsProvider {
         try {
             DavEntry entry = statOrThrow(documentId);
             String parent = parentOf(documentId);
-            String candidate = uniqueName(toDavPath(parent), name);
+            // A case-only rename would collide with the file itself in the
+            // uniqueName probe (the server matches names case-insensitively)
+            // and silently come back as "name (1)". MOVE onto the same node
+            // is supported server-side, so skip the probe.
+            String candidate = name.equalsIgnoreCase(nameOf(documentId))
+                    ? name
+                    : uniqueName(toDavPath(parent), name);
             String newDocId = childDocId(parent, candidate);
             client().move(toDavPath(documentId), toDavPath(newDocId), entry.directory);
             notifyChildrenChanged(parent);
@@ -404,7 +416,9 @@ public class FlowDriveProvider extends DocumentsProvider {
 
     private File pendingDir() {
         Context ctx = getContext();
-        File dir = new File(ctx != null ? ctx.getFilesDir() : cacheDir(), "flowdrive-pending");
+        // getNoBackupFilesDir: pending edits are company documents and must
+        // not roam into cloud backups or device transfers.
+        File dir = new File(ctx != null ? ctx.getNoBackupFilesDir() : cacheDir(), "flowdrive-pending");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
         return dir;
@@ -496,7 +510,11 @@ public class FlowDriveProvider extends DocumentsProvider {
             boolean unrecoverable = false;
             if (e instanceof DavClient.DavException) {
                 int s = ((DavClient.DavException) e).status;
-                unrecoverable = (s == 400 || s == 413);
+                // Deterministic rejections (blocked file type, read-only item,
+                // parent deleted, too large, ...) can never succeed on retry.
+                // Only auth (401), timeout (408) and throttling (429) are
+                // worth retrying among the 4xx family.
+                unrecoverable = (s >= 400 && s < 500 && s != 401 && s != 408 && s != 429);
             }
             if (unrecoverable) {
                 // Retrying cannot help (invalid name / file too large).
@@ -542,7 +560,12 @@ public class FlowDriveProvider extends DocumentsProvider {
 
     private void noteIfAuthFailure(IOException e) {
         if (e instanceof DavClient.DavException && ((DavClient.DavException) e).status == 401) {
+            boolean firstFailure = !DriveStore.isAuthBlocked();
             DriveStore.noteAuthFailure();
+            if (firstFailure) {
+                notifyUser("FlowDrive sign-in failed",
+                        "Open the FlowDrive app and sign in again to reconnect your drive.");
+            }
         }
     }
 
@@ -704,8 +727,6 @@ public class FlowDriveProvider extends DocumentsProvider {
         row.add(Document.COLUMN_LAST_MODIFIED,
                 entry.lastModified > 0 ? entry.lastModified : null);
         row.add(Document.COLUMN_FLAGS, flagsFor(docId, entry.directory));
-        cursor.setNotificationUri(resolver(),
-                DocumentsContract.buildChildDocumentsUri(AUTHORITY, parentOf(docId)));
     }
 
     private int flagsFor(String docId, boolean directory) {
@@ -714,7 +735,10 @@ public class FlowDriveProvider extends DocumentsProvider {
         boolean readonly = path.equals(READONLY_DRIVE)
                 || path.startsWith(READONLY_DRIVE + "/");
         if (readonly) {
-            return 0;
+            // The server allows COPY out of a read-only drive; advertising it
+            // lets same-provider copies happen server-side instead of being
+            // streamed through the device byte by byte.
+            return depth >= 2 ? Document.FLAG_SUPPORTS_COPY : 0;
         }
         int flags = 0;
         if (directory) {

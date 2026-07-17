@@ -2,8 +2,10 @@ package app.flowwork.drive;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.text.InputType;
@@ -167,6 +169,14 @@ public class DriveSetupActivity extends Activity {
                                     + "your other storage.");
                             Toast.makeText(DriveSetupActivity.this,
                                     "FlowDrive connected", Toast.LENGTH_SHORT).show();
+                            // Android 13+ drops notifications (used for
+                            // upload status) unless the user grants this.
+                            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(
+                                    "android.permission.POST_NOTIFICATIONS")
+                                    != PackageManager.PERMISSION_GRANTED) {
+                                requestPermissions(new String[]{
+                                        "android.permission.POST_NOTIFICATIONS"}, 100);
+                            }
                         } else {
                             statusText.setText("Could not connect: " + finalError);
                         }

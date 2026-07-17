@@ -94,11 +94,15 @@ public class MainActivity extends AppCompatActivity {
 
         // Restore the browsing session after a system-initiated recreation
         // (rotation is already handled by configChanges in the manifest, but
-        // this also survives process death / low-memory kills). Only load
-        // the home page on a genuinely fresh start.
+        // this also survives process death / low-memory kills). Fall back to
+        // the home page when there is nothing to restore - an unchecked
+        // restoreState with an empty bundle would leave the screen blank.
+        boolean restored = false;
         if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState);
-        } else {
+            android.webkit.WebBackForwardList history = webView.restoreState(savedInstanceState);
+            restored = history != null && history.getSize() > 0;
+        }
+        if (!restored) {
             webView.loadUrl("https://www.flowwork.app");
         }
     }

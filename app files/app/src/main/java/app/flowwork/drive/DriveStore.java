@@ -92,12 +92,13 @@ public final class DriveStore {
     }
 
     // After a 401, stop hammering the server: every failed Basic-auth attempt
-    // lands in the shared login_attempts table and would soon rate-limit the
-    // user's IP out of the FlowDrive WEBSITE as well.
+    // lands in the shared login_attempts table (10 failures / 15 min locks
+    // the IP), which would rate-limit the user out of the FlowDrive WEBSITE
+    // as well. Match the server's window; re-saving credentials clears it.
     private static volatile long authBlockUntil;
 
     public static void noteAuthFailure() {
-        authBlockUntil = SystemClock.elapsedRealtime() + 60_000L;
+        authBlockUntil = SystemClock.elapsedRealtime() + 15L * 60_000L;
     }
 
     public static void clearAuthBlock() {
