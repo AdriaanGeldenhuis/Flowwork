@@ -28,6 +28,9 @@ import java.io.IOException;
  */
 public class DriveSetupActivity extends Activity {
 
+    /** Set by the launcher shortcut to force the settings screen open. */
+    public static final String EXTRA_SETTINGS = "app.flowwork.drive.SETTINGS";
+
     private EditText urlInput;
     private EditText emailInput;
     private EditText passwordInput;
@@ -39,6 +42,15 @@ public class DriveSetupActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Signed in already? The icon should take the user straight to their
+        // drives. The settings screen stays reachable via a long-press on the
+        // icon ("FlowDrive settings" shortcut).
+        boolean wantSettings = getIntent() != null
+                && getIntent().getBooleanExtra(EXTRA_SETTINGS, false);
+        if (!wantSettings && DriveStore.isConfigured(this) && openDrivesView()) {
+            finish();
+            return;
+        }
         buildUi();
         refreshState();
     }
@@ -130,7 +142,10 @@ public class DriveSetupActivity extends Activity {
         disconnectButton.setVisibility(configured ? View.VISIBLE : View.GONE);
         if (configured) {
             statusText.setText("Connected as " + DriveStore.getEmail(this)
-                    + ". FlowDrive is available in your Files app under Browse.");
+                    + ". Tapping the FlowDrive icon now opens your drives directly - "
+                    + "long-press the icon and choose \"FlowDrive settings\" to come "
+                    + "back here. You can also share any file to FlowDrive from other "
+                    + "apps via Share > FlowDrive.");
         }
     }
 
@@ -191,8 +206,8 @@ public class DriveSetupActivity extends Activity {
                 DocumentsContract.buildRootsUri(FlowDriveProvider.AUTHORITY), null);
     }
 
-    private void openFilesApp() {
-        // Ask the system documents UI to show our root directly.
+    /** Opens the system Files view directly at the FlowDrive root. */
+    private boolean openDrivesView() {
         try {
             Uri uri = DocumentsContract.buildRootUri(
                     FlowDriveProvider.AUTHORITY, FlowDriveProvider.ROOT_ID);
@@ -200,8 +215,15 @@ public class DriveSetupActivity extends Activity {
             intent.setDataAndType(uri, "vnd.android.document/root");
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void openFilesApp() {
+        if (openDrivesView()) {
             return;
-        } catch (Exception ignored) {
         }
         // Fall back to a generic picker rooted at FlowDrive.
         try {
