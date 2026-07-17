@@ -57,6 +57,12 @@ try {
     $details = json_encode(['credit_note_id' => $creditNoteId, 'credit_note_number' => $credit['credit_note_number']]);
     $insAudit->execute([$companyId, $userId, $details, $_SERVER['REMOTE_ADDR'] ?? null]);
     $DB->commit();
+
+    // Status changed — re-render the credit note PDF and refresh the copy in
+    // FlowWork Drive (best-effort).
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'credit_note', (int)$creditNoteId, (int)$userId);
+
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
     $DB->rollBack();

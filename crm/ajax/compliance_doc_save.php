@@ -82,6 +82,13 @@ try {
             $stmt->execute([$typeId, $referenceNo, $expiryDate ?: null, $notes, $status, $docId, $companyId]);
         }
         
+        // Publish the (re)uploaded file to FlowWork Drive under the
+        // account's Documents folder (best-effort).
+        if ($filePath) {
+            require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $uploadDir . $fileName, (int)$userId);
+        }
+
         echo json_encode([
             'ok' => true,
             'message' => 'Document updated successfully',
@@ -107,7 +114,14 @@ try {
         ]);
         
         $newId = $DB->lastInsertId();
-        
+
+        // Publish the uploaded file to FlowWork Drive under the account's
+        // Documents folder (best-effort).
+        if ($filePath) {
+            require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $uploadDir . $fileName, (int)$userId);
+        }
+
         echo json_encode([
             'ok' => true,
             'message' => 'Document uploaded successfully',

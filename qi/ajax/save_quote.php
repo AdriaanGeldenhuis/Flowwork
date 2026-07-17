@@ -316,6 +316,13 @@ try {
     echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
 
+// After the quote has been saved and committed, render its PDF to
+// storage/qi/... and publish it to FlowWork Drive under the customer's folder.
+if (isset($quoteId) && isset($companyId) && isset($userId) && $quoteId) {
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'quote', (int)$quoteId, (int)$userId);
+}
+
 // After the quote has been saved (either created or updated) and committed, hook into the calendar to create/update expiry events.
 if (isset($quoteId) && isset($companyId) && isset($userId) && $quoteId) {
     try {

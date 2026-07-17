@@ -98,6 +98,11 @@ $stmt = $DB->prepare("INSERT INTO crm_compliance_docs (company_id, account_id, t
 $relativePath = '/uploads/company/' . $companyId . '/compliance/' . $filename;
 $stmt->execute([$companyId, $sid, $typeId, $referenceNo, $issueDate, $expiryDate, $relativePath]);
 
+// Publish the uploaded file to FlowWork Drive under the supplier's Documents
+// folder (best-effort; never blocks the upload).
+require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+FlowDriveSync::fileComplianceDoc($DB, $companyId, (int)$sid, (int)$typeId, (string)$referenceNo, $destPath, null);
+
 // Redirect back to the portal page with success flag to display message
 header('Location: index.php?sid=' . $sid . '&token=' . urlencode($token) . '&uploaded=1');
 exit;
