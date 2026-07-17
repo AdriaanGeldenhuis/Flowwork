@@ -316,7 +316,7 @@ class FlowDriveSync
         if ($ascii !== false) {
             $name = $ascii;
         }
-        return mb_strtolower($name);
+        return function_exists('mb_strtolower') ? mb_strtolower($name) : strtolower($name);
     }
 
     private static function loadAccount(PDO $db, int $companyId, int $accountId): ?array
@@ -357,6 +357,6 @@ class FlowDriveSync
         $name = preg_replace('/[\x00-\x1f\x7f\/\\\\:*?"<>|]/u', '', $name) ?? '';
         $name = preg_replace('/\s+/', ' ', $name) ?? '';
         $name = trim($name, " .");
-        return mb_substr($name, 0, 200);
+        return function_exists('mb_substr') ? mb_substr($name, 0, 200) : substr($name, 0, 200);
     }
 }

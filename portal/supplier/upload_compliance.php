@@ -6,7 +6,11 @@
 // created in the crm_compliance_docs table. Access is controlled
 // using the same deterministic token mechanism as other portal pages.
 
-require_once __DIR__ . '/../../../init.php';
+// NOTE: this file is two levels below the app root (portal/supplier/), the
+// same depth as portal/supplier/index.php. The requires and upload dir used
+// to climb THREE levels — outside the app — which fataled the endpoint and
+// stranded any earlier uploads outside the web root.
+require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../functions.php';
 
 // Ensure POST request
@@ -71,8 +75,9 @@ if (!$typeRow) {
     exit;
 }
 
-// Determine destination directory for uploads
-$destDir = __DIR__ . '/../../../uploads/company/' . $companyId . '/compliance';
+// Determine destination directory for uploads (under the app root's
+// /uploads, matching the web path recorded in file_path below)
+$destDir = __DIR__ . '/../../uploads/company/' . $companyId . '/compliance';
 if (!is_dir($destDir) && !mkdir($destDir, 0775, true)) {
     http_response_code(500);
     echo 'Failed to create upload directory';
