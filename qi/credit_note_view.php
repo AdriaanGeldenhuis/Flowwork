@@ -345,12 +345,6 @@ function format_currency($amount) {
                         <span>TOTAL CREDIT:</span>
                         <span><?= format_currency($creditNote['total']) ?></span>
                     </div>
-                    <?php if ($isForeign): ?>
-                        <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
-                            <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
-                            <span>R <?= number_format((float)$creditNote['total'] * $docRate, 2) ?></span>
-                        </div>
-                    <?php endif; ?>
                 </div>
 
                 <!-- Reason (if not shown above) -->

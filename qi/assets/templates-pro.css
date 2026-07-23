@@ -72,6 +72,10 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Let this grid column shrink below its content's intrinsic width instead of
+     forcing the header wider than the page (which clipped the right column /
+     "Bill To" off the printed PDF). */
+  min-width: 0;
 }
 
 /* Logo position variants */
@@ -86,7 +90,9 @@
 }
 
 .fw-qi__doc-logo {
-  max-width: var(--qi-logo-size, 200px);
+  /* Never exceed the column that holds it — a very wide logo used to push the
+     header past the page edge and clip the document's right side. */
+  max-width: min(var(--qi-logo-size, 200px), 100%);
   max-height: 160px;
   object-fit: contain;
   margin-bottom: 16px;
@@ -125,6 +131,20 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  /* Same as the left column: allow it to shrink and wrap long values (e.g. a
+     customer email in "Bill To") rather than overflow the page edge. */
+  min-width: 0;
+}
+
+/* Long unbroken strings — emails, URLs, reference numbers — must wrap inside
+   their column instead of forcing the header/columns wider than the page and
+   getting cut off in the printed PDF. */
+.fw-qi__doc-company,
+.fw-qi__doc-company p,
+.fw-qi__doc-bill-to,
+.fw-qi__doc-bill-to p {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .fw-qi__doc-title {
