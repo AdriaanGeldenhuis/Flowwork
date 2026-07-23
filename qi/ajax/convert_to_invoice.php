@@ -29,6 +29,12 @@ try {
     $converter = new QuoteConverter($DB);
     $result = $converter->convert((int)$quoteId, (int)$companyId, (int)$userId);
 
+    // Render the new invoice's PDF (and refresh the quote's — its status just
+    // changed) and publish both to FlowWork Drive. Best-effort.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$result['invoice_id'], (int)$userId);
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'quote', (int)$quoteId, (int)$userId);
+
     echo json_encode([
         'ok' => true,
         'invoice_id' => $result['invoice_id'],

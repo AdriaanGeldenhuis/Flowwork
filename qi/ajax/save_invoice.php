@@ -345,6 +345,13 @@ try {
     echo json_encode(['ok' => false, 'error' => $safeMsg]);
 }
 
+// After the invoice has been saved and committed, render its PDF to
+// storage/qi/... and publish it to FlowWork Drive under the customer's folder.
+if (isset($invoiceId) && isset($companyId) && isset($userId) && $invoiceId) {
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId, (int)$userId);
+}
+
 // After the invoice has been saved and committed, hook into the calendar to create/update due events.
 if (isset($invoiceId) && isset($companyId) && isset($userId) && $invoiceId) {
     try {

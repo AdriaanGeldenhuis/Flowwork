@@ -25,7 +25,7 @@ if (!$quoteId) {
 try {
     $DB->beginTransaction();
 
-    $stmt = $DB->prepare("SELECT id, status FROM quotes WHERE id = ? AND company_id = ?");
+    $stmt = $DB->prepare("SELECT id, status, quote_number, customer_id FROM quotes WHERE id = ? AND company_id = ?");
     $stmt->execute([$quoteId, $companyId]);
     $quote = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$quote) throw new Exception('Quote not found');
@@ -69,6 +69,10 @@ try {
     }
 
     $DB->commit();
+
+    // Remove the quote's PDF from FlowWork Drive (source is gone).
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::removeFromDrive($DB, $companyId, 'quote', (int)$quote['customer_id'], (string)$quote['quote_number']);
 
     try {
         $calendarHookPath = __DIR__ . '/../services/CalendarHook.php';

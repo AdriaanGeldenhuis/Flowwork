@@ -104,6 +104,11 @@ try {
     ]);
 
     $DB->commit();
+
+    // Render the new credit note's PDF and publish it to FlowWork Drive.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'credit_note', (int)$cnId, (int)$userId);
+
     echo json_encode(['ok'=>true, 'credit_note_id'=>$cnId, 'credit_note_number'=>$cnNumber]);
 
 } catch (Exception $e) {

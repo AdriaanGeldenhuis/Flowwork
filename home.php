@@ -24,6 +24,16 @@ $companyLogo  = null; // TODO: implement logo upload
 $userCompanies = fw_user_companies($userId);
 $csrfToken     = Csrf::token();
 
+// One-time self-heal: publish the company's existing documents into FlowWork
+// Drive the first time the home dashboard loads after deployment. A single
+// cheap flag SELECT thereafter. Best-effort — never blocks the page.
+try {
+    require_once __DIR__ . '/includes/flowdrive/FlowDriveBackfill.php';
+    FlowDriveBackfill::autoRunOnce($DB, $activeCompanyId);
+} catch (Throwable $e) {
+    error_log('home FlowDrive autoRun: ' . $e->getMessage());
+}
+
 // Time-based greeting for the hero
 $hour = (int)date('G');
 $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');

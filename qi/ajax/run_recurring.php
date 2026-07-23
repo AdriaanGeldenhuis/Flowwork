@@ -176,6 +176,11 @@ try {
 
     $DB->commit();
 
+    // Render the generated (and issued) invoice's PDF and publish it to
+    // FlowWork Drive under the customer's folder.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId, (int)$userId);
+
     echo json_encode(['ok' => true, 'invoice_id' => $invoiceId, 'invoice_number' => $invoiceNumber]);
 
 } catch (Exception $e) {

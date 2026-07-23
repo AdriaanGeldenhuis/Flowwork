@@ -61,7 +61,12 @@ try {
     }
     
     if ($docId > 0) {
-        // UPDATE existing
+        // UPDATE existing — capture the current row first: when only the
+        // metadata changes (no re-upload) the drive copy must be republished
+        // from the EXISTING file so it carries the new name.
+        $stmtOld = $DB->prepare("SELECT account_id, type_id, reference_no, file_path FROM crm_compliance_docs WHERE id = ? AND company_id = ?");
+        $stmtOld->execute([$docId, $companyId]);
+        $oldDoc = $stmtOld->fetch() ?: null;
         if ($filePath) {
             // If new file uploaded, update file path too
             $stmt = $DB->prepare("
@@ -82,6 +87,20 @@ try {
             $stmt->execute([$typeId, $referenceNo, $expiryDate ?: null, $notes, $status, $docId, $companyId]);
         }
         
+        // Republish the document's FlowWork Drive copy under its current
+        // name. The publish is identity-tracked (fw_compliance_doc_id in the
+        // node's meta), so any previous copy — even under an old type name or
+        // reference — is retired first. Runs for metadata-only edits too:
+        // renaming the reference without re-uploading must rename the drive
+        // copy as well.
+        $publishPath = $filePath
+            ? $uploadDir . $fileName
+            : (($oldDoc && $oldDoc['file_path']) ? __DIR__ . '/../../' . ltrim((string)$oldDoc['file_path'], '/') : null);
+        if ($publishPath) {
+            require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $publishPath, (int)$userId, (int)$docId);
+        }
+
         echo json_encode([
             'ok' => true,
             'message' => 'Document updated successfully',
@@ -107,7 +126,14 @@ try {
         ]);
         
         $newId = $DB->lastInsertId();
-        
+
+        // Publish the uploaded file to FlowWork Drive under the account's
+        // Documents folder, identity-tagged with the new row id (best-effort).
+        if ($filePath) {
+            require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+            FlowDriveSync::fileComplianceDoc($DB, (int)$companyId, $accountId, $typeId, $referenceNo, $uploadDir . $fileName, (int)$userId, (int)$newId);
+        }
+
         echo json_encode([
             'ok' => true,
             'message' => 'Document uploaded successfully',

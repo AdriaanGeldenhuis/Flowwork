@@ -165,6 +165,11 @@ try {
 
             $DB->commit();
 
+            // Render the issued invoice's PDF and publish it to FlowWork
+            // Drive under the customer's folder (best-effort).
+            require_once __DIR__ . '/../services/DocumentPdfService.php';
+            DocumentPdfService::generateAndFile($DB, (int)$rec['company_id'], 'invoice', (int)$invoiceId, (int)$userId);
+
             echo "Generated invoice {$invoiceNumber} from recurring {$rec['id']}\n";
 
         } catch (Exception $e) {

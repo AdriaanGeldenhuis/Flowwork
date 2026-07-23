@@ -19,10 +19,11 @@ try {
 
     $DB->beginTransaction();
 
-    // Get doc details
+    // Get doc details (type_id/reference_no are needed to remove the
+    // document's FlowWork Drive copy after the delete commits)
     $stmt = $DB->prepare("
-        SELECT account_id, file_path 
-        FROM crm_compliance_docs 
+        SELECT account_id, type_id, reference_no, file_path
+        FROM crm_compliance_docs
         WHERE id = ? AND company_id = ?
     ");
     $stmt->execute([$docId, $companyId]);
@@ -64,6 +65,22 @@ try {
     ]);
 
     $DB->commit();
+
+    // Remove the document's copy from FlowWork Drive (best-effort). Primary
+    // match is by identity tag; the name-based removal is a fallback for
+    // copies published before identity tagging existed.
+    if ($doc['file_path']) {
+        require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+        FlowDriveSync::removeComplianceDocById($DB, (int)$companyId, (int)$docId);
+        FlowDriveSync::removeComplianceDoc(
+            $DB,
+            (int)$companyId,
+            (int)$doc['account_id'],
+            (int)$doc['type_id'],
+            (string)($doc['reference_no'] ?? ''),
+            pathinfo((string)$doc['file_path'], PATHINFO_EXTENSION)
+        );
+    }
 
     echo json_encode(['ok' => true, 'deleted_file' => $doc['file_path']]);
 

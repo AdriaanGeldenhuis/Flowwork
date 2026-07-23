@@ -69,70 +69,22 @@ try {
         throw new Exception('Invoice not found');
     }
 
-    // Ensure pdf_path exists; if not, generate the branded PDF now so the
-    // emailed document matches the on-screen and downloaded versions.
-    $pdfPath = $invoice['pdf_path'] ?? null;
-    if (empty($pdfPath)) {
-        require_once __DIR__ . '/../../includes/pdf/qi_styled_pdf.php';
-
-        // Fetch invoice line items
-        $stmtLines = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
-        $stmtLines->execute([$invoiceId]);
-        $lineRows = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
-
-        // Branding + document meta (same shape the download endpoint uses)
-        $brand = Branding::resolve($invoice, 'invoice');
-        $invoice['_doc_type']    = $brand['title'];
-        $invoice['_doc_title']   = 'Invoice #: ' . $invoice['invoice_number'];
-        $invoice['_footer_text'] = $brand['footer'];
-        $invoice['_dates'] = [
-            'Issue Date' => date('d M Y', strtotime($invoice['issue_date'])),
-            'Due Date'   => date('d M Y', strtotime($invoice['due_date'])),
-            'Status'     => ucfirst($invoice['status']),
-        ];
-
-        // Payment schedule + payment history so the emailed PDF matches the
-        // on-screen invoice (invoice_view.php).
-        if (!empty($invoice['has_milestones'])) {
-            $stmtMs = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
-            $stmtMs->execute([$invoiceId, $companyId]);
-            $invoice['_milestones'] = $stmtMs->fetchAll(PDO::FETCH_ASSOC);
-        }
-        $stmtPay = $DB->prepare(
-            "SELECT p.payment_date, p.method, p.reference, pa.amount
-             FROM payment_allocations pa
-             JOIN payments p ON pa.payment_id = p.id
-             WHERE pa.invoice_id = ? AND p.company_id = ?
-             ORDER BY p.payment_date ASC, p.id ASC"
-        );
-        $stmtPay->execute([$invoiceId, $companyId]);
-        $invoice['_payments'] = $stmtPay->fetchAll(PDO::FETCH_ASSOC);
-
-        // Determine file path
-        $safeCode = preg_replace('~[^A-Za-z0-9_-]~', '_', $invoice['invoice_number']);
-        $baseDir = __DIR__ . '/../../storage/qi/' . $companyId . '/invoice';
-        if (!is_dir($baseDir)) {
-            @mkdir($baseDir, 0775, true);
-        }
-        $absPath = $baseDir . '/' . $safeCode . '.pdf';
-        $relPath = '/storage/qi/' . $companyId . '/invoice/' . $safeCode . '.pdf';
-
-        // Generate branded PDF
-        $pdf = new QiStyledPdfWriter($invoice, $lineRows);
-        file_put_contents($absPath, $pdf->render());
-
-        // Update invoice record
-        $upd = $DB->prepare("UPDATE invoices SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
-        $upd->execute([$relPath, $invoiceId, $companyId]);
-        $invoice['pdf_path'] = $relPath;
-    }
-
     // Issue the invoice: draft -> sent AND post to the general ledger (a sent
     // invoice is a tax invoice and must be in the GL/VAT201). Throws — and
     // rolls the whole send back — if posting fails, so an invoice can never
     // be sent to a customer without its ledger entry.
     require_once __DIR__ . '/../lib/InvoiceLifecycle.php';
     InvoiceLifecycle::issueInvoice($DB, $companyId, $userId, $invoiceId);
+
+    // Always re-render the branded PDF AFTER issuing so the emailed document
+    // (and the copy in FlowWork Drive) carries the issued status — a PDF
+    // rendered at save time still says "Draft".
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    $pdfInfo = DocumentPdfService::render($DB, $companyId, 'invoice', (int)$invoiceId);
+    if ($pdfInfo === null) {
+        throw new Exception('Could not generate the invoice PDF');
+    }
+    $invoice['pdf_path'] = $pdfInfo['rel_path'];
 
     // Compose the email subject and body using company and invoice details
     $subject = 'Invoice ' . $invoice['invoice_number'] . ' from ' . ($invoice['company_name'] ?? '');
@@ -154,6 +106,9 @@ try {
 
     $DB->commit();
 
+    // Publish the issued PDF to FlowWork Drive under the customer's folder.
+    DocumentPdfService::fileToDrive($DB, $companyId, 'invoice', $pdfInfo, $userId);
+
     echo json_encode([
         'ok' => true,
         'message' => 'Invoice sent successfully',
@@ -164,6 +119,18 @@ try {
 
 } catch (Exception $e) {
     $DB->rollBack();
+    // The PDF file on disk is written non-transactionally during the send; a
+    // rollback (mail/commit failure) would leave a file claiming the invoice
+    // was issued while the row is back to draft. Re-render best-effort so the
+    // stored file always matches the actual (rolled-back) state.
+    if (!empty($invoiceId)) {
+        try {
+            require_once __DIR__ . '/../services/DocumentPdfService.php';
+            DocumentPdfService::render($DB, (int)$companyId, 'invoice', (int)$invoiceId);
+        } catch (Throwable $reErr) {
+            error_log('Send invoice rollback re-render failed: ' . $reErr->getMessage());
+        }
+    }
     error_log("Send invoice error: " . $e->getMessage());
     $msg = ($e instanceof PDOException) ? 'Failed to send invoice' : $e->getMessage();
     echo json_encode(['ok' => false, 'error' => $msg]);
