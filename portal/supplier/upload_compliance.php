@@ -6,7 +6,11 @@
 // created in the crm_compliance_docs table. Access is controlled
 // using the same deterministic token mechanism as other portal pages.
 
-require_once __DIR__ . '/../../../init.php';
+// NOTE: this file is two levels below the app root (portal/supplier/), the
+// same depth as portal/supplier/index.php. The requires and upload dir used
+// to climb THREE levels — outside the app — which fataled the endpoint and
+// stranded any earlier uploads outside the web root.
+require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../functions.php';
 
 // Ensure POST request
@@ -71,8 +75,9 @@ if (!$typeRow) {
     exit;
 }
 
-// Determine destination directory for uploads
-$destDir = __DIR__ . '/../../../uploads/company/' . $companyId . '/compliance';
+// Determine destination directory for uploads (under the app root's
+// /uploads, matching the web path recorded in file_path below)
+$destDir = __DIR__ . '/../../uploads/company/' . $companyId . '/compliance';
 if (!is_dir($destDir) && !mkdir($destDir, 0775, true)) {
     http_response_code(500);
     echo 'Failed to create upload directory';
@@ -97,6 +102,12 @@ if (!move_uploaded_file($uploadedFile['tmp_name'], $destPath)) {
 $stmt = $DB->prepare("INSERT INTO crm_compliance_docs (company_id, account_id, type_id, reference_no, issue_date, expiry_date, file_path, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'valid', NOW())");
 $relativePath = '/uploads/company/' . $companyId . '/compliance/' . $filename;
 $stmt->execute([$companyId, $sid, $typeId, $referenceNo, $issueDate, $expiryDate, $relativePath]);
+
+// Publish the uploaded file to FlowWork Drive under the supplier's Documents
+// folder, identity-tagged with the row id (best-effort; never blocks the upload).
+$complianceDocId = (int)$DB->lastInsertId();
+require_once __DIR__ . '/../../includes/flowdrive/FlowDriveSync.php';
+FlowDriveSync::fileComplianceDoc($DB, $companyId, (int)$sid, (int)$typeId, (string)$referenceNo, $destPath, null, $complianceDocId ?: null);
 
 // Redirect back to the portal page with success flag to display message
 header('Location: index.php?sid=' . $sid . '&token=' . urlencode($token) . '&uploaded=1');

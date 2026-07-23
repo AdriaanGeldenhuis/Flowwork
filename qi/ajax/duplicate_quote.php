@@ -92,6 +92,10 @@ try {
     
     $DB->commit();
 
+    // Render the duplicated quote's PDF and publish it to FlowWork Drive.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'quote', (int)$newQuoteId, (int)$userId);
+
     // Create calendar event for the new duplicate quote's expiry
     try {
         $calendarHookPath = __DIR__ . '/../services/CalendarHook.php';

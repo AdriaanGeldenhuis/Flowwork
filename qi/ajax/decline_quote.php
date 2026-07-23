@@ -60,6 +60,15 @@ try {
 
     $DB->commit();
 
+    // Status changed — refresh the quote's PDF and its FlowWork Drive copy.
+    try {
+        require_once __DIR__ . '/../services/DocumentPdfService.php';
+        DocumentPdfService::generateAndFile($DB, (int)$quote['company_id'], 'quote', (int)$quote['id'],
+            !empty($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null);
+    } catch (Throwable $pdfEx) {
+        error_log('Decline quote PDF publish failed: ' . $pdfEx->getMessage());
+    }
+
     try {
         require_once __DIR__ . '/../services/Mailer.php';
         $mailer = new Mailer($DB);

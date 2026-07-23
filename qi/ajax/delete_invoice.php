@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/InvoiceDeleteHelper.php';
+require_once __DIR__ . '/../services/DocumentPdfService.php';
 
 header('Content-Type: application/json');
 
@@ -66,6 +67,7 @@ try {
             'invoice_id' => $invoiceId, 'reason' => $reason,
         ]);
         $DB->commit();
+        DocumentPdfService::removeFromDrive($DB, (int)$companyId, 'invoice', (int)$invoice['customer_id'], (string)$invoice['invoice_number']);
         echo json_encode(['ok' => true, 'mode' => 'soft']);
         exit;
     }
@@ -96,6 +98,7 @@ try {
             'prior_status' => $invoice['status'],
         ]);
         $DB->commit();
+        DocumentPdfService::removeFromDrive($DB, (int)$companyId, 'invoice', (int)$invoice['customer_id'], (string)$invoice['invoice_number']);
         InvoiceDeleteHelper::removeCalendarEvent($DB, $invoiceId);
         echo json_encode(['ok' => true, 'mode' => 'force']);
         exit;
@@ -116,6 +119,7 @@ try {
     ]);
 
     $DB->commit();
+    DocumentPdfService::removeFromDrive($DB, (int)$companyId, 'invoice', (int)$invoice['customer_id'], (string)$invoice['invoice_number']);
     InvoiceDeleteHelper::removeCalendarEvent($DB, $invoiceId);
     echo json_encode(['ok' => true, 'mode' => 'hard']);
 

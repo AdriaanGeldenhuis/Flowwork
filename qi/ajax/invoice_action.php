@@ -228,6 +228,12 @@ try {
     }
 
     $DB->commit();
+
+    // The invoice's status/balance changed — re-render its PDF and refresh
+    // the copy in FlowWork Drive (best-effort).
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId, (int)$userId);
+
     echo json_encode(['ok' => true, 'action' => $action]);
 
 } catch (Exception $e) {

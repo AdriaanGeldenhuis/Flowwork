@@ -84,6 +84,20 @@ try {
         error_log('Auto invoice from accept failed: ' . $convEx->getMessage());
     }
 
+    // Refresh the accepted quote's PDF (status changed) and render the
+    // auto-created invoice's PDF; publish both to FlowWork Drive.
+    try {
+        require_once __DIR__ . '/../services/DocumentPdfService.php';
+        $hookCompanyId = (int)$quote['company_id'];
+        $hookUserId = !empty($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+        DocumentPdfService::generateAndFile($DB, $hookCompanyId, 'quote', (int)$quote['id'], $hookUserId);
+        if (!empty($invoiceId)) {
+            DocumentPdfService::generateAndFile($DB, $hookCompanyId, 'invoice', (int)$invoiceId, $hookUserId);
+        }
+    } catch (Throwable $pdfEx) {
+        error_log('Accept quote PDF publish failed: ' . $pdfEx->getMessage());
+    }
+
     try {
         require_once __DIR__ . '/../services/Mailer.php';
         $mailer = new Mailer($DB);

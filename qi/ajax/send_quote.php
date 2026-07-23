@@ -71,55 +71,23 @@ try {
         throw new Exception('Quote not found');
     }
 
-    // Ensure pdf_path exists; if not, generate the branded PDF now so the
-    // emailed document matches the on-screen and downloaded versions.
-    $pdfPath = $quote['pdf_path'] ?? null;
-    if (empty($pdfPath)) {
-        require_once __DIR__ . '/../../includes/pdf/qi_styled_pdf.php';
-
-        // Fetch quote line items
-        $stmtLines = $DB->prepare("SELECT item_description, quantity, unit_price, line_total FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
-        $stmtLines->execute([$quoteId]);
-        $lineRows = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
-
-        // Branding + document meta (same shape the download endpoint uses)
-        $brand = Branding::resolve($quote, 'quote');
-        $quote['_doc_type']    = $brand['title'];
-        $quote['_doc_title']   = 'Quote #: ' . $quote['quote_number'];
-        $quote['_footer_text'] = $brand['footer'];
-        $quote['_dates'] = [
-            'Issue Date' => date('d M Y', strtotime($quote['issue_date'])),
-            'Expires'    => date('d M Y', strtotime($quote['expiry_date'])),
-            'Status'     => ucfirst($quote['status']),
-        ];
-
-        // Determine file paths
-        $safeCode = preg_replace('~[^A-Za-z0-9_-]~', '_', $quote['quote_number']);
-        $dir      = __DIR__ . '/../../storage/qi/' . $companyId . '/quote';
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0775, true);
-        }
-        $absPath = $dir . '/' . $safeCode . '.pdf';
-        $relPath = '/storage/qi/' . $companyId . '/quote/' . $safeCode . '.pdf';
-
-        // Generate branded PDF
-        $pdf = new QiStyledPdfWriter($quote, $lineRows);
-        file_put_contents($absPath, $pdf->render());
-
-        // Update record
-        $upd = $DB->prepare("UPDATE quotes SET pdf_path = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
-        $upd->execute([$relPath, $quoteId, $companyId]);
-        $quote['pdf_path'] = $relPath;
-    }
-
     // Update status to sent if currently draft
     $stmt = $DB->prepare(
-        "UPDATE quotes 
+        "UPDATE quotes
          SET status = CASE WHEN status = 'draft' THEN 'sent' ELSE status END,
-             updated_at = NOW() 
+             updated_at = NOW()
          WHERE id = ? AND company_id = ?"
     );
     $stmt->execute([$quoteId, $companyId]);
+
+    // Always re-render the branded PDF AFTER the status change so the emailed
+    // document (and the copy in FlowWork Drive) doesn't say "Draft".
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    $pdfInfo = DocumentPdfService::render($DB, $companyId, 'quote', (int)$quoteId);
+    if ($pdfInfo === null) {
+        throw new Exception('Could not generate the quote PDF');
+    }
+    $quote['pdf_path'] = $pdfInfo['rel_path'];
 
     // Compose the email subject and body for the quote
     $subject = 'Quote ' . $quote['quote_number'] . ' from ' . ($quote['company_name'] ?? '');
@@ -139,6 +107,9 @@ try {
 
     $DB->commit();
 
+    // Publish the sent PDF to FlowWork Drive under the customer's folder.
+    DocumentPdfService::fileToDrive($DB, $companyId, 'quote', $pdfInfo, $userId);
+
     echo json_encode([
         'ok'           => true,
         'message'      => 'Quote sent successfully',
@@ -149,6 +120,16 @@ try {
 
 } catch (Exception $e) {
     $DB->rollBack();
+    // Keep the on-disk PDF consistent with the rolled-back row (see the
+    // matching block in send_invoice.php).
+    if (!empty($quoteId)) {
+        try {
+            require_once __DIR__ . '/../services/DocumentPdfService.php';
+            DocumentPdfService::render($DB, (int)$companyId, 'quote', (int)$quoteId);
+        } catch (Throwable $reErr) {
+            error_log('Send quote rollback re-render failed: ' . $reErr->getMessage());
+        }
+    }
     error_log('Send quote error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

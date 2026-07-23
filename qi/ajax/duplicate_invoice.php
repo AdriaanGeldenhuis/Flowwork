@@ -82,6 +82,11 @@ try {
     ]);
 
     $DB->commit();
+
+    // Render the duplicated invoice's PDF and publish it to FlowWork Drive.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$newId, (int)$userId);
+
     echo json_encode(['ok'=>true, 'invoice_id'=>$newId, 'invoice_number'=>$newNumber]);
 
 } catch (Exception $e) {

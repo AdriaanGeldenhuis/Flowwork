@@ -125,6 +125,11 @@ try {
     $posting->postCustomerRefund($refundPaymentId);
 
     $DB->commit();
+
+    // Balance/status changed — refresh the invoice PDF and its drive copy.
+    require_once __DIR__ . '/../services/DocumentPdfService.php';
+    DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId, (int)$userId);
+
     echo json_encode(['ok'=>true, 'new_balance'=>$newBalance, 'status'=>$newStatus]);
 
 } catch (Throwable $e) {

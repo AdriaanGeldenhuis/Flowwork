@@ -7,6 +7,16 @@ require_once __DIR__ . '/lib/Currencies.php';
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
 
+// One-time self-heal: on first Quotes & Invoices page load after deployment,
+// publish the company's existing documents into FlowWork Drive. A single cheap
+// flag SELECT on every load thereafter. Best-effort — never blocks the page.
+try {
+    require_once __DIR__ . '/../includes/flowdrive/FlowDriveBackfill.php';
+    FlowDriveBackfill::autoRunOnce($DB, (int)$companyId);
+} catch (Throwable $e) {
+    error_log('QI index FlowDrive autoRun: ' . $e->getMessage());
+}
+
 // Fetch user info
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
 $stmt->execute([$userId]);
