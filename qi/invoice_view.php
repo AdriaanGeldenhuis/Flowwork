@@ -598,17 +598,6 @@ $vatSplit = $isVatRegistered ? qi_vat_rate_split($lines) : [];
                         <span>TOTAL:</span>
                         <span><?= format_currency($invoice['total']) ?></span>
                     </div>
-                    <?php if ($isForeign): ?>
-                        <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
-                            <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
-                            <span>R&nbsp;<?= number_format((float)$invoice['total'] * $docRate, 2) ?></span>
-                        </div>
-                        <?php // s20: the VAT amount must be expressed in Rand on a foreign-currency tax invoice ?>
-                        <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
-                            <span>VAT in ZAR at rate <?= number_format($docRate, 4) ?>:</span>
-                            <span>R&nbsp;<?= number_format((float)$invoice['tax'] * $docRate, 2) ?></span>
-                        </div>
-                    <?php endif; ?>
                     <?php if ((float)$invoice['balance_due'] < (float)$invoice['total']): ?>
                         <div class="fw-qi__doc-total-row" style="margin-top:8px;">
                             <span>Balance Due:</span>

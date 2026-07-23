@@ -458,7 +458,10 @@ try {
             text-align: right !important;
         }
         .fw-qi__doc-logo {
-            max-width: 480px !important;
+            /* Fit the logo to its header column. A fixed 480px width used to
+               push the two-column header wider than the page, clipping the
+               right column (title, dates, "Bill To") off the PDF. */
+            max-width: 100% !important;
             max-height: 160px !important;
         }
         .fw-qi__doc-header { page-break-inside: avoid; }
@@ -476,7 +479,9 @@ try {
     }
     @page {
         size: A4;
-        margin: 10mm 0;
+        /* Horizontal margin (was 0) keeps content off the physical page edge so
+           nothing is clipped when printed or saved as PDF. */
+        margin: 10mm;
     }
 </style>
 </head>
@@ -616,19 +621,6 @@ try {
                 <span>TOTAL:</span>
                 <span><?= fmt($doc['total']) ?></span>
             </div>
-            <?php if ($isForeign): ?>
-                <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
-                    <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docFxRate, 4) ?> ZAR):</span>
-                    <span>R&nbsp;<?= number_format((float)$doc['total'] * $docFxRate, 2) ?></span>
-                </div>
-                <?php if ($isInvoice): ?>
-                    <?php // s20: the VAT amount must be expressed in Rand on a foreign-currency tax invoice ?>
-                    <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
-                        <span>VAT in ZAR at rate <?= number_format($docFxRate, 4) ?>:</span>
-                        <span>R&nbsp;<?= number_format((float)$doc['tax'] * $docFxRate, 2) ?></span>
-                    </div>
-                <?php endif; ?>
-            <?php endif; ?>
             <?php if ($type === 'invoice' && (float)($doc['balance_due'] ?? 0) < (float)$doc['total']): ?>
                 <div class="fw-qi__doc-total-row" style="margin-top:8px;">
                     <span>Balance Due:</span>

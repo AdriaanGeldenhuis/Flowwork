@@ -392,12 +392,6 @@ $isForeign   = ($docCurrency !== Currencies::BASE);
                         <div class="fw-qi__doc-total-row"><span>Discount:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['discount'], 2) ?></span></div>
                         <div class="fw-qi__doc-total-row"><span>VAT:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['tax'], 2) ?></span></div>
                         <div class="fw-qi__doc-total-row fw-qi__doc-total-row--grand"><span>TOTAL:</span><span><?= htmlspecialchars($docSymbol) ?> <?= number_format($quote['total'], 2) ?></span></div>
-                        <?php if ($isForeign): ?>
-                            <div class="fw-qi__doc-total-row" style="font-size:12px;color:#6b7280;">
-                                <span>ZAR equivalent (1 <?= htmlspecialchars($docCurrency) ?> = <?= number_format($docRate, 4) ?> ZAR):</span>
-                                <span>R <?= number_format((float)$quote['total'] * $docRate, 2) ?></span>
-                            </div>
-                        <?php endif; ?>
                     </div>
                 </div>
 

@@ -612,16 +612,7 @@ class QiStyledPdfWriter
         }
         $totalRows[] = [$this->taxLabel() . ':', $this->fmt($this->doc['tax'] ?? 0)];
 
-        // ZAR-equivalent row for foreign-currency documents (matches view/print).
-        $zarRow = null;
-        if ($this->isForeign) {
-            $zarRow = [
-                'ZAR equivalent (1 ' . $this->curCode . ' = ' . number_format($this->fxRate, 4) . ' ZAR):',
-                'R ' . number_format((float)($this->doc['total'] ?? 0) * $this->fxRate, 2),
-            ];
-        }
-
-        $needed = (count($totalRows) + 1) * $rowH + 10 + ($zarRow ? $rowH : 0);
+        $needed = (count($totalRows) + 1) * $rowH + 10;
         $this->checkSpace($needed);
 
         foreach ($totalRows as $row) {
@@ -638,15 +629,6 @@ class QiStyledPdfWriter
         $this->text('F2', 14, $x + 8, $this->y - 16, 'TOTAL:', $this->accentR, $this->accentG, $this->accentB);
         $this->textRight('F2', 14, $x + $boxW - 8, $this->y - 16, $this->fmt($this->doc['total'] ?? 0), $this->accentR, $this->accentG, $this->accentB);
         $this->y -= ($grandH + 5);
-
-        // ZAR equivalent (foreign only) — small muted line, its own full-width
-        // row above the box so the long label never collides with the value.
-        if ($zarRow) {
-            $labelX = $this->marginL;
-            $this->text('F1', 8, $labelX, $this->y - 11, $zarRow[0], '0.42', '0.44', '0.5');
-            $this->textRight('F1', 8, $x + $boxW - 8, $this->y - 11, $zarRow[1], '0.42', '0.44', '0.5');
-            $this->y -= 16;
-        }
 
         // Balance due (invoices)
         if (isset($this->doc['balance_due']) && (float)($this->doc['balance_due']) < (float)($this->doc['total'] ?? 0)) {
