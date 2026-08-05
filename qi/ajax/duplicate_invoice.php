@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
+require_once __DIR__ . '/../lib/LineHeadings.php';
 
 header('Content-Type: application/json');
 
@@ -70,6 +71,9 @@ try {
             $l['inventory_item_id'] ?? null,
         ]);
     }
+
+    // Copy section headings so the duplicate keeps its grouped layout
+    LineHeadings::copy($DB, (int)$companyId, LineHeadings::TYPE_INVOICE, (int)$invoiceId, LineHeadings::TYPE_INVOICE, (int)$newId);
 
     $stmt = $DB->prepare("
         INSERT INTO audit_log (company_id, user_id, action, details, ip)

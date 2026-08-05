@@ -104,10 +104,10 @@
       e.preventDefault();
       e.stopPropagation();
       
-      const isHidden = menu.getAttribute('aria-hidden') === 'true';
-      setMenuState(!isHidden);
-      
-      console.log('🎛️ Menu toggle clicked, isHidden was:', isHidden);
+      const isOpen = menu.getAttribute('aria-hidden') === 'false';
+      setMenuState(!isOpen);
+
+      console.log('🎛️ Menu toggle clicked, isOpen was:', isOpen);
     });
 
     // Close on outside click

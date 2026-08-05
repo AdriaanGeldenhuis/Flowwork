@@ -6,6 +6,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
+require_once __DIR__ . '/../lib/LineHeadings.php';
 
 header('Content-Type: application/json');
 
@@ -89,7 +90,10 @@ try {
             $line['sort_order']
         ]);
     }
-    
+
+    // Copy section headings so the duplicate keeps its grouped layout
+    LineHeadings::copy($DB, (int)$companyId, LineHeadings::TYPE_QUOTE, (int)$quoteId, LineHeadings::TYPE_QUOTE, (int)$newQuoteId);
+
     $DB->commit();
 
     // Render the duplicated quote's PDF and publish it to FlowWork Drive.

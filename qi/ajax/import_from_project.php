@@ -79,14 +79,45 @@ try {
         // ignore if table not found or error
     }
 
-    // Fetch board items and their values
-    $stmtItems = $DB->prepare("SELECT id, title FROM board_items WHERE board_id = ? AND archived = 0 ORDER BY id");
+    // Fetch the board's groups so items import under their group heading,
+    // in the same order they appear on the board.
+    $groups = [];
+    try {
+        $stmtGroups = $DB->prepare("SELECT id, name FROM board_groups WHERE board_id = ? ORDER BY position ASC, id ASC");
+        $stmtGroups->execute([$boardId]);
+        $groups = $stmtGroups->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $ex) {
+        // Boards without groups still import as a flat list
+    }
+
+    // Fetch board items in board order (group position, then item position)
+    $stmtItems = $DB->prepare("SELECT id, group_id, title FROM board_items WHERE board_id = ? AND archived = 0 ORDER BY position ASC, id ASC");
     $stmtItems->execute([$boardId]);
     $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
+    // Bucket items per group, preserving item order inside each group
+    $itemsByGroup = [];
+    foreach ($items as $item) {
+        $gid = (int)($item['group_id'] ?? 0);
+        $itemsByGroup[$gid][] = $item;
+    }
+
+    // Walk groups in board order; items whose group no longer exists tag on
+    // at the end without a heading.
+    $orderedGroups = [];
+    foreach ($groups as $g) {
+        $orderedGroups[] = ['id' => (int)$g['id'], 'name' => trim((string)$g['name'])];
+    }
+    $knownGroupIds = array_column($orderedGroups, 'id');
+    $orphanIds = array_diff(array_keys($itemsByGroup), $knownGroupIds);
+    foreach ($orphanIds as $oid) {
+        $orderedGroups[] = ['id' => (int)$oid, 'name' => ''];
+    }
+
     $results = [];
     $stmtVals = $DB->prepare("SELECT column_id, value FROM board_item_values WHERE item_id = ?");
-    foreach ($items as $item) {
+
+    $buildItem = function (array $item) use ($stmtVals, $quantityCol, $priceCol, $totalCol, $taxCol, $firstCol, $defaultTaxRate) {
         $itemId = (int)$item['id'];
         $title = trim($item['title'] ?? '');
         $stmtVals->execute([$itemId]);
@@ -140,12 +171,29 @@ try {
             }
             $taxRate = round($taxCandidate, 2);
         }
-        $results[] = [
+        return [
+            'type'        => 'item',
             'description' => $title,
             'quantity'    => (float)$qty,
             'unit_price'  => (float)$unitPrice,
             'tax_rate'    => (float)$taxRate
         ];
+    };
+
+    foreach ($orderedGroups as $group) {
+        $groupItems = $itemsByGroup[$group['id']] ?? [];
+        if (empty($groupItems)) {
+            continue; // empty groups don't add headings to the document
+        }
+        if ($group['name'] !== '') {
+            $results[] = [
+                'type'        => 'heading',
+                'description' => $group['name'],
+            ];
+        }
+        foreach ($groupItems as $item) {
+            $results[] = $buildItem($item);
+        }
     }
 
     echo json_encode(['ok' => true, 'items' => $results]);

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
 require_once __DIR__ . '/lib/Currencies.php';
+require_once __DIR__ . '/lib/LineHeadings.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -92,6 +93,9 @@ try {
     $stmt = $DB->prepare("SELECT * FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
     $stmt->execute([$quoteId]);
     $lines = $stmt->fetchAll();
+
+    // Interleave section headings (board-group style) into document order
+    $docRows = LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, $quoteId));
 
     // Fetch payment milestones
     $milestones = [];
@@ -372,15 +376,23 @@ $isForeign   = ($docCurrency !== Currencies::BASE);
                     <table class="fw-qi__doc-table">
                         <thead><tr><th style="width:50px;">#</th><th>Description</th><th class="fw-qi__doc-table-center" style="width:100px;">Qty</th><th class="fw-qi__doc-table-right" style="width:130px;">Unit Price</th><th class="fw-qi__doc-table-right" style="width:130px;">Total</th></tr></thead>
                         <tbody>
-                            <?php if (count($lines) > 0): ?>
-                                <?php foreach ($lines as $idx => $line): ?>
-                                    <tr>
-                                        <td><?= $idx + 1 ?></td>
-                                        <td><?= htmlspecialchars($line['item_description']) ?></td>
-                                        <td class="fw-qi__doc-table-center"><?= number_format($line['quantity'], 2) ?></td>
-                                        <td class="fw-qi__doc-table-right"><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['unit_price'], 2) ?></td>
-                                        <td class="fw-qi__doc-table-right"><strong><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['line_total'], 2) ?></strong></td>
-                                    </tr>
+                            <?php if (count($docRows) > 0): ?>
+                                <?php $itemNo = 0; ?>
+                                <?php foreach ($docRows as $line): ?>
+                                    <?php if (($line['_kind'] ?? 'item') === 'heading'): ?>
+                                        <tr class="fw-qi__doc-heading-row">
+                                            <td colspan="5"><?= htmlspecialchars($line['item_description']) ?></td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php $itemNo++; ?>
+                                        <tr>
+                                            <td><?= $itemNo ?></td>
+                                            <td><?= htmlspecialchars($line['item_description']) ?></td>
+                                            <td class="fw-qi__doc-table-center"><?= number_format($line['quantity'], 2) ?></td>
+                                            <td class="fw-qi__doc-table-right"><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['unit_price'], 2) ?></td>
+                                            <td class="fw-qi__doc-table-right"><strong><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['line_total'], 2) ?></strong></td>
+                                        </tr>
+                                    <?php endif; ?>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr><td colspan="5" style="text-align:center;padding:40px;color:#999;">No items</td></tr>

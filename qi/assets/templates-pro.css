@@ -350,6 +350,26 @@
   text-align: right !important;
 }
 
+/* Section heading rows (board-group style) inside the items table */
+.fw-qi__doc-table tr.fw-qi__doc-heading-row td {
+  padding: 10px 12px 6px;
+  font-size: 12.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--qi-heading-color, #111827);
+  background: rgba(0, 0, 0, 0.04);
+  border-bottom: 2px solid var(--qi-table-header-bg, #9ca3af);
+}
+
+.fw-qi[data-theme="dark"] .fw-qi__doc-table tr.fw-qi__doc-heading-row td {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.fw-qi__doc-table tbody tr.fw-qi__doc-heading-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 /* Numeric columns (Qty / Unit Price / Line Total / Amount / Paid / Outstanding)
    must keep the currency symbol and the number on one line — otherwise a
    squeezed column wraps "R" onto its own line above the value. */

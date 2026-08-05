@@ -1439,13 +1439,96 @@ select.fw-qi__input:focus {
   text-shadow: 0 0 12px var(--fw-primary-glow);
 }
 
-/* Quote form line grid (legacy fw-qi-form__ block — JS contract, keep names) */
+/* Quote form line grid (legacy fw-qi-form__ block — JS contract, keep names).
+   First 28px column is the drag handle used to reorder rows. */
 .fw-qi-form__line-item {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1.2fr 1fr 40px;
+  grid-template-columns: 28px 2fr 1fr 1fr 1.2fr 1fr 40px;
   gap: 12px;
   align-items: center;
   margin-bottom: 10px;
+}
+
+/* Section heading row (board-group style): handle, title, remove */
+.fw-qi-form__heading-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 40px;
+  gap: 12px;
+  align-items: center;
+  margin: 18px 0 10px;
+}
+
+.fw-qi-form__heading-row:first-child {
+  margin-top: 0;
+}
+
+.fw-qi-form__heading-row .fw-qi__input {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-left: 3px solid var(--fw-primary);
+}
+
+/* Drag handle (both editors) */
+.fw-qi__drag-handle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 40px;
+  color: var(--fw-text-muted, #9ca3af);
+  cursor: grab;
+  border-radius: var(--fw-radius-sm);
+  user-select: none;
+  touch-action: none;
+}
+
+.fw-qi__drag-handle:hover {
+  color: var(--fw-primary);
+  background: var(--fw-primary-light, rgba(139, 92, 246, 0.1));
+}
+
+.fw-qi__drag-handle:active {
+  cursor: grabbing;
+}
+
+.fw-qi__drag-handle svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+/* Row being dragged + drop indicator (both editors) */
+.fw-qi__row-dragging {
+  opacity: 0.45;
+}
+
+.fw-qi__row-drop-before {
+  box-shadow: 0 -3px 0 0 var(--fw-primary) !important;
+}
+
+.fw-qi__row-drop-after {
+  box-shadow: 0 3px 0 0 var(--fw-primary) !important;
+}
+
+/* Invoice editor: slim heading card between the line-item cards */
+.fw-qi__heading-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--fw-card-face);
+  border: 1px solid var(--fw-border-base);
+  border-left: 3px solid var(--fw-primary);
+  border-radius: var(--fw-radius-md);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  box-shadow: var(--fw-key-shadow);
+}
+
+.fw-qi__heading-card .fw-qi__input {
+  flex: 1;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .fw-qi-form__remove-line {

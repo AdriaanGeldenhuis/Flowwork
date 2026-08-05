@@ -6,6 +6,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../lib/Branding.php';
 require_once __DIR__ . '/../lib/Currencies.php';
+require_once __DIR__ . '/../lib/LineHeadings.php';
 
 // Get token from query string
 $token = $_GET['token'] ?? '';
@@ -81,6 +82,9 @@ try {
     $stmt = $DB->prepare("SELECT * FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
     $stmt->execute([$quote['id']]);
     $lines = $stmt->fetchAll();
+
+    // Interleave section headings (board-group style) into document order
+    $docRows = LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, (int)$quote['id']));
 
     // Colour, text and font customisation — resolved centrally (qi/lib/Branding.php).
     $brand = Branding::resolve($quote, 'quote');
@@ -201,7 +205,13 @@ try {
                         </thead>
                         <tbody>
                             <?php $subtotal = 0; ?>
-                            <?php foreach ($lines as $line): ?>
+                            <?php foreach ($docRows as $line): ?>
+                                <?php if (($line['_kind'] ?? 'item') === 'heading'): ?>
+                                    <tr class="fw-qi__doc-heading-row">
+                                        <td colspan="4"><?= htmlspecialchars($line['item_description']) ?></td>
+                                    </tr>
+                                    <?php continue; ?>
+                                <?php endif; ?>
                                 <?php
                                     $qty = (float)$line['quantity'];
                                     $price = (float)$line['unit_price'];

@@ -5,6 +5,7 @@
 // Caller must NOT already be inside a transaction.
 
 require_once __DIR__ . '/SequenceAllocator.php';
+require_once __DIR__ . '/LineHeadings.php';
 
 class QuoteConverter {
     private PDO $DB;
@@ -90,6 +91,10 @@ class QuoteConverter {
                     $line['sort_order'],
                 ]);
             }
+
+            // Section headings ride along so the invoice keeps the quote's
+            // board-group structure (sort_order values carry over unchanged).
+            LineHeadings::copy($DB, $companyId, LineHeadings::TYPE_QUOTE, $quoteId, LineHeadings::TYPE_INVOICE, $invoiceId);
 
             if (!empty($quote['has_milestones'])) {
                 $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ? ORDER BY sort_order");

@@ -48,6 +48,7 @@ class InvoiceDeleteHelper
             'DELETE FROM payment_milestones WHERE entity_type = "invoice" AND entity_id = ?',
             'DELETE FROM receipt_match WHERE invoice_id = ?',
             'DELETE FROM receipt_policy_log WHERE invoice_id = ?',
+            'DELETE FROM qi_line_headings WHERE parent_type = "invoice" AND parent_id = ?',
         ];
         foreach ($children as $sql) {
             try {

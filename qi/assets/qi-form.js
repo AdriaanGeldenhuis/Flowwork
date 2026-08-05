@@ -11,15 +11,19 @@ window.QI = window.QI || {};
     return (window.QICurrency) ? QICurrency.symbol() : 'R';
   }
 
+  function handleHtml() {
+    return (window.QIDnD) ? QIDnD.handleHtml() : '';
+  }
+
   // ========== LINE ITEMS ==========
   QI.addLineItem = function() {
     lineItemCounter++;
     const container = document.getElementById('lineItemsContainer');
-    
+
     const lineDiv = document.createElement('div');
     lineDiv.className = 'fw-qi__line-item';
     lineDiv.dataset.lineId = lineItemCounter;
-    
+
     // Build options for the inventory item selector if available
     let itemOptionsHtml = '';
     if (window.FW_INV_ITEMS && Array.isArray(window.FW_INV_ITEMS)) {
@@ -32,7 +36,10 @@ window.QI = window.QI || {};
 
     lineDiv.innerHTML = `
       <div class="fw-qi__line-item-header">
-        <span class="fw-qi__line-item-number">#${lineItemCounter}</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          ${handleHtml()}
+          <span class="fw-qi__line-item-number">#${lineItemCounter}</span>
+        </span>
         <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="QI.removeLineItem(${lineItemCounter})">
           Remove
         </button>
@@ -113,6 +120,46 @@ window.QI = window.QI || {};
       QI.calculateTotals();
     }
   };
+
+  // ========== SECTION HEADINGS (board-group style) ==========
+  // A slim card between line items; shares the drag & drop ordering and is
+  // collected into the save payload's `headings` array with a sort_order.
+  QI.addHeadingRow = function(title) {
+    const container = document.getElementById('lineItemsContainer');
+    if (!container) return null;
+    const row = document.createElement('div');
+    row.className = 'fw-qi__heading-card';
+    row.innerHTML = `
+      ${handleHtml()}
+      <input type="text" class="fw-qi__input heading-title" placeholder="Section heading (e.g. Aluminium)">
+      <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="this.closest('.fw-qi__heading-card').remove()">
+        Remove
+      </button>
+    `;
+    const input = row.querySelector('input');
+    if (input && title) input.value = title;
+    container.appendChild(row);
+    return row;
+  };
+
+  // Drag & drop reordering for the invoice/credit-note editors: items move
+  // alone, a heading moves its whole section (like a board group).
+  function initDnD() {
+    if (!window.QIDnD) return;
+    const container = document.getElementById('lineItemsContainer');
+    if (!container) return;
+    QIDnD.attach({
+      container: container,
+      rowSelector: '.fw-qi__line-item',
+      headingSelector: '.fw-qi__heading-card',
+      onReorder: QI.calculateTotals
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDnD);
+  } else {
+    initDnD();
+  }
 
   // ========== CALCULATIONS ==========
   QI.calculateTotals = function() {

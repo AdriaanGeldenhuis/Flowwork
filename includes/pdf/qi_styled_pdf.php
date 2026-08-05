@@ -546,6 +546,29 @@ class QiStyledPdfWriter
         // Rows
         $even = false;
         foreach ($this->lines as $li) {
+            // Section heading rows (board-group style): a full-width tinted
+            // band with the title in bold — no qty/price/total, and the
+            // zebra striping restarts under each heading.
+            if (($li['_kind'] ?? 'item') === 'heading') {
+                $title = trim((string)($li['item_description'] ?? ''));
+                if ($title === '') {
+                    continue;
+                }
+                $headRowH = 24;
+                $beforePage = $this->pageNum;
+                $this->checkSpace($headRowH + $rowH);
+                if ($this->pageNum !== $beforePage) {
+                    $this->drawTableHeader($x, $w, $headerH, $colDesc, $colQty, $colPrice, $colTotal);
+                    $this->y -= $headerH;
+                }
+                $this->rect($x, $this->y - $headRowH, $w, $headRowH, '0.93', '0.94', '0.96');
+                $this->line($x, $this->y - $headRowH, $x + $w, $this->y - $headRowH, 0.5, '0.8', '0.8', '0.82');
+                $this->text('F2', 9.5, $x + 8, $this->y - 16, $title, $this->headingR, $this->headingG, $this->headingB);
+                $this->y -= $headRowH;
+                $even = false;
+                continue;
+            }
+
             $desc = $li['item_description'] ?? '';
             // Estimate row height: wrap long descriptions
             $descLines = $this->wrapText($desc, 9, $colQty - 10);
