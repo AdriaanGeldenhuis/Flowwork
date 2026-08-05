@@ -1531,6 +1531,61 @@ select.fw-qi__input:focus {
   letter-spacing: 0.5px;
 }
 
+/* Live per-section total (excl. VAT) — quote editor grid rows.
+   Display-only: rebuilt by calculateTotals, ignored by drag & drop and by
+   the save payload collector. Right padding parks the amount under the
+   line-total column (40px remove button + 12px gap). */
+.fw-qi-form__section-total {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 16px;
+  margin: -2px 0 14px;
+  padding: 6px 52px 8px 0;
+  border-bottom: 1px solid var(--fw-border-base);
+}
+
+.fw-qi-form__section-total-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--fw-text-muted, #9ca3af);
+}
+
+.fw-qi-form__section-total-amount {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--fw-primary);
+}
+
+/* Live per-section total (excl. VAT) — invoice editor slim card */
+.fw-qi__section-total {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 16px;
+  background: var(--fw-primary-light, rgba(139, 92, 246, 0.06));
+  border: 1px solid var(--fw-border-base);
+  border-radius: var(--fw-radius-md);
+  padding: 10px 16px;
+  margin: -8px 0 16px;
+}
+
+.fw-qi__section-total-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--fw-text-muted, #9ca3af);
+}
+
+.fw-qi__section-total-amount {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--fw-primary);
+}
+
 .fw-qi-form__remove-line {
   width: 40px;
   height: 40px;

@@ -36,6 +36,7 @@
         `;
         container.appendChild(newLine);
         attachLineListeners(newLine);
+        calculateTotals();
     }
 
     // Add a section heading row (board-group style). Returns the row so
@@ -51,8 +52,13 @@
             <button type="button" class="fw-qi-form__remove-line" data-action="remove-heading" title="Remove heading">×</button>
         `;
         const input = row.querySelector('input');
-        if (input && title) input.value = title;
+        if (input) {
+            if (title) input.value = title;
+            // Renaming a heading updates its section-total label live
+            input.addEventListener('input', calculateTotals);
+        }
         container.appendChild(row);
+        calculateTotals();
         return row;
     }
 
@@ -101,6 +107,51 @@
         if (subtotalDisplay) subtotalDisplay.textContent = curSym() + ' ' + subtotal.toFixed(2);
         if (taxDisplay) taxDisplay.textContent = curSym() + ' ' + tax.toFixed(2);
         if (totalDisplay) totalDisplay.textContent = curSym() + ' ' + total.toFixed(2);
+
+        renderSectionTotals();
+    }
+
+    // Live per-section totals (excl. VAT), like the board's per-group SUMMARY
+    // row. Display-only rows rebuilt on every recalc — they are invisible to
+    // the drag & drop selectors and to the save payload collector, and VAT
+    // stays a single line in the grand totals.
+    function renderSectionTotals() {
+        const container = document.getElementById('lineItemsContainer');
+        if (!container) return;
+        container.querySelectorAll('.fw-qi-form__section-total').forEach(el => el.remove());
+
+        let open = null; // { title, net, count, lastRow }
+        const flush = () => {
+            if (open && open.count > 0) {
+                const row = document.createElement('div');
+                row.className = 'fw-qi-form__section-total';
+                const label = document.createElement('span');
+                label.className = 'fw-qi-form__section-total-label';
+                label.textContent = (open.title ? open.title + ' — ' : '') + 'Total (excl. VAT)';
+                const amount = document.createElement('span');
+                amount.className = 'fw-qi-form__section-total-amount';
+                amount.textContent = curSym() + ' ' + open.net.toFixed(2);
+                row.appendChild(label);
+                row.appendChild(amount);
+                open.lastRow.after(row);
+            }
+            open = null;
+        };
+
+        Array.from(container.children).forEach(child => {
+            if (child.classList.contains('fw-qi-form__heading-row')) {
+                flush();
+                const title = (child.querySelector('[name="item_heading[]"]')?.value || '').trim();
+                open = { title: title, net: 0, count: 0, lastRow: child };
+            } else if (child.classList.contains('fw-qi-form__line-item') && open) {
+                const qty = parseFloat(child.querySelector('[name="item_quantity[]"]')?.value) || 0;
+                const price = parseFloat(child.querySelector('[name="item_price[]"]')?.value) || 0;
+                open.net += qty * price;
+                open.count++;
+                open.lastRow = child;
+            }
+        });
+        flush();
     }
 
     // Handle form submission to save quote
@@ -197,6 +248,11 @@
         }
         // Attach listeners to existing lines
         document.querySelectorAll('.fw-qi-form__line-item').forEach(attachLineListeners);
+        // Server-rendered heading rows (edit mode): rename updates the
+        // section-total label live
+        document.querySelectorAll('.fw-qi-form__heading-row [name="item_heading[]"]').forEach(inp => {
+            inp.addEventListener('input', calculateTotals);
+        });
         // Delegate remove-line / remove-heading buttons
         document.addEventListener('click', function(e) {
             if (e.target && e.target.dataset && e.target.dataset.action === 'remove-line') {
@@ -204,7 +260,10 @@
             }
             if (e.target && e.target.dataset && e.target.dataset.action === 'remove-heading') {
                 const row = e.target.closest('.fw-qi-form__heading-row');
-                if (row) row.remove();
+                if (row) {
+                    row.remove();
+                    calculateTotals();
+                }
             }
         });
         // Drag & drop reordering (items move alone; a heading moves its section)

@@ -14,7 +14,7 @@ if (!defined('CRM_ASSET_VERSION')) {
 
 // Centralized QI asset version for cache busting
 if (!defined('QI_ASSET_VERSION')) {
-    define('QI_ASSET_VERSION', '2026-08-05-qi-section-totals');
+    define('QI_ASSET_VERSION', '2026-08-05b-qi-editor-totals');
 }
 
 // Centralized Finances asset version for cache busting
