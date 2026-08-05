@@ -8,6 +8,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Branding.php';
 require_once __DIR__ . '/lib/Currencies.php';
+require_once __DIR__ . '/lib/LineHeadings.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -44,6 +45,12 @@ try {
     );
     $stmt->execute([$invoiceId]);
     $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Interleave section headings (board-group style) into document order,
+    // with a per-section total (excl. VAT) after each section's items
+    $docRows = LineHeadings::withSectionTotals(
+        LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_INVOICE, $invoiceId))
+    );
 
     // Fetch payment milestones
     $milestones = [];
@@ -565,14 +572,25 @@ $vatSplit = $isVatRegistered ? qi_vat_rate_split($lines) : [];
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($lines as $line): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($line['item_description']) ?></td>
-                                <td style="text-align:right;"><?= number_format((float)$line['quantity'], 2) ?></td>
-                                <td style="text-align:right;"><?= format_currency($line['unit_price']) ?></td>
-                                <td style="text-align:right;"><?= htmlspecialchars(qi_line_vat_label($line)) ?></td>
-                                <td style="text-align:right;"><?= format_currency($line['line_total']) ?></td>
-                            </tr>
+                        <?php foreach ($docRows as $line): ?>
+                            <?php if (($line['_kind'] ?? 'item') === 'heading'): ?>
+                                <tr class="fw-qi__doc-heading-row">
+                                    <td colspan="5"><?= htmlspecialchars($line['item_description']) ?></td>
+                                </tr>
+                            <?php elseif ($line['_kind'] === 'section_total'): ?>
+                                <tr class="fw-qi__doc-section-total-row">
+                                    <td colspan="4" style="text-align:right;"><?= htmlspecialchars($line['title'] !== '' ? $line['title'] . ' — Total (excl. VAT)' : 'Section total (excl. VAT)') ?></td>
+                                    <td style="text-align:right;"><strong><?= format_currency($line['net']) ?></strong></td>
+                                </tr>
+                            <?php else: ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($line['item_description']) ?></td>
+                                    <td style="text-align:right;"><?= number_format((float)$line['quantity'], 2) ?></td>
+                                    <td style="text-align:right;"><?= format_currency($line['unit_price']) ?></td>
+                                    <td style="text-align:right;"><?= htmlspecialchars(qi_line_vat_label($line)) ?></td>
+                                    <td style="text-align:right;"><?= format_currency($line['line_total']) ?></td>
+                                </tr>
+                            <?php endif; ?>
                         <?php endforeach; ?>
                     </tbody>
                 </table>

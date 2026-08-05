@@ -6,6 +6,7 @@ ini_set('display_errors', '0');
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Currencies.php';
+require_once __DIR__ . '/lib/LineHeadings.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -17,6 +18,7 @@ $editMode = false;
 $quoteId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
 $quoteData = null;
 $lineItems = [];
+$editRows = [];
 $editMilestones = [];
 
 if ($quoteId) {
@@ -45,6 +47,10 @@ if ($quoteId) {
     );
     $stmt->execute([$quoteId]);
     $lineItems = $stmt->fetchAll();
+
+    // Interleave stored section headings so the editor shows rows in
+    // document order (each row carries _kind = 'item' | 'heading')
+    $editRows = LineHeadings::merge($lineItems, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, $quoteId));
 
     $stmt = $DB->prepare("
         SELECT label, percentage, amount, due_date
@@ -96,6 +102,19 @@ if (!function_exists('qi_line_tax_select')) {
                    . ($code === $sel ? ' selected' : '') . '>' . htmlspecialchars($label) . '</option>';
         }
         return $html . '</select>';
+    }
+}
+
+// Drag handle markup shared by all server-rendered editor rows (mirrors
+// QIDnD.handleHtml() so PHP-rendered and JS-added rows look identical)
+if (!function_exists('qi_drag_handle')) {
+    function qi_drag_handle(): string {
+        return '<span class="fw-qi__drag-handle" title="Drag to reorder">'
+             . '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+             . '<circle cx="9" cy="5" r="1.7"/><circle cx="15" cy="5" r="1.7"/>'
+             . '<circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/>'
+             . '<circle cx="9" cy="19" r="1.7"/><circle cx="15" cy="19" r="1.7"/>'
+             . '</svg></span>';
     }
 }
 
@@ -225,19 +244,29 @@ $docSymbol = Currencies::symbol($docCurrency);
                     <h3 class="fw-qi__form-section-title">Line Items</h3>
                     
                     <div id="lineItemsContainer">
-                        <?php if ($editMode && count($lineItems) > 0): ?>
-                            <?php foreach ($lineItems as $item): ?>
-                                <div class="fw-qi-form__line-item">
-                                    <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" value="<?= htmlspecialchars($item['item_description']) ?>" required>
-                                    <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="<?= $item['quantity'] ?>" step="0.01" min="0" required>
-                                    <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" value="<?= $item['unit_price'] ?>" step="0.01" min="0" required>
-                                    <?= qi_line_tax_select($item['tax_code'] ?? null, $item['tax_rate'] ?? null) ?>
-                                    <input type="text" class="fw-qi__input" placeholder="R 0.00" readonly name="item_total[]" value="<?= number_format($item['line_total'], 2) ?>">
-                                    <button type="button" class="fw-qi-form__remove-line" onclick="removeLine(this)">×</button>
-                                </div>
+                        <?php if ($editMode && count($editRows) > 0): ?>
+                            <?php foreach ($editRows as $item): ?>
+                                <?php if (($item['_kind'] ?? 'item') === 'heading'): ?>
+                                    <div class="fw-qi-form__heading-row">
+                                        <?= qi_drag_handle() ?>
+                                        <input type="text" class="fw-qi__input" placeholder="Section heading (e.g. Aluminium)" name="item_heading[]" value="<?= htmlspecialchars($item['item_description']) ?>">
+                                        <button type="button" class="fw-qi-form__remove-line" data-action="remove-heading" title="Remove heading">×</button>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="fw-qi-form__line-item">
+                                        <?= qi_drag_handle() ?>
+                                        <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" value="<?= htmlspecialchars($item['item_description']) ?>" required>
+                                        <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="<?= $item['quantity'] ?>" step="0.01" min="0" required>
+                                        <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" value="<?= $item['unit_price'] ?>" step="0.01" min="0" required>
+                                        <?= qi_line_tax_select($item['tax_code'] ?? null, $item['tax_rate'] ?? null) ?>
+                                        <input type="text" class="fw-qi__input" placeholder="R 0.00" readonly name="item_total[]" value="<?= number_format($item['line_total'], 2) ?>">
+                                        <button type="button" class="fw-qi-form__remove-line" onclick="removeLine(this)">×</button>
+                                    </div>
+                                <?php endif; ?>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <div class="fw-qi-form__line-item">
+                                <?= qi_drag_handle() ?>
                                 <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" required>
                                 <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="1" step="0.01" min="0" required>
                                 <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" step="0.01" min="0" required>
@@ -249,6 +278,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                     </div>
 
                     <button type="button" class="fw-qi__btn fw-qi__btn--secondary" onclick="addLine()">+ Add Line</button>
+                    <button type="button" class="fw-qi__btn fw-qi__btn--secondary" style="margin-left:8px;" onclick="addHeading()">+ Add Heading</button>
                     <button type="button" id="suggestLinesBtn" class="fw-qi__btn fw-qi__btn--secondary" style="margin-left:8px;">✨ Suggest Lines</button>
 
                     <!-- AI suggestions panel for line items -->
@@ -332,6 +362,7 @@ $docSymbol = Currencies::symbol($docCurrency);
     <script src="/qi/assets/qi.ui.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi.currency.js?v=<?= ASSET_VERSION ?>"></script>
+    <script src="/qi/assets/qi.dnd.js?v=<?= ASSET_VERSION ?>"></script>
     <!-- Quote-specific logic -->
     <script>
         // Provide configuration for the quote form to the external JS
@@ -621,6 +652,13 @@ $docSymbol = Currencies::symbol($docCurrency);
                     const data = await res.json();
                     if (data.ok && Array.isArray(data.items)) {
                         data.items.forEach(function(item) {
+                            // Board group headings arrive as type:'heading'
+                            if (item.type === 'heading') {
+                                if (typeof addHeading === 'function') {
+                                    addHeading(item.description || '');
+                                }
+                                return;
+                            }
                             // Use global addLine() function from qi.quote.js
                             if (typeof addLine === 'function') {
                                 addLine();

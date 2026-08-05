@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Currencies.php';
+require_once __DIR__ . '/lib/LineHeadings.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -14,6 +15,7 @@ $editMode = false;
 $editInvoiceId = filter_input(INPUT_GET, 'edit', FILTER_VALIDATE_INT);
 $invoiceData = null;
 $editLineItems = [];
+$editHeadings = [];
 $editMilestones = [];
 
 if ($editInvoiceId) {
@@ -41,6 +43,10 @@ if ($editInvoiceId) {
          WHERE il.invoice_id = ? ORDER BY il.sort_order");
     $stmt->execute([$editInvoiceId]);
     $editLineItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Stored section headings (board-group style) — merged into the row
+    // sequence client-side by sort_order
+    $editHeadings = LineHeadings::fetch($DB, LineHeadings::TYPE_INVOICE, $editInvoiceId);
 
     $stmt = $DB->prepare("SELECT * FROM payment_milestones WHERE entity_type = 'invoice' AND entity_id = ? AND company_id = ? ORDER BY sort_order");
     $stmt->execute([$editInvoiceId, $companyId]);
@@ -108,6 +114,7 @@ $docSymbol = Currencies::symbol($docCurrency);
     window.EDIT_INVOICE_DATA = {
         invoice: <?= json_encode($invoiceData) ?>,
         lineItems: <?= json_encode($editLineItems) ?>,
+        headings: <?= json_encode($editHeadings) ?>,
         milestones: <?= json_encode($editMilestones) ?>
     };
     </script>
@@ -230,6 +237,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                     <h2 class="fw-qi__form-section-title">Line Items</h2>
                     <div id="lineItemsContainer"></div>
                     <button type="button" class="fw-qi__btn fw-qi__btn--secondary" onclick="QI.addLineItem()">+ Add Line Item</button>
+                    <button type="button" class="fw-qi__btn fw-qi__btn--secondary" style="margin-left:8px;" onclick="QI.addHeadingRow()">+ Add Heading</button>
                 </div>
 
                 <div class="fw-qi__form-section">
@@ -328,6 +336,7 @@ $docSymbol = Currencies::symbol($docCurrency);
             symbols: <?= json_encode(Currencies::symbolMap()) ?>
         });
     </script>
+    <script src="/qi/assets/qi.dnd.js?v=<?= ASSET_VERSION ?>"></script>
     <script src="/qi/assets/qi-form.js?v=<?= ASSET_VERSION ?>"></script>
     <script>
         // Wire the currency selector: live rate lookup + price conversion on switch
@@ -378,8 +387,17 @@ $docSymbol = Currencies::symbol($docCurrency);
                 payload.terms = form.terms ? form.terms.value : '';
                 payload.notes = form.notes ? form.notes.value : '';
                 payload.line_items = [];
+                payload.headings = [];
 
-                document.querySelectorAll('.fw-qi__line-item').forEach(function(lineDiv) {
+                // Walk rows in DOM order so drag & drop ordering persists;
+                // section headings share the same sort_order sequence.
+                let sortIndex = 0;
+                document.querySelectorAll('#lineItemsContainer .fw-qi__line-item, #lineItemsContainer .fw-qi__heading-card').forEach(function(lineDiv) {
+                    if (lineDiv.classList.contains('fw-qi__heading-card')) {
+                        const title = (lineDiv.querySelector('.heading-title')?.value || '').trim();
+                        if (title) payload.headings.push({ title: title, sort_order: sortIndex++ });
+                        return;
+                    }
                     const descriptionInput = lineDiv.querySelector('input[name*="[description]"]');
                     const qtyInput = lineDiv.querySelector('.line-quantity');
                     const priceInput = lineDiv.querySelector('.line-price');
@@ -412,7 +430,8 @@ $docSymbol = Currencies::symbol($docCurrency);
                         // (edit deletes + reinserts lines; without this any
                         // custom GL account reset to the default sales account)
                         gl_account_id: lineDiv.dataset.glAccountId || null,
-                        line_total: line_total
+                        line_total: line_total,
+                        sort_order: sortIndex++
                     });
                 });
 
@@ -467,9 +486,29 @@ $docSymbol = Currencies::symbol($docCurrency);
         if (window.EDIT_INVOICE_DATA) {
             var data = window.EDIT_INVOICE_DATA;
 
-            // Populate line items
+            // Populate line items interleaved with stored section headings
+            // (both share one sort_order sequence; heading wins a tie because
+            // it introduces the items at that position)
+            var docRows = [];
             if (Array.isArray(data.lineItems)) {
                 data.lineItems.forEach(function(item) {
+                    docRows.push({ kind: 'item', sort: parseInt(item.sort_order, 10) || 0, rank: 1, data: item });
+                });
+            }
+            if (Array.isArray(data.headings)) {
+                data.headings.forEach(function(h) {
+                    docRows.push({ kind: 'heading', sort: parseInt(h.sort_order, 10) || 0, rank: 0, data: h });
+                });
+            }
+            docRows.sort(function(a, b) { return (a.sort - b.sort) || (a.rank - b.rank); });
+
+            if (docRows.length) {
+                docRows.forEach(function(rowDef) {
+                    if (rowDef.kind === 'heading') {
+                        QI.addHeadingRow(rowDef.data.title || '');
+                        return;
+                    }
+                    var item = rowDef.data;
                     QI.addLineItem();
                     var lines = document.querySelectorAll('.fw-qi__line-item');
                     var lastLine = lines[lines.length - 1];
@@ -623,6 +662,13 @@ $docSymbol = Currencies::symbol($docCurrency);
                     const data = await res.json();
                     if (data.ok && Array.isArray(data.items)) {
                         data.items.forEach(function(item) {
+                            // Board group headings arrive as type:'heading'
+                            if (item.type === 'heading') {
+                                if (typeof QI.addHeadingRow === 'function') {
+                                    QI.addHeadingRow(item.description || '');
+                                }
+                                return;
+                            }
                             if (typeof QI.addLineItem === 'function') {
                                 QI.addLineItem();
                                 // Get last line item element

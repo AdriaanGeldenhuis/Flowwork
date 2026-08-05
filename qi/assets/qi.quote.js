@@ -11,6 +11,10 @@
         return (window.QICurrency) ? QICurrency.symbol() : 'R';
     }
 
+    function handleHtml() {
+        return (window.QIDnD) ? QIDnD.handleHtml() : '';
+    }
+
     // Add a new line item to the form
     function addLine() {
         const container = document.getElementById('lineItemsContainer');
@@ -18,6 +22,7 @@
         const newLine = document.createElement('div');
         newLine.className = 'fw-qi-form__line-item';
         newLine.innerHTML = `
+            ${handleHtml()}
             <input type="text" class="fw-qi__input" placeholder="Description" name="item_description[]" required>
             <input type="number" class="fw-qi__input" placeholder="Qty" name="item_quantity[]" value="1" step="0.01" min="0" required>
             <input type="number" class="fw-qi__input" placeholder="Unit Price" name="item_price[]" step="0.01" min="0" required>
@@ -31,12 +36,36 @@
         `;
         container.appendChild(newLine);
         attachLineListeners(newLine);
+        calculateTotals();
+    }
+
+    // Add a section heading row (board-group style). Returns the row so
+    // import can set the title safely via the input's value property.
+    function addHeading(title) {
+        const container = document.getElementById('lineItemsContainer');
+        if (!container) return null;
+        const row = document.createElement('div');
+        row.className = 'fw-qi-form__heading-row';
+        row.innerHTML = `
+            ${handleHtml()}
+            <input type="text" class="fw-qi__input" placeholder="Section heading (e.g. Aluminium)" name="item_heading[]">
+            <button type="button" class="fw-qi-form__remove-line" data-action="remove-heading" title="Remove heading">×</button>
+        `;
+        const input = row.querySelector('input');
+        if (input) {
+            if (title) input.value = title;
+            // Renaming a heading updates its section-total label live
+            input.addEventListener('input', calculateTotals);
+        }
+        container.appendChild(row);
+        calculateTotals();
+        return row;
     }
 
     // Remove a line item (only if more than one exists)
     function removeLine(button) {
         const container = document.getElementById('lineItemsContainer');
-        if (!container || container.children.length <= 1) return;
+        if (!container || container.querySelectorAll('.fw-qi-form__line-item').length <= 1) return;
         const lineItem = button.closest('.fw-qi-form__line-item');
         if (lineItem) {
             lineItem.remove();
@@ -78,6 +107,51 @@
         if (subtotalDisplay) subtotalDisplay.textContent = curSym() + ' ' + subtotal.toFixed(2);
         if (taxDisplay) taxDisplay.textContent = curSym() + ' ' + tax.toFixed(2);
         if (totalDisplay) totalDisplay.textContent = curSym() + ' ' + total.toFixed(2);
+
+        renderSectionTotals();
+    }
+
+    // Live per-section totals (excl. VAT), like the board's per-group SUMMARY
+    // row. Display-only rows rebuilt on every recalc — they are invisible to
+    // the drag & drop selectors and to the save payload collector, and VAT
+    // stays a single line in the grand totals.
+    function renderSectionTotals() {
+        const container = document.getElementById('lineItemsContainer');
+        if (!container) return;
+        container.querySelectorAll('.fw-qi-form__section-total').forEach(el => el.remove());
+
+        let open = null; // { title, net, count, lastRow }
+        const flush = () => {
+            if (open && open.count > 0) {
+                const row = document.createElement('div');
+                row.className = 'fw-qi-form__section-total';
+                const label = document.createElement('span');
+                label.className = 'fw-qi-form__section-total-label';
+                label.textContent = (open.title ? open.title + ' — ' : '') + 'Total (excl. VAT)';
+                const amount = document.createElement('span');
+                amount.className = 'fw-qi-form__section-total-amount';
+                amount.textContent = curSym() + ' ' + open.net.toFixed(2);
+                row.appendChild(label);
+                row.appendChild(amount);
+                open.lastRow.after(row);
+            }
+            open = null;
+        };
+
+        Array.from(container.children).forEach(child => {
+            if (child.classList.contains('fw-qi-form__heading-row')) {
+                flush();
+                const title = (child.querySelector('[name="item_heading[]"]')?.value || '').trim();
+                open = { title: title, net: 0, count: 0, lastRow: child };
+            } else if (child.classList.contains('fw-qi-form__line-item') && open) {
+                const qty = parseFloat(child.querySelector('[name="item_quantity[]"]')?.value) || 0;
+                const price = parseFloat(child.querySelector('[name="item_price[]"]')?.value) || 0;
+                open.net += qty * price;
+                open.count++;
+                open.lastRow = child;
+            }
+        });
+        flush();
     }
 
     // Handle form submission to save quote
@@ -86,10 +160,19 @@
         const form = e.target;
         const formData = new FormData(form);
 
-        // Build line items array, carrying each line's VAT choice (rate + SARS
-        // tax code) so the server stores it and the converted invoice inherits it.
+        // Build line items array in DOM order, carrying each line's VAT choice
+        // (rate + SARS tax code) so the server stores it and the converted
+        // invoice inherits it. Section headings share the same sort_order
+        // sequence so the server can interleave them back into this order.
         const lineItems = [];
-        document.querySelectorAll('.fw-qi-form__line-item').forEach(line => {
+        const headings = [];
+        let sortIndex = 0;
+        document.querySelectorAll('#lineItemsContainer .fw-qi-form__line-item, #lineItemsContainer .fw-qi-form__heading-row').forEach(line => {
+            if (line.classList.contains('fw-qi-form__heading-row')) {
+                const title = (line.querySelector('[name="item_heading[]"]')?.value || '').trim();
+                if (title) headings.push({ title: title, sort_order: sortIndex++ });
+                return;
+            }
             const desc = line.querySelector('[name="item_description[]"]').value;
             const qty = parseFloat(line.querySelector('[name="item_quantity[]"]').value) || 0;
             const price = parseFloat(line.querySelector('[name="item_price[]"]').value) || 0;
@@ -102,7 +185,8 @@
                 unit_price: price,
                 line_total: qty * price,
                 tax_rate: taxRate,
-                tax_code: taxCode
+                tax_code: taxCode,
+                sort_order: sortIndex++
             });
         });
 
@@ -126,7 +210,8 @@
             total: total,
             terms: formData.get('terms'),
             notes: formData.get('notes'),
-            line_items: lineItems
+            line_items: lineItems,
+            headings: headings
         };
         // Handle edit
         const config = window.quoteConfig || {};
@@ -163,12 +248,33 @@
         }
         // Attach listeners to existing lines
         document.querySelectorAll('.fw-qi-form__line-item').forEach(attachLineListeners);
-        // Delegate remove-line buttons
+        // Server-rendered heading rows (edit mode): rename updates the
+        // section-total label live
+        document.querySelectorAll('.fw-qi-form__heading-row [name="item_heading[]"]').forEach(inp => {
+            inp.addEventListener('input', calculateTotals);
+        });
+        // Delegate remove-line / remove-heading buttons
         document.addEventListener('click', function(e) {
             if (e.target && e.target.dataset && e.target.dataset.action === 'remove-line') {
                 removeLine(e.target);
             }
+            if (e.target && e.target.dataset && e.target.dataset.action === 'remove-heading') {
+                const row = e.target.closest('.fw-qi-form__heading-row');
+                if (row) {
+                    row.remove();
+                    calculateTotals();
+                }
+            }
         });
+        // Drag & drop reordering (items move alone; a heading moves its section)
+        if (window.QIDnD) {
+            QIDnD.attach({
+                container: '#lineItemsContainer',
+                rowSelector: '.fw-qi-form__line-item',
+                headingSelector: '.fw-qi-form__heading-row',
+                onReorder: calculateTotals
+            });
+        }
         // Currency selector: live rate lookup + optional price conversion on switch
         if (window.QICurrency) {
             QICurrency.init(window.qiCurrency || {});
@@ -184,9 +290,11 @@
         }
         // Initialize totals
         calculateTotals();
-        // Expose addLine/removeLine for inline button handlers
+        // Expose for inline button handlers and the page's import script
         window.addLine = addLine;
+        window.addHeading = addHeading;
         window.removeLine = removeLine;
+        window.calculateTotals = calculateTotals;
     }
 
     if (document.readyState === 'loading') {

@@ -11,15 +11,19 @@ window.QI = window.QI || {};
     return (window.QICurrency) ? QICurrency.symbol() : 'R';
   }
 
+  function handleHtml() {
+    return (window.QIDnD) ? QIDnD.handleHtml() : '';
+  }
+
   // ========== LINE ITEMS ==========
   QI.addLineItem = function() {
     lineItemCounter++;
     const container = document.getElementById('lineItemsContainer');
-    
+
     const lineDiv = document.createElement('div');
     lineDiv.className = 'fw-qi__line-item';
     lineDiv.dataset.lineId = lineItemCounter;
-    
+
     // Build options for the inventory item selector if available
     let itemOptionsHtml = '';
     if (window.FW_INV_ITEMS && Array.isArray(window.FW_INV_ITEMS)) {
@@ -32,7 +36,10 @@ window.QI = window.QI || {};
 
     lineDiv.innerHTML = `
       <div class="fw-qi__line-item-header">
-        <span class="fw-qi__line-item-number">#${lineItemCounter}</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          ${handleHtml()}
+          <span class="fw-qi__line-item-number">#${lineItemCounter}</span>
+        </span>
         <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="QI.removeLineItem(${lineItemCounter})">
           Remove
         </button>
@@ -114,6 +121,51 @@ window.QI = window.QI || {};
     }
   };
 
+  // ========== SECTION HEADINGS (board-group style) ==========
+  // A slim card between line items; shares the drag & drop ordering and is
+  // collected into the save payload's `headings` array with a sort_order.
+  QI.addHeadingRow = function(title) {
+    const container = document.getElementById('lineItemsContainer');
+    if (!container) return null;
+    const row = document.createElement('div');
+    row.className = 'fw-qi__heading-card';
+    row.innerHTML = `
+      ${handleHtml()}
+      <input type="text" class="fw-qi__input heading-title" placeholder="Section heading (e.g. Aluminium)">
+      <button type="button" class="fw-qi__btn fw-qi__btn--small fw-qi__btn--danger" onclick="this.closest('.fw-qi__heading-card').remove(); QI.calculateTotals();">
+        Remove
+      </button>
+    `;
+    const input = row.querySelector('input');
+    if (input) {
+      if (title) input.value = title;
+      // Renaming a heading updates its section-total label live
+      input.addEventListener('input', QI.calculateTotals);
+    }
+    container.appendChild(row);
+    QI.calculateTotals();
+    return row;
+  };
+
+  // Drag & drop reordering for the invoice/credit-note editors: items move
+  // alone, a heading moves its whole section (like a board group).
+  function initDnD() {
+    if (!window.QIDnD) return;
+    const container = document.getElementById('lineItemsContainer');
+    if (!container) return;
+    QIDnD.attach({
+      container: container,
+      rowSelector: '.fw-qi__line-item',
+      headingSelector: '.fw-qi__heading-card',
+      onReorder: QI.calculateTotals
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDnD);
+  } else {
+    initDnD();
+  }
+
   // ========== CALCULATIONS ==========
   QI.calculateTotals = function() {
     let subtotal = 0;
@@ -169,7 +221,53 @@ window.QI = window.QI || {};
     if (document.getElementById('enableMilestones')?.checked) {
       QI.calculateMilestones();
     }
+
+    renderSectionTotals();
   };
+
+  // Live per-section totals (excl. VAT), like the board's per-group SUMMARY
+  // row. Display-only cards rebuilt on every recalc — invisible to the drag
+  // & drop selectors and to the save payload collector; VAT stays a single
+  // line in the grand totals.
+  function renderSectionTotals() {
+    const container = document.getElementById('lineItemsContainer');
+    if (!container) return;
+    container.querySelectorAll('.fw-qi__section-total').forEach(el => el.remove());
+
+    let open = null; // { title, net, count, lastRow }
+    const flush = function () {
+      if (open && open.count > 0) {
+        const row = document.createElement('div');
+        row.className = 'fw-qi__section-total';
+        const label = document.createElement('span');
+        label.className = 'fw-qi__section-total-label';
+        label.textContent = (open.title ? open.title + ' — ' : '') + 'Total (excl. VAT)';
+        const amount = document.createElement('span');
+        amount.className = 'fw-qi__section-total-amount';
+        amount.textContent = curSym() + ' ' + open.net.toFixed(2);
+        row.appendChild(label);
+        row.appendChild(amount);
+        open.lastRow.after(row);
+      }
+      open = null;
+    };
+
+    Array.from(container.children).forEach(function (child) {
+      if (child.classList.contains('fw-qi__heading-card')) {
+        flush();
+        const title = (child.querySelector('.heading-title')?.value || '').trim();
+        open = { title: title, net: 0, count: 0, lastRow: child };
+      } else if (child.classList.contains('fw-qi__line-item') && open) {
+        const qty = parseFloat(child.querySelector('.line-quantity')?.value) || 0;
+        const price = parseFloat(child.querySelector('.line-price')?.value) || 0;
+        const discount = parseFloat(child.querySelector('.line-discount')?.value) || 0;
+        open.net += qty * price - discount;
+        open.count++;
+        open.lastRow = child;
+      }
+    });
+    flush();
+  }
 
   // ========== MILESTONES ==========
   let milestoneCounter = 0;

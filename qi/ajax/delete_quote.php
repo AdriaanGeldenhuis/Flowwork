@@ -45,6 +45,12 @@ try {
     // Purge child rows (no FK cascade in schema)
     $DB->prepare("DELETE FROM quote_lines WHERE quote_id = ?")->execute([$quoteId]);
     try {
+        require_once __DIR__ . '/../lib/LineHeadings.php';
+        LineHeadings::delete($DB, LineHeadings::TYPE_QUOTE, (int)$quoteId);
+    } catch (Throwable $e) {
+        error_log('delete_quote headings cleanup: ' . $e->getMessage());
+    }
+    try {
         $DB->prepare("DELETE FROM payment_milestones WHERE entity_type = 'quote' AND entity_id = ? AND company_id = ?")
            ->execute([$quoteId, $companyId]);
     } catch (Throwable $e) {

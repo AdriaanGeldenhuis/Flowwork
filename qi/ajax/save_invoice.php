@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
 require_once __DIR__ . '/../lib/Currencies.php';
+require_once __DIR__ . '/../lib/LineHeadings.php';
 
 header('Content-Type: application/json');
 
@@ -32,6 +33,22 @@ $lineItems = $input['line_items'] ?? [];
 if (empty($lineItems) || !is_array($lineItems)) {
     echo json_encode(['ok' => false, 'error' => 'At least one line item is required']);
     exit;
+}
+
+// Section headings (board-group style). Only requests that carry the key
+// touch stored headings, so older cached form JS can't wipe them. The table
+// is created up-front when needed — DDL inside the transaction would
+// implicitly commit it.
+$headingsProvided = array_key_exists('headings', $input) && is_array($input['headings']);
+$headings = $headingsProvided ? $input['headings'] : [];
+if ($headingsProvided) {
+    try {
+        LineHeadings::ensureTable($DB);
+    } catch (Throwable $e) {
+        error_log('save_invoice ensure qi_line_headings: ' . $e->getMessage());
+        $headingsProvided = false;
+        $headings = [];
+    }
 }
 
 // Fetch default currency from qi_settings; the default VAT rate is the
@@ -260,10 +277,17 @@ try {
                 $item['tax_code_id'],
                 $glAccountId,
                 ($item['line_total_c'] ?? 0) / 100,
-                $index,
+                // Explicit sort_order interleaves items with section headings;
+                // older clients that don't send it keep array order.
+                isset($item['sort_order']) ? (int)$item['sort_order'] : $index,
                 $invId
             ]);
         }
+    }
+
+    // Persist section headings (shares the lines' sort_order sequence)
+    if ($headingsProvided) {
+        LineHeadings::replace($DB, (int)$companyId, LineHeadings::TYPE_INVOICE, (int)$invoiceId, $headings);
     }
 
     // Handle payment milestones
