@@ -94,8 +94,11 @@ try {
     $stmt->execute([$quoteId]);
     $lines = $stmt->fetchAll();
 
-    // Interleave section headings (board-group style) into document order
-    $docRows = LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, $quoteId));
+    // Interleave section headings (board-group style) into document order,
+    // with a per-section total (excl. VAT) after each section's items
+    $docRows = LineHeadings::withSectionTotals(
+        LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, $quoteId))
+    );
 
     // Fetch payment milestones
     $milestones = [];
@@ -382,6 +385,11 @@ $isForeign   = ($docCurrency !== Currencies::BASE);
                                     <?php if (($line['_kind'] ?? 'item') === 'heading'): ?>
                                         <tr class="fw-qi__doc-heading-row">
                                             <td colspan="5"><?= htmlspecialchars($line['item_description']) ?></td>
+                                        </tr>
+                                    <?php elseif ($line['_kind'] === 'section_total'): ?>
+                                        <tr class="fw-qi__doc-section-total-row">
+                                            <td colspan="4" class="fw-qi__doc-table-right"><?= htmlspecialchars($line['title'] !== '' ? $line['title'] . ' — Total (excl. VAT)' : 'Section total (excl. VAT)') ?></td>
+                                            <td class="fw-qi__doc-table-right"><strong><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['net'], 2) ?></strong></td>
                                         </tr>
                                     <?php else: ?>
                                         <?php $itemNo++; ?>

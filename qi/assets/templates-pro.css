@@ -370,6 +370,26 @@
   background: rgba(0, 0, 0, 0.04);
 }
 
+/* Per-section total row (excl. VAT) closing off each heading's items */
+.fw-qi__doc-table tr.fw-qi__doc-section-total-row td {
+  padding: 7px 12px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--qi-text-color, #374151);
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid #d1d5db;
+  white-space: nowrap;
+}
+
+.fw-qi[data-theme="dark"] .fw-qi__doc-table tr.fw-qi__doc-section-total-row td {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+.fw-qi__doc-table tbody tr.fw-qi__doc-section-total-row:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
 /* Numeric columns (Qty / Unit Price / Line Total / Amount / Paid / Outstanding)
    must keep the currency symbol and the number on one line — otherwise a
    squeezed column wraps "R" onto its own line above the value. */

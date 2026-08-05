@@ -546,6 +546,29 @@ class QiStyledPdfWriter
         // Rows
         $even = false;
         foreach ($this->lines as $li) {
+            // Per-section total (excl. VAT): right-aligned label + amount on
+            // a light band closing off the section. VAT stays a single line
+            // in the grand totals.
+            if (($li['_kind'] ?? 'item') === 'section_total') {
+                $title = trim((string)($li['title'] ?? ''));
+                $label = $title !== '' ? ($title . ' — Total (excl. VAT)') : 'Section total (excl. VAT)';
+                $totRowH = 20;
+                $beforePage = $this->pageNum;
+                $this->checkSpace($totRowH);
+                if ($this->pageNum !== $beforePage) {
+                    $this->drawTableHeader($x, $w, $headerH, $colDesc, $colQty, $colPrice, $colTotal);
+                    $this->y -= $headerH;
+                }
+                $this->rect($x, $this->y - $totRowH, $w, $totRowH, '0.96', '0.965', '0.975');
+                $this->line($x, $this->y - $totRowH, $x + $w, $this->y - $totRowH, 0.5, '0.8', '0.8', '0.82');
+                $midY = $this->y - 13;
+                $this->textRight('F2', 8.5, $x + $colTotal - 8, $midY, $label, '0.25', '0.28', '0.33');
+                $this->textRight('F2', 9, $x + $w - 8, $midY, $this->fmt($li['net'] ?? 0), '0.1', '0.1', '0.1');
+                $this->y -= $totRowH;
+                $even = false;
+                continue;
+            }
+
             // Section heading rows (board-group style): a full-width tinted
             // band with the title in bold — no qty/price/total, and the
             // zebra striping restarts under each heading.

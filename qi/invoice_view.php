@@ -46,8 +46,11 @@ try {
     $stmt->execute([$invoiceId]);
     $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Interleave section headings (board-group style) into document order
-    $docRows = LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_INVOICE, $invoiceId));
+    // Interleave section headings (board-group style) into document order,
+    // with a per-section total (excl. VAT) after each section's items
+    $docRows = LineHeadings::withSectionTotals(
+        LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_INVOICE, $invoiceId))
+    );
 
     // Fetch payment milestones
     $milestones = [];
@@ -573,6 +576,11 @@ $vatSplit = $isVatRegistered ? qi_vat_rate_split($lines) : [];
                             <?php if (($line['_kind'] ?? 'item') === 'heading'): ?>
                                 <tr class="fw-qi__doc-heading-row">
                                     <td colspan="5"><?= htmlspecialchars($line['item_description']) ?></td>
+                                </tr>
+                            <?php elseif ($line['_kind'] === 'section_total'): ?>
+                                <tr class="fw-qi__doc-section-total-row">
+                                    <td colspan="4" style="text-align:right;"><?= htmlspecialchars($line['title'] !== '' ? $line['title'] . ' — Total (excl. VAT)' : 'Section total (excl. VAT)') ?></td>
+                                    <td style="text-align:right;"><strong><?= format_currency($line['net']) ?></strong></td>
                                 </tr>
                             <?php else: ?>
                                 <tr>

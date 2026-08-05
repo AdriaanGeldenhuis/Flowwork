@@ -165,13 +165,16 @@ class DocumentPdfService
             return null;
         }
 
-        $stmtLines = $db->prepare("SELECT item_description, quantity, unit_price, line_total, sort_order FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
+        $stmtLines = $db->prepare("SELECT item_description, quantity, unit_price, discount, line_total, sort_order FROM invoice_lines WHERE invoice_id = ? ORDER BY sort_order");
         $stmtLines->execute([$invoiceId]);
         $lineRows = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
         // Interleave section headings (board-group style); heading rows carry
         // _kind = 'heading' and no amounts, and the writer renders them as
-        // full-width section bands.
-        $lineRows = LineHeadings::merge($lineRows, LineHeadings::fetch($db, LineHeadings::TYPE_INVOICE, $invoiceId));
+        // full-width section bands with a per-section total (excl. VAT)
+        // after each section's items.
+        $lineRows = LineHeadings::withSectionTotals(
+            LineHeadings::merge($lineRows, LineHeadings::fetch($db, LineHeadings::TYPE_INVOICE, $invoiceId))
+        );
 
         $brand = Branding::resolve($invoice, 'invoice');
         $invoice['_doc_type']    = $brand['title'];
@@ -246,11 +249,13 @@ class DocumentPdfService
             return null;
         }
 
-        $stmtLines = $db->prepare("SELECT item_description, quantity, unit_price, line_total, sort_order FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
+        $stmtLines = $db->prepare("SELECT item_description, quantity, unit_price, discount, line_total, sort_order FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
         $stmtLines->execute([$quoteId]);
         $lineRows = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
         // Interleave section headings (board-group style) — see renderInvoice.
-        $lineRows = LineHeadings::merge($lineRows, LineHeadings::fetch($db, LineHeadings::TYPE_QUOTE, $quoteId));
+        $lineRows = LineHeadings::withSectionTotals(
+            LineHeadings::merge($lineRows, LineHeadings::fetch($db, LineHeadings::TYPE_QUOTE, $quoteId))
+        );
 
         $brand = Branding::resolve($quote, 'quote');
         $quote['_doc_type']    = $brand['title'];

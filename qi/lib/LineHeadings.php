@@ -122,6 +122,48 @@ class LineHeadings
     }
 
     /**
+     * Insert a '_kind' => 'section_total' row after each section's items,
+     * carrying the section 'title' and 'net' — the sum of the section's
+     * qty * unit_price - discount (i.e. excluding VAT). VAT stays a single
+     * line in the document's grand-totals block. Items before the first
+     * heading belong to no section and get no total row; sections without
+     * items get none either. No-op for documents without headings.
+     */
+    public static function withSectionTotals(array $rows): array
+    {
+        $out = [];
+        $open = null; // ['title' => string, 'net' => float, 'count' => int]
+
+        $flush = function () use (&$out, &$open) {
+            if ($open && $open['count'] > 0) {
+                $out[] = [
+                    '_kind' => 'section_total',
+                    'title' => $open['title'],
+                    'net'   => $open['net'],
+                ];
+            }
+            $open = null;
+        };
+
+        foreach ($rows as $r) {
+            if (($r['_kind'] ?? 'item') === 'heading') {
+                $flush();
+                $open = ['title' => (string)($r['item_description'] ?? ''), 'net' => 0.0, 'count' => 0];
+                $out[] = $r;
+                continue;
+            }
+            $out[] = $r;
+            if ($open !== null) {
+                $open['net'] += (float)($r['quantity'] ?? 0) * (float)($r['unit_price'] ?? 0)
+                              - (float)($r['discount'] ?? 0);
+                $open['count']++;
+            }
+        }
+        $flush();
+        return $out;
+    }
+
+    /**
      * Interleave line rows and heading rows into document order.
      * Each returned row gains '_kind' => 'item' | 'heading'; heading rows
      * carry their title in 'item_description' too, so existing render loops

@@ -83,8 +83,11 @@ try {
     $stmt->execute([$quote['id']]);
     $lines = $stmt->fetchAll();
 
-    // Interleave section headings (board-group style) into document order
-    $docRows = LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, (int)$quote['id']));
+    // Interleave section headings (board-group style) into document order,
+    // with a per-section total (excl. VAT) after each section's items
+    $docRows = LineHeadings::withSectionTotals(
+        LineHeadings::merge($lines, LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, (int)$quote['id']))
+    );
 
     // Colour, text and font customisation — resolved centrally (qi/lib/Branding.php).
     $brand = Branding::resolve($quote, 'quote');
@@ -209,6 +212,13 @@ try {
                                 <?php if (($line['_kind'] ?? 'item') === 'heading'): ?>
                                     <tr class="fw-qi__doc-heading-row">
                                         <td colspan="4"><?= htmlspecialchars($line['item_description']) ?></td>
+                                    </tr>
+                                    <?php continue; ?>
+                                <?php endif; ?>
+                                <?php if ($line['_kind'] === 'section_total'): ?>
+                                    <tr class="fw-qi__doc-section-total-row">
+                                        <td colspan="3" style="text-align:right;"><?= htmlspecialchars($line['title'] !== '' ? $line['title'] . ' — Total (excl. VAT)' : 'Section total (excl. VAT)') ?></td>
+                                        <td style="text-align:right;"><strong><?= htmlspecialchars($docSymbol) ?> <?= number_format($line['net'], 2) ?></strong></td>
                                     </tr>
                                     <?php continue; ?>
                                 <?php endif; ?>

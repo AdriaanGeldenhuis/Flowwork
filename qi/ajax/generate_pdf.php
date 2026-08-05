@@ -113,7 +113,7 @@ try {
             'Expires' => date('d M Y', strtotime($doc['expiry_date'])),
         ];
 
-        $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, line_total, sort_order FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
+        $stmt = $DB->prepare("SELECT item_description, quantity, unit_price, discount, line_total, sort_order FROM quote_lines WHERE quote_id = ? ORDER BY sort_order");
         $stmt->execute([$id]);
         $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $docHeadings = LineHeadings::fetch($DB, LineHeadings::TYPE_QUOTE, (int)$id);
@@ -303,10 +303,11 @@ try {
     $isVatRegistered = trim((string)($doc['vat_number'] ?? '')) !== '';
     $vatSplit        = ($isInvoice && $isVatRegistered) ? qi_vat_rate_split($lines) : [];
 
-    // Interleave section headings (board-group style) into document order.
-    // The VAT split above is computed from $lines only — headings carry no
-    // amounts and never touch the figures.
-    $docRows = LineHeadings::merge($lines, $docHeadings ?? []);
+    // Interleave section headings (board-group style) into document order,
+    // with a per-section total (excl. VAT) after each section's items.
+    // The VAT split above is computed from $lines only — headings and
+    // section totals carry no tax and never touch the figures.
+    $docRows = LineHeadings::withSectionTotals(LineHeadings::merge($lines, $docHeadings ?? []));
 
 } catch (Exception $e) {
     http_response_code(500);
@@ -478,8 +479,10 @@ try {
         .fw-qi__doc-totals { page-break-inside: avoid; }
         .fw-qi__doc-table thead { display: table-header-group; }
         .fw-qi__doc-table tbody tr { page-break-inside: avoid; }
-        /* A line-item section heading must not be stranded at a page bottom */
+        /* A line-item section heading must not be stranded at a page bottom,
+           and a section total stays with the item above it */
         .fw-qi__doc-heading-row { break-after: avoid; page-break-after: avoid; }
+        .fw-qi__doc-section-total-row { break-before: avoid; page-break-before: avoid; }
         /* Keep a section heading with its content, and don't split the short
            Payment Details / Terms blocks or strand the footer. */
         .fw-qi__doc-section { page-break-inside: avoid; }
@@ -601,6 +604,11 @@ try {
                     <?php if (($li['_kind'] ?? 'item') === 'heading'): ?>
                         <tr class="fw-qi__doc-heading-row">
                             <td colspan="<?= $isInvoice ? 5 : 4 ?>"><?= htmlspecialchars($li['item_description']) ?></td>
+                        </tr>
+                    <?php elseif ($li['_kind'] === 'section_total'): ?>
+                        <tr class="fw-qi__doc-section-total-row">
+                            <td colspan="<?= $isInvoice ? 4 : 3 ?>" style="text-align:right;"><?= htmlspecialchars($li['title'] !== '' ? $li['title'] . ' — Total (excl. VAT)' : 'Section total (excl. VAT)') ?></td>
+                            <td style="text-align:right;"><strong><?= fmt($li['net']) ?></strong></td>
                         </tr>
                     <?php else: ?>
                         <tr>
