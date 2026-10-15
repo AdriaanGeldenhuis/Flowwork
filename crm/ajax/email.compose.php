@@ -79,7 +79,7 @@ try {
 
     // Append signature if provided
     if ($signatureId > 0) {
-        $sigStmt = $DB->prepare("SELECT html FROM email_signatures WHERE signature_id = ? AND company_id = ? AND (user_id = ? OR user_id IS NULL)");
+        $sigStmt = $DB->prepare("SELECT content_html FROM email_signatures WHERE signature_id = ? AND company_id = ? AND (user_id = ? OR user_id IS NULL)");
         $sigStmt->execute([$signatureId, $companyId, $userId]);
         $sigHtml = $sigStmt->fetchColumn();
         if ($sigHtml) {

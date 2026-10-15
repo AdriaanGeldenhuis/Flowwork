@@ -31,7 +31,12 @@ class SecureVault {
     $cipher = substr($raw, 28);
     $key = self::getKey();
     $plain = openssl_decrypt($cipher, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
-    if ($plain === false) return '';
+    if ($plain === false) {
+      // Legacy rows stored base64(plaintext); a long legacy password is >= 29
+      // bytes so it lands here. Accept it only if it is printable text.
+      if (preg_match('/^[\x20-\x7E]+$/', $raw)) return $raw;
+      return '';
+    }
     return $plain;
   }
 }

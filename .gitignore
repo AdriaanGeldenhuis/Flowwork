@@ -60,3 +60,8 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# ---------------------------------------------------------------------------
+# Mail runtime data (attachments, outgoing spool, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/mail/
