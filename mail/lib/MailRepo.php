@@ -512,16 +512,19 @@ class MailRepo
                    SUM(e.folder='Drafts') AS drafts,
                    SUM(e.folder='Outbox') AS outbox,
                    COUNT(DISTINCT CASE WHEN e.folder='Spam' AND e.is_read=0 THEN COALESCE(NULLIF(e.thread_id,0), -e.email_id) END) AS spam,
-                   COUNT(DISTINCT CASE WHEN e.folder='INBOX' AND e.snoozed_until > NOW() THEN COALESCE(NULLIF(e.thread_id,0), -e.email_id) END) AS snoozed,
-                   MAX(e.email_id) AS latest_id
-              FROM emails e WHERE e.account_id IN ($in) GROUP BY e.account_id");
+                   COUNT(DISTINCT CASE WHEN e.folder='INBOX' AND e.snoozed_until > NOW() THEN COALESCE(NULLIF(e.thread_id,0), -e.email_id) END) AS snoozed
+              FROM emails e
+             WHERE e.account_id IN ($in) AND e.folder IN ('INBOX','Drafts','Outbox','Spam')
+          GROUP BY e.account_id");
         $st->execute($accountIds);
-        $latest = 0;
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
             foreach (['inbox', 'drafts', 'outbox', 'spam', 'snoozed'] as $k) $out[$k] += (int)$r[$k];
             $out['by_account'][(int)$r['account_id']] = (int)$r['inbox'];
-            $latest = max($latest, (int)$r['latest_id']);
         }
+        // Newest message id — lets the client notice mail delivered by cron.
+        $st = $db->prepare("SELECT MAX(email_id) FROM emails WHERE account_id IN ($in)");
+        $st->execute($accountIds);
+        $latest = (int)$st->fetchColumn();
         $st = $db->prepare("SELECT m.tag_id, COUNT(DISTINCT COALESCE(NULLIF(e.thread_id,0), -e.email_id)) AS n
                               FROM email_tag_map m JOIN emails e ON e.email_id = m.email_id
                              WHERE e.account_id IN ($in) AND e.is_read = 0 AND e.folder NOT IN ('Trash','Spam')
