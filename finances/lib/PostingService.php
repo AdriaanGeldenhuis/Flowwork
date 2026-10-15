@@ -18,6 +18,7 @@
 // one, in which case they join it.
 
 require_once __DIR__ . '/AccountsMap.php';
+require_once __DIR__ . '/FinanceBootstrap.php';
 require_once __DIR__ . '/PeriodService.php';
 require_once __DIR__ . '/InventoryService.php';
 require_once __DIR__ . '/ReversalService.php';
@@ -38,6 +39,9 @@ class PostingService
         $this->db = $db;
         $this->companyId = $companyId;
         $this->userId = $userId;
+        // Core tax codes and a chart must exist before anything can post
+        // (a company set up after the finance migrations has neither).
+        FinanceBootstrap::ensure($db, $companyId);
         $this->accounts = new AccountsMap($db, $companyId);
         $this->periodService = new PeriodService($db, $companyId);
         $this->inventory = new InventoryService($db, $companyId);
@@ -74,6 +78,13 @@ class PostingService
         );
         $stmt->execute([$this->companyId, $code]);
         $id = $stmt->fetchColumn();
+        // A missing core code would leave the journal line untagged (and out
+        // of the VAT201 boxes) — provision it and look again.
+        if (!$id && isset(FinanceBootstrap::CORE_TAX_CODES[$code])
+            && FinanceBootstrap::ensureTaxCodes($this->db, $this->companyId)) {
+            $stmt->execute([$this->companyId, $code]);
+            $id = $stmt->fetchColumn();
+        }
         return $id ? (int)$id : null;
     }
 

@@ -6,6 +6,8 @@
 // 15 sprinkled through save paths. Rates live per company so a statutory
 // rate change is one data update, not a code hunt.
 
+require_once __DIR__ . '/FinanceBootstrap.php';
+
 class TaxCodes
 {
     private PDO $db;
@@ -19,21 +21,40 @@ class TaxCodes
         $this->companyId = $companyId;
     }
 
-    /** All active tax codes for the company, keyed by tax_code_id. */
+    /**
+     * All active tax codes for the company, keyed by tax_code_id. The core
+     * codes (STD/ZERO/EXEMPT/INPUT) the document forms send are provisioned
+     * first when any is missing — otherwise saving a line fails with
+     * "Unknown tax code 'ZERO'".
+     */
     public function all(): array
     {
         if ($this->cache === null) {
-            $stmt = $this->db->prepare(
-                "SELECT tax_code_id, code, description, rate_percent, type
-                   FROM gl_tax_codes WHERE company_id = ? AND is_active = 1"
-            );
-            $stmt->execute([$this->companyId]);
-            $this->cache = [];
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $this->cache[(int)$row['tax_code_id']] = $row;
+            $this->cache = $this->load();
+            $present = [];
+            foreach ($this->cache as $row) {
+                $present[strtoupper(trim((string)$row['code']))] = true;
+            }
+            if (array_diff_key(FinanceBootstrap::CORE_TAX_CODES, $present)
+                && FinanceBootstrap::ensureTaxCodes($this->db, $this->companyId)) {
+                $this->cache = $this->load();
             }
         }
         return $this->cache;
+    }
+
+    private function load(): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT tax_code_id, code, description, rate_percent, type
+               FROM gl_tax_codes WHERE company_id = ? AND is_active = 1"
+        );
+        $stmt->execute([$this->companyId]);
+        $rows = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $rows[(int)$row['tax_code_id']] = $row;
+        }
+        return $rows;
     }
 
     /** The company's standard VAT rate percent (STD code), e.g. 15.0. */

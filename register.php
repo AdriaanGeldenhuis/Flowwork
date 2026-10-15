@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/init.php';
 require_once __DIR__ . '/includes/business_types.php';
+require_once __DIR__ . '/includes/companies.php';
 
 if (!empty($_SESSION['user_id'])) redirect('/home.php');
 
@@ -130,6 +131,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $_SESSION['sess_token'] = $token;
 
       $DB->prepare("UPDATE users SET session_token = ? WHERE id = ?")->execute([$token, $userId]);
+
+      fw_provision_company_finance((int)$companyId);
 
       redirect('/home.php');
 

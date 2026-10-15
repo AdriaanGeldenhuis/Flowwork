@@ -16,6 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $companyId = (int)$_SESSION['company_id'];
 
 try {
+    // The pickers must always offer the core codes (STD/ZERO/EXEMPT/INPUT).
+    require_once __DIR__ . '/../lib/FinanceBootstrap.php';
+    FinanceBootstrap::ensureTaxCodes($DB, $companyId);
+
     $stmt = $DB->prepare("
         SELECT
             tax_code_id,

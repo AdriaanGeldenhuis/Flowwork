@@ -8,6 +8,8 @@
 // fetch the corresponding account_code from gl_accounts. If the setting is
 // blank or invalid a sensible default can be supplied.
 
+require_once __DIR__ . '/FinanceBootstrap.php';
+
 class AccountsMap
 {
     /**
@@ -78,13 +80,57 @@ class AccountsMap
      * Resolve a mapping key to an account code using the canonical fallback
      * from self::DEFAULTS. Prefer this over get() with an ad-hoc literal so
      * every caller shares one authority.
+     *
+     * An explicit setting that points at a real account always wins. Without
+     * one, the canonical default is used only when that account exists on
+     * this company's chart and plays the role; otherwise the role is resolved
+     * to the company's own account (or the seed account is created) and
+     * pinned — see FinanceBootstrap. A setting whose account was deleted is
+     * repaired the same way. This is what keeps legacy charts (where e.g. the
+     * bank is 1110, not the seed's 1020) and new companies posting.
      */
     public function code(string $settingKey): string
     {
         if (!isset(self::DEFAULTS[$settingKey])) {
             throw new InvalidArgumentException("Unknown finance account mapping key: $settingKey");
         }
-        return $this->get($settingKey, self::DEFAULTS[$settingKey]);
+        $explicit = $this->explicitCode($settingKey);
+        if ($explicit !== null) {
+            return $explicit;
+        }
+        $brokenSetting = $this->rawSetting($settingKey) !== '';
+        return FinanceBootstrap::resolveMapping($this->db, $this->companyId, $settingKey, $brokenSetting)
+            ?? self::DEFAULTS[$settingKey];
+    }
+
+    /**
+     * Account code an explicit company setting points at, or null when the
+     * setting is blank or its account does not exist on this company's chart.
+     * Numeric values are account ids, anything else an account code (as get()).
+     */
+    public function explicitCode(string $settingKey): ?string
+    {
+        $value = $this->rawSetting($settingKey);
+        if ($value === '') {
+            return null;
+        }
+        $stmt = $this->db->prepare(is_numeric($value)
+            ? "SELECT account_code FROM gl_accounts WHERE account_id = ? AND company_id = ? LIMIT 1"
+            : "SELECT account_code FROM gl_accounts WHERE account_code = ? AND company_id = ? LIMIT 1");
+        $stmt->execute([is_numeric($value) ? (int)$value : $value, $this->companyId]);
+        $code = $stmt->fetchColumn();
+        return $code !== false && $code !== null && $code !== '' ? (string)$code : null;
+    }
+
+    /** Trimmed raw setting value ('' when unset or falsy, as get() treats it). */
+    private function rawSetting(string $settingKey): string
+    {
+        $stmt = $this->db->prepare(
+            "SELECT setting_value FROM company_settings WHERE company_id = ? AND setting_key = ? LIMIT 1"
+        );
+        $stmt->execute([$this->companyId, $settingKey]);
+        $value = trim((string)$stmt->fetchColumn());
+        return $value === '0' ? '' : $value;
     }
 
     /**
