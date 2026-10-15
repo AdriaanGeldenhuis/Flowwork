@@ -238,6 +238,27 @@ Also note: migrations 05 (fixed-asset `asset_id` AUTO_INCREMENT fix) and 06
 all six 2026-07-06 files — and `fa_depreciation_runs` gains a unique month index
 via migration 06 (see the pre-flight duplicate check in step 2).
 
+## Self-provisioning (2026-10)
+
+The manual steps above were missed in production, which surfaced as
+"Unknown tax code 'ZERO'" (saving a zero-rated line) and "Unknown GL account
+code(s): 1020" (recording a payment on the legacy chart, whose bank is 1110).
+`finances/lib/FinanceBootstrap.php` now does the same work on demand, so the
+app no longer depends on them:
+
+- missing core tax codes (STD/ZERO/EXEMPT/INPUT) are inserted or reactivated
+  whenever tax codes are loaded or a document posts;
+- a company with no chart gets the full SARS chart (`finances/lib/CoaSeed.php`,
+  a PHP copy of the stored procedure — a test keeps them identical);
+- `AccountsMap::code()` never returns a mapping account that is missing from
+  the chart or (for an unset mapping) plays the wrong role: it finds the
+  company's own account (Banking → Accounts link, subtype, then name) or
+  creates the seed account, pins the mapping and writes an audit event;
+- new companies (registration / Add Company) are fully provisioned up front.
+
+Explicit mappings that point at a real account are never changed. The steps
+above remain safe to run; they are no longer required.
+
 ## Review items documented, not changed
 
 - qi financial endpoints (record payment, write-off, credit) require

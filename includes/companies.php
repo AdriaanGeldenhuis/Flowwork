@@ -212,9 +212,25 @@ function fw_create_company_for_user(int $userId, string $name, string $businessT
         $stmt->execute([$userId, $newCompanyId]);
 
         $DB->commit();
-        return $newCompanyId;
     } catch (Exception $e) {
         $DB->rollBack();
         throw $e;
+    }
+
+    fw_provision_company_finance($newCompanyId);
+    return $newCompanyId;
+}
+
+// Give a new company its VAT codes, chart of accounts and finance account
+// mappings up front, so invoicing and payments work from day one. Never
+// blocks company creation — the finance posting paths self-heal anyway.
+function fw_provision_company_finance(int $companyId): void
+{
+    global $DB;
+    try {
+        require_once __DIR__ . '/../finances/lib/FinanceBootstrap.php';
+        FinanceBootstrap::provisionCompany($DB, $companyId);
+    } catch (Throwable $e) {
+        error_log('Finance provisioning for company ' . $companyId . ' failed: ' . $e->getMessage());
     }
 }

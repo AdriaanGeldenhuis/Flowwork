@@ -9,6 +9,9 @@
  *   php finances/tools/finance_setup.php --company=3
  *
  * What it does, per company:
+ *  0. Ensures the core VAT codes exist and seeds the SARS chart when the
+ *     company has no accounts (FinanceBootstrap — the app does the same on
+ *     demand, so this is belt-and-braces).
  *  1. Ensures a dedicated net "VAT Control" account exists (legacy charts often
  *     have VAT Output/Input but no net control account, and code 2100 may be
  *     occupied by a legacy header account — the tool picks the next free code
@@ -28,6 +31,7 @@ if (PHP_SAPI !== 'cli') {
 
 require_once dirname(__DIR__, 2) . '/db.php';
 require_once dirname(__DIR__) . '/lib/AccountsMap.php';
+require_once dirname(__DIR__) . '/lib/FinanceBootstrap.php';
 
 $options = getopt('', ['company::']);
 $onlyCompany = isset($options['company']) ? (int)$options['company'] : null;
@@ -40,6 +44,8 @@ foreach ($companies as $company) {
         continue;
     }
     echo "== Company {$cid} ({$company['name']}) ==\n";
+    // Core VAT codes, and the SARS chart for a company that has none yet.
+    FinanceBootstrap::ensure($DB, $cid);
     ensure_vat_control_account($DB, $cid);
     ensure_bad_debt_account($DB, $cid);
     seed_finance_settings($DB, $cid);
