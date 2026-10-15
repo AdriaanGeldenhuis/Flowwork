@@ -1,208 +1,152 @@
 <?php
-// /mail/index.php
+// /mail/index.php — Mail app (inbox, reader, composer).
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/autoload.php';
 
-define('ASSET_VERSION', '2026-07-10-mail-crm-parity');
+$companyId = (int)$_SESSION['company_id'];
+$userId = (int)$_SESSION['user_id'];
+$isAdmin = fw_active_user_is_admin();
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch account + unread counts. The mail schema (email_accounts/emails) is
-// provisioned outside the tracked migrations, so if a table is missing on this
-// environment we degrade to the empty state instead of failing the whole page
-// with a 500 (mirrors the "table may not exist yet" handling in auth_gate.php).
-$accountCount = 0;
-$unreadCount  = 0;
+$companyName = 'Company';
 try {
-    $stmt = $DB->prepare("SELECT COUNT(*) FROM email_accounts WHERE company_id = ? AND user_id = ? AND is_active = 1");
-    $stmt->execute([$companyId, $userId]);
-    $accountCount = (int)$stmt->fetchColumn();
-
-    $stmt = $DB->prepare("
-      SELECT COUNT(*) FROM emails e
-      JOIN email_accounts a ON e.account_id = a.account_id
-      WHERE a.company_id = ? AND a.user_id = ? AND e.is_read = 0 AND e.direction = 'incoming'
-    ");
-    $stmt->execute([$companyId, $userId]);
-    $unreadCount = (int)$stmt->fetchColumn();
+    $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $companyName = $stmt->fetchColumn() ?: 'Company';
+    MailSchema::ensure($DB);
 } catch (Throwable $e) {
-    error_log('[mail/index] mailbox count query failed: ' . $e->getMessage());
+    error_log('[mail/index] ' . $e->getMessage());
 }
+
+$pageTitle = 'Mail';
+$withSearch = true;
+$withSync = true;
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Mail – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/mail/assets/mail.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-mail">
-    <div class="fw-mail__container">
+<div class="fwm-app" id="mailApp">
+    <?php include __DIR__ . '/partials/topbar.php'; ?>
 
-        <!-- Header -->
-        <header class="fw-mail__header">
-            <div class="fw-mail__brand">
-                <div class="fw-mail__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+    <div class="fwm-body">
+        <aside class="fwm-side" id="side" aria-label="Folders">
+            <button class="fwm-compose-btn hide-narrow-drawer" id="composeBtn" type="button">
+                <svg class="i"><use href="#i-pen"/></svg><span>Compose</span>
+            </button>
+            <div class="fwm-side__scroll scroll" id="sideNav">
+                <nav class="fwm-nav" id="navFolders" aria-label="Mailboxes"></nav>
+                <div class="fwm-nav__head fwm-nav--labels"><h3>Labels</h3>
+                    <button class="icon-btn icon-btn--sm" id="newLabelBtn" type="button" aria-label="New label" data-tip="New label"><svg class="i i--sm"><use href="#i-plus"/></svg></button>
                 </div>
-                <div class="fw-mail__brand-text">
-                    <div class="fw-mail__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-mail__app-name">Mail</div>
-                </div>
+                <nav class="fwm-nav fwm-nav--labels" id="navLabels" aria-label="Labels"></nav>
+                <div class="fwm-nav__head fwm-nav--views" id="viewsHead" hidden><h3>Saved searches</h3></div>
+                <nav class="fwm-nav fwm-nav--views" id="navViews" aria-label="Saved searches"></nav>
             </div>
+            <div class="fwm-side__foot" id="sideFoot"></div>
+        </aside>
 
-            <div class="fw-mail__greeting">
-                Hello, <span class="fw-mail__greeting-name"><?= htmlspecialchars($firstName) ?></span>
+        <section class="fwm-pane fwm-list" id="listPane" aria-label="Conversations">
+            <div class="fwm-list__head" id="listHead">
+                <label class="fwm-check" id="selectAll" role="checkbox" aria-checked="false" tabindex="0" aria-label="Select all"><svg class="i"><use href="#i-check"/></svg></label>
+                <div class="fwm-list__title"><h2 id="listTitle">Inbox</h2><small id="listSub">&nbsp;</small></div>
+                <button class="icon-btn" id="saveSearchBtn" type="button" aria-label="Save this search" data-tip="Save search" hidden><svg class="i"><use href="#i-bookmark"/></svg></button>
+                <button class="icon-btn" id="listMoreBtn" type="button" aria-label="List options" data-tip="Options" data-tip-pos="left"><svg class="i"><use href="#i-more-h"/></svg></button>
             </div>
-
-            <div class="fw-mail__controls">
-                <a href="/" class="fw-mail__home-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-
-                <button class="fw-mail__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <svg class="fw-mail__theme-icon fw-mail__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <svg class="fw-mail__theme-icon fw-mail__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
-
-                <div class="fw-mail__menu-wrapper">
-                    <button class="fw-mail__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                        </svg>
-                    </button>
-                    <nav class="fw-mail__kebab-menu" id="kebabMenu" aria-hidden="true">
-                        <a href="/mail/" class="fw-mail__kebab-item">Inbox</a>
-                        <a href="/mail/compose.php" class="fw-mail__kebab-item">Compose</a>
-                        <a href="/mail/templates.php" class="fw-mail__kebab-item">Templates</a>
-                        <a href="/mail/settings.php" class="fw-mail__kebab-item">Settings</a>
-                        <button class="fw-mail__kebab-item" onclick="MailApp.syncAll()">Sync All</button>
-                    </nav>
-                </div>
+            <div class="fwm-bulk" id="bulkBar" hidden>
+                <label class="fwm-check is-on" id="bulkAll" role="checkbox" aria-checked="true" tabindex="0" aria-label="Clear selection"><svg class="i"><use href="#i-check"/></svg></label>
+                <span class="fwm-bulk__count" id="bulkCount">0 selected</span>
+                <span class="fwm-bulk__spacer"></span>
+                <div id="bulkActions" style="display:flex;gap:2px"></div>
             </div>
-        </header>
-
-        <!-- Main Content -->
-        <main class="fw-mail__main">
-
-            <div class="fw-mail__page-header">
-                <h1 class="fw-mail__page-title">Mail</h1>
-                <p class="fw-mail__page-subtitle">Unified inbox for your company accounts</p>
+            <div class="fwm-list__filters" id="filterChips" role="toolbar" aria-label="Filter">
+                <button class="fwm-chip is-on" data-filter="">All</button>
+                <button class="fwm-chip" data-filter="unread">Unread</button>
+                <button class="fwm-chip" data-filter="starred"><svg class="i"><use href="#i-star"/></svg>Starred</button>
+                <button class="fwm-chip" data-filter="attachments"><svg class="i"><use href="#i-clip"/></svg>Attachments</button>
             </div>
+            <div class="fwm-threads scroll" id="threads" role="listbox" aria-label="Conversations" tabindex="0"></div>
+        </section>
 
-            <!-- View tabs -->
-            <div class="fw-mail__view-tabs">
-                <a href="/mail/" class="fw-mail__view-tab fw-mail__view-tab--active">Inbox</a>
-                <a href="/mail/templates.php" class="fw-mail__view-tab">Templates</a>
-                <a href="/mail/settings.php" class="fw-mail__view-tab">Settings</a>
-            </div>
-
-            <!-- 3-pane layout -->
-            <div class="fw-mail__layout">
-
-                <!-- Sidebar: Folders -->
-                <aside class="fw-mail__sidebar" id="mailSidebar">
-                    <?php if ($accountCount === 0): ?>
-                        <div class="fw-mail__no-accounts">
-                            <p>No email accounts configured.</p>
-                            <a href="/mail/settings.php" class="fw-mail__btn fw-mail__btn--primary">Add Account</a>
-                        </div>
-                    <?php else: ?>
-                        <button class="fw-mail__compose-btn" onclick="location.href='/mail/compose.php'">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            </svg>
-                            Compose
-                        </button>
-
-                        <div class="fw-mail__folder-list" id="folderList">
-                            <div class="fw-mail__loading">Loading folders...</div>
-                        </div>
-                    <?php endif; ?>
-                </aside>
-
-                <!-- Middle: Thread list -->
-                <section class="fw-mail__thread-list" id="threadList">
-                    <div class="fw-mail__thread-header">
-                        <h2 id="threadListTitle">Inbox</h2>
-                        <div class="fw-mail__thread-controls">
-                            <input type="search" class="fw-mail__search" id="threadSearch" placeholder="Search..." autocomplete="off">
-                            <select class="fw-mail__filter" id="filterRead">
-                                <option value="">All</option>
-                                <option value="unread">Unread</option>
-                                <option value="read">Read</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="fw-mail__threads" id="threads">
-                        <div class="fw-mail__empty-state">
-                            <p>Select a folder</p>
-                            <small>Pick a folder from the sidebar to see its messages.</small>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Right: Message preview -->
-                <section class="fw-mail__preview" id="messagePreview">
-                    <div class="fw-mail__preview-empty">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="2"/>
-                            <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2"/>
-                        </svg>
-                        <p>Select a message to view</p>
-                    </div>
-                </section>
-
-            </div>
-
-        </main>
-
-        <!-- Footer -->
-        <footer class="fw-mail__footer">
-            <span>Mail v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Dark</span>
-        </footer>
-
+        <section class="fwm-pane fwm-reader" id="readerPane" aria-label="Reading pane"></section>
     </div>
+</div>
 
-    <script src="/mail/assets/mail.js?v=<?= ASSET_VERSION ?>"></script>
+<button class="fwm-fab" id="fabCompose" type="button"><svg class="i"><use href="#i-pen"/></svg>Compose</button>
+<div class="fwm-toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<!-- Keyboard shortcuts -->
+<div class="fwm-modal" id="shortcutsModal" hidden>
+    <div class="fwm-dialog fwm-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+        <div class="fwm-dialog__head"><h2 id="shortcutsTitle">Keyboard shortcuts</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <div class="fwm-dialog__body">
+            <div class="fwm-kbd-grid">
+                <h4>Navigate</h4>
+                <div class="fwm-kbd-row"><span>Next / previous conversation</span><span><kbd class="fwm-kbd">j</kbd><kbd class="fwm-kbd">k</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Open conversation</span><span><kbd class="fwm-kbd">Enter</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Back to list</span><span><kbd class="fwm-kbd">Esc</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Search</span><span><kbd class="fwm-kbd">/</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Go to Inbox / Starred / Sent / Drafts</span><span><kbd class="fwm-kbd">g</kbd><kbd class="fwm-kbd">i</kbd>·<kbd class="fwm-kbd">s</kbd>·<kbd class="fwm-kbd">t</kbd>·<kbd class="fwm-kbd">d</kbd></span></div>
+                <h4>Act</h4>
+                <div class="fwm-kbd-row"><span>Compose</span><span><kbd class="fwm-kbd">c</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Reply / reply all / forward</span><span><kbd class="fwm-kbd">r</kbd><kbd class="fwm-kbd">a</kbd><kbd class="fwm-kbd">f</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Archive</span><span><kbd class="fwm-kbd">e</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Move to Trash</span><span><kbd class="fwm-kbd">#</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Report spam</span><span><kbd class="fwm-kbd">!</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Star / unstar</span><span><kbd class="fwm-kbd">s</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Mark unread / read</span><span><kbd class="fwm-kbd">⇧ U</kbd><kbd class="fwm-kbd">⇧ I</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Select conversation</span><span><kbd class="fwm-kbd">x</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Snooze</span><span><kbd class="fwm-kbd">b</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Label</span><span><kbd class="fwm-kbd">l</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Undo last action</span><span><kbd class="fwm-kbd">z</kbd></span></div>
+                <h4>Compose</h4>
+                <div class="fwm-kbd-row"><span>Send</span><span><kbd class="fwm-kbd">Ctrl</kbd><kbd class="fwm-kbd">Enter</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Insert link</span><span><kbd class="fwm-kbd">Ctrl</kbd><kbd class="fwm-kbd">K</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Show shortcuts</span><span><kbd class="fwm-kbd">?</kbd></span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Link to CRM -->
+<div class="fwm-modal" id="crmModal" hidden>
+    <div class="fwm-dialog" role="dialog" aria-modal="true" aria-labelledby="crmTitle">
+        <div class="fwm-dialog__head"><h2 id="crmTitle">Link to CRM</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <div class="fwm-dialog__body">
+            <p class="fwm-dialog__lead">Linked conversations appear on the customer's or supplier's timeline in the CRM.</p>
+            <input class="input" id="crmSearch" type="search" placeholder="Search customers and suppliers" autocomplete="off">
+            <div id="crmResults"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Pick a date & time (snooze / schedule send) -->
+<div class="fwm-modal" id="whenModal" hidden>
+    <div class="fwm-dialog" role="dialog" aria-modal="true" aria-labelledby="whenTitle" style="width:min(420px,100%)">
+        <div class="fwm-dialog__head"><h2 id="whenTitle">Pick date &amp; time</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <div class="fwm-dialog__body">
+            <div class="row">
+                <div class="field"><label class="label" for="whenDate">Date</label><input class="input" type="date" id="whenDate"></div>
+                <div class="field"><label class="label" for="whenTime">Time</label><input class="input" type="time" id="whenTime" step="300"></div>
+            </div>
+        </div>
+        <div class="fwm-dialog__foot"><button class="btn" data-close>Cancel</button><button class="btn btn--primary" id="whenOk">Confirm</button></div>
+    </div>
+</div>
+
+<!-- New label -->
+<div class="fwm-modal" id="labelModal" hidden>
+    <div class="fwm-dialog" role="dialog" aria-modal="true" aria-labelledby="labelTitle" style="width:min(420px,100%)">
+        <div class="fwm-dialog__head"><h2 id="labelTitle">New label</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <div class="fwm-dialog__body">
+            <div class="field"><label class="label" for="labelName">Name</label><input class="input" id="labelName" maxlength="64" placeholder="e.g. Suppliers"></div>
+            <div class="field"><span class="label">Colour</span><div class="fwm-swatches" id="labelSwatches"></div></div>
+        </div>
+        <div class="fwm-dialog__foot"><button class="btn" data-close>Cancel</button><button class="btn btn--primary" id="labelSave">Create label</button></div>
+    </div>
+</div>
+
+<script src="/mail/js/mail.js?v=<?= MAIL_ASSET_VERSION ?>"></script>
 </body>
 </html>

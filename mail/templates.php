@@ -1,227 +1,75 @@
 <?php
-// /mail/templates.php
+// /mail/templates.php — reusable messages with {placeholders}.
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/autoload.php';
 
-define('ASSET_VERSION', '2026-07-10-mail-crm-parity');
-
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch templates. The mail schema (email_templates) is provisioned outside the
-// tracked migrations, so degrade gracefully rather than 500 if it is missing.
+$companyId = (int)$_SESSION['company_id'];
+$isAdmin = fw_active_user_is_admin();
+$companyName = 'Company';
 $templates = [];
 try {
-    $stmt = $DB->prepare("SELECT * FROM email_templates WHERE company_id = ? ORDER BY category, name");
+    $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
     $stmt->execute([$companyId]);
-    $templates = $stmt->fetchAll();
+    $companyName = $stmt->fetchColumn() ?: 'Company';
+    MailSchema::ensure($DB);
+    $stmt = $DB->prepare("SELECT template_id, name, category, subject, body_html, updated_at FROM email_templates WHERE company_id = ? ORDER BY category, name");
+    $stmt->execute([$companyId]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $t) {
+        $templates[] = [
+            'template_id' => (int)$t['template_id'], 'name' => $t['name'], 'category' => (string)$t['category'],
+            'subject' => (string)$t['subject'], 'preview' => HtmlSanitizer::snippet(HtmlSanitizer::toText(HtmlSanitizer::ensureHtml((string)$t['body_html'])), 220),
+        ];
+    }
 } catch (Throwable $e) {
-    error_log('[mail/templates] data load failed: ' . $e->getMessage());
+    error_log('[mail/templates] ' . $e->getMessage());
 }
+
+$pageTitle = 'Templates';
+$withSearch = false;
+$withSync = false;
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Email Templates – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/mail/assets/mail.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-mail">
-    <div class="fw-mail__container">
-
-        <!-- Header -->
-        <header class="fw-mail__header">
-            <div class="fw-mail__brand">
-                <div class="fw-mail__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <polyline points="22,6 12,13 2,6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="fw-mail__brand-text">
-                    <div class="fw-mail__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-mail__app-name">Mail – Templates</div>
+<div class="fwm-page" id="templatesApp">
+    <?php include __DIR__ . '/partials/topbar.php'; ?>
+    <div class="fwm-page__body">
+        <aside class="fwm-page__nav fwm-side" id="side" aria-label="Mail">
+            <a class="fwm-page__back" href="/mail/"><svg class="i"><use href="#i-arrow-left"/></svg>Back to Mail</a>
+            <nav class="fwm-nav" id="tplCategories"></nav>
+        </aside>
+        <main class="fwm-pane fwm-page__main">
+            <div class="fwm-page__scroll scroll">
+                <div class="fwm-page__content" style="max-width:1100px">
+                    <div class="fwm-page__head"><div><h1>Templates</h1><p>Write once, send often. Placeholders such as <code>{first_name}</code> fill in from the recipient's CRM contact.</p></div>
+                        <button class="btn btn--primary" id="addTemplate" type="button"><svg class="i i--sm"><use href="#i-plus"/></svg>New template</button></div>
+                    <div class="fwm-grid" id="tplGrid"></div>
                 </div>
             </div>
-
-            <div class="fw-mail__greeting">
-                Hello, <span class="fw-mail__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-
-            <div class="fw-mail__controls">
-                <a href="/mail/" class="fw-mail__back-btn" title="Back to Mail">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-
-                <a href="/" class="fw-mail__home-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-
-                <button class="fw-mail__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <svg class="fw-mail__theme-icon fw-mail__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <svg class="fw-mail__theme-icon fw-mail__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
-
-                <div class="fw-mail__menu-wrapper">
-                    <button class="fw-mail__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                        </svg>
-                    </button>
-                    <nav class="fw-mail__kebab-menu" id="kebabMenu" aria-hidden="true">
-                        <a href="/mail/" class="fw-mail__kebab-item">Inbox</a>
-                        <a href="/mail/compose.php" class="fw-mail__kebab-item">Compose</a>
-                        <a href="/mail/templates.php" class="fw-mail__kebab-item">Templates</a>
-                        <a href="/mail/settings.php" class="fw-mail__kebab-item">Settings</a>
-                    </nav>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <main class="fw-mail__main">
-
-            <div class="fw-mail__page-header">
-                <h1 class="fw-mail__page-title">Email Templates</h1>
-                <p class="fw-mail__page-subtitle">Reusable messages with dynamic placeholders</p>
-            </div>
-
-            <!-- View tabs -->
-            <div class="fw-mail__view-tabs">
-                <a href="/mail/" class="fw-mail__view-tab">Inbox</a>
-                <a href="/mail/templates.php" class="fw-mail__view-tab fw-mail__view-tab--active">Templates</a>
-                <a href="/mail/settings.php" class="fw-mail__view-tab">Settings</a>
-            </div>
-
-            <!-- Templates Content -->
-            <div class="fw-mail__templates-container">
-                <div class="fw-mail__settings-header">
-                    <h2>Email Templates</h2>
-                    <button class="fw-mail__btn fw-mail__btn--primary" onclick="MailTemplates.showModal()">+ New Template</button>
-                </div>
-
-                <?php if (empty($templates)): ?>
-                    <div class="fw-mail__empty-state">
-                        <p>No templates yet.</p>
-                        <small>Create reusable email templates with placeholders like {first_name}, {company_name}, {quote_number}.</small>
-                    </div>
-                <?php else: ?>
-                    <div class="fw-mail__templates-grid">
-                        <?php foreach ($templates as $tpl): ?>
-                            <div class="fw-mail__template-card">
-                                <div class="fw-mail__template-card-header">
-                                    <h3><?= htmlspecialchars($tpl['name']) ?></h3>
-                                    <?php if ($tpl['category']): ?>
-                                        <span class="fw-mail__badge"><?= htmlspecialchars($tpl['category']) ?></span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="fw-mail__template-card-body">
-                                    <p><strong>Subject:</strong> <?= htmlspecialchars($tpl['subject'] ?: '(No subject)') ?></p>
-                                    <div class="fw-mail__template-preview"><?= htmlspecialchars(substr(strip_tags($tpl['body_html']), 0, 150)) ?>...</div>
-                                </div>
-                                <div class="fw-mail__card-actions">
-                                    <button class="fw-mail__btn fw-mail__btn--small" onclick="MailTemplates.edit(<?= $tpl['template_id'] ?>)">Edit</button>
-                                    <button class="fw-mail__btn fw-mail__btn--small" onclick="MailTemplates.use(<?= $tpl['template_id'] ?>)">Use</button>
-                                    <button class="fw-mail__btn fw-mail__btn--small fw-mail__btn--danger" onclick="MailTemplates.delete(<?= $tpl['template_id'] ?>)">Delete</button>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-
         </main>
-
-        <!-- Footer -->
-        <footer class="fw-mail__footer">
-            <span>Mail v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Dark</span>
-        </footer>
-
     </div>
+</div>
 
-    <!-- Template Modal -->
-    <div class="fw-mail__modal-overlay" id="templateModal" aria-hidden="true">
-        <div class="fw-mail__modal fw-mail__modal--large">
-            <div class="fw-mail__modal-header">
-                <h3 class="fw-mail__modal-title" id="templateModalTitle">New Template</h3>
-                <button class="fw-mail__modal-close" onclick="MailTemplates.closeModal()">&times;</button>
+<div class="fwm-modal" id="templateModal" hidden>
+    <div class="fwm-dialog fwm-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="tplTitle">
+        <div class="fwm-dialog__head"><h2 id="tplTitle">New template</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <div class="fwm-dialog__body">
+            <div class="row">
+                <div class="field" style="grid-column:span 2"><label class="label" for="tplName">Name</label><input class="input" id="tplName" maxlength="120" placeholder="e.g. Quote follow-up"></div>
+                <div class="field"><label class="label" for="tplCategory">Category</label><input class="input" id="tplCategory" maxlength="64" list="tplCategoryList" placeholder="e.g. Sales"><datalist id="tplCategoryList"></datalist></div>
             </div>
-            <div class="fw-mail__modal-body">
-                <form id="templateForm" class="fw-mail__form">
-                    <input type="hidden" name="template_id" id="templateId">
-
-                    <div class="fw-mail__form-row">
-                        <div class="fw-mail__form-group">
-                            <label class="fw-mail__label">Template Name <span class="fw-mail__required">*</span></label>
-                            <input type="text" name="name" class="fw-mail__input" required>
-                        </div>
-                        <div class="fw-mail__form-group">
-                            <label class="fw-mail__label">Category</label>
-                            <input type="text" name="category" class="fw-mail__input" placeholder="e.g., RFQ, Follow-up">
-                        </div>
-                    </div>
-
-                    <div class="fw-mail__form-group">
-                        <label class="fw-mail__label">Subject</label>
-                        <input type="text" name="subject" class="fw-mail__input" placeholder="Use {placeholders}">
-                    </div>
-
-                    <div class="fw-mail__form-group">
-                        <label class="fw-mail__label">Body <span class="fw-mail__required">*</span></label>
-                        <textarea name="body_html" class="fw-mail__textarea" rows="12" required></textarea>
-                        <small class="fw-mail__help-text">
-                            Available placeholders: {first_name}, {last_name}, {company_name}, {email}, {quote_number}, {invoice_number}, {total}, {due_date}, {project_name}, {board_name}, {item_title}
-                        </small>
-                    </div>
-
-                    <div class="fw-mail__form-actions">
-                        <button type="submit" class="fw-mail__btn fw-mail__btn--primary">Save Template</button>
-                        <button type="button" class="fw-mail__btn fw-mail__btn--secondary" onclick="MailTemplates.closeModal()">Cancel</button>
-                    </div>
-
-                    <div id="templateMessage" class="fw-mail__form-message" style="display:none;"></div>
-                </form>
-            </div>
+            <div class="field"><label class="label" for="tplSubject">Subject</label><input class="input" id="tplSubject" maxlength="500" placeholder="Following up on your quote"></div>
+            <div class="field"><span class="label">Message</span><div id="tplEditor"></div>
+                <div class="fwm-placeholders" id="tplPlaceholders" aria-label="Insert placeholder"></div>
+                <span class="hint">Click a placeholder to insert it. Unknown placeholders are left for you to fill in when composing.</span></div>
         </div>
+        <div class="fwm-dialog__foot"><button class="btn" data-close>Cancel</button><button class="btn btn--primary" id="saveTemplate">Save template</button></div>
     </div>
+</div>
 
-    <script src="/mail/assets/mail.js?v=<?= ASSET_VERSION ?>"></script>
+<div class="fwm-toasts" id="toasts" aria-live="polite"></div>
+<script type="application/json" id="tplData"><?= json_encode($templates, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?></script>
+<script src="/mail/js/mail.js?v=<?= MAIL_ASSET_VERSION ?>"></script>
+<script src="/mail/js/mail-settings.js?v=<?= MAIL_ASSET_VERSION ?>"></script>
 </body>
 </html>

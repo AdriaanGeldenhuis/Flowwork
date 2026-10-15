@@ -1,0 +1,10 @@
+# The Mail API moved to /mail/api/. Deploys do not delete files, so older
+# copies of the endpoints that used to live here may still exist on the server.
+# Block them all (Apache 2.4 and 2.2 syntax).
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
