@@ -46,7 +46,7 @@ include __DIR__ . '/partials/head.php';
         <section class="fwm-pane fwm-list" id="listPane" aria-label="Conversations">
             <div class="fwm-list__head" id="listHead">
                 <label class="fwm-check" id="selectAll" role="checkbox" aria-checked="false" tabindex="0" aria-label="Select all"><svg class="i"><use href="#i-check"/></svg></label>
-                <div class="fwm-list__title"><h2 id="listTitle">Inbox</h2><small id="listSub">&nbsp;</small></div>
+                <div class="fwm-list__title"><span class="fwm-list__eyebrow" id="listEyebrow"></span><h2 id="listTitle">Inbox</h2><small id="listSub">&nbsp;</small></div>
                 <button class="icon-btn" id="saveSearchBtn" type="button" aria-label="Save this search" data-tip="Save search" hidden><svg class="i"><use href="#i-bookmark"/></svg></button>
                 <button class="icon-btn" id="listMoreBtn" type="button" aria-label="List options" data-tip="Options" data-tip-pos="left"><svg class="i"><use href="#i-more-h"/></svg></button>
             </div>
