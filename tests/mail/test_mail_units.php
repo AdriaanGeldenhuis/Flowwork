@@ -94,6 +94,17 @@ $shown = HtmlSanitizer::sanitize('<img src="https://b.example/b.jpg">', ['block_
 check(str_contains($shown['html'], 'src="https://b.example/b.jpg"'), 'images allowed when not blocking');
 same('', HtmlSanitizer::sanitize('   ')['html'], 'empty html');
 same("Hello\n\n• one\n• two\nlink (https://x.com)", HtmlSanitizer::toText('<p>Hello</p><ul><li>one</li><li>two</li></ul><a href="https://x.com">link</a>'), 'html → text');
+// Local attachment URLs: never from received mail, only exact ones from drafts.
+$recv = HtmlSanitizer::sanitize('<img src="/mail/api/attachment.php?id=5"><img src="/mail/api/attachment.php/../../logout.php">')['html'];
+check(!str_contains($recv, 'attachment.php') && !str_contains($recv, 'logout'), 'received mail cannot point at local attachments');
+$draft = HtmlSanitizer::sanitize('<img src="/mail/api/attachment.php?id=5&amp;inline=1"><img src="/mail/api/attachment.php?id=5&x=../../logout.php"><img src="/mail/api/attachment.php/../../logout.php">',
+    ['block_remote' => false, 'allow_local' => true])['html'];
+check(substr_count($draft, 'attachment.php') === 1 && str_contains($draft, 'attachment.php?id=5&amp;inline=1') && !str_contains($draft, 'logout'), 'drafts keep only exact attachment URLs');
+$ed = HtmlSanitizer::sanitize('<style>.fwm-app{display:none}</style><div class="fwm-modal" id="app" style="color:red">x</div>', ['for_editor' => true])['html'];
+check(!str_contains($ed, '<style') && !str_contains($ed, 'class=') && !str_contains($ed, 'id=') && str_contains($ed, 'color:red'), 'editor content loses <style>, class and id');
+$kept = HtmlSanitizer::sanitize('<style>.a{color:red}</style><div class="a">x</div>')['html'];
+check(str_contains($kept, '<style>') && str_contains($kept, 'class="a"'), 'reader keeps <style> and class');
+
 same('Thanks for the quote.', HtmlSanitizer::snippet("Thanks for the quote.\n\nOn Mon, 1 Jan 2026 at 10:00, Ann <a@b> wrote:\n> old"), 'snippet drops quoted history');
 
 // ------------------------------------------------------------ MimeBuilder
@@ -143,5 +154,34 @@ same('42', $tok[3][1], 'fetch UID token');
 same(['\\Seen'], $tok[3][3], 'flags list');
 same("ab\r\nc", $tok[3][5], 'literal inside list');
 same(null, $tok[3][7], 'NIL → null');
+
+// ------------------------------------------------------------ Host policy
+foreach (['127.0.0.1', '10.1.2.3', '192.168.0.1', '172.16.5.4', '169.254.169.254', '100.64.0.1', '0.0.0.0',
+          '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '64:ff9b::a00:1'] as $ip) {
+    check(!MailNet::isPublic($ip), "private address refused: $ip");
+}
+foreach (['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111', '2a00:1450:4001:80b::200e'] as $ip) {
+    check(MailNet::isPublic($ip), "public address accepted: $ip");
+}
+check(MailNet::hostProblem('127.0.0.1') !== null && MailNet::hostProblem('[::1]') !== null, 'loopback hosts refused');
+check(MailNet::hostProblem('localhost') !== null, 'localhost refused');
+check(MailNet::hostProblem('bad host;rm') !== null, 'bad host syntax refused');
+same('8.8.8.8', MailNet::target('8.8.8.8'), 'public IP connects as is');
+same('[2606:4700:4700::1111]', MailNet::target('2606:4700:4700::1111'), 'IPv6 target bracketed');
+putenv('MAIL_ALLOW_PRIVATE_HOSTS=1');
+same('127.0.0.1', MailNet::target('127.0.0.1'), 'private allowed when configured');
+putenv('MAIL_ALLOW_PRIVATE_HOSTS');
+
+// ------------------------------------------------------------ SecureVault
+$blob = SecureVault::encrypt('s3cret-pass');
+same('s3cret-pass', SecureVault::decrypt($blob), 'vault round trip');
+same('legacy-pw', SecureVault::decrypt(base64_encode('legacy-pw')), 'legacy base64 password');
+same('a-long-legacy-password-of-29-bytes+', SecureVault::decrypt(base64_encode('a-long-legacy-password-of-29-bytes+')), 'long legacy password');
+putenv('MAIL_SECRET_KEY=a-real-key-0123456789-abcdefghijkl');
+same('s3cret-pass', SecureVault::decrypt($blob), 'dev-key password still opens after a key is set');
+$blob2 = SecureVault::encrypt('new-pass');
+same('new-pass', SecureVault::decrypt($blob2), 'real-key round trip');
+putenv('MAIL_SECRET_KEY');
+same('', SecureVault::decrypt($blob2), 'real-key blob does not open without the key');
 
 echo "OK mail units ($n assertions)\n";

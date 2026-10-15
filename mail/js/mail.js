@@ -290,7 +290,7 @@
     const applyTheme = (t) => {
       body.dataset.theme = t;
       const meta = $('meta[name="theme-color"]');
-      if (meta) meta.content = t === 'dark' ? '#0f0e0d' : '#f4f1ec';
+      if (meta) meta.content = t === 'dark' ? '#0d0a09' : '#f2ece3';
       if (themeBtn) {
         themeBtn.innerHTML = icon(t === 'dark' ? 'sun' : 'moon');
         themeBtn.setAttribute('data-tip', t === 'dark' ? 'Light theme' : 'Dark theme');
@@ -532,7 +532,7 @@
   };
   const el = {
     side: $('#side'), navFolders: $('#navFolders'), navLabels: $('#navLabels'), navViews: $('#navViews'), viewsHead: $('#viewsHead'),
-    sideFoot: $('#sideFoot'), threads: $('#threads'), reader: $('#readerPane'), listTitle: $('#listTitle'), listSub: $('#listSub'),
+    sideFoot: $('#sideFoot'), threads: $('#threads'), reader: $('#readerPane'), listTitle: $('#listTitle'), listSub: $('#listSub'), listEyebrow: $('#listEyebrow'),
     bulkBar: $('#bulkBar'), bulkCount: $('#bulkCount'), bulkActions: $('#bulkActions'), listHead: $('#listHead'),
     filters: $('#filterChips'), search: $('#searchInput'), searchClear: $('#searchClear'), syncBtn: $('#syncBtn'), syncDot: $('#syncDot'),
     selectAll: $('#selectAll'), saveSearch: $('#saveSearchBtn'),
@@ -580,7 +580,7 @@
     el.listHead.hidden = true;
     el.navFolders.innerHTML = VIEWS.slice(0, 6).map((v) => `<span class="fwm-nav__item" aria-disabled="true">${icon(v.icon)}<span class="fwm-nav__label">${v.label}</span></span>`).join('');
     $$('.fwm-nav--labels').forEach((n) => { n.hidden = true; });
-    el.threads.innerHTML = emptyState('mail', 'Connect your mailbox',
+    el.threads.innerHTML = emptyState('letter', 'Connect your mailbox',
       'Add your work email (IMAP/SMTP — Gmail, Microsoft 365, cPanel, Xneelo and most hosts) to read, send and file mail right inside Flowwork.',
       '<a class="btn btn--primary btn--lg" href="/mail/settings.php#accounts/new">' + icon('plus') + 'Connect an account</a>');
     el.reader.innerHTML = emptyState('shield', 'Private by design',
@@ -654,6 +654,7 @@
   // ---------------------------------------------------------------- sidebar
   function renderNav() {
     if (!S.accounts.length) return;
+    refreshGreeting();
     const c = S.counts || {};
     const acctSwitch = S.accounts.length > 1 ? (() => {
       const a = accountById(S.accountId);
@@ -748,8 +749,30 @@
   function renderListSkeleton() {
     el.threads.innerHTML = Array.from({ length: 7 }, () => `<div class="fwm-skel"><div class="fwm-skel__a"></div><div><div class="fwm-skel__l" style="width:${40 + Math.random() * 30}%"></div><div class="fwm-skel__l" style="width:${60 + Math.random() * 30}%"></div><div class="fwm-skel__l" style="width:${30 + Math.random() * 40}%;margin-bottom:0"></div></div></div>`).join('');
   }
-  function emptyState(ic, title, text, actions) {
-    return `<div class="fwm-empty"><div class="fwm-empty__art">${icon(ic)}</div><h3>${esc(title)}</h3><p>${text}</p>${actions || ''}</div>`;
+  // A sealed letter, drawn inline so it follows the theme colours.
+  const LETTER_ART = `<svg class="fwm-art" viewBox="0 0 190 132" aria-hidden="true">
+      <ellipse class="a-shadow" cx="95" cy="124" rx="62" ry="5"/>
+      <g class="a-float">
+        <rect class="a-paper-2" x="50" y="8" width="90" height="70" rx="4" transform="rotate(-6 95 43)"/>
+        <path class="a-lines" d="M64 26h44M64 36h58M64 46h36" transform="rotate(-6 95 43)"/>
+        <rect class="a-paper" x="30" y="40" width="130" height="80" rx="7"/>
+        <path class="a-fold" d="M32 117 82 78M158 117 108 78"/>
+        <path class="a-paper" d="M31 43 95 88 159 43Z"/>
+        <circle class="a-seal" cx="95" cy="86" r="14"/>
+        <circle class="a-seal-hi" cx="91" cy="81" r="6"/>
+        <circle class="a-seal-ring" cx="95" cy="86" r="9.5"/>
+        <path class="a-gold" d="M95 79.5 96.6 84.4 101.5 86 96.6 87.6 95 92.5 93.4 87.6 88.5 86 93.4 84.4Z"/>
+      </g>
+      <path class="a-spark" d="M22 30l1.6 4.4L28 36l-4.4 1.6L22 42l-1.6-4.4L16 36l4.4-1.6Z"/>
+      <path class="a-spark" d="M170 16l1.2 3.3 3.3 1.2-3.3 1.2-1.2 3.3-1.2-3.3-3.3-1.2 3.3-1.2Z"/>
+      <path class="a-spark" d="M176 72l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1Z"/>
+    </svg>`;
+  function emptyState(ic, title, text, actions, opts = {}) {
+    const art = ic === 'letter' ? `<div class="fwm-empty__art fwm-empty__art--letter">${LETTER_ART}</div>` : `<div class="fwm-empty__art">${icon(ic)}</div>`;
+    return `<div class="fwm-empty">${art}${opts.eyebrow ? `<div class="fwm-empty__eyebrow">${esc(opts.eyebrow)}</div>` : ''}<h3>${opts.titleHtml || esc(title)}</h3>${text ? `<p>${text}</p>` : ''}${actions || ''}</div>`;
+  }
+  function todayLabel() {
+    return new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
   async function loadThreads({ append = false, silent = false } = {}) {
@@ -767,6 +790,11 @@
       S.hasMore = r.has_more;
       if (!append && !silent) el.threads.scrollTop = 0;
       renderList();
+      if (!append && !silent) {
+        el.threads.classList.add('is-entering');
+        clearTimeout(S.enterTimer);
+        S.enterTimer = setTimeout(() => el.threads.classList.remove('is-entering'), 1100);
+      }
     } catch (e) {
       if (id !== S.reqId) return;
       if (!append) el.threads.innerHTML = emptyState('alert', 'Couldn\'t load this folder', esc(e.message), '<button class="btn" id="retryList">Try again</button>');
@@ -787,6 +815,11 @@
       if (unread) sub += ` · ${unread} unread`;
     }
     el.listSub.innerHTML = sub ? esc(sub) : '&nbsp;';
+    refreshGreeting();
+    if (el.listEyebrow) {
+      const acct = S.accountId ? S.accounts.find((a) => a.account_id === S.accountId) : null;
+      el.listEyebrow.textContent = S.q ? 'Search' : lbl ? 'Label' : acct ? acct.email_address : S.view === 'inbox' ? todayLabel() : 'All mailboxes';
+    }
     el.saveSearch.hidden = !S.q;
     updateTitle();
   }
@@ -816,7 +849,7 @@
 
     const hover = rowHoverActions();
     return `<div class="fwm-row ${unread ? 'is-unread' : ''} ${active ? 'is-active' : ''} ${selected ? 'is-selected' : ''} ${idx === S.focusIdx ? 'is-focus' : ''}"
-        role="option" aria-selected="${active}" data-key="${t.key}" data-idx="${idx}">
+        role="option" aria-selected="${active}" data-key="${t.key}" data-idx="${idx}" style="--i:${Math.min(idx, 16)}">
       <div class="fwm-row__lead">
         ${avatar(avatarName, avatarEmail, isSentish ? 'fwm-avatar--me' : '')}
         <span class="fwm-check ${selected ? 'is-on' : ''}" data-check role="checkbox" aria-checked="${selected}" aria-label="Select">${icon('check')}</span>
@@ -850,7 +883,7 @@
     renderListHead();
     if (!S.threads.length) {
       const empty = {
-        inbox: ['inbox', 'You\'re all caught up', 'Nothing new in your inbox. Enjoy the quiet.'],
+        inbox: ['letter', 'You\'re all caught up', 'Nothing new in your inbox. Enjoy the quiet.'],
         starred: ['star', 'No starred mail', 'Star important conversations to find them here quickly.'],
         snoozed: ['clock', 'Nothing snoozed', 'Snooze a conversation to have it come back when you need it.'],
         drafts: ['draft', 'No drafts', 'Messages you start but don\'t send are kept here automatically.'],
@@ -1270,11 +1303,31 @@
   }
 
   // ---------------------------------------------------------------- reader
-  function readerEmpty() {
+  function greetingText() {
     const c = S.counts || {};
     const unread = S.accountId ? (c.by_account || {})[S.accountId] || 0 : c.inbox || 0;
-    el.reader.innerHTML = emptyState('mail-open', S.view === 'inbox' && unread === 0 ? 'Inbox zero' : 'Nothing selected',
-      S.view === 'inbox' && unread === 0 ? 'Every conversation has been read. Nicely done.' : 'Choose a conversation to read it here. Press <kbd class="fwm-kbd">?</kbd> for keyboard shortcuts.', '');
+    if (S.view !== 'inbox' || S.q || S.labelId) return 'Choose a conversation to read it here. Press <kbd class="fwm-kbd">?</kbd> for keyboard shortcuts.';
+    return unread === 0 ? 'Your inbox is clear — every conversation has been read.'
+      : `You have <b>${unread}</b> unread conversation${unread === 1 ? '' : 's'}. Choose one to read it here.`;
+  }
+  function readerEmpty() {
+    const h = new Date().getHours();
+    const greet = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    const first = (S.me && S.me.first_name) || '';
+    const text = greetingText();
+    el.reader.innerHTML = emptyState('letter', '', text, '', {
+      eyebrow: todayLabel(),
+      titleHtml: esc(greet) + (first ? `, <span class="fwm-empty__greet">${esc(first)}</span>` : ''),
+    });
+    const p = $('.fwm-empty p', el.reader);
+    if (p) { p.dataset.greet = '1'; p.dataset.text = text; }
+  }
+  /** Keep the greeting's unread line current without replaying its entrance. */
+  function refreshGreeting() {
+    const p = !S.openKey && $('[data-greet]', el.reader);
+    if (!p) return;
+    const text = greetingText();
+    if (p.dataset.text !== text) { p.innerHTML = text; p.dataset.text = text; }
   }
 
   async function openThread(key, opts = {}) {
@@ -1452,8 +1505,8 @@
   }
 
   const FRAME_CSS = `html{color-scheme:light}body{display:flow-root;margin:0;padding:0;background:#fff;color:#1f1a17;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
-    img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}a{color:#7b1e2b}
-    blockquote{margin:0 0 0 .8ex;border-left:2px solid #d6d0ca;padding-left:1ex;color:#55504b}
+    img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}a{color:#7a1f30}
+    blockquote{margin:0 0 0 .8ex;border-left:2px solid #dccbae;padding-left:1ex;color:#55504b}
     body>*:first-child{margin-top:0}.fwm-folded{display:none!important}`;
 
   function mountFrame(art) {
@@ -2274,9 +2327,9 @@
       case 'Enter': case 'o': if (focusKey) { e.preventDefault(); if (S.view === 'drafts') Composer.openFrom({ mode: 'draft', email_id: S.threads[S.focusIdx].latest_email_id }); else openThread(focusKey); } return;
       case 'Escape': case 'u': if (S.selected.size) { S.selected.clear(); renderList(); } else if (openKey) closeReader(); return;
       case 'x': if (focusKey) toggleSelect(focusKey, S.focusIdx, false); return;
-      case 'e': if (targetKeys.length && !['trash', 'spam', 'archive'].includes(S.view)) act(targetKeys, 'archive'); return;
+      case 'e': if (targetKeys.length && !['trash', 'spam', 'archive', 'drafts', 'outbox'].includes(S.view)) act(targetKeys, 'archive'); return;
       case '#': case 'Delete': if (targetKeys.length) S.view === 'trash' ? deleteForever(targetKeys) : act(targetKeys, 'trash'); return;
-      case '!': if (targetKeys.length && S.view !== 'spam') act(targetKeys, 'spam'); return;
+      case '!': if (targetKeys.length && !['spam', 'drafts', 'outbox', 'sent'].includes(S.view)) act(targetKeys, 'spam'); return;
       case 's': if (targetKeys.length) { const th = S.threads.find((x) => x.key === targetKeys[0]); act(targetKeys, th && th.starred ? 'unstar' : 'star'); } return;
       case 'U': if (targetKeys.length) act(targetKeys, 'unread'); return;
       case 'I': if (targetKeys.length) act(targetKeys, 'read'); return;

@@ -12,6 +12,7 @@
  */
 
 require __DIR__ . '/../lib/bootstrap.php';
+putenv('MAIL_ALLOW_PRIVATE_HOSTS=1'); // the test servers listen on 127.0.0.1
 require FLOWWORK_ROOT . '/mail/lib/autoload.php';
 
 $smtpOut = getenv('MAIL_TEST_SMTP_OUT') ?: '/tmp/fake_smtp';
@@ -166,6 +167,17 @@ $imap->uidStore([(int)$reply['imap_uid']], '-', ['\\Seen']);
 MailSyncService::syncAccount($DB, $account, ['time_budget' => 30]);
 assert_eq(0, (int)$DB->query("SELECT is_read FROM emails WHERE email_id = " . (int)$reply['email_id'])->fetchColumn(), 'remote unread mirrored');
 
+// ---------------------------------------------------------------- undo cancels the queued server move
+$rows = MailRepo::emailsForKeys($DB, TEST_COMPANY_ID, TEST_USER_ID, ['t' . $alice['thread_id']]);
+assert_eq(2, MailActions::apply($DB, $rows, 'archive'), 'archive Alice');
+$rows = MailRepo::emailsForKeys($DB, TEST_COMPANY_ID, TEST_USER_ID, ['t' . $alice['thread_id']]);
+assert_eq(2, MailActions::apply($DB, $rows, 'inbox'), 'undo archive');
+assert_eq(0, (int)$DB->query("SELECT COUNT(*) FROM email_imap_ops WHERE op IN ('move', 'copy')")->fetchColumn(), 'undo cancelled the queued moves');
+MailSyncService::syncAccount($DB, $account, ['time_budget' => 30]);
+$imap->select('INBOX');
+assert_eq(2, count($imap->uidSearch('ALL')), 'Alice stays in server INBOX');
+assert_eq(2, (int)$DB->query("SELECT COUNT(*) FROM emails WHERE folder = 'INBOX' AND imap_folder = 'INBOX' AND thread_id = " . (int)$alice['thread_id'])->fetchColumn(), 'Alice still INBOX locally');
+
 // ---------------------------------------------------------------- trash → delete forever
 $rows = MailRepo::emailsForKeys($DB, TEST_COMPANY_ID, TEST_USER_ID, ['t' . $bob['thread_id']]);
 MailActions::apply($DB, $rows, 'trash');
@@ -191,6 +203,21 @@ $d = $DB->query("SELECT * FROM emails WHERE email_id = $draftId")->fetch();
 assert_eq('Drafts', $d['folder'], 'draft saved');
 assert_true(!str_contains($d['body_html'], '<script'), 'draft body sanitised');
 MailStore::storeAttachment($DB, TEST_COMPANY_ID, $accountId, $draftId, 'quote.pdf', 'application/pdf', '%PDF quote');
+$inDrafts = MailRepo::emailsForKeys($DB, TEST_COMPANY_ID, TEST_USER_ID, ['t' . $alice['thread_id']], 'drafts');
+assert_eq([$draftId], array_map(fn($r) => (int)$r['email_id'], $inDrafts), 'drafts scope holds only the draft, not the conversation');
+
+// Only images from the draft's own conversation may be embedded in what it sends.
+$logoId = (int)$DB->query("SELECT attachment_id FROM email_attachments WHERE email_id = " . (int)$alice['email_id'] . " AND content_id IS NOT NULL")->fetchColumn();
+$specId = (int)$DB->query("SELECT attachment_id FROM email_attachments WHERE email_id = " . (int)$alice['email_id'] . " AND content_id IS NULL")->fetchColumn();
+$elsewhere = MailOutbox::saveDraft($DB, TEST_COMPANY_ID, TEST_USER_ID, ['account_id' => $accountId, 'to' => 'z@example.org', 'subject' => 'other', 'body_html' => 'x']);
+$foreignId = MailStore::storeAttachment($DB, TEST_COMPANY_ID, $accountId, $elsewhere['email_id'], 'secret.png', 'image/png', 'PNGSECRET');
+[$embHtml, $emb] = MailOutbox::embedImages($DB, TEST_USER_ID,
+    '<img src="/mail/api/attachment.php?id=' . $logoId . '&amp;inline=1"><img src="/mail/api/attachment.php?id=' . $foreignId . '">'
+    . '<img src="/mail/api/attachment.php?id=' . $specId . '">', $draftId, (int)$alice['thread_id']);
+assert_eq(1, count($emb), 'only the conversation image is embedded');
+assert_eq('PNG', $emb[0]['content'] ?? null, 'embedded the quoted logo');
+assert_true(str_contains($embHtml, 'id=' . $foreignId) && str_contains($embHtml, 'id=' . $specId), 'foreign and non-image attachments are not embedded');
+MailStore::deleteEmails($DB, [(int)$elsewhere['email_id']]);
 
 $q = MailOutbox::queue($DB, TEST_COMPANY_ID, TEST_USER_ID, $draftId, null, 30);
 assert_true(!empty($q['queued']), 'queued with undo window');
@@ -237,6 +264,15 @@ $d2 = MailOutbox::saveDraft($DB, TEST_COMPANY_ID, TEST_USER_ID, ['account_id' =>
 $res = MailOutbox::queue($DB, TEST_COMPANY_ID, TEST_USER_ID, $d2['email_id'], null, 0);
 assert_true(empty($res['sent']) && str_contains((string)$res['error'], 'rejected'), 'rejected recipient reported: ' . json_encode($res));
 assert_eq('failed', $DB->query("SELECT send_status FROM emails WHERE email_id = " . (int)$d2['email_id'])->fetchColumn(), 'marked failed');
+
+// A long-overdue scheduled send is claimed with a fresh timestamp, so the
+// stale-send sweep cannot mark it failed while it is still being sent.
+$d3 = MailOutbox::saveDraft($DB, TEST_COMPANY_ID, TEST_USER_ID, ['account_id' => $accountId, 'to' => 'y@reject.test', 'subject' => 'late', 'body_html' => 'x']);
+$d3id = (int)$d3['email_id'];
+MailOutbox::queue($DB, TEST_COMPANY_ID, TEST_USER_ID, $d3id, null, 30);
+$DB->exec("UPDATE emails SET scheduled_at = DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE email_id = $d3id");
+MailOutbox::sendOne($DB, $d3id);
+assert_eq(1, (int)$DB->query("SELECT scheduled_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE) FROM emails WHERE email_id = $d3id")->fetchColumn(), 'claim stamps the send time');
 
 // ---------------------------------------------------------------- UIDVALIDITY reset safety
 $DB->exec("UPDATE email_folder_state SET uidvalidity = 1 WHERE folder = 'INBOX'");

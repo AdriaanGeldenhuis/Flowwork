@@ -20,7 +20,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
         mail_json(['template' => [
             'template_id' => (int)$t['template_id'], 'name' => $t['name'], 'category' => (string)$t['category'],
             'subject' => (string)$t['subject'],
-            'body_html' => HtmlSanitizer::sanitize(HtmlSanitizer::ensureHtml((string)$t['body_html']), ['block_remote' => false])['html'],
+            'body_html' => HtmlSanitizer::sanitize(HtmlSanitizer::ensureHtml((string)$t['body_html']), ['block_remote' => false, 'for_editor' => true])['html'],
         ]]);
     }
 
@@ -55,7 +55,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
     // HTML-escape values going into the body; the subject is plain text.
     $htmlCtx = array_map(fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'), array_filter($ctx, fn($v) => $v !== ''));
     $body = TemplateEngine::render(HtmlSanitizer::ensureHtml((string)$t['body_html']), $htmlCtx);
-    $body = HtmlSanitizer::sanitize($body, ['block_remote' => false])['html'];
+    $body = HtmlSanitizer::sanitize($body, ['block_remote' => false, 'for_editor' => true])['html'];
     $subject = TemplateEngine::render((string)$t['subject'], array_filter($ctx, fn($v) => $v !== ''));
     preg_match_all('/\{([A-Za-z0-9_]+)\}/', $subject . ' ' . $body, $m);
     mail_json(['subject' => $subject, 'body_html' => $body, 'unresolved' => array_values(array_unique($m[0]))]);
@@ -75,7 +75,7 @@ if ($op === 'save') {
     $name = mail_str($in, 'name', 120);
     $subject = MimeBuilder::clean(mail_str($in, 'subject', 500));
     $category = mail_str($in, 'category', 64);
-    $body = HtmlSanitizer::sanitize((string)($in['body_html'] ?? ''), ['block_remote' => false])['html'];
+    $body = HtmlSanitizer::sanitize((string)($in['body_html'] ?? ''), ['block_remote' => false, 'for_editor' => true])['html'];
     if ($name === '') mail_error('Give the template a name');
     if (trim(strip_tags($body, '<img>')) === '') mail_error('The template body is empty');
     $id = (int)($in['template_id'] ?? 0);

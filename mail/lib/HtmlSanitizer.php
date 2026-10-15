@@ -24,14 +24,27 @@ class HtmlSanitizer
 
     public const BLOCKED_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
+    /** The only local URL an <img> may point at (and only when allow_local is set). */
+    private const LOCAL_ATTACHMENT = '#^/mail/api/attachment\.php\?id=\d+(&inline=1)?$#';
+
     /**
-     * @param array{block_remote?:bool, cid_map?:array<string,string>} $opts
+     * Options:
+     *   block_remote  park remote images in data-fw-src (default true)
+     *   cid_map       cid → URL for this message's own inline parts
+     *   allow_local   accept /mail/api/attachment.php?id=N images. Only for content the
+     *                 user wrote (drafts); received mail reaches its own parts via cid_map,
+     *                 so it can never point at someone else's attachment.
+     *   for_editor    content goes into a contenteditable in the app page: drop <style>
+     *                 blocks and class/id so it cannot restyle the page around it.
+     *
+     * @param array{block_remote?:bool, cid_map?:array<string,string>, allow_local?:bool, for_editor?:bool} $opts
      * @return array{html:string, remote_images:bool}
      */
     public static function sanitize(string $html, array $opts = []): array
     {
         $blockRemote = (bool)($opts['block_remote'] ?? true);
         $cidMap = $opts['cid_map'] ?? [];
+        $ctx = ['local' => (bool)($opts['allow_local'] ?? false), 'editor' => (bool)($opts['for_editor'] ?? false)];
         $remote = false;
 
         if (trim($html) === '') return ['html' => '', 'remote_images' => false];
@@ -46,8 +59,10 @@ class HtmlSanitizer
         // Keep <style> blocks wherever they are (including <head>).
         $styles = [];
         foreach (iterator_to_array($doc->getElementsByTagName('style')) as $st) {
-            $css = self::cleanCss($st->textContent, $blockRemote, $remote);
-            if (trim($css) !== '') $styles[] = $css;
+            if (!$ctx['editor']) {
+                $css = self::cleanCss($st->textContent, $blockRemote, $remote);
+                if (trim($css) !== '') $styles[] = $css;
+            }
             $st->parentNode?->removeChild($st);
         }
 
@@ -55,7 +70,7 @@ class HtmlSanitizer
         $root = $body ?: $doc->documentElement;
         if (!$root) return ['html' => '', 'remote_images' => false];
 
-        self::walk($root, $blockRemote, $cidMap, $remote);
+        self::walk($root, $blockRemote, $cidMap, $ctx, $remote);
 
         $out = '';
         foreach ($root->childNodes as $child) {
@@ -67,7 +82,7 @@ class HtmlSanitizer
         return ['html' => $out, 'remote_images' => $remote];
     }
 
-    private static function walk(DOMNode $node, bool $blockRemote, array $cidMap, bool &$remote): void
+    private static function walk(DOMNode $node, bool $blockRemote, array $cidMap, array $ctx, bool &$remote): void
     {
         $children = [];
         foreach ($node->childNodes as $c) $children[] = $c;
@@ -85,7 +100,7 @@ class HtmlSanitizer
                 continue;
             }
             if (in_array($tag, self::UNWRAP, true)) {
-                self::walk($child, $blockRemote, $cidMap, $remote);
+                self::walk($child, $blockRemote, $cidMap, $ctx, $remote);
                 while ($child->firstChild) {
                     $node->insertBefore($child->firstChild, $child);
                 }
@@ -93,12 +108,12 @@ class HtmlSanitizer
                 continue;
             }
 
-            self::cleanAttributes($child, $tag, $blockRemote, $cidMap, $remote);
-            self::walk($child, $blockRemote, $cidMap, $remote);
+            self::cleanAttributes($child, $tag, $blockRemote, $cidMap, $ctx, $remote);
+            self::walk($child, $blockRemote, $cidMap, $ctx, $remote);
         }
     }
 
-    private static function cleanAttributes(DOMElement $el, string $tag, bool $blockRemote, array $cidMap, bool &$remote): void
+    private static function cleanAttributes(DOMElement $el, string $tag, bool $blockRemote, array $cidMap, array $ctx, bool &$remote): void
     {
         $attrs = [];
         foreach ($el->attributes as $a) $attrs[] = $a->name;
@@ -106,7 +121,8 @@ class HtmlSanitizer
         foreach ($attrs as $name) {
             $lname = strtolower($name);
             $value = $el->getAttribute($name);
-            if (!in_array($lname, self::ALLOWED_ATTRS, true) && !str_starts_with($lname, 'aria-')) {
+            if ((!in_array($lname, self::ALLOWED_ATTRS, true) && !str_starts_with($lname, 'aria-'))
+                || ($ctx['editor'] && ($lname === 'class' || $lname === 'id'))) {
                 $el->removeAttribute($name);
                 continue;
             }
@@ -121,7 +137,7 @@ class HtmlSanitizer
                     break;
                 case 'src':
                 case 'background':
-                    $res = self::safeSrc($value, $blockRemote, $cidMap, $remote);
+                    $res = self::safeSrc($value, $blockRemote, $cidMap, $ctx['local'] && $lname === 'src', $remote);
                     if ($res === null) {
                         $el->removeAttribute($name);
                     } elseif ($res['blocked']) {
@@ -171,7 +187,7 @@ class HtmlSanitizer
     }
 
     /** @return array{url:string, blocked:bool}|null */
-    private static function safeSrc(string $url, bool $blockRemote, array $cidMap, bool &$remote): ?array
+    private static function safeSrc(string $url, bool $blockRemote, array $cidMap, bool $allowLocal, bool &$remote): ?array
     {
         $url = trim($url);
         $lower = strtolower($url);
@@ -187,8 +203,9 @@ class HtmlSanitizer
             if (str_starts_with($url, '//')) $url = 'https:' . $url;
             return ['url' => $url, 'blocked' => $blockRemote];
         }
-        if (str_starts_with($url, '/mail/api/attachment.php')) {
-            return ['url' => $url, 'blocked' => false];
+        if ($allowLocal) {
+            $plain = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if (preg_match(self::LOCAL_ATTACHMENT, $plain)) return ['url' => $plain, 'blocked' => false];
         }
         return null;
     }

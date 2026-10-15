@@ -11,7 +11,7 @@ $st->execute([$MAIL_COMPANY_ID, $MAIL_USER_ID]);
 $signatures = array_map(fn($s) => [
     'signature_id' => (int)$s['signature_id'], 'name' => $s['name'],
     // Older signatures were stored unsanitised; they are inserted into a live editor.
-    'content_html' => HtmlSanitizer::sanitize(HtmlSanitizer::ensureHtml((string)$s['content_html']), ['block_remote' => false])['html'],
+    'content_html' => HtmlSanitizer::sanitize(HtmlSanitizer::ensureHtml((string)$s['content_html']), ['block_remote' => false, 'for_editor' => true])['html'],
     'is_default' => (int)$s['is_default'] === 1, 'shared' => $s['user_id'] === null,
 ], $st->fetchAll(PDO::FETCH_ASSOC));
 

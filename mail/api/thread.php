@@ -35,7 +35,9 @@ foreach ($rows as $r) {
     }
     $html = (string)$r['body_html'];
     $san = $html !== ''
-        ? HtmlSanitizer::sanitize($html, ['block_remote' => !$showImages, 'cid_map' => $cidMap])
+        // Only messages written here (send_status set) may point at /mail/api/attachment.php
+        // directly — that is how a reply quotes the original's inline images.
+        ? HtmlSanitizer::sanitize($html, ['block_remote' => !$showImages, 'cid_map' => $cidMap, 'allow_local' => $r['send_status'] !== null])
         : ['html' => HtmlSanitizer::fromText((string)$r['body_text']), 'remote_images' => false];
     $anyRemote = $anyRemote || $san['remote_images'];
 

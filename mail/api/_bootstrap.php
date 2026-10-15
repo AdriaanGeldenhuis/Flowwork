@@ -109,17 +109,7 @@ function mail_rate_limit(string $bucket, int $max, int $window): void
  */
 function mail_host_problem(string $host): ?string
 {
-    if ($host === '') return null;
-    if (!preg_match('/^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i', $host)) return 'Server names may only contain letters, digits, dots and hyphens';
-    if (getenv('MAIL_ALLOW_PRIVATE_HOSTS')) return null;
-    $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (@gethostbynamel($host) ?: []);
-    if (!$ips) return 'Could not find server "' . $host . '" — check the spelling';
-    foreach ($ips as $ip) {
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            return 'Server "' . $host . '" points to a private network address';
-        }
-    }
-    return null;
+    return $host === '' ? null : MailNet::hostProblem($host);
 }
 
 function mail_user_name(PDO $db, int $userId): array

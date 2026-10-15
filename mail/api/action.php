@@ -20,8 +20,10 @@ if ($action === 'snooze') {
 
 // Read/unread/star act on what you can see; moves act on the whole conversation
 // (each action filters by folder itself, e.g. archive only touches INBOX copies).
+// In Trash, Spam, Drafts and Outbox a key means only the copies listed there —
+// discarding a reply draft must not trash the conversation it belongs to.
 $scope = in_array($action, ['restore', 'delete_forever'], true) ? 'all'
-       : (in_array($view, ['trash', 'spam'], true) ? $view : 'visible');
+       : (in_array($view, ['trash', 'spam', 'drafts', 'outbox'], true) ? $view : 'visible');
 if ($action === 'not_spam') $scope = 'spam';
 $rows = MailRepo::emailsForKeys($DB, $MAIL_COMPANY_ID, $MAIL_USER_ID, $keys, $scope);
 if (!$rows) mail_error('Conversation not found', 404);

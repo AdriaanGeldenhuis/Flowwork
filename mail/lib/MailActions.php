@@ -177,6 +177,11 @@ class MailActions
     {
         $db->prepare("UPDATE emails SET folder = ?, prev_folder = ?, snoozed_until = NULL WHERE email_id = ?")
            ->execute([$folder, $prev, $r['email_id']]);
+        // A newer move supersedes any server move still waiting in the queue (e.g. undo
+        // right after archive): the row's imap_folder is still where the message really
+        // is, so the caller queues one move from there if one is needed at all.
+        $db->prepare("DELETE FROM email_imap_ops WHERE email_id = ? AND op IN ('move', 'copy')")
+           ->execute([$r['email_id']]);
     }
 
     private static function queueFlag(PDO $db, array $r, string $mode, string $flag): void
