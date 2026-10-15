@@ -42,6 +42,7 @@ class MailPaths
 }
 
 require_once __DIR__ . '/SecureVault.php';
+require_once __DIR__ . '/MailNet.php';
 require_once __DIR__ . '/MailSchema.php';
 require_once __DIR__ . '/HtmlSanitizer.php';
 require_once __DIR__ . '/MimeParser.php';

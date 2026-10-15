@@ -48,7 +48,7 @@ if ($mode === 'draft') {
     $out['cc'] = MimeParser::parseAddressList((string)$source['cc_recipients']);
     $out['bcc'] = MimeParser::parseAddressList((string)$source['bcc_recipients']);
     $out['subject'] = (string)$source['subject'];
-    $out['body_html'] = HtmlSanitizer::sanitize((string)$source['body_html'], ['block_remote' => false])['html'];
+    $out['body_html'] = HtmlSanitizer::sanitize((string)$source['body_html'], ['block_remote' => false, 'allow_local' => true, 'for_editor' => true])['html'];
     $out['in_reply_to'] = $source['in_reply_to'];
     $out['references'] = $source['ref_message_ids'];
     $out['thread_key'] = (int)$source['thread_id'] > 0 ? 't' . (int)$source['thread_id'] : null;
@@ -81,10 +81,8 @@ if ($source) {
         if ($a['content_id']) $cidMap[strtolower($a['content_id'])] = '/mail/api/attachment.php?id=' . (int)$a['attachment_id'] . '&inline=1';
     }
     $origHtml = (string)$source['body_html'] !== ''
-        ? HtmlSanitizer::sanitize((string)$source['body_html'], ['block_remote' => false, 'cid_map' => $cidMap])['html']
+        ? HtmlSanitizer::sanitize((string)$source['body_html'], ['block_remote' => false, 'cid_map' => $cidMap, 'for_editor' => true])['html']
         : HtmlSanitizer::fromText((string)$source['body_text']);
-    // <style> blocks from the original would restyle the whole reply.
-    $origHtml = preg_replace('#<style\b[^>]*>.*?</style>#is', '', $origHtml);
 
     $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     $fromLabel = $e($fromName) . ($from ? ' &lt;' . $e($from[0]['email']) . '&gt;' : '');
@@ -138,7 +136,7 @@ if ($mode === 'new') {
         $st->execute([$tplId, $MAIL_COMPANY_ID]);
         if ($t = $st->fetch(PDO::FETCH_ASSOC)) {
             $out['subject'] = (string)$t['subject'];
-            $out['body_html'] = HtmlSanitizer::sanitize(HtmlSanitizer::ensureHtml((string)$t['body_html']), ['block_remote' => false])['html'];
+            $out['body_html'] = HtmlSanitizer::sanitize(HtmlSanitizer::ensureHtml((string)$t['body_html']), ['block_remote' => false, 'for_editor' => true])['html'];
             $out['template_id'] = $tplId;
         }
     }

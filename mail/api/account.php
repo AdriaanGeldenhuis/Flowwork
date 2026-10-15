@@ -93,7 +93,8 @@ if ($op === 'test') {
             $result['smtp'] = ['ok' => false, 'error' => $p];
         } else {
             $result['smtp'] = SmtpSender::test(['host' => $f['smtp_server'], 'port' => $f['smtp_port'], 'encryption' => $f['smtp_encryption'],
-                                                'tls_verify' => $f['tls_verify'] === 1, 'username' => $user, 'password' => $pass]);
+                                                'tls_verify' => $f['tls_verify'] === 1, 'username' => $user, 'password' => $pass,
+                                                'public_only' => true]);
         }
     }
     if ($result['imap'] === null && $result['smtp'] === null) mail_error('Enter an incoming (IMAP) or outgoing (SMTP) server first');

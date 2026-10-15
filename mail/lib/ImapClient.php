@@ -7,6 +7,8 @@
 // UID SEARCH/FETCH/STORE/MOVE/COPY/EXPUNGE and APPEND, with full literal
 // handling in responses.
 
+require_once __DIR__ . '/MailNet.php';
+
 class ImapClient
 {
     /** @var resource|null */
@@ -30,7 +32,8 @@ class ImapClient
             'verify_peer' => $this->verify, 'verify_peer_name' => $this->verify,
             'allow_self_signed' => !$this->verify, 'peer_name' => $this->host, 'SNI_enabled' => true,
         ]]);
-        $remote = ($enc === 'ssl' ? 'ssl://' : 'tcp://') . $this->host . ':' . ($this->port ?: 993);
+        // Connect to the checked public address; TLS still verifies $this->host.
+        $remote = ($enc === 'ssl' ? 'ssl://' : 'tcp://') . MailNet::target($this->host) . ':' . ($this->port ?: 993);
         $errno = 0; $errstr = '';
         $fp = @stream_socket_client($remote, $errno, $errstr, 20, STREAM_CLIENT_CONNECT, $ctx);
         if (!$fp) {

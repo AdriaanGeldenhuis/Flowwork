@@ -2274,9 +2274,9 @@
       case 'Enter': case 'o': if (focusKey) { e.preventDefault(); if (S.view === 'drafts') Composer.openFrom({ mode: 'draft', email_id: S.threads[S.focusIdx].latest_email_id }); else openThread(focusKey); } return;
       case 'Escape': case 'u': if (S.selected.size) { S.selected.clear(); renderList(); } else if (openKey) closeReader(); return;
       case 'x': if (focusKey) toggleSelect(focusKey, S.focusIdx, false); return;
-      case 'e': if (targetKeys.length && !['trash', 'spam', 'archive'].includes(S.view)) act(targetKeys, 'archive'); return;
+      case 'e': if (targetKeys.length && !['trash', 'spam', 'archive', 'drafts', 'outbox'].includes(S.view)) act(targetKeys, 'archive'); return;
       case '#': case 'Delete': if (targetKeys.length) S.view === 'trash' ? deleteForever(targetKeys) : act(targetKeys, 'trash'); return;
-      case '!': if (targetKeys.length && S.view !== 'spam') act(targetKeys, 'spam'); return;
+      case '!': if (targetKeys.length && !['spam', 'drafts', 'outbox', 'sent'].includes(S.view)) act(targetKeys, 'spam'); return;
       case 's': if (targetKeys.length) { const th = S.threads.find((x) => x.key === targetKeys[0]); act(targetKeys, th && th.starred ? 'unstar' : 'star'); } return;
       case 'U': if (targetKeys.length) act(targetKeys, 'unread'); return;
       case 'I': if (targetKeys.length) act(targetKeys, 'read'); return;

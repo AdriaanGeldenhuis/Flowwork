@@ -56,7 +56,7 @@ foreach ($rows as $r) if ($r['subject'] !== '') $subject = $r['subject'];
     $cid = [];
     foreach ($atts[$id] ?? [] as $a) if ($a['content_id']) $cid[strtolower($a['content_id'])] = '/mail/api/attachment.php?id=' . (int)$a['attachment_id'] . '&inline=1';
     $html = $r['body_html'] !== '' && $r['body_html'] !== null
-        ? HtmlSanitizer::sanitize((string)$r['body_html'], ['block_remote' => !$images, 'cid_map' => $cid])['html']
+        ? HtmlSanitizer::sanitize((string)$r['body_html'], ['block_remote' => !$images, 'cid_map' => $cid, 'allow_local' => $r['send_status'] !== null])['html']
         : HtmlSanitizer::fromText((string)$r['body_text']);
     $files = array_filter($atts[$id] ?? [], fn($a) => (int)$a['is_inline'] !== 1);
 ?>

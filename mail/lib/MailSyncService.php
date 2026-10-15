@@ -52,6 +52,7 @@ class MailSyncService
         $incoming = [];
         try {
             $client = self::connect($acc);
+            SecureVault::upgrade($db, (int)$acc['account_id'], $acc['password_encrypted'] ?? null);
             $map = self::detectFolders($db, $client, $acc);
             $acc['folder_map_json'] = json_encode($map);
             self::processOps($db, $client, $acc, $map);
@@ -62,6 +63,7 @@ class MailSyncService
                 if (microtime(true) > $deadline) break;
                 $new += self::syncFolder($db, $client, $acc, $local, $server, $deadline, $incoming);
             }
+            if (microtime(true) < $deadline - 3) self::repairLegacyRows($db, $client, $acc, $deadline);
             $client->logout();
 
             $db->prepare("UPDATE email_accounts SET last_sync_at = NOW(), last_error = NULL, sync_lock_until = NULL WHERE account_id = ?")
@@ -227,6 +229,8 @@ class MailSyncService
                                    ->execute([$folder, $newUid, (int)$op['email_id']]);
                             }
                             @unlink($path);
+                        } elseif ($path !== null) {
+                            @unlink($path); // no Sent folder to file it in: drop the spooled copy with the op
                         }
                         break;
                 }
@@ -295,6 +299,7 @@ class MailSyncService
         } else {
             $last = (int)$state['last_uid'];
             $uids = array_values(array_filter($c->uidSearch('UID ' . ($last + 1) . ':*'), fn($u) => $u > $last));
+            sort($uids); // the cursor below only ever moves forward, so work oldest first
             $uids = array_slice($uids, 0, self::INCREMENTAL_MAX);
             if ($uids) {
                 $done = self::fetchAndIngest($db, $c, $acc, $local, $server, $uids, $deadline, $incoming,
@@ -330,14 +335,20 @@ class MailSyncService
             if (microtime(true) > $deadline) return ['new' => $new, 'complete' => false];
             $meta = $c->uidFetch($batch, 'UID FLAGS INTERNALDATE RFC822.SIZE');
 
-            // Group bodies into ~8 MB fetches.
+            // Group bodies into ~8 MB fetches, keeping the batch order: $onUid advances
+            // the folder cursor, so a UID may only be reported once every UID before it
+            // has been handled. A UID without metadata (expunged meanwhile) rides along
+            // with zero size; its fetch returns nothing and it is simply passed over.
             $groups = [];
             $cur = [];
             $curSize = 0;
             foreach ($batch as $uid) {
-                if (!isset($meta[$uid])) { if ($onUid) $onUid($uid); continue; } // expunged meanwhile
                 $size = (int)($meta[$uid]['RFC822.SIZE'] ?? 0);
-                if ($size > self::MAX_MESSAGE_BYTES) { $groups[] = ['big' => [$uid]]; continue; }
+                if ($size > self::MAX_MESSAGE_BYTES) {
+                    if ($cur) { $groups[] = ['ok' => $cur]; $cur = []; $curSize = 0; }
+                    $groups[] = ['big' => [$uid]];
+                    continue;
+                }
                 if ($cur && $curSize + $size > 8 * 1024 * 1024) { $groups[] = ['ok' => $cur]; $cur = []; $curSize = 0; }
                 $cur[] = $uid;
                 $curSize += $size;
@@ -353,7 +364,7 @@ class MailSyncService
                 foreach ($list as $uid) {
                     $item = $bodies[$uid] ?? null;
                     $raw = $item ? (string)($item[$headersOnly ? 'BODY[HEADER]' : 'BODY[]'] ?? '') : '';
-                    if ($raw !== '') {
+                    if ($raw !== '' && isset($meta[$uid])) {
                         $flags = is_array($meta[$uid]['FLAGS'] ?? null) ? $meta[$uid]['FLAGS'] : [];
                         try {
                             $emailId = MailStore::ingest($db, $acc, $local, $server, $uid, $flags,
@@ -382,6 +393,44 @@ class MailSyncService
             }
         }
         return ['new' => $new, 'complete' => true];
+    }
+
+    /**
+     * Messages stored by the previous (pre-2026-10) sync kept raw MIME as text and
+     * no Message-ID. Re-fetch them from INBOX by UID and re-parse, a small batch
+     * per sync, verifying the subject so a reassigned UID is never trusted.
+     */
+    private static function repairLegacyRows(PDO $db, ImapClient $c, array $acc, float $deadline): void
+    {
+        $st = $db->prepare("SELECT email_id, imap_uid, subject FROM emails
+                             WHERE account_id = ? AND imap_folder IS NULL AND imap_uid IS NOT NULL AND message_id IS NULL
+                          ORDER BY email_id DESC LIMIT 40");
+        $st->execute([(int)$acc['account_id']]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) return;
+        $c->select('INBOX');
+        $byUid = [];
+        foreach ($rows as $r) $byUid[(int)$r['imap_uid']] = $r;
+        $unbind = $db->prepare("UPDATE emails SET imap_uid = NULL WHERE email_id = ?");
+        foreach (array_chunk(array_keys($byUid), 10) as $uids) {
+            if (microtime(true) > $deadline - 2) return;
+            $meta = $c->uidFetch($uids, 'UID RFC822.SIZE');
+            $fetch = array_values(array_filter($uids, fn($u) => isset($meta[$u]) && (int)($meta[$u]['RFC822.SIZE'] ?? 0) <= self::MAX_MESSAGE_BYTES));
+            $bodies = $fetch ? $c->uidFetch($fetch, 'UID BODY.PEEK[]') : [];
+            foreach ($uids as $uid) {
+                $row = $byUid[$uid];
+                $raw = (string)($bodies[$uid]['BODY[]'] ?? '');
+                if ($raw === '') { $unbind->execute([(int)$row['email_id']]); continue; } // gone from the server
+                $p = MimeParser::parse($raw);
+                if (!MailStore::sameSubject((string)$row['subject'], $p['subject'])) { $unbind->execute([(int)$row['email_id']]); continue; }
+                try {
+                    MailStore::repairLegacy($db, $acc, (int)$row['email_id'], $p, 'INBOX', $uid, false);
+                } catch (Throwable $e) {
+                    error_log('[mail] legacy repair ' . $row['email_id'] . ': ' . $e->getMessage());
+                    $unbind->execute([(int)$row['email_id']]);
+                }
+            }
+        }
     }
 
     /** Mirror \Seen/\Flagged changes and removals made in other clients. */

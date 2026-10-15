@@ -29,4 +29,5 @@ MAIL_TEST_SMTP_OUT=/tmp/fake_smtp php tests/mail/test_mail_integration.php
 ```
 
 The test prints `SKIP` (and passes) when the IMAP or SMTP server is not
-running.
+running. It sets `MAIL_ALLOW_PRIVATE_HOSTS` itself, because the test servers
+listen on 127.0.0.1.

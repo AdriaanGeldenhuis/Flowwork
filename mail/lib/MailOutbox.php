@@ -24,7 +24,7 @@ class MailOutbox
         $cc  = MimeBuilder::normalizeList(self::listInput($d['cc'] ?? []));
         $bcc = MimeBuilder::normalizeList(self::listInput($d['bcc'] ?? []));
         $subject = mb_substr(MimeBuilder::clean((string)($d['subject'] ?? '')), 0, 500);
-        $html = HtmlSanitizer::sanitize((string)($d['body_html'] ?? ''), ['block_remote' => false])['html'];
+        $html = HtmlSanitizer::sanitize((string)($d['body_html'] ?? ''), ['block_remote' => false, 'allow_local' => true, 'for_editor' => true])['html'];
         if (strlen($html) > 5 * 1024 * 1024) throw new MailUserError('The message body is too large');
         $text = HtmlSanitizer::toText($html);
 
@@ -139,7 +139,10 @@ class MailOutbox
 
     public static function sendOne(PDO $db, int $emailId): array
     {
-        $claim = $db->prepare("UPDATE emails SET send_status = 'sending' WHERE email_id = ? AND folder = 'Outbox' AND send_status = 'queued'");
+        // scheduled_at becomes the claim time, so the stale-send sweep in flushDue
+        // measures from when sending began, not from an old scheduled time.
+        $claim = $db->prepare("UPDATE emails SET send_status = 'sending', scheduled_at = NOW()
+                                WHERE email_id = ? AND folder = 'Outbox' AND send_status = 'queued'");
         $claim->execute([$emailId]);
         if ($claim->rowCount() !== 1) return ['ok' => false, 'skipped' => true, 'error' => 'Not queued'];
 
@@ -161,7 +164,7 @@ class MailOutbox
                            'cid' => $a['content_id'], 'inline' => (int)$a['is_inline'] === 1];
             }
 
-            [$bodyHtml, $inlineAtts] = self::embedImages($db, (int)$account['user_id'], (string)$row['body_html']);
+            [$bodyHtml, $inlineAtts] = self::embedImages($db, (int)$account['user_id'], (string)$row['body_html'], $emailId, (int)$row['thread_id']);
             $atts = array_merge($atts, $inlineAtts);
 
             $res = SmtpSender::send([
@@ -173,8 +176,10 @@ class MailOutbox
                 'to' => [(string)$row['to_recipients']], 'cc' => [(string)$row['cc_recipients']], 'bcc' => [(string)$row['bcc_recipients']],
                 'subject' => (string)$row['subject'], 'html' => $bodyHtml, 'text' => (string)$row['body_text'],
                 'attachments' => $atts, 'in_reply_to' => $row['in_reply_to'], 'references' => $row['ref_message_ids'],
+                'public_only' => true,
             ]);
             if (!$res['ok']) throw new RuntimeException($res['error'] ?? 'Send failed');
+            SecureVault::upgrade($db, (int)$account['account_id'], $account['password_encrypted'] ?? null);
         } catch (Throwable $e) {
             $msg = mb_substr($e->getMessage(), 0, 500);
             $db->prepare("UPDATE emails SET send_status = 'failed', send_error = ? WHERE email_id = ?")->execute([$msg, $emailId]);
@@ -241,21 +246,28 @@ class MailOutbox
      * parts so recipients see them.
      * @return array{0:string,1:array}
      */
-    public static function embedImages(PDO $db, int $ownerUserId, string $html): array
+    /**
+     * Turn local attachment images and data: images into inline MIME parts.
+     * Only images that belong to this draft or to its own conversation are
+     * embedded, so a crafted <img src> can never mail out another attachment.
+     */
+    public static function embedImages(PDO $db, int $ownerUserId, string $html, int $draftId = 0, int $threadId = 0): array
     {
         $atts = [];
         $n = 0;
-        $html = preg_replace_callback('#(<img\b[^>]*?\bsrc=)(["\'])(.*?)\2#is', function ($m) use ($db, $ownerUserId, &$atts, &$n) {
+        $html = preg_replace_callback('#(<img\b[^>]*?\bsrc=)(["\'])(.*?)\2#is', function ($m) use ($db, $ownerUserId, $draftId, $threadId, &$atts, &$n) {
             $src = html_entity_decode($m[3], ENT_QUOTES | ENT_HTML5, 'UTF-8');
             $content = null;
             $mime = 'image/png';
             $name = 'image';
-            if (preg_match('#^/mail/api/attachment\.php\?id=(\d+)#', $src, $mm)) {
+            if (preg_match('#^/mail/api/attachment\.php\?id=(\d+)(&inline=1)?$#', $src, $mm)) {
                 $st = $db->prepare("SELECT ea.file_name, ea.file_path, ea.mime_type FROM email_attachments ea
                                       JOIN emails e ON e.email_id = ea.email_id
                                       JOIN email_accounts a ON a.account_id = e.account_id
-                                     WHERE ea.attachment_id = ? AND a.user_id = ?");
-                $st->execute([(int)$mm[1], $ownerUserId]);
+                                     WHERE ea.attachment_id = ? AND a.user_id = ?
+                                       AND ea.mime_type LIKE 'image/%'
+                                       AND (e.email_id = ? OR (? > 0 AND e.thread_id = ?))");
+                $st->execute([(int)$mm[1], $ownerUserId, $draftId, $threadId, $threadId]);
                 if ($a = $st->fetch(PDO::FETCH_ASSOC)) {
                     $path = MailPaths::resolveStored((string)$a['file_path']);
                     if ($path !== null) {

@@ -27,19 +27,24 @@ class MailSchema
 
         $marker = self::markerPath();
         if ($marker !== null && is_file($marker)) return;
+        // After a failure, wait before retrying so a stuck ALTER is not re-run on every request.
+        $failed = $marker !== null ? $marker . '.failed' : null;
+        if ($failed !== null && is_file($failed) && filemtime($failed) > time() - 600) return;
 
-        try {
-            self::createTables($db);
-            self::addColumns($db);
-            self::fixIndexes($db);
-            self::backfill($db);
-            if ($marker !== null) {
-                @file_put_contents($marker, date('c'));
+        // Tables and columns are required; index tuning and backfills are best-effort.
+        $ok = true;
+        foreach (['createTables' => true, 'addColumns' => true, 'fixIndexes' => false, 'backfill' => false] as $step => $required) {
+            try {
+                self::$step($db);
+            } catch (Throwable $e) {
+                // Never take the page down over provisioning.
+                error_log('[mail] schema ' . $step . ' failed: ' . $e->getMessage());
+                if ($required) $ok = false;
             }
-        } catch (Throwable $e) {
-            // Never take the page down over provisioning; queries that need a
-            // missing column will surface their own error.
-            error_log('[mail] schema ensure failed: ' . $e->getMessage());
+        }
+        if ($marker !== null) {
+            if ($ok) { @file_put_contents($marker, date('c')); @unlink($failed); }
+            else @touch($failed);
         }
     }
 
@@ -415,6 +420,13 @@ class MailSchema
     private static function fixIndexes(PDO $db): void
     {
         $idx = self::indexMap($db, ['emails', 'email_links', 'email_threads']);
+        $db = new class($db) {
+            public function __construct(private PDO $db) {}
+            public function exec(string $sql): void
+            {
+                try { $this->db->exec($sql); } catch (Throwable $e) { error_log('[mail] schema index: ' . $e->getMessage()); }
+            }
+        };
 
         // A global UNIQUE(message_id) meant a newsletter (or a CC) delivered to
         // two mailboxes was stored for only one of them. Scope it per account.

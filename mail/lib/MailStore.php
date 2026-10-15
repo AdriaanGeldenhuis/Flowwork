@@ -48,14 +48,45 @@ class MailStore
         }
 
         // Rows written by the previous sync (no imap_folder, no Message-ID, raw MIME
-        // stored as text): re-parse in place instead of creating a duplicate.
+        // stored as text): re-parse in place instead of creating a duplicate — but
+        // only when the subject proves it is the same message (UIDs may have been
+        // reassigned since).
         if ($uid && $serverFolder) {
-            $st = $db->prepare("SELECT email_id FROM emails
-                                 WHERE account_id = ? AND folder = ? AND imap_uid = ? AND imap_folder IS NULL LIMIT 1");
-            $st->execute([$accountId, $localFolder, $uid]);
-            if ($legacyId = (int)$st->fetchColumn()) {
-                self::repairLegacy($db, $account, $legacyId, $p, $serverFolder, $uid, $headersOnly);
-                return null;
+            $st = $db->prepare("SELECT email_id, subject FROM emails
+                                 WHERE account_id = ? AND imap_uid = ? AND imap_folder IS NULL LIMIT 1");
+            $st->execute([$accountId, $uid]);
+            if ($legacy = $st->fetch(PDO::FETCH_ASSOC)) {
+                if (self::sameSubject((string)$legacy['subject'], $p['subject'])) {
+                    self::repairLegacy($db, $account, (int)$legacy['email_id'], $p, $serverFolder, $uid, $headersOnly);
+                    return null;
+                }
+                // A different message now owns that UID: the old binding is meaningless.
+                $db->prepare("UPDATE emails SET imap_uid = NULL WHERE email_id = ?")->execute([(int)$legacy['email_id']]);
+            }
+        }
+
+        // Mail sent from Flowwork before this version was stored without a
+        // Message-ID; when the provider filed its own copy in Sent (Gmail, 365),
+        // bind that copy to the existing row instead of listing it twice.
+        if ($uid && $serverFolder && $localFolder === 'Sent') {
+            $ts0 = $p['date'] ?? ($internalDate ? strtotime($internalDate) : null);
+            $firstTo = $p['to'][0]['email'] ?? '';
+            if ($ts0 && $firstTo !== '') {
+                $st = $db->prepare("SELECT email_id FROM emails
+                                     WHERE account_id = ? AND direction = 'outgoing' AND message_id IS NULL AND imap_folder IS NULL
+                                       AND folder IN ('Sent','Archive','Trash') AND subject = ? AND to_recipients LIKE ?
+                                       AND sent_at BETWEEN ? AND ? LIMIT 1");
+                $st->execute([$accountId, mb_substr($p['subject'], 0, 500), '%' . MailRepo::likeEscape($firstTo) . '%',
+                              date('Y-m-d H:i:s', $ts0 - 3 * 3600), date('Y-m-d H:i:s', $ts0 + 3 * 3600)]);
+                if ($localId = (int)$st->fetchColumn()) {
+                    try {
+                        $db->prepare("UPDATE emails SET imap_folder = ?, imap_uid = ?, message_id = ? WHERE email_id = ?")
+                           ->execute([$serverFolder, $uid, $p['message_id'], $localId]);
+                    } catch (PDOException $e) {
+                        if ($e->getCode() !== '23000') throw $e;
+                    }
+                    return null;
+                }
             }
         }
 
@@ -132,8 +163,9 @@ class MailStore
         return $emailId;
     }
 
-    private static function repairLegacy(PDO $db, array $account, int $emailId, array $p, string $serverFolder,
-                                         int $uid, bool $headersOnly): void
+    /** @return string 'repaired' | 'merged' */
+    public static function repairLegacy(PDO $db, array $account, int $emailId, array $p, string $serverFolder,
+                                        int $uid, bool $headersOnly): string
     {
         $html = $headersOnly ? '' : $p['html'];
         $text = $headersOnly ? '' : $p['text'];
@@ -163,11 +195,52 @@ class MailStore
                 }
             }
             if ($ownTx) $db->commit();
+            return 'repaired';
         } catch (Throwable $e) {
             if ($ownTx && $db->inTransaction()) $db->rollBack();
-            if ($e instanceof PDOException && $e->getCode() === '23000') return; // message_id clash — leave as is
+            if (!($e instanceof PDOException) || $e->getCode() !== '23000') throw $e;
+        }
+        // A proper copy of this message already exists (same server UID or
+        // Message-ID): fold the legacy row's labels/links into it and drop it.
+        $st = $db->prepare("SELECT email_id FROM emails WHERE account_id = ? AND email_id <> ?
+                               AND ((imap_folder = ? AND imap_uid = ?) OR (message_id IS NOT NULL AND message_id = ?)) LIMIT 1");
+        $st->execute([(int)$account['account_id'], $emailId, $serverFolder, $uid, (string)$p['message_id']]);
+        $keep = (int)$st->fetchColumn();
+        if ($keep) {
+            self::mergeInto($db, $emailId, $keep);
+            return 'merged';
+        }
+        // Nothing to merge with — just stop treating it as bound to that UID.
+        $db->prepare("UPDATE emails SET imap_uid = NULL WHERE email_id = ?")->execute([$emailId]);
+        return 'merged';
+    }
+
+    /** Move labels and links from a duplicate row onto the row we keep, then delete the duplicate. */
+    public static function mergeInto(PDO $db, int $fromId, int $toId): void
+    {
+        $ownTx = !$db->inTransaction();
+        if ($ownTx) $db->beginTransaction();
+        try {
+            $db->prepare("INSERT IGNORE INTO email_tag_map (email_id, tag_id) SELECT ?, tag_id FROM email_tag_map WHERE email_id = ?")
+               ->execute([$toId, $fromId]);
+            $db->prepare("INSERT INTO email_links (company_id, email_id, linked_type, linked_id, created_by, created_at)
+                          SELECT l.company_id, ?, l.linked_type, l.linked_id, l.created_by, l.created_at FROM email_links l
+                           WHERE l.email_id = ? AND NOT EXISTS (SELECT 1 FROM email_links x WHERE x.email_id = ?
+                                 AND x.linked_type = l.linked_type AND x.linked_id = l.linked_id)")
+               ->execute([$toId, $fromId, $toId]);
+            $db->prepare("UPDATE emails t JOIN emails f ON f.email_id = ? SET t.is_starred = GREATEST(t.is_starred, f.is_starred) WHERE t.email_id = ?")
+               ->execute([$fromId, $toId]);
+            self::deleteEmails($db, [$fromId]);
+            if ($ownTx) $db->commit();
+        } catch (Throwable $e) {
+            if ($ownTx && $db->inTransaction()) $db->rollBack();
             throw $e;
         }
+    }
+
+    public static function sameSubject(string $a, string $b): bool
+    {
+        return MimeParser::normalizeSubject($a) === MimeParser::normalizeSubject($b);
     }
 
     /**

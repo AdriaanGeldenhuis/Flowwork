@@ -7,6 +7,7 @@
 //
 // Accepted options:
 //   host, port, encryption ('ssl'|'tls'|'none'), username, password, tls_verify (bool, default true)
+//   public_only (bool) — host must resolve to public addresses (user-entered servers in Mail)
 //   from, from_name, reply_to, to[], cc[], bcc[], subject, html, text,
 //   attachments [['filename','content','mime', 'cid'?, 'inline'?]],
 //   message_id, in_reply_to, references
@@ -21,6 +22,7 @@ require_once __DIR__ . '/MimeParser.php';
 require_once __DIR__ . '/HtmlSanitizer.php';
 require_once __DIR__ . '/MimeBuilder.php';
 require_once __DIR__ . '/ImapClient.php';
+require_once __DIR__ . '/MailNet.php';
 
 class SmtpSender
 {
@@ -74,7 +76,9 @@ class SmtpSender
         $c = new self();
         try {
             $c->open($opts);
-            $c->auth((string)($opts['username'] ?? ''), (string)($opts['password'] ?? ''));
+            // No username but a password: log in as the sender, which is what nearly every provider expects.
+            $user = trim((string)($opts['username'] ?? '')) ?: $fromAddr;
+            $c->auth($user, (string)($opts['password'] ?? ''));
             $c->expect($c->cmd('MAIL FROM:<' . $fromAddr . '>'), [250], 'Sender rejected');
             $accepted = 0;
             $rejected = [];
@@ -123,7 +127,8 @@ class SmtpSender
             'verify_peer' => $verify, 'verify_peer_name' => $verify, 'allow_self_signed' => !$verify,
             'peer_name' => $host, 'SNI_enabled' => true,
         ]]);
-        $remote = ($enc === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
+        $target = !empty($opts['public_only']) ? MailNet::target($host) : $host;
+        $remote = ($enc === 'ssl' ? 'ssl://' : 'tcp://') . $target . ':' . $port;
         $errno = 0; $errstr = '';
         $fp = @stream_socket_client($remote, $errno, $errstr, 20, STREAM_CLIENT_CONNECT, $ctx);
         if (!$fp) {
