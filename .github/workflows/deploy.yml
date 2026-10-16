@@ -35,6 +35,9 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           # No --delete: server-only files are never removed.
+          # "app files/" (the Android Studio project) is copied too, so the
+          # server always has the current app; its .htaccess blocks web access.
+          # Build output and signing files are never copied.
           rsync -rlptvz \
             -e "ssh -i ~/.ssh/deploy_key -p ${SSH_PORT:-2222}" \
             --exclude='.git' \
@@ -50,5 +53,11 @@ jobs:
             --exclude='/uploads/' \
             --exclude='/storage/' \
             --exclude='/logs/' \
-            --exclude='/app files/' \
+            --exclude='/app files/.gradle/' \
+            --exclude='/app files/build/' \
+            --exclude='/app files/app/build/' \
+            --exclude='local.properties' \
+            --exclude='keystore.properties' \
+            --exclude='*.jks' \
+            --exclude='*.keystore' \
             ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"

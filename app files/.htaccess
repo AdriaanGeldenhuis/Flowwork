@@ -1,0 +1,10 @@
+# The Android Studio project (source, google-services.json). It is deployed
+# to the server so the current app is always there to copy, but it must never
+# be served over HTTP. Deny all direct web access (Apache 2.4 and 2.2 syntax).
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
