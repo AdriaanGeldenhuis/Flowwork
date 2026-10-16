@@ -17,8 +17,8 @@ define('DB_PASS', getenv('DB_PASS') ?: 'your-db-password');
 
 // Session
 const SESSION_NAME       = 'FLOWWORKSESSID';
-const SESSION_LIFETIME   = 86400;   // 24 hours
-const REMEMBER_ME_EXPIRY = 604800;  // 7 days
+const SESSION_LIFETIME   = 86400;    // 24 hours idle, per device
+const REMEMBER_ME_EXPIRY = 2592000;  // 30 days idle for "Keep me signed in" (always on in the app)
 
 // Error handling
 if (APP_ENV === 'production') {

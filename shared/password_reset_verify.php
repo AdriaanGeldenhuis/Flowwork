@@ -75,6 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetData && !$err) {
       $DB->commit();
       $success = true;
 
+      // Sign the account out on every device, including "keep me signed in" ones.
+      try {
+        fw_auth_revoke_all($DB, (int)$resetData['user_id'], 'password_reset');
+      } catch (Throwable $e) {
+        error_log('[auth] revoke after password reset failed: ' . $e->getMessage());
+      }
+
     } catch (Exception $e) {
       if ($DB->inTransaction()) {
         $DB->rollBack();

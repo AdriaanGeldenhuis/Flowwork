@@ -380,6 +380,7 @@
   function initAutoDismissMessages() {
     const messages = document.querySelectorAll('.fw-auth__message');
     messages.forEach(function(msg) {
+      if (msg.hasAttribute('data-sticky')) return; // e.g. why this device was signed out
       setTimeout(function() {
         msg.style.transition = 'opacity 0.3s ease';
         msg.style.opacity = '0';

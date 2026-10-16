@@ -1,0 +1,117 @@
+/* /account/css/account.css — Signed-in devices. Mobile-first, light + dark. */
+
+.fwa {
+  --bg: #f5f4f1;
+  --surface: #ffffff;
+  --surface-2: #f8f7f4;
+  --line: rgba(30, 28, 24, 0.1);
+  --line-strong: rgba(30, 28, 24, 0.18);
+  --ink: #1c1b19;
+  --ink-2: #4a4741;
+  --ink-3: #7c776f;
+  --accent: #2f5bd3;
+  --accent-soft: rgba(47, 91, 211, 0.1);
+  --ok: #217a52;
+  --ok-soft: rgba(33, 122, 82, 0.1);
+  --danger: #b4261c;
+  --danger-soft: rgba(180, 38, 28, 0.08);
+  --shadow: 0 1px 2px rgba(30, 28, 24, 0.05), 0 12px 28px -20px rgba(30, 28, 24, 0.35);
+  --radius: 16px;
+  color-scheme: light;
+}
+.fwa[data-theme="dark"] {
+  --bg: #111015;
+  --surface: #1b1a20;
+  --surface-2: #212027;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.15);
+  --ink: #f1efeb;
+  --ink-2: #c9c5bd;
+  --ink-3: #8f8a82;
+  --accent: #8fb0ff;
+  --accent-soft: rgba(143, 176, 255, 0.13);
+  --ok: #6fd1a4;
+  --ok-soft: rgba(111, 209, 164, 0.12);
+  --danger: #ff8f86;
+  --danger-soft: rgba(255, 143, 134, 0.12);
+  --shadow: 0 0 0 1px var(--line), 0 16px 32px -22px rgba(0, 0, 0, 0.9);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body.fwa { margin: 0; min-height: 100%; }
+body.fwa {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.fwa :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.fwa [hidden] { display: none !important; }
+.fwa-i { width: 20px; height: 20px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.fwa-top { display: flex; align-items: center; height: 56px; padding: 0 12px; max-width: 760px; margin: 0 auto; }
+.fwa-back { display: inline-flex; align-items: center; gap: 4px; padding: 8px 12px 8px 6px; border-radius: 10px; color: var(--ink-2); text-decoration: none; font-weight: 500; }
+.fwa-back:hover { background: var(--surface-2); color: var(--ink); }
+
+.fwa-main { max-width: 760px; margin: 0 auto; padding: 4px 16px 48px; }
+.fwa-head { display: flex; gap: 14px; align-items: flex-start; margin: 4px 0 22px; }
+.fwa-head__icon { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: 0 0 auto; }
+.fwa-head h1 { margin: 2px 0 6px; font-size: 24px; line-height: 1.2; letter-spacing: -0.01em; }
+.fwa-head p { margin: 0; color: var(--ink-3); font-size: 14px; max-width: 560px; }
+
+.fwa-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; color: var(--ink-3); font-size: 13.5px; }
+
+.fwa-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px;
+  border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.fwa-btn:hover { background: var(--surface-2); }
+a.fwa-btn { text-decoration: none; }
+.fwa-btn[disabled] { opacity: 0.55; cursor: default; }
+.fwa-btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.fwa-btn--danger:hover { background: var(--danger-soft); }
+.fwa-btn--danger.is-armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+.fwa-btn--sm { min-height: 34px; padding: 0 13px; font-size: 13px; }
+
+.fwa-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.fwa-card {
+  display: grid; grid-template-columns: 44px 1fr; gap: 12px 14px; align-items: center;
+  padding: 16px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
+  animation: fwa-in 0.25s ease both;
+}
+.fwa-card.is-current { box-shadow: inset 0 0 0 1.5px var(--accent), var(--shadow); }
+.fwa-card__icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+.fwa-card.is-current .fwa-card__icon { background: var(--accent-soft); color: var(--accent); }
+.fwa-card__body { min-width: 0; }
+.fwa-card__title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+.fwa-card__meta { color: var(--ink-3); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
+.fwa-card__actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.fwa-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.fwa-badge--here { background: var(--accent-soft); color: var(--accent); }
+.fwa-badge--kept { background: var(--ok-soft); color: var(--ok); }
+.fwa-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
+.fwa-card--skel { height: 92px; background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%); background-size: 200% 100%; animation: fwa-shimmer 1.2s linear infinite; }
+.fwa-empty { padding: 28px 16px; text-align: center; color: var(--ink-3); background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
+.fwa-note { margin: 22px 2px 0; color: var(--ink-3); font-size: 13px; }
+
+.fwa-toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 12px; background: #1c1b19; color: #fff; font-size: 14px;
+  box-shadow: 0 16px 36px -14px rgba(0, 0, 0, 0.6); animation: fwa-in 0.2s ease both; z-index: 10;
+}
+.fwa-toast.is-error { background: var(--danger); }
+
+@media (min-width: 640px) {
+  .fwa-main { padding-top: 12px; }
+  .fwa-head h1 { font-size: 28px; }
+  .fwa-card { grid-template-columns: 44px 1fr auto; }
+  .fwa-card__actions { grid-column: auto; }
+}
+@keyframes fwa-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fwa-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .fwa *, .fwa *::before, .fwa *::after { animation: none !important; transition: none !important; }
+}
