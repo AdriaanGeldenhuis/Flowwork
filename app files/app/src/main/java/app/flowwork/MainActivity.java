@@ -57,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Create WebView programmatically
         webView = new WebView(this);
+        CookieManager.getInstance().setAcceptCookie(true);
         setContentView(webView);
 
         // WebView settings
@@ -162,6 +163,15 @@ public class MainActivity extends AppCompatActivity {
         if (!restored) {
             webView.loadUrl("https://www.flowwork.app");
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Write the sign-in cookies to disk now. WebView otherwise saves them
+        // on a timer, so closing the app right after signing in could lose
+        // them and show the sign-in page again on the next launch.
+        CookieManager.getInstance().flush();
     }
 
     @Override

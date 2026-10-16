@@ -118,6 +118,7 @@ if (!empty($_SESSION['user_id'])) {
                 <a href="/admin/" class="<?= $scope ?>__kebab-item" role="menuitem">Admin/Settings</a>
                 <a href="/contact/" class="<?= $scope ?>__kebab-item" role="menuitem">Contact Us</a>
                 <a href="/help/" class="<?= $scope ?>__kebab-item" role="menuitem">Help</a>
+                <a href="/account/" class="<?= $scope ?>__kebab-item" role="menuitem">Signed-in devices</a>
                 <a href="/logout.php" class="<?= $scope ?>__kebab-item" role="menuitem">Logout</a>
             </nav>
         </div>

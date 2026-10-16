@@ -126,6 +126,7 @@ $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'G
                         <a href="/admin/" class="fw-home__kebab-item" role="menuitem">Admin/Settings</a>
                         <a href="/contact/" class="fw-home__kebab-item" role="menuitem">Contact Us</a>
                         <a href="/help/" class="fw-home__kebab-item" role="menuitem">Help</a>
+                        <a href="/account/" class="fw-home__kebab-item" role="menuitem">Signed-in devices</a>
                         <a href="/logout.php" class="fw-home__kebab-item" role="menuitem">Logout</a>
                     </nav>
                 </div>

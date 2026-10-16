@@ -162,6 +162,8 @@ try {
                     WHERE id = ?
                 ");
                 $stmt->execute([$firstName, $lastName, $role, $status, $isSeat, $targetUserId]);
+                // A suspended user is signed out on every device straight away.
+                if ($status !== 'active') fw_auth_revoke_all($DB, $targetUserId, 'suspended');
             } else {
                 $stmt = $DB->prepare(
                     "UPDATE users SET first_name = ?, last_name = ?, updated_at = NOW() WHERE id = ?"
@@ -235,6 +237,7 @@ try {
                     "UPDATE users SET status = 'suspended', session_token = NULL, updated_at = NOW() WHERE id = ?"
                 );
                 $stmt->execute([$targetUserId]);
+                fw_auth_revoke_all($DB, $targetUserId, 'suspended');
             }
 
             // Log audit

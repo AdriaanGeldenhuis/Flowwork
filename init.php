@@ -5,6 +5,15 @@ require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/utils.php';
 require_once __DIR__ . '/finances/lib/Csrf.php';
+require_once __DIR__ . '/includes/auth_sessions.php';
+
+// Is this device still signed in? (per-device sessions — see includes/auth_sessions.php)
+try {
+    fw_auth_check($DB);
+} catch (Throwable $e) {
+    error_log('[auth] device check failed: ' . $e->getMessage());
+    fw_auth_drop('session_expired');
+}
 
 
 // Centralized CRM asset version for cache busting

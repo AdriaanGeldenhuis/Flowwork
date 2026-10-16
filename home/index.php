@@ -172,6 +172,7 @@ try {
                         <a href="/admin/" class="fw-dashboard__kebab-item" role="menuitem">Admin/Settings</a>
                         <a href="/contact/" class="fw-dashboard__kebab-item" role="menuitem">Contact Us</a>
                         <a href="/help/" class="fw-dashboard__kebab-item" role="menuitem">Help</a>
+                        <a href="/account/" class="fw-dashboard__kebab-item" role="menuitem">Signed-in devices</a>
                         <a href="/logout.php" class="fw-dashboard__kebab-item" role="menuitem">Logout</a>
                     </nav>
                 </div>

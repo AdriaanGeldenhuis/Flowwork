@@ -120,17 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $DB->commit();
 
-      // Auto-login
-      session_regenerate_id(true);
-      $_SESSION['user_id'] = $userId;
-      $_SESSION['company_id'] = $companyId;
-      $_SESSION['user_first_name'] = $firstName;
-      $_SESSION['user_last_name'] = $lastName;
-
-      $token = bin2hex(random_bytes(32));
-      $_SESSION['sess_token'] = $token;
-
-      $DB->prepare("UPDATE users SET session_token = ? WHERE id = ?")->execute([$token, $userId]);
+      // Auto-login: this device becomes the account's first signed-in device.
+      fw_auth_begin($DB, ['id' => $userId, 'company_id' => $companyId, 'first_name' => $firstName, 'last_name' => $lastName], true);
 
       fw_provision_company_finance((int)$companyId);
 

@@ -314,7 +314,8 @@
         ${onInbox ? `<button class="fwm-pop__item" data-v="keys">${icon('keyboard')}Keyboard shortcuts <small>?</small></button>` : ''}
         ${kebab.dataset.admin === '1' ? `<a class="fwm-pop__item" data-v="admin" href="/admin/mail.php">${icon('shield')}Company mail settings</a>` : ''}
         <div class="fwm-pop__sep"></div>
-        <a class="fwm-pop__item" data-v="home" href="/home.php">${icon('home')}Flowwork home</a>`, {
+        <a class="fwm-pop__item" data-v="home" href="/home.php">${icon('home')}Flowwork home</a>
+        <a class="fwm-pop__item" data-v="devices" href="/account/">${icon('shield')}Signed-in devices</a>`, {
         align: 'end',
         onClick: (it) => { if (it.dataset.v === 'keys') openModal('shortcutsModal'); },
       });

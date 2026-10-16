@@ -20,7 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'security_session_timeout' => trim($_POST['security_session_timeout'] ?? '480'),
             'security_max_login_attempts' => trim($_POST['security_max_login_attempts'] ?? '5'),
             'security_lockout_duration' => trim($_POST['security_lockout_duration'] ?? '15'),
-            'security_force_single_session' => isset($_POST['security_force_single_session']) ? '1' : '0',
+            // Replaces the old 'security_force_single_session' key (which was never enforced and
+            // defaulted to on): one device per user is now opt-in and actually applied at sign-in.
+            'security_single_device' => isset($_POST['security_single_device']) ? '1' : '0',
             'security_ip_whitelist' => trim($_POST['security_ip_whitelist'] ?? ''),
             'security_2fa_enabled' => isset($_POST['security_2fa_enabled']) ? '1' : '0',
             'security_password_expiry_days' => trim($_POST['security_password_expiry_days'] ?? '0'),
@@ -51,7 +53,7 @@ $s = [
     'security_session_timeout' => getCRMSetting('security_session_timeout', '480'),
     'security_max_login_attempts' => getCRMSetting('security_max_login_attempts', '5'),
     'security_lockout_duration' => getCRMSetting('security_lockout_duration', '15'),
-    'security_force_single_session' => getCRMSetting('security_force_single_session', '1'),
+    'security_single_device' => getCRMSetting('security_single_device', '0'),
     'security_ip_whitelist' => getCRMSetting('security_ip_whitelist', ''),
     'security_2fa_enabled' => getCRMSetting('security_2fa_enabled', '0'),
     'security_password_expiry_days' => getCRMSetting('security_password_expiry_days', '0'),
@@ -160,8 +162,8 @@ $loginActivity = $stmt->fetchAll();
                         </div>
                         <div class="fw-admin__form-group fw-admin__form-group--full">
                             <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="security_force_single_session" value="1" <?= $s['security_force_single_session'] === '1' ? 'checked' : '' ?>>
-                                <span>Force single session per user (new login logs out other sessions)</span>
+                                <input type="checkbox" name="security_single_device" value="1" <?= $s['security_single_device'] === '1' ? 'checked' : '' ?>>
+                                <span>Allow only one signed-in device per user (signing in on a phone signs the computer out). Off: people stay signed in on phone, tablet and computer at the same time.</span>
                             </label>
                         </div>
                         <div class="fw-admin__form-group fw-admin__form-group--full">

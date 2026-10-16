@@ -1,29 +1,42 @@
 <?php
 require_once __DIR__ . '/init.php';
 
-if (!empty($_SESSION['user_id'])) redirect('/home.php');
+$redirectTo = fw_safe_redirect($_GET['redirect'] ?? null);
+if (!empty($_SESSION['user_id'])) redirect($redirectTo);
 
+header('Cache-Control: no-store');
+$isApp = fw_auth_is_app();
 $err = '';
 $msg = '';
+$msgType = 'success';
 
-// Display messages
-if (isset($_GET['msg'])) {
-  $msgs = [
-    'session_expired' => 'Your session expired. Please log in again.',
-    'logged_out' => 'You have been logged out.',
-    'account_suspended' => 'Your account is suspended.',
-    'reset_success' => 'Password reset successful. Please log in.',
-    'verified' => 'Email verified successfully. Please log in.',
-  ];
-  $msg = $msgs[$_GET['msg']] ?? '';
-}
+// Why this device is on the sign-in page (from the link, or from the device check).
+$notice = (string)($_GET['msg'] ?? ($_SESSION['auth_notice'] ?? ''));
+unset($_SESSION['auth_notice']);
+$msgs = [
+  'session_expired'     => ['Your session expired. Please sign in again.', 'info'],
+  'logged_out'          => ['You have been signed out of this device.', 'success'],
+  'account_suspended'   => ['Your account is suspended.', 'error'],
+  'reset_success'       => ['Password reset successful. Please sign in.', 'success'],
+  'verified'            => ['Email verified successfully. Please sign in.', 'success'],
+  'signed_out_remote'   => ['This device was signed out from another device.', 'info'],
+  'password_changed'    => ['Your password was changed, so this device was signed out. Please sign in again.', 'info'],
+  'signed_in_elsewhere' => ['You signed in on another device. Your company allows one signed-in device per user.', 'info'],
+  'invalid_user'        => ['Please sign in again.', 'info'],
+];
+if (isset($msgs[$notice])) [$msg, $msgType] = $msgs[$notice];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $email = trim($_POST['email'] ?? '');
-  $pass  = $_POST['password'] ?? '';
-  $remember = isset($_POST['remember']);
+  $msg = '';
+  $email = mb_strtolower(trim((string)($_POST['email'] ?? '')));
+  $pass  = (string)($_POST['password'] ?? '');
+  // The app always keeps you signed in; in a browser it is the checkbox.
+  $remember = $isApp || !empty($_POST['remember']);
+  $ip = fw_auth_ip();
 
-  if ($email === '' || $pass === '') {
+  if (!hash_equals(Csrf::token(), (string)($_POST['csrf_token'] ?? ''))) {
+    $err = 'This sign-in page expired. Please try again.';
+  } elseif ($email === '' || $pass === '' || strlen($email) > 255 || strlen($pass) > 4096) {
     $err = 'Please enter email and password.';
   } else {
     $stmt = $DB->prepare("SELECT id, email, password_hash, company_id, status, first_name, last_name
@@ -31,11 +44,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->execute([$email]);
     $u = $stmt->fetch();
 
-    if (!$u || !password_verify($pass, $u['password_hash'])) {
+    [$maxAttempts, $lockMinutes] = fw_login_limits($DB, $u ? (int)$u['company_id'] : null);
+    $wait = fw_login_wait($DB, $email, $ip, $maxAttempts, $lockMinutes);
+
+    if ($wait > 0) {
+      $mins = (int)ceil($wait / 60);
+      $err = 'Too many sign-in attempts. Please try again in ' . $mins . ' minute' . ($mins === 1 ? '' : 's') . '.';
+    } elseif (!$u || !password_verify($pass, (string)$u['password_hash'])) {
+      // Same work whether or not the account exists, so timing does not reveal it.
+      if (!$u) password_verify($pass, '$2y$10$CUpLPInlM21BCvOecw4qfuE9YD9zE8P6rV9Fd0Tmlaup/AN9hgMjW');
+      fw_login_failed($DB, $email, $ip);
       $err = 'Invalid email or password.';
-      
-      // Log failed attempt
-      $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
       error_log("Failed login attempt for email: {$email} from IP: {$ip}");
     } elseif ($u['status'] !== 'active') {
       $err = 'Your account is not active. Please contact support.';
@@ -48,46 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$company || !$company['subscription_active']) {
         $err = 'Your subscription is not active. Please contact support.';
       } else {
-        // Successful login
-        session_regenerate_id(true);
-        $_SESSION['user_id'] = (int)$u['id'];
-        $_SESSION['company_id'] = (int)$u['company_id'];
-        $_SESSION['user_first_name'] = $u['first_name'];
-        $_SESSION['user_last_name'] = $u['last_name'];
-
-        // Generate single-session token
-        $token = bin2hex(random_bytes(32));
-        $_SESSION['sess_token'] = $token;
-
-        // Update DB
-        $DB->prepare("UPDATE users 
-                      SET session_token = ?, last_login_at = NOW() 
-                      WHERE id = ?")
-           ->execute([$token, $u['id']]);
-
-        // Remember me: persist login for 7 days
-        if ($remember) {
-          $rememberToken = bin2hex(random_bytes(32));
-          $tokenHash = hash('sha256', $rememberToken);
-          setcookie('fw_remember', $rememberToken, [
-            'expires'  => time() + REMEMBER_ME_EXPIRY,
-            'path'     => '/',
-            'secure'   => $https,
-            'httponly'  => true,
-            'samesite' => 'Lax',
-          ]);
-
-          // Clear any old remember tokens for this user, then store new one
-          try {
-            $DB->prepare("DELETE FROM remember_tokens WHERE user_id = ?")
-               ->execute([$u['id']]);
-            $DB->prepare("INSERT INTO remember_tokens (user_id, token_hash, expires_at)
-                          VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))")
-               ->execute([$u['id'], $tokenHash, REMEMBER_ME_EXPIRY]);
-          } catch (Exception $e) {
-            error_log("Remember token store error: " . $e->getMessage());
-          }
-        }
+        // Successful login: a new signed-in device; other devices stay signed in.
+        fw_login_succeeded($DB, $email, $ip);
+        fw_auth_begin($DB, $u, $remember);
 
         // Log successful login
         $stmt = $DB->prepare("INSERT INTO audit_log 
@@ -96,12 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([
           $u['company_id'], 
           $u['id'], 
-          json_encode(['email' => $email]),
-          $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+          json_encode(['email' => $email, 'device' => fw_auth_device_label((string)($_SERVER['HTTP_USER_AGENT'] ?? ''))]),
+          $ip
         ]);
 
-        $redir = $_GET['redirect'] ?? '/home.php';
-        redirect($redir);
+        redirect($redirectTo);
       }
     }
   }
@@ -152,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Success Message -->
     <?php if ($msg): ?>
-      <div class="fw-auth__message fw-auth__message--success">
+      <div class="fw-auth__message fw-auth__message--<?= e($msgType) ?>" role="status"<?= $msgType === 'info' ? ' data-sticky' : '' ?>>
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:16px;height:16px;display:inline-block;vertical-align:middle;margin-right:8px;">
           <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
           <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -175,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Form -->
     <form method="POST" action="" data-validate>
+      <input type="hidden" name="csrf_token" value="<?= e(Csrf::token()) ?>">
       <!-- Email -->
       <div class="fw-auth__form-group">
         <label class="fw-auth__label" for="email">
@@ -224,10 +206,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <!-- Remember Me & Forgot Password -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--fw-spacing-lg);">
+        <?php if ($isApp): ?>
+        <span class="fw-auth__checkbox-label" style="margin:0;font-size:13px;opacity:.8;">You'll stay signed in</span>
+        <?php else: ?>
         <div class="fw-auth__checkbox-wrapper" style="margin:0;">
-          <input type="checkbox" id="remember" name="remember" class="fw-auth__checkbox">
-          <label for="remember" class="fw-auth__checkbox-label">Remember me</label>
+          <input type="checkbox" id="remember" name="remember" value="1" class="fw-auth__checkbox"
+                 <?= ($_SERVER['REQUEST_METHOD'] !== 'POST' || !empty($_POST['remember'])) ? 'checked' : '' ?>>
+          <label for="remember" class="fw-auth__checkbox-label">Keep me signed in</label>
         </div>
+        <?php endif; ?>
         <a href="/shared/password_reset_request.php" class="fw-auth__link" style="font-size:14px;">Forgot password?</a>
       </div>
 
