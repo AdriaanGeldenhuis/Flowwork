@@ -28,7 +28,7 @@ try {
 
 // Centralized CRM asset version for cache busting
 if (!defined('CRM_ASSET_VERSION')) {
-    define('CRM_ASSET_VERSION', '2026-07-05-crm-glossy-3d');
+    define('CRM_ASSET_VERSION', '2026-10-17-calendar-links');
 }
 
 // Centralized QI asset version for cache busting

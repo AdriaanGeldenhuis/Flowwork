@@ -34,6 +34,30 @@ try {
     error_log('home FlowDrive autoRun: ' . $e->getMessage());
 }
 
+// Calendar tile: today at a glance ("3 today · next 14:00 Site visit").
+// Best-effort — the tile falls back to its plain subtitle.
+$calendarToday = '';
+try {
+    require_once __DIR__ . '/calendar/lib/autoload.php';
+    CalendarSchema::ensure($DB);
+    $calRepo = new CalendarRepo($DB, $activeCompanyId, $userId, (string)($_SESSION['role'] ?? 'viewer'));
+    $calNow = CalendarRepo::nowLocal($DB, $activeCompanyId);
+    $calToday = array_values(array_filter($calRepo->feed(substr($calNow, 0, 10) . ' 00:00:00', substr($calNow, 0, 10) . ' 23:59:59'),
+        fn($e) => !$e['busy'] && $e['response'] !== 'declined'));
+    $calNext = null;
+    foreach ($calToday as $e) {
+        if (!$e['all_day'] && $e['end'] >= $calNow && ($calNext === null || $e['start'] < $calNext['start'])) $calNext = $e;
+    }
+    if ($calToday) {
+        $calendarToday = count($calToday) . ' today';
+        if ($calNext) $calendarToday .= ' · ' . ($calNext['start'] <= $calNow ? 'now' : 'next ' . substr($calNext['start'], 11, 5)) . ' ' . $calNext['title'];
+    } else {
+        $calendarToday = 'Nothing scheduled today';
+    }
+} catch (Throwable $e) {
+    error_log('home calendar tile: ' . $e->getMessage());
+}
+
 // Time-based greeting for the hero
 $hour = (int)date('G');
 $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');
@@ -290,7 +314,7 @@ $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'G
                             </svg>
                         </div>
                         <h2 class="fw-home__tile-title">Calendar</h2>
-                        <p class="fw-home__tile-subtitle">Schedule and events</p>
+                        <p class="fw-home__tile-subtitle"><?= htmlspecialchars($calendarToday !== '' ? $calendarToday : 'Schedule and events') ?></p>
                     </div>
                 </a>
 

@@ -440,6 +440,27 @@ $vatSplit = $isVatRegistered ? qi_vat_rate_split($lines) : [];
                             </button>
                         <?php endif; ?>
 
+                        <?php // Calendar: the due date is shown live on the calendar; schedule time around it ?>
+                        <?php if (!empty($invoice['due_date'])): ?>
+                            <a href="/calendar/?view=month&amp;date=<?= urlencode(substr((string)$invoice['due_date'], 0, 10)) ?>&amp;focus=invoice:<?= (int)$invoiceId ?>" class="fw-qi__kebab-item">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                <rect x="3" y="4" width="18" height="18" rx="2" />
+                                <line x1="16" y1="2" x2="16" y2="6" />
+                                <line x1="8" y1="2" x2="8" y2="6" />
+                                <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                                View in Calendar
+                            </a>
+                            <a href="/calendar/?new=1&amp;date=<?= urlencode(substr((string)$invoice['due_date'], 0, 10)) ?>&amp;link=invoice:<?= (int)$invoiceId ?>&amp;title=<?= urlencode('Follow up ' . $invoice['invoice_number'] . ($invoice['customer_name'] ? ' · ' . $invoice['customer_name'] : '')) ?>" class="fw-qi__kebab-item">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">
+                                <rect x="3" y="4" width="18" height="18" rx="2" />
+                                <line x1="16" y1="2" x2="16" y2="6" />
+                                <line x1="8" y1="2" x2="8" y2="6" />
+                                <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                                Schedule in Calendar…
+                            </a>
+                        <?php endif; ?>
                         <?php // Email Log: show email history for this invoice ?>
                         <button onclick="InvoiceView.viewEmailLog()" class="fw-qi__kebab-item">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:8px;">

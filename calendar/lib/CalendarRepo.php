@@ -259,8 +259,9 @@ final class CalendarRepo
     /**
      * Events overlapping [$from, $to] ('Y-m-d H:i:s'), repeating events expanded.
      * @param int[]|null $calendarIds limit to these calendars (invitations are always included)
+     * @param int[]|null $eventIds    limit to these events
      */
-    public function feed(string $from, string $to, ?array $calendarIds = null): array
+    public function feed(string $from, string $to, ?array $calendarIds = null, ?array $eventIds = null): array
     {
         $visible = $this->visibleCalendars();
         $calIds = array_keys($visible);
@@ -282,7 +283,7 @@ final class CalendarRepo
                AND e.start_datetime <= ?
                AND (e.end_datetime >= ? OR (e.recurrence IS NOT NULL AND e.recurrence <> ''))
                AND (e.calendar_id IN ($calIn) OR p.id IS NOT NULL)
-               AND " . self::notMirrorSql() . "
+               AND " . self::notMirrorSql() . ($eventIds !== null ? " AND e.id IN (" . (implode(',', array_map('intval', $eventIds)) ?: '0') . ")" : '') . "
           ORDER BY e.start_datetime, e.id
              LIMIT 5000");
         $st->execute([$this->userId, $this->companyId, $to, $from]);
@@ -314,6 +315,8 @@ final class CalendarRepo
                 $out[] = $item;
             }
         }
+        // Chronological (all-day first on a day), whichever series an occurrence came from.
+        usort($out, fn($a, $b) => strcmp($a['start'], $b['start']) ?: ($a['id'] <=> $b['id']));
         return $out;
     }
 

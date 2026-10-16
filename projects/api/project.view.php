@@ -35,16 +35,21 @@ try {
     $stmt->execute([$projectId, $COMPANY_ID]);
     $boards = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Get upcoming events
-    $stmt = $DB->prepare("
-        SELECT id, title, start_datetime AS starts_at, end_datetime AS ends_at, all_day
-        FROM calendar_events
-        WHERE company_id = ?
-        ORDER BY start_datetime ASC
-        LIMIT 5
-    ");
-    $stmt->execute([$COMPANY_ID]);
-    $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Upcoming calendar events linked to this project (or its tasks) that this
+    // user may see. (This used to return the company's five oldest events of
+    // any calendar, private ones included.)
+    $events = [];
+    try {
+        require_once __DIR__ . '/../../calendar/lib/autoload.php';
+        $tl = CalendarLink::projectTimeline($DB, (int)$COMPANY_ID, (int)$USER_ID, (string)$USER_ROLE, (int)$projectId,
+                                            date('Y-m-d'), date('Y-m-d', strtotime('+180 days')));
+        foreach (array_slice($tl['events'], 0, 5) as $e) {
+            $events[] = ['id' => $e['id'], 'title' => $e['title'], 'starts_at' => $e['start'], 'ends_at' => $e['end'],
+                         'all_day' => $e['all_day'] ? 1 : 0, 'url' => '/calendar/?event=' . $e['id'] . '&date=' . substr($e['start'], 0, 10)];
+        }
+    } catch (Throwable $e) {
+        error_log('Project view events: ' . $e->getMessage());
+    }
     
     // Get members - role is 'owner', 'manager', 'member', 'viewer' in YOUR DB
     $stmt = $DB->prepare("

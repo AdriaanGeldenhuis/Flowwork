@@ -1395,7 +1395,7 @@
       left += b('move', 'folder', 'Move to');
       left += b('label', 'tag', 'Label (l)');
     }
-    left += '<span class="sep hide-narrow"></span>' + b('crm', 'building', 'Link to CRM') + b('print', 'print', 'Print');
+    left += '<span class="sep hide-narrow"></span>' + b('crm', 'building', 'Link to CRM') + b('event', 'calendar-plus', 'Add to calendar') + b('print', 'print', 'Print');
     const idx = S.threads.findIndex((t) => t.key === S.openKey);
     const nav = idx >= 0 ? `<span class="fwm-reader__pos hide-narrow">${idx + 1} of ${S.total || S.threads.length}</span>
       ${b('prev', 'chev-up', 'Newer (k)', idx <= 0 ? 'disabled' : '')}${b('next', 'chev-down', 'Older (j)', idx >= S.threads.length - 1 ? 'disabled' : '')}` : '';
@@ -1580,12 +1580,22 @@
       case 'label': labelMenu(anchor, [key]); break;
       case 'move': moveMenu(anchor, [key]); break;
       case 'crm': openCrm(key); break;
+      case 'event': addToCalendar(); break;
       case 'print': window.open('/mail/api/print.php?key=' + encodeURIComponent(key) + (S.thread.images_shown ? '&images=1' : ''), '_blank', 'noopener'); break;
       case 'images': openThread(key, { images: true, fromRoute: true }); break;
       case 'delete_forever': deleteForever([key]); break;
       case 'unread': act([key], 'unread', { silent: true }).then(() => { toast('Marked as unread'); closeReader(); }); break;
       default: act([key], a);
     }
+  }
+  // Opens the calendar's editor with the subject filled in and the email linked
+  // (the link is only visible to whoever owns this mailbox).
+  function addToCalendar() {
+    const th = S.thread;
+    const last = th && th.messages[th.messages.length - 1];
+    if (!last) return;
+    const title = String(th.subject || '').replace(/^\s*((re|fw|fwd|aw)\s*:\s*)+/i, '').slice(0, 300);
+    location.href = '/calendar/?' + new URLSearchParams({ new: '1', title, link: 'email:' + last.email_id }).toString();
   }
   function stepThread(dir) {
     const idx = S.threads.findIndex((t) => t.key === S.openKey);
