@@ -447,7 +447,7 @@
         </div>
         <div class="fwm-card"><h3 class="fwm-section-title" style="margin-top:0">New mail</h3>
           ${row('Check for new mail', 'While Mail is open. A background job can also sync every few minutes.', `<select class="select" data-pref="sync_minutes" style="width:auto">${[1, 3, 5, 10, 15, 30].map((m) => `<option value="${m}" ${Number(p.sync_minutes) === m ? 'selected' : ''}>Every ${m} min</option>`).join('')}</select>`)}
-          ${sw('notification_enabled', 'Flowwork notifications for new mail', 'Shows in the Flowwork notification bell.', p.notification_enabled)}
+          ${sw('notification_enabled', 'Flowwork notifications for new mail', 'Shows in the Flowwork notification bell and on your phone (Flowwork app).', p.notification_enabled)}
           ${sw('smart_labels', 'Smart labels', 'Automatically label RFQs, invoice queries and proofs of payment.', p.smart_labels)}
         </div>
         <div class="fwm-card"><h3 class="fwm-section-title" style="margin-top:0">Reply reminders</h3>

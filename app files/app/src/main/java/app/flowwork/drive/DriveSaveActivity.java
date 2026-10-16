@@ -27,6 +27,8 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import app.flowwork.SystemBars;
+
 /**
  * "Save to FlowDrive" share target: appears in every app's Share menu.
  * The user picks a destination folder (browsing the live drive) and the
@@ -173,6 +175,7 @@ public class DriveSaveActivity extends Activity {
         column.addView(statusText);
 
         setContentView(column);
+        SystemBars.fit(this, column);
     }
 
     private void loadFolders(final String path) {

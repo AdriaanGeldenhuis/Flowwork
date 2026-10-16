@@ -1,7 +1,6 @@
 package app.flowwork.drive;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
@@ -25,6 +24,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.List;
+
+import app.flowwork.R;
+import app.flowwork.push.Channels;
 
 /**
  * Exposes FlowDrive (the company's WebDAV server, dav.php) to Android's
@@ -93,7 +95,7 @@ public class FlowDriveProvider extends DocumentsProvider {
         row.add(Root.COLUMN_ROOT_ID, ROOT_ID);
         row.add(Root.COLUMN_FLAGS,
                 Root.FLAG_SUPPORTS_CREATE | Root.FLAG_SUPPORTS_IS_CHILD);
-        row.add(Root.COLUMN_ICON, app.flowwork.R.mipmap.ic_launcher);
+        row.add(Root.COLUMN_ICON, app.flowwork.R.mipmap.ic_launcher_drive);
         row.add(Root.COLUMN_TITLE, "FlowDrive");
         row.add(Root.COLUMN_SUMMARY, DriveStore.getEmail(ctx));
         row.add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID);
@@ -583,14 +585,13 @@ public class FlowDriveProvider extends DocumentsProvider {
             }
             Notification.Builder builder;
             if (Build.VERSION.SDK_INT >= 26) {
-                nm.createNotificationChannel(new NotificationChannel(
-                        "flowdrive_uploads", "FlowDrive uploads",
-                        NotificationManager.IMPORTANCE_DEFAULT));
-                builder = new Notification.Builder(ctx, "flowdrive_uploads");
+                Channels.ensure(ctx);
+                builder = new Notification.Builder(ctx, Channels.DRIVE_UPLOADS);
             } else {
                 builder = new Notification.Builder(ctx);
             }
-            builder.setSmallIcon(android.R.drawable.stat_sys_upload_done)
+            builder.setSmallIcon(R.drawable.ic_stat_drive)
+                    .setColor(ctx.getColor(R.color.brand))
                     .setContentTitle(title)
                     .setContentText(text)
                     .setStyle(new Notification.BigTextStyle().bigText(text))

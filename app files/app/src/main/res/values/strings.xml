@@ -1,4 +1,58 @@
 <resources>
     <string name="app_name">FlowWork</string>
+    <string name="flowmail_label">FlowMail</string>
+    <string name="flowdrive_label">FlowDrive</string>
+    <string name="flowdrive_save_label">Save to FlowDrive</string>
     <string name="flowdrive_settings_label">FlowDrive settings</string>
+
+    <!-- Launcher shortcuts (long-press an icon) -->
+    <string name="shortcut_compose_short">New email</string>
+    <string name="shortcut_compose_long">Write a new email</string>
+    <string name="shortcut_calendar_short">Calendar</string>
+    <string name="shortcut_projects_short">Projects</string>
+
+    <!-- Notification categories (Settings › Apps › FlowWork › Notifications) -->
+    <string name="channel_group_flowwork">FlowWork</string>
+    <string name="channel_group_flowmail">FlowMail</string>
+    <string name="channel_group_flowdrive">FlowDrive</string>
+    <string name="channel_mail">New email</string>
+    <string name="channel_mail_desc">Each new message that arrives in your inbox</string>
+    <string name="channel_mail_reminders">Reply reminders</string>
+    <string name="channel_mail_reminders_desc">Conversations still waiting for your reply</string>
+    <string name="channel_calendar">Event reminders</string>
+    <string name="channel_calendar_desc">Reminders before your calendar events start</string>
+    <string name="channel_projects">Mentions</string>
+    <string name="channel_projects_desc">When someone @mentions you on a project board</string>
+    <string name="channel_general">Updates</string>
+    <string name="channel_general_desc">Other FlowWork notifications</string>
+    <string name="channel_drive">Uploads</string>
+    <string name="channel_drive_desc">FlowDrive upload progress and problems</string>
+
+    <!-- Notifications -->
+    <string name="notif_mark_read">Mark as read</string>
+    <string name="notif_archive">Archive</string>
+    <string name="notif_reply">Reply</string>
+    <string name="notif_public_mail">New email</string>
+    <string name="notif_public_other">New notification</string>
+    <string name="notif_action_failed_title">Couldn\'t update that email</string>
+    <string name="notif_action_failed_text">Check your connection, or open FlowMail to try again.</string>
+
+    <!-- Offline screen -->
+    <string name="offline_title">You\'re offline</string>
+    <string name="offline_text">FlowWork needs an internet connection. We\'ll reconnect as soon as you\'re back online.</string>
+    <string name="offline_retry">Try again</string>
+    <string name="offline_server_title">Can\'t reach FlowWork</string>
+    <string name="offline_server_text">The server didn\'t answer. Check your connection and try again.</string>
+
+    <!-- Downloads / printing -->
+    <string name="download_started">Downloading %1$s</string>
+    <string name="download_saved">Saved %1$s to Downloads</string>
+    <string name="download_failed">Couldn\'t save the file</string>
+    <string name="download_unavailable">Download service unavailable</string>
+    <string name="download_needs_webview">Update \"Android System WebView\" from the Play Store to download this file.</string>
+    <string name="storage_permission_needed">Storage permission needed to download files</string>
+    <string name="print_unavailable">Printing isn\'t available on this device</string>
+    <string name="no_file_picker">No file picker available</string>
+    <string name="choose_file">Choose file</string>
+    <string name="no_app_for_link">No app can open this link</string>
 </resources>

@@ -7,6 +7,10 @@
   const bar = $('#othersBar');
   const toastEl = $('#toast');
   let toastTimer = 0;
+  // Present inside the Flowwork Android app (injected by the app before this script runs).
+  const native = window.FlowWorkApp || null;
+  let nativeStatus = null;   // { notifications, permission, push } from the app
+  let lastData = null;       // last /account/api/sessions.php response
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -68,7 +72,8 @@
         <div class="fwa-card__body">
           <div class="fwa-card__title">${esc(d.label || 'Unknown device')}
             ${d.current ? '<span class="fwa-badge fwa-badge--here">This device</span>' : ''}
-            ${d.remembered ? '<span class="fwa-badge fwa-badge--kept">Stays signed in</span>' : ''}</div>
+            ${d.remembered ? '<span class="fwa-badge fwa-badge--kept">Stays signed in</span>' : ''}
+            ${d.push ? '<span class="fwa-badge fwa-badge--push">Notifications on</span>' : ''}</div>
           <div class="fwa-card__meta">${d.current || d.seen_ago < 120 ? '<span class="fwa-dot"></span>' : ''}${esc(d.current ? 'Active now' : ago(d.seen_ago))}
             · ${esc(since(d.created_ago))}${d.ip ? ' · IP ' + esc(d.ip) : ''}</div>
         </div>
@@ -94,9 +99,78 @@
     return false;
   }
 
+  // ------------------------------------------------------------ phone notifications
+  const pushPanel = $('#pushPanel');
+  const pushText = $('#pushText');
+  const pushEnable = $('#pushEnable');
+  const pushTest = $('#pushTest');
+
+  function renderPush() {
+    if (!lastData) return;
+    const devices = lastData.devices || [];
+    const phones = devices.filter((d) => d.push).length;
+    const here = devices.find((d) => d.current) || {};
+    let text = '';
+    let off = false;
+    let canEnable = false;
+    if (native && nativeStatus) {
+      if (!nativeStatus.notifications) {
+        text = 'Off on this phone. Turn them on to get new email, event reminders and mentions.';
+        off = true;
+        canEnable = true;
+      } else if (!lastData.push_ready) {
+        text = "Allowed on this phone, but the server isn't sending yet (Firebase isn't set up).";
+      } else if (here.push) {
+        text = 'On for this phone: new email, event reminders and mentions arrive here.';
+      } else {
+        text = 'Allowed on this phone and connecting… reopen this page in a moment.';
+      }
+    } else if (native) {
+      text = 'Checking this phone…';
+    } else if (phones > 0) {
+      text = 'On for ' + (phones === 1 ? '1 phone' : phones + ' phones') + ' with the Flowwork app.';
+    } else {
+      text = 'Install the Flowwork app on your phone and sign in to get new email, reminders and mentions there.';
+    }
+    pushText.textContent = text;
+    pushPanel.classList.toggle('is-off', off);
+    pushEnable.hidden = !canEnable;
+    pushTest.hidden = !(lastData.push_ready && phones > 0);
+    pushPanel.hidden = false;
+  }
+
+  if (native) {
+    window.addEventListener('flowwork-native', (e) => {
+      if (e.detail && e.detail.type === 'status') {
+        const turnedOn = nativeStatus && !nativeStatus.notifications && e.detail.notifications;
+        nativeStatus = e.detail;
+        renderPush();
+        if (turnedOn) setTimeout(load, 1500); // let the app bind its token, then refresh
+      }
+    });
+    native.request('status');
+  }
+
+  pushEnable.addEventListener('click', () => { if (native) native.request('askNotifications'); });
+
+  pushTest.addEventListener('click', async () => {
+    if (pushTest.disabled) return;
+    pushTest.disabled = true;
+    try {
+      const r = await api('POST', { action: 'test_push' });
+      toast(r.sent === 1 ? 'Test sent to 1 phone' : 'Test sent to ' + r.sent + ' phones');
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      setTimeout(() => { pushTest.disabled = false; }, 3000);
+    }
+  });
+
   async function load() {
     try {
-      render((await api('GET')).devices);
+      lastData = await api('GET');
+      renderPush();
+      render(lastData.devices);
     } catch (e) {
       list.setAttribute('aria-busy', 'false');
       list.innerHTML = `<li class="fwa-empty">${esc(e.message)}</li>`;
@@ -110,6 +184,8 @@
     btn.disabled = true;
     try {
       const r = await api('POST', { action: 'revoke', id: Number(btn.dataset.revoke) });
+      lastData = r;
+      renderPush();
       render(r.devices);
       toast('Device signed out');
     } catch (err) {
@@ -124,6 +200,8 @@
     btn.disabled = true;
     try {
       const r = await api('POST', { action: 'revoke_others' });
+      lastData = r;
+      renderPush();
       render(r.devices);
       toast(r.signed_out === 1 ? '1 device signed out' : r.signed_out + ' devices signed out');
     } catch (err) {

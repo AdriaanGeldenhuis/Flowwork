@@ -42,16 +42,13 @@ foreach ($prefs as $p) {
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $t) {
         $DB->prepare("UPDATE email_threads SET sla_due_at = DATE_ADD(?, INTERVAL ? HOUR), sla_notified_at = NOW() WHERE thread_id = ?")
            ->execute([$t['last_in'], $hours, (int)$t['thread_id']]);
-        try {
-            $DB->prepare("INSERT INTO notifications (company_id, user_id, type, title, message, url, created_at, is_read)
-                          VALUES (?, ?, 'mail_sla', 'Reply overdue', ?, ?, NOW(), 0)")
-               ->execute([(int)$t['company_id'], (int)$p['user_id'],
-                          mb_substr('No reply yet: ' . ($t['subject'] ?: '(no subject)'), 0, 500),
-                          '/mail/?open=t' . (int)$t['thread_id']]);
-            $notified++;
-        } catch (Throwable $e) {
-            // notifications table optional
-        }
+        $subject = $t['subject'] ?: '(no subject)';
+        $id = fw_notify($DB, (int)$t['company_id'], (int)$p['user_id'], 'mail_sla', 'Reply overdue',
+                        'No reply yet: ' . $subject, '/mail/?open=t' . (int)$t['thread_id'], [
+                            'ch' => 'mail_reminders', 'grp' => 'mail_reminders', 'app' => 'mail',
+                            'tag' => 'sla:t' . (int)$t['thread_id'], 'body' => $subject, 'ttl' => 3 * 86400,
+                        ]);
+        if ($id) $notified++;
     }
 }
 echo date('c') . " sla reminders=$notified\n";

@@ -75,8 +75,16 @@ try {
 
 // ========== HELPER FUNCTIONS ==========
 
+/** Site host for links and the From address; there is no HTTP_HOST under cron. */
+function reminderHost(): string {
+    $host = parse_url(defined('APP_BASE_URL') ? APP_BASE_URL : '', PHP_URL_HOST);
+    return $host ?: (string)($_SERVER['HTTP_HOST'] ?? 'www.flowwork.app');
+}
+
 function sendReminderEmail($reminder) {
     $to = $reminder['email'];
+    $host = reminderHost();
+    $mailHost = preg_replace('/^www\./', '', $host);
     $subject = "Reminder: " . $reminder['event_title'];
     
     $startDate = new DateTime($reminder['start_datetime']);
@@ -95,12 +103,12 @@ function sendReminderEmail($reminder) {
         $body .= "\nDESCRIPTION:\n" . $reminder['description'] . "\n";
     }
     
-    $body .= "\nView event: https://" . $_SERVER['HTTP_HOST'] . "/calendar/event_view.php?id=" . $reminder['event_id'] . "\n\n";
+    $body .= "\nView event: https://" . $host . "/calendar/event_view.php?id=" . $reminder['event_id'] . "\n\n";
     $body .= "---\n";
     $body .= $reminder['company_name'] . " Calendar\n";
     
-    $headers = "From: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-    $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
+    $headers = "From: noreply@" . $mailHost . "\r\n";
+    $headers .= "Reply-To: noreply@" . $mailHost . "\r\n";
     $headers .= "X-Mailer: PHP/" . phpversion();
     
     return mail($to, $subject, $body, $headers);
@@ -109,31 +117,25 @@ function sendReminderEmail($reminder) {
 function createInAppNotification($reminder) {
     global $DB;
     
-    try {
-        // Create notification (assuming you have a notifications system)
-        // If not, you can create a simple notifications table
-        $stmt = $DB->prepare("
-            INSERT INTO notifications 
-            (company_id, user_id, type, title, message, link, created_at)
-            VALUES (?, ?, 'calendar_reminder', ?, ?, ?, NOW())
-        ");
-        
-        $message = "Event starts at " . date('g:i A', strtotime($reminder['start_datetime']));
-        if ($reminder['location']) {
-            $message .= " at " . $reminder['location'];
-        }
-        
-        $stmt->execute([
-            $reminder['company_id'],
-            $reminder['user_id'],
-            $reminder['event_title'],
-            $message,
-            '/calendar/event_view.php?id=' . $reminder['event_id']
-        ]);
-        
-        return true;
-    } catch (Exception $e) {
-        error_log("In-app notification error: " . $e->getMessage());
-        return false;
+    require_once __DIR__ . '/../../includes/notify.php';
+
+    $start = strtotime($reminder['start_datetime']);
+    $message = "Event starts at " . date('g:i A', $start);
+    if ($reminder['location']) {
+        $message .= " at " . $reminder['location'];
     }
+
+    // Bell + phone. A reminder that reaches a phone only after the event
+    // started is useless, so it expires shortly after the start time.
+    $id = fw_notify($DB, (int)$reminder['company_id'], (int)$reminder['user_id'], 'calendar_reminder',
+                    (string)$reminder['event_title'], $message,
+                    '/calendar/event_view.php?id=' . (int)$reminder['event_id'], [
+                        'ch' => 'calendar', 'grp' => 'calendar',
+                        'tag' => 'cal:r' . (int)$reminder['reminder_id'],
+                        'ttl' => max(300, $start - time() + 900),
+                    ]);
+    if (!$id) {
+        error_log("In-app notification error: reminder " . (int)$reminder['reminder_id'] . " could not be stored");
+    }
+    return $id !== null;
 }

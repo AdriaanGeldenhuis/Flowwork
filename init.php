@@ -15,6 +15,16 @@ try {
     fw_auth_drop('session_expired');
 }
 
+// Phone notifications: tie the Android app's push token to this signed-in
+// device (see includes/push.php). auth_gate.php repeats it after a
+// "keep me signed in" restore and handles notification taps.
+require_once __DIR__ . '/includes/notify.php';
+try {
+    fw_push_sync_device($DB);
+} catch (Throwable $e) {
+    error_log('[push] device sync failed: ' . $e->getMessage());
+}
+
 
 // Centralized CRM asset version for cache busting
 if (!defined('CRM_ASSET_VERSION')) {

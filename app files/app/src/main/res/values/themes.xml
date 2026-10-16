@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- One theme for the whole app. The WebView screens draw edge-to-edge
+         (WebShellActivity pads the page clear of the system bars); the
+         FlowDrive screens follow the system light/dark setting. -->
+    <style name="Theme.FlowWork" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorPrimaryDark">@color/brand_dark</item>
+        <item name="colorAccent">@color/brand</item>
+    </style>
 
-    <style name="Theme.FlowWork" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- WebView screens: dark backdrop so launching never flashes white. -->
+    <style name="Theme.FlowWork.Web">
+        <item name="android:windowBackground">@color/shell_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

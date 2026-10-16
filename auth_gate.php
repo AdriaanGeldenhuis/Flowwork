@@ -43,6 +43,16 @@ if (empty($_SESSION['user_id'])) {
   }
 }
 
+// Signed in (possibly restored just now): bind the app's push token to this
+// device and act on a notification tap (?fw_nid / ?fw_co) before the active
+// company is resolved below. See includes/notify.php.
+try {
+  fw_push_sync_device($DB);
+  fw_notify_apply_link($DB);
+} catch (Throwable $e) {
+  error_log('[push] notification link: ' . $e->getMessage());
+}
+
 // The device itself was verified in init.php (fw_auth_check). Signing in on
 // another device no longer ends this one; see includes/auth_sessions.php.
 $stmt = $DB->prepare("SELECT company_id, status FROM users WHERE id = ?");

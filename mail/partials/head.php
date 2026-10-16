@@ -1,7 +1,7 @@
 <?php
 // /mail/partials/head.php — <head> + opening <body> shared by every Mail page.
 // Inputs: $pageTitle, $companyName, $bodyExtraClass (optional)
-if (!defined('MAIL_ASSET_VERSION')) define('MAIL_ASSET_VERSION', '2026-10-16-devices');
+if (!defined('MAIL_ASSET_VERSION')) define('MAIL_ASSET_VERSION', '2026-10-16-push');
 $fwTheme = (($_COOKIE['fw_theme'] ?? 'dark') === 'light') ? 'light' : 'dark';
 ?>
 <!DOCTYPE html>
