@@ -12,6 +12,8 @@ includes/notify.php                 fw_notify(): bell row + phone push in one ca
 includes/push.php                   devices, outbox, FCM HTTP v1 client, signed
                                     action tokens (Mark as read / Archive)
 notifications/worker/send_push.php  cron: sends the queue and retries
+notifications/api/tick.php          the same jobs over HTTP, for an outside
+                                    scheduler (host cron limited to 2-hourly)
 mail/api/push_action.php            the notification buttons (token-authorised)
 Migrations/2026-10-16-push-notifications.sql   optional, same schema
 tests/notifications/                test_push.php, test_push_http.php
@@ -64,19 +66,39 @@ notifications. `config.example.php` uses 30 days, which suits the app.
    Also check Firebase console › Project settings › Cloud Messaging: *Firebase
    Cloud Messaging API (V1)* must show **Enabled**.
 
-2. **Cron.** Add next to the mail jobs:
+2. **Every-minute jobs (the tick).** xneelo's cron runs at most every two
+   hours, which is too slow for new-mail notifications and calendar reminders
+   (a reminder is only sent between its reminder time and the event start).
+   So a free outside scheduler calls a secret URL every minute instead:
+
+   a. Add a random key of 32+ characters to the server's `config.php`:
+
+      ```php
+      define('FW_CRON_KEY', '...64 random letters/digits...');
+      ```
+
+   b. At https://cron-job.org (free) create a cron job: URL
+      `https://www.flowwork.app/notifications/api/tick.php?key=<the key>`,
+      schedule *every minute*, request method GET.
+
+   Each call sends queued phone notifications (and retries), sends due
+   calendar reminders, sends due scheduled mail and syncs mailboxes not synced
+   in the last 90 seconds, runs reply-overdue reminders every 15 minutes and
+   housekeeping hourly. It answers at once with the previous run's figures
+   (shown in cron-job.org's history) and works up to ~45 s after that. Runs
+   never overlap and are at least 20 s apart. Without `FW_CRON_KEY` the URL
+   answers 503 and does nothing.
+
+   Optional safety net in xneelo's cron (every 2 hours):
 
    ```
-   *    * * * *  php /path/to/notifications/worker/send_push.php  >/dev/null 2>&1
+   /usr/local/bin/php /usr/home/<user>/public_html/notifications/worker/send_push.php
    ```
 
-   Calendar reminders also need `calendar/cron/send_reminders.php` every
-   5 minutes (see `calendar/cron/README.md`) if that job is not set up yet.
-
-   Most pushes leave at the end of the request that created them; the worker
-   is the safety net and the retry loop. New-mail notifications are as fresh as
-   the mail sync (`mail/worker/sync_imap.php`, every 5 minutes, or sooner while
-   Mail is open somewhere).
+   On a host whose cron allows every minute, the CLI jobs do the same work:
+   `notifications/worker/send_push.php` (every minute),
+   `calendar/cron/send_reminders.php` and `mail/worker/sync_imap.php` (every
+   5 minutes), `mail/worker/sla_tick.php` (every 15 minutes).
 
 3. **Schema.** Created automatically on first use. Running
    `Migrations/2026-10-16-push-notifications.sql` does the same up front.

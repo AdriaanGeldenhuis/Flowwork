@@ -70,3 +70,8 @@ storage/mail/
 # Firebase service-account key (phone notifications) and its token cache
 # ---------------------------------------------------------------------------
 storage/firebase/
+
+# ---------------------------------------------------------------------------
+# Web tick lock + run summary (notifications/api/tick.php)
+# ---------------------------------------------------------------------------
+storage/cron/
