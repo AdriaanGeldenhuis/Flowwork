@@ -5,9 +5,9 @@ share one install and one sign-in:
 
 | Icon | Opens | Activity |
 |---|---|---|
-| **FlowWork** | the whole app (home page) | `MainActivity` |
-| **FlowMail** | straight into the mailbox, own Recents card; also offered as an email app for `mailto:` links | `mail/MailActivity` |
-| **FlowDrive** | FlowDrive in the Files app (sign-in screen on first use) | `drive/DriveSetupActivity` |
+| **FlowWork** (purple) | the whole app (home page) | `MainActivity` |
+| **FlowMail** (red) | straight into the mailbox, own Recents card; also offered as an email app for `mailto:` links | `mail/MailActivity` |
+| **FlowDrive** (orange) | FlowDrive in the Files app (sign-in screen on first use) | `drive/DriveSetupActivity` |
 
 Plus "Save to FlowDrive" in every app's Share menu and FlowDrive as a location
 in the Files app / file pickers (`drive/`).
@@ -58,7 +58,8 @@ tools/icons/make_icons.py                regenerates every icon from assets/logo
 - `mailto:` links open the FlowMail composer; `tel:`, WhatsApp, maps and other
   sites open in their apps. HTTPS only (`res/xml/network_security_config.xml`).
 - Long-press shortcuts: FlowWork › Calendar, Projects; FlowMail › New email;
-  FlowDrive › Settings. Android 13+ themed (monochrome) icons for all three.
+  FlowDrive › Settings. The icons keep their own colours even with Android's
+  "themed icons" switched on (no monochrome layer on purpose).
 
 ## Build
 
@@ -85,9 +86,9 @@ Android Studio or the command line (JDK 17+):
 ## Icons
 
 `tools/icons/make_icons.py` builds the adaptive foregrounds (glyph kept inside
-the 66 dp safe zone so no launcher mask clips it), monochrome layers, legacy
-icons and the white status-bar icons from `assets/logo.webp` at the repo
-root. It needs Python with `opencv-python-headless`, `numpy` and `pillow`:
+the 66 dp safe zone so no launcher mask clips it) in each icon's colour,
+legacy icons and the white status-bar icons from `assets/logo.webp` at the
+repo root. The gradient backgrounds are `res/drawable/ic_launcher*_background.xml`. It needs Python with `opencv-python-headless`, `numpy` and `pillow`:
 
 ```
 python tools/icons/make_icons.py ../assets/logo.webp app/src/main/res /tmp/icon-previews

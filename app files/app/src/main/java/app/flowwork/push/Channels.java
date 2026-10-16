@@ -93,7 +93,9 @@ public final class Channels {
         c.setGroup(group);
         c.setShowBadge(!DRIVE_UPLOADS.equals(id));
         c.enableLights(true);
-        c.setLightColor(Color.rgb(0x7C, 0x2E, 0xA6));
+        // LED colour of the app it belongs to: FlowMail red, FlowDrive orange, FlowWork purple.
+        c.setLightColor(GROUP_MAIL.equals(group) ? Color.rgb(0xD3, 0x2F, 0x2F)
+                : GROUP_DRIVE.equals(group) ? Color.rgb(0xEF, 0x6C, 0x00) : Color.rgb(0x7C, 0x2E, 0xA6));
         c.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
         return c;
     }

@@ -459,7 +459,7 @@ public final class Notifier {
     private static NotificationCompat.Builder base(Context ctx, String channel, boolean mail) {
         return new NotificationCompat.Builder(ctx, channel)
                 .setSmallIcon(mail ? R.drawable.ic_stat_mail : R.drawable.ic_stat_flowwork)
-                .setColor(ContextCompat.getColor(ctx, R.color.brand))
+                .setColor(ContextCompat.getColor(ctx, mail ? R.color.flowmail : R.color.brand))
                 .setPriority(priority(channel))
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE);
     }
@@ -468,7 +468,7 @@ public final class Notifier {
     private static Notification publicVersion(Context ctx, String channel, boolean mail) {
         return new NotificationCompat.Builder(ctx, channel)
                 .setSmallIcon(mail ? R.drawable.ic_stat_mail : R.drawable.ic_stat_flowwork)
-                .setColor(ContextCompat.getColor(ctx, R.color.brand))
+                .setColor(ContextCompat.getColor(ctx, mail ? R.color.flowmail : R.color.brand))
                 .setContentTitle(ctx.getString(mail ? R.string.flowmail_label : R.string.app_name))
                 .setContentText(ctx.getString(mail ? R.string.notif_public_mail : R.string.notif_public_other))
                 .build();

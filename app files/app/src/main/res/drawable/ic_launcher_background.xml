@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-   Shared adaptive-icon background for FlowWork, FlowMail and FlowDrive:
-   the brand's diagonal purple gradient. The ends are set so the visible
-   72dp window matches the logo tile (#7C2EA6 top-left to #2F0461
-   bottom-right). Regenerate the matching rasters with
-   app files/tools/icons/make_icons.py.
+   FlowWork purple adaptive-icon background: a diagonal gradient whose visible 72dp
+   window runs from #7C2EA6 (top-left) to #2F0461 (bottom-right). The matching
+   rasters come from app files/tools/icons/make_icons.py.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
