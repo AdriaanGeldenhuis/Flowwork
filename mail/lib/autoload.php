@@ -57,3 +57,4 @@ require_once __DIR__ . '/RulesEngine.php';
 require_once __DIR__ . '/MailStore.php';
 require_once __DIR__ . '/MailSyncService.php';
 require_once __DIR__ . '/MailOutbox.php';
+require_once __DIR__ . '/MailWorker.php';

@@ -38,7 +38,9 @@ mail/
    the outgoing spool and rate-limit buckets live there. `storage/.htaccess`
    already blocks direct HTTP access.
 4. **Cron.** Mail syncs while the app is open, but these keep it fresh and send
-   scheduled mail when nobody is logged in:
+   scheduled mail when nobody is logged in. Where the host's cron is limited
+   (xneelo: every two hours), the web tick `notifications/api/tick.php` runs the
+   sync and reply reminders every minute instead; see `notifications/README.md`.
 
 ```
 */5  * * * *  php /path/to/mail/worker/sync_imap.php   >/dev/null 2>&1
