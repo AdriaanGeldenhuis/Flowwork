@@ -591,7 +591,7 @@ public class FlowDriveProvider extends DocumentsProvider {
                 builder = new Notification.Builder(ctx);
             }
             builder.setSmallIcon(R.drawable.ic_stat_drive)
-                    .setColor(ctx.getColor(R.color.brand))
+                    .setColor(ctx.getColor(R.color.flowdrive))
                     .setContentTitle(title)
                     .setContentText(text)
                     .setStyle(new Notification.BigTextStyle().bigText(text))

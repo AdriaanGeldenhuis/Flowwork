@@ -3,6 +3,9 @@
     <!-- FlowWork brand, sampled from assets/logo.webp -->
     <color name="brand">#FF7C2EA6</color>
     <color name="brand_dark">#FF2F0461</color>
+    <!-- Icon colours of the other two launcher icons, also their notification accents -->
+    <color name="flowmail">#FFD32F2F</color>
+    <color name="flowdrive">#FFEF6C00</color>
 
     <!-- Shown behind the page until it paints, and under the system bars
          until the page reports its own colour (web app default is dark). -->

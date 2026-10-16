@@ -1,13 +1,15 @@
 """
 Generates every launcher + notification icon for the FlowWork Android app.
 
-  FlowWork  - the brand "F", extracted from assets/logo.webp
-  FlowMail  - envelope, rendered in the same glossy 3D style
-  FlowDrive - cloud with an upload arrow, same style
+  FlowWork  - the brand "F", extracted from assets/logo.webp, on purple
+  FlowMail  - envelope, rendered in the same glossy 3D style, on red
+  FlowDrive - cloud with an upload arrow, same style, on orange
+
+There is deliberately no monochrome (themed-icon) layer: with Android's
+themed icons switched on it would repaint all three in the same colour.
 
 Outputs (under <res>):
   mipmap-<dpi>/ic_launcher[_mail|_drive]_foreground.webp   adaptive foreground (108dp)
-  mipmap-<dpi>/ic_launcher[_mail|_drive]_monochrome.webp   Android 13+ themed icon layer
   mipmap-<dpi>/ic_launcher[_mail|_drive].webp              legacy square icon (API 24-25)
   mipmap-<dpi>/ic_launcher[_mail|_drive]_round.webp        legacy round icon (API 25)
   drawable-<dpi>/ic_stat_flowwork|ic_stat_mail|ic_stat_drive.webp  status-bar icons (24dp)
@@ -28,21 +30,39 @@ PX = 16                      # master resolution: px per dp
 LAYER = 108 * PX             # adaptive layer, 108dp
 SAFE_R = 30.5 * PX           # glyph must sit inside the 66dp safe circle (33dp radius) with margin
 
-# Brand palette, sampled from assets/logo.webp
-BG_TL = (143, 57, 183)       # gradient ends chosen so the visible 72dp window
-BG_BR = (28, 0, 80)          # matches the logo tile: #7C2EA6 -> #2F0461
+# One palette per icon. Gradient ends are chosen so the visible 72dp window
+# runs from the first colour (top-left) to the second (bottom-right); the
+# same ends are in drawable/ic_launcher[_mail|_drive]_background.xml.
+PALETTES = {
+    # FlowWork purple, sampled from assets/logo.webp: #7C2EA6 -> #2F0461
+    'purple': dict(bg_tl=(143, 57, 183), bg_br=(28, 0, 80), side_near=(150, 126, 196), side_far=(112, 88, 164),
+                   shadow=(16, 0, 48), face_bottom=(221, 218, 228)),
+    # FlowMail red: #E53935 -> #7A0A14
+    'red': dict(bg_tl=(255, 69, 61), bg_br=(95, 0, 12), side_near=(222, 150, 156), side_far=(178, 102, 110),
+                shadow=(48, 0, 6), face_bottom=(228, 220, 222)),
+    # FlowDrive orange: #FF9828 -> #D6540A
+    'orange': dict(bg_tl=(255, 169, 48), bg_br=(204, 67, 3), side_near=(232, 170, 128), side_far=(196, 126, 84),
+                   shadow=(70, 24, 0), face_bottom=(230, 224, 218)),
+}
 FACE_TOP = (244, 242, 247)
-FACE_BOTTOM = (221, 218, 228)
 RIM = (255, 252, 255)
-SIDE_NEAR = (150, 126, 196)
-SIDE_FAR = (112, 88, 164)
-SHADOW = (16, 0, 48)
+
+
+def use(palette):
+    """Switch the colours the render functions below read."""
+    global BG_TL, BG_BR, SIDE_NEAR, SIDE_FAR, SHADOW, FACE_BOTTOM
+    p = PALETTES[palette]
+    BG_TL, BG_BR = p['bg_tl'], p['bg_br']
+    SIDE_NEAR, SIDE_FAR, SHADOW, FACE_BOTTOM = p['side_near'], p['side_far'], p['shadow'], p['face_bottom']
+
+
+use('purple')
 
 
 # ---------------------------------------------------------------- helpers
 
 def background(size):
-    """Diagonal brand gradient, identical to drawable/ic_launcher_background.xml."""
+    """Diagonal gradient of the current palette, identical to its drawable/ic_launcher*_background.xml."""
     t = np.add.outer(np.arange(size), np.arange(size)) / (2.0 * (size - 1))
     out = np.zeros((size, size, 3), np.float32)
     for c in range(3):
@@ -237,12 +257,6 @@ def legacy(fg_layer, shape):
     return out
 
 
-def monochrome(alpha):
-    a = (np.clip(alpha, 0, 1) * 255).astype(np.uint8)
-    white = np.full_like(a, 255)
-    return Image.fromarray(np.dstack([white, white, white, a]), 'RGBA')
-
-
 def status_icon(alpha):
     """24dp white silhouette with a 1dp margin, for the status bar / notification header."""
     ys, xs = np.nonzero(alpha > 0.35)
@@ -261,7 +275,6 @@ def status_icon(alpha):
 
 def write_set(name, fg_layer, mono_alpha, stat_name):
     import os
-    mono = monochrome(mono_alpha)
     sq, rd = legacy(fg_layer, 'square'), legacy(fg_layer, 'round')
     stat = status_icon(mono_alpha)
     for dpi, scale in DENSITIES.items():
@@ -271,7 +284,6 @@ def write_set(name, fg_layer, mono_alpha, stat_name):
         os.makedirs(ddir, exist_ok=True)
         lp = int(round(108 * scale))
         save_webp(fg_layer.resize((lp, lp), Image.LANCZOS), f'{mdir}/{name}_foreground.webp')
-        save_webp(mono.resize((lp, lp), Image.LANCZOS), f'{mdir}/{name}_monochrome.webp')
         ip = int(round(48 * scale))
         save_webp(sq.resize((ip, ip), Image.LANCZOS), f'{mdir}/{name}.webp')
         save_webp(rd.resize((ip, ip), Image.LANCZOS), f'{mdir}/{name}_round.webp')
@@ -314,6 +326,7 @@ def preview(name, fg_layer):
     return sheet
 
 
+use('purple')
 f_layer, f_alpha, _ = f_glyph()
 m_face = mail_mask()
 d_face = drive_mask()
@@ -321,23 +334,26 @@ m_fit = fit_into_safe_zone(m_face, SAFE_R * 0.86)
 d_fit = fit_into_safe_zone(d_face, SAFE_R * 0.91)
 m_face = np.clip(warp(m_face, m_fit), 0, 1)
 d_face = np.clip(warp(d_face, d_fit), 0, 1)
+use('red')
 m_layer = render_3d(m_face)
+use('orange')
 d_layer = render_3d(d_face)
 
-sheets = []
-for name, layer, mono, stat in (
-        ('ic_launcher', f_layer, f_alpha, 'ic_stat_flowwork'),
-        ('ic_launcher_mail', m_layer, m_face, 'ic_stat_mail'),
-        ('ic_launcher_drive', d_layer, d_face, 'ic_stat_drive')):
-    sq = write_set(name, layer, mono, stat)
-    sheets.append(preview(name, layer))
+ICONS = (
+    ('ic_launcher', 'purple', f_layer, f_alpha, 'ic_stat_flowwork', 'FlowWork'),
+    ('ic_launcher_mail', 'red', m_layer, m_face, 'ic_stat_mail', 'FlowMail'),
+    ('ic_launcher_drive', 'orange', d_layer, d_face, 'ic_stat_drive', 'FlowDrive'),
+)
+for name, palette, layer, mono, stat, _label in ICONS:
+    use(palette)
+    write_set(name, layer, mono, stat)
+    preview(name, layer)
 
 # home-screen style preview: the three icons on a wallpaper-ish background, with labels
 home = Image.new('RGBA', (760, 300), (36, 52, 71, 255))
 d = ImageDraw.Draw(home)
-for i, (name, layer, label) in enumerate(((n, l, t) for n, l, t in (
-        ('ic_launcher', f_layer, 'FlowWork'), ('ic_launcher_mail', m_layer, 'FlowMail'),
-        ('ic_launcher_drive', d_layer, 'FlowDrive')))):
+for i, (name, palette, layer, _mono, _stat, label) in enumerate(ICONS):
+    use(palette)
     full = Image.alpha_composite(background(LAYER), layer)
     o = int(18 * PX)
     win = full.crop((o, o, LAYER - o, LAYER - o)).resize((150, 150), Image.LANCZOS)

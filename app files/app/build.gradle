@@ -21,8 +21,8 @@ android {
         // version. Targeting 35+ makes the app draw edge-to-edge and 36 turns
         // on predictive Back, both handled in WebShellActivity.
         targetSdk 36
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
     }
 
     buildFeatures {
