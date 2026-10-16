@@ -1,205 +1,123 @@
 <?php
-// /calendar/index.php
+// /calendar/index.php — Calendar app (day · week · month · year · schedule).
+// Deep links: ?view=week&date=2026-10-21 · ?event=12[&date=…] · ?new=1&title=…&date=…&start=09:00&end=10:00
+//             &all_day=1&location=…&description=…&link=crm_account:12 · ?focus=invoice:44&date=…
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/lib/autoload.php';
 
-define('ASSET_VERSION', '2026-07-10-calendar-crm-parity');
+$companyId = (int)$_SESSION['company_id'];
+$userId = (int)$_SESSION['user_id'];
+$role = (string)($_SESSION['role'] ?? 'viewer');
+$isAdmin = fw_active_user_is_admin();
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Default view
-$activeView = $_GET['view'] ?? 'week';
-$allowedViews = ['day', 'week', 'month', 'agenda', 'timeline', 'year'];
-if (!in_array($activeView, $allowedViews)) {
-    $activeView = 'week';
+$companyName = 'Company';
+$boot = ['settings' => null, 'calendars' => [], 'sources' => [], 'me' => ['id' => $userId, 'name' => ''], 'role' => $role, 'admin' => $isAdmin];
+try {
+    $stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
+    $stmt->execute([$companyId]);
+    $companyName = $stmt->fetchColumn() ?: 'Company';
+    CalendarSchema::ensure($DB);
+    $cal = new CalendarRepo($DB, $companyId, $userId, $role);
+    $cal->ensureCompanyCalendar();
+    $cal->defaultCalendarId();
+    $cal->allCalendars(true);
+    require_once __DIR__ . '/api/_payload.php';
+    $boot['settings'] = CalendarSettings::load($DB, $companyId, $userId);
+    $boot['calendars'] = cal_calendars_payload($cal);
+    $available = (new CalendarSources($DB, $cal))->available();
+    foreach (CalendarSources::META as $name => $m) $boot['sources'][] = ['id' => $name, 'available' => $available[$name]] + $m;
+    $stmt = $DB->prepare("SELECT first_name, last_name, email FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $me = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $boot['me'] = ['id' => $userId, 'name' => trim(($me['first_name'] ?? '') . ' ' . ($me['last_name'] ?? '')), 'email' => $me['email'] ?? ''];
+} catch (Throwable $e) {
+    error_log('[calendar/index] ' . $e->getMessage());
 }
+
+$pageTitle = 'Calendar';
+$withSearch = true;
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calendar – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <link rel="stylesheet" href="/calendar/assets/calendar.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-calendar">
-    <div class="fw-calendar__container">
-        
-        <!-- Header -->
-        <header class="fw-calendar__header">
-            <div class="fw-calendar__brand">
-                <div class="fw-calendar__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>
-                        <circle cx="8" cy="14" r="1" fill="currentColor"/>
-                        <circle cx="12" cy="14" r="1" fill="currentColor"/>
-                        <circle cx="16" cy="14" r="1" fill="currentColor"/>
-                        <circle cx="8" cy="18" r="1" fill="currentColor"/>
-                        <circle cx="12" cy="18" r="1" fill="currentColor"/>
-                    </svg>
+<div class="fwm-app fwc-app" id="calApp">
+    <?php include __DIR__ . '/partials/topbar.php'; ?>
+
+    <div class="fwm-body">
+        <aside class="fwm-side fwc-side" id="side" aria-label="Calendars">
+            <button class="fwm-compose-btn" id="newEventBtn" type="button">
+                <svg class="i"><use href="#i-plus"/></svg><span>New event</span>
+            </button>
+            <div class="fwm-side__scroll scroll" id="sideNav">
+                <div class="fwc-mini" id="miniMonth" aria-label="Choose a date"></div>
+                <div class="fwm-nav__head"><h3>My calendars</h3>
+                    <button class="icon-btn icon-btn--sm" id="newCalBtn" type="button" aria-label="New calendar" data-tip="New calendar"><svg class="i i--sm"><use href="#i-plus"/></svg></button>
                 </div>
-                <div class="fw-calendar__brand-text">
-                    <div class="fw-calendar__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-calendar__app-name">Calendar</div>
+                <nav class="fwm-nav" id="navMine" aria-label="My calendars"></nav>
+                <div class="fwm-nav__head" id="sharedHead"><h3>Shared</h3></div>
+                <nav class="fwm-nav" id="navShared" aria-label="Shared calendars"></nav>
+                <div class="fwm-nav__head" id="sourcesHead"><h3>From Flowwork</h3></div>
+                <nav class="fwm-nav" id="navSources" aria-label="Dates from other modules"></nav>
+            </div>
+            <div class="fwm-side__foot" id="sideFoot"></div>
+        </aside>
+
+        <section class="fwm-pane fwc-main" id="mainPane" aria-label="Calendar">
+            <div class="fwc-head" id="viewHead">
+                <div class="fwc-head__title"><span class="fwm-list__eyebrow" id="viewEyebrow"></span><h2 id="viewTitle">Calendar</h2></div>
+                <div class="fwc-head__nav">
+                    <button class="btn btn--sm" id="todayBtn" type="button">Today</button>
+                    <button class="icon-btn" id="prevBtn" type="button" aria-label="Previous" data-tip="Previous (k)"><svg class="i"><use href="#i-chev-left"/></svg></button>
+                    <button class="icon-btn" id="nextBtn" type="button" aria-label="Next" data-tip="Next (j)"><svg class="i"><use href="#i-chev-right"/></svg></button>
                 </div>
-            </div>
-
-            <div class="fw-calendar__greeting">
-                Hello, <span class="fw-calendar__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-
-            <div class="fw-calendar__controls">
-                <a href="/" class="fw-calendar__home-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-                
-                <button class="fw-calendar__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <svg class="fw-calendar__theme-icon fw-calendar__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <svg class="fw-calendar__theme-icon fw-calendar__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
-
-                <div class="fw-calendar__menu-wrapper">
-                    <button class="fw-calendar__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                        </svg>
-                    </button>
-                    <nav class="fw-calendar__kebab-menu" id="kebabMenu" aria-hidden="true">
-                        <a href="/calendar/" class="fw-calendar__kebab-item">Calendar</a>
-                        <a href="/calendar/event_new.php" class="fw-calendar__kebab-item">New Event</a>
-                        <a href="/calendar/settings.php" class="fw-calendar__kebab-item">Settings</a>
-                        <button class="fw-calendar__kebab-item" id="btnSyncCalendars">Sync Calendars</button>
-                        <button class="fw-calendar__kebab-item" id="btnPrintCalendar">Print</button>
-                    </nav>
+                <div class="seg" id="viewSeg" role="tablist" aria-label="View">
+                    <button type="button" data-view="day" role="tab">Day</button>
+                    <button type="button" data-view="week" role="tab">Week</button>
+                    <button type="button" data-view="month" role="tab">Month</button>
+                    <button type="button" data-view="year" role="tab">Year</button>
+                    <button type="button" data-view="agenda" role="tab">Schedule</button>
                 </div>
+                <button class="icon-btn" id="viewMoreBtn" type="button" aria-label="View options" data-tip="Options" data-tip-pos="left"><svg class="i"><use href="#i-more-h"/></svg></button>
             </div>
-        </header>
+            <div class="fwc-progress" id="progress"></div>
+            <div class="fwc-view scroll" id="view" tabindex="-1"></div>
+        </section>
 
-        <!-- Main Layout -->
-        <main class="fw-calendar__main">
-            <div class="fw-calendar__main-inner">
-
-            <div class="fw-calendar__page-header">
-                <h1 class="fw-calendar__page-title">Calendar</h1>
-                <p class="fw-calendar__page-subtitle">
-                    Company events, meetings and reminders
-                </p>
-            </div>
-
-            <!-- Toolbar -->
-            <div class="fw-calendar__toolbar">
-                <div class="fw-calendar__nav">
-                    <button class="fw-calendar__btn fw-calendar__btn--icon" id="btnToday">Today</button>
-                    <button class="fw-calendar__btn fw-calendar__btn--icon" id="btnPrev" title="Previous">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2"/></svg>
-                    </button>
-                    <button class="fw-calendar__btn fw-calendar__btn--icon" id="btnNext" title="Next">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2"/></svg>
-                    </button>
-                    <div class="fw-calendar__date-display" id="dateDisplay">Loading...</div>
-                </div>
-
-                <div class="fw-calendar__view-switcher">
-                    <a href="?view=day" class="fw-calendar__view-tab <?= $activeView === 'day' ? 'fw-calendar__view-tab--active' : '' ?>">Day</a>
-                    <a href="?view=week" class="fw-calendar__view-tab <?= $activeView === 'week' ? 'fw-calendar__view-tab--active' : '' ?>">Week</a>
-                    <a href="?view=month" class="fw-calendar__view-tab <?= $activeView === 'month' ? 'fw-calendar__view-tab--active' : '' ?>">Month</a>
-                    <a href="?view=agenda" class="fw-calendar__view-tab <?= $activeView === 'agenda' ? 'fw-calendar__view-tab--active' : '' ?>">Agenda</a>
-                    <a href="?view=timeline" class="fw-calendar__view-tab <?= $activeView === 'timeline' ? 'fw-calendar__view-tab--active' : '' ?>">Timeline</a>
-                    <a href="?view=year" class="fw-calendar__view-tab <?= $activeView === 'year' ? 'fw-calendar__view-tab--active' : '' ?>">Year</a>
-                </div>
-
-                <button class="fw-calendar__btn fw-calendar__btn--primary" id="btnNewEvent">
-                    + New Event
-                </button>
-            </div>
-
-            <!-- Content Area -->
-            <div class="fw-calendar__content">
-                
-                <!-- Sidebar (My Day + Calendars) -->
-                <aside class="fw-calendar__sidebar">
-                    <div class="fw-calendar__sidebar-section">
-                        <h3 class="fw-calendar__sidebar-title">My Day</h3>
-                        <div class="fw-calendar__myday" id="myDayPane">
-                            <div class="fw-calendar__loading">Loading tasks...</div>
-                        </div>
-                    </div>
-
-                    <div class="fw-calendar__sidebar-section">
-                        <div class="fw-calendar__sidebar-header">
-                            <h3 class="fw-calendar__sidebar-title">Calendars</h3>
-                            <button class="fw-calendar__btn fw-calendar__btn--small" id="btnAddCalendar">+</button>
-                        </div>
-                        <div class="fw-calendar__calendar-list" id="calendarList">
-                            <div class="fw-calendar__loading">Loading...</div>
-                        </div>
-                    </div>
-                </aside>
-
-                <!-- Main View -->
-                <div class="fw-calendar__view" id="calendarView">
-                    <div class="fw-calendar__loading">Loading calendar...</div>
-                </div>
-
-            </div>
-
-            </div>
-
-        </main>
-
-        <!-- Footer -->
-        <footer class="fw-calendar__footer">
-            <span>Calendar v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Dark</span>
-        </footer>
-
+        <section class="fwm-pane fwc-detail" id="detailPane" aria-label="Event" hidden></section>
     </div>
+</div>
 
-    <script>
-        window.CALENDAR_CONFIG = {
-            userId: <?= $userId ?>,
-            companyId: <?= $companyId ?>,
-            activeView: '<?= $activeView ?>',
-            assetVersion: '<?= ASSET_VERSION ?>'
-        };
-    </script>
-    <script src="/calendar/assets/calendar.js?v=<?= ASSET_VERSION ?>"></script>
+<button class="fwm-fab fwc-fab" id="fabNew" type="button"><svg class="i"><use href="#i-plus"/></svg>New event</button>
+<div class="fwm-toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+<input type="file" id="importFile" accept=".ics,text/calendar" hidden>
+<input type="file" id="attachFile" hidden>
+
+<!-- Keyboard shortcuts -->
+<div class="fwm-modal" id="shortcutsModal" hidden>
+    <div class="fwm-dialog fwm-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+        <div class="fwm-dialog__head"><h2 id="shortcutsTitle">Keyboard shortcuts</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <div class="fwm-dialog__body">
+            <div class="fwm-kbd-grid">
+                <h4>Navigate</h4>
+                <div class="fwm-kbd-row"><span>Today</span><span><kbd class="fwm-kbd">t</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Next / previous period</span><span><kbd class="fwm-kbd">j</kbd><kbd class="fwm-kbd">k</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Day · week · month · year · schedule</span><span><kbd class="fwm-kbd">d</kbd><kbd class="fwm-kbd">w</kbd><kbd class="fwm-kbd">m</kbd><kbd class="fwm-kbd">y</kbd><kbd class="fwm-kbd">a</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Go to a date</span><span><kbd class="fwm-kbd">g</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Search</span><span><kbd class="fwm-kbd">/</kbd></span></div>
+                <h4>Events</h4>
+                <div class="fwm-kbd-row"><span>New event</span><span><kbd class="fwm-kbd">c</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Edit the open event</span><span><kbd class="fwm-kbd">e</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Delete the open event</span><span><kbd class="fwm-kbd">#</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Close / cancel</span><span><kbd class="fwm-kbd">Esc</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Save in the editor</span><span><kbd class="fwm-kbd">Ctrl</kbd><kbd class="fwm-kbd">Enter</kbd></span></div>
+                <div class="fwm-kbd-row"><span>Show shortcuts</span><span><kbd class="fwm-kbd">?</kbd></span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script id="calBoot" type="application/json"><?= json_encode($boot, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?></script>
+<script src="/calendar/js/calendar-core.js?v=<?= CAL_ASSET_VERSION ?>"></script>
+<script src="/calendar/js/calendar.js?v=<?= CAL_ASSET_VERSION ?>"></script>
 </body>
 </html>

@@ -13,7 +13,7 @@ require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../includes/companies.php';
 
 // Asset version for cache busting
-define('ASSET_VERSION', '2026-10-16-1');
+define('ASSET_VERSION', '2026-10-17-1');
 
 // Fetch user data from session
 $firstName = $_SESSION['user_first_name'] ?? 'Welcome';

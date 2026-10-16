@@ -1,0 +1,9 @@
+# The calendar's styles and scripts moved to /calendar/css/ and /calendar/js/.
+# Block the retired copies a deploy may have left on the server.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
