@@ -102,19 +102,15 @@ try {
             $url = '/projects/board.php?board_id=' . (int)$item['board_id']
                  . '&item=' . (int)$itemId . '&open=comments';
 
-            $insert = $DB->prepare("
-                INSERT INTO notifications (company_id, user_id, type, title, message, url, created_at, is_read)
-                VALUES (?, ?, 'mention', ?, ?, ?, NOW(), 0)
-            ");
+            require_once __DIR__ . '/../../../includes/notify.php';
             foreach ($mentionedUsers as $mu) {
                 if ((int)$mu['id'] === (int)$USER_ID) continue; // don't notify yourself
-                $insert->execute([
-                    $COMPANY_ID,
-                    (int)$mu['id'],
-                    $authorName . ' mentioned you',
-                    '"' . $item['title'] . '": ' . $excerpt,
-                    $url,
-                ]);
+                // Bell + phone (Mentions category), bundled per board item on the phone.
+                fw_notify($DB, (int)$COMPANY_ID, (int)$mu['id'], 'mention', $authorName . ' mentioned you',
+                          '"' . $item['title'] . '": ' . $excerpt, $url, [
+                              'ch' => 'projects', 'grp' => 'projects', 'who' => $authorName,
+                              'tag' => 'mention:c' . (int)$commentId, 'ttl' => 3 * 86400,
+                          ]);
             }
         } catch (Exception $e) {
             error_log('Mention notification error: ' . $e->getMessage());

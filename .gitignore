@@ -65,3 +65,8 @@ Thumbs.db
 # Mail runtime data (attachments, outgoing spool, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/mail/
+
+# ---------------------------------------------------------------------------
+# Firebase service-account key (phone notifications) and its token cache
+# ---------------------------------------------------------------------------
+storage/firebase/

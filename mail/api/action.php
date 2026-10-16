@@ -44,4 +44,18 @@ foreach ($byKey as $group) {
     $n += MailActions::apply($DB, $group, $action, $args);
 }
 
+// Dealt with here, so take those notifications off the user's phones too.
+if ($n > 0 && in_array($action, ['read', 'archive', 'trash', 'spam', 'delete_forever', 'snooze'], true)) {
+    try {
+        $tags = [];
+        foreach (array_keys($byKey) as $k) {
+            $tags[] = 'mail:' . $k;
+            $tags[] = 'sla:' . $k;
+        }
+        fw_push_dismiss($DB, $MAIL_USER_ID, $tags);
+    } catch (Throwable $e) {
+        error_log('[mail/api] push dismiss: ' . $e->getMessage());
+    }
+}
+
 mail_json(['affected' => $n, 'counts' => MailRepo::counts($DB, $MAIL_COMPANY_ID, $MAIL_USER_ID)]);

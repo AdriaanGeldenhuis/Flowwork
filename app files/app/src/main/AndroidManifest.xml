@@ -7,37 +7,94 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <application
+        android:name=".FlowWorkApp"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="Flow Work"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.FlowWork"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:enableOnBackInvokedCallback="true">
 
-        <!-- configChanges keeps the activity (and its WebView) alive across
-             rotation and fold/unfold, so the app no longer resets to the
-             home page when the screen is turned. -->
+        <!-- Defaults for messages typed in the Firebase console (the app's own
+             pushes set all of this per message). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_flowwork" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/brand" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="general" />
+
+        <!-- FlowWork icon. singleTask: notification taps and shortcuts reuse
+             the open screen instead of stacking new ones. configChanges keeps
+             the WebView alive across rotation and fold/unfold, so the app no
+             longer resets to the home page when the screen is turned. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.FlowWork.Web"
+            android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts_main" />
+        </activity>
+
+        <!-- FlowMail icon: straight into the mailbox, in its own task (own
+             Recents card), sharing FlowWork's sign-in. Also offered as an
+             email app for mailto: links from other apps. -->
+        <activity
+            android:name=".mail.MailActivity"
+            android:exported="true"
+            android:label="@string/flowmail_label"
+            android:icon="@mipmap/ic_launcher_mail"
+            android:roundIcon="@mipmap/ic_launcher_mail_round"
+            android:taskAffinity="app.flowwork.mail"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.FlowWork.Web"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="mailto" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mailto" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts_mail" />
         </activity>
 
         <!-- One-time FlowDrive sign-in screen (its own icon on the launcher).
              configChanges: keep the in-flight connection check and the typed
              form alive across rotation. taskAffinity: its own task, so the
-             two launcher icons do not resurface each other's screens. -->
+             launcher icons do not resurface each other's screens. -->
         <activity
             android:name=".drive.DriveSetupActivity"
             android:exported="true"
-            android:label="FlowDrive"
-            android:icon="@mipmap/ic_launcher"
+            android:label="@string/flowdrive_label"
+            android:icon="@mipmap/ic_launcher_drive"
+            android:roundIcon="@mipmap/ic_launcher_drive_round"
             android:taskAffinity="app.flowwork.drive.setup"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
             <intent-filter>
@@ -53,8 +110,9 @@
         <activity
             android:name=".drive.DriveSaveActivity"
             android:exported="true"
-            android:label="Save to FlowDrive"
-            android:icon="@mipmap/ic_launcher"
+            android:label="@string/flowdrive_save_label"
+            android:icon="@mipmap/ic_launcher_drive"
+            android:roundIcon="@mipmap/ic_launcher_drive_round"
             android:taskAffinity="app.flowwork.drive.save"
             android:excludeFromRecents="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
@@ -69,6 +127,20 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- Push notifications (Firebase Cloud Messaging). -->
+        <service
+            android:name=".push.FlowMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Notification buttons (Mark as read, Archive) and swipe-away. -->
+        <receiver
+            android:name=".push.NotificationActionReceiver"
+            android:exported="false" />
 
         <!-- Makes FlowDrive appear as a location in the Files app and in
              every app's file picker (Storage Access Framework). -->

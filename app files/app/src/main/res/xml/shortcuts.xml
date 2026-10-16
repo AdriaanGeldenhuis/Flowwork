@@ -7,7 +7,7 @@
     <shortcut
         android:shortcutId="flowdrive_settings"
         android:enabled="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher_drive"
         android:shortcutShortLabel="@string/flowdrive_settings_label">
         <intent
             android:action="android.intent.action.VIEW"

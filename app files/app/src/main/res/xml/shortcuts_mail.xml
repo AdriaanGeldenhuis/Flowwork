@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press shortcut on the FlowMail launcher icon. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="compose"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_mail"
+        android:shortcutShortLabel="@string/shortcut_compose_short"
+        android:shortcutLongLabel="@string/shortcut_compose_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://www.flowwork.app/mail/?compose=new"
+            android:targetPackage="app.flowwork"
+            android:targetClass="app.flowwork.mail.MailActivity" />
+    </shortcut>
+</shortcuts>

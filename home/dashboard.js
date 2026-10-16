@@ -139,6 +139,16 @@
     const list      = document.getElementById('notificationsList');
     const markAll   = document.getElementById('markAllRead');
     if (!btn || !dropdown) return;
+    // POSTs need the session's CSRF token (auth_gate.php answers 419 without it).
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? csrfMeta.content : '';
+
+    // Writers store the target in `link` (calendar) or `url` (mail, mentions);
+    // only same-site paths are followed.
+    function notificationHref(n) {
+      const target = String(n.link || n.url || '');
+      return /^\/(?!\/)/.test(target) ? target : '#';
+    }
 
     async function loadNotifications() {
       try {
@@ -161,7 +171,7 @@
       const html = notifications.map(n => {
         const isUnread = !n.is_read;
         return `
-          <a href="${n.link || '#'}" class="fw-dashboard__notification-item ${isUnread ? 'fw-dashboard__notification-item--unread' : ''}" data-id="${n.id}" onclick="markDashboardNotificationRead(${n.id})">
+          <a href="${escapeHtml(notificationHref(n))}" class="fw-dashboard__notification-item ${isUnread ? 'fw-dashboard__notification-item--unread' : ''}" data-id="${n.id}" onclick="markDashboardNotificationRead(${n.id})">
             <div class="fw-dashboard__notification-icon">
               ${getNotificationIcon(n.type)}
             </div>
@@ -188,6 +198,9 @@
     function getNotificationIcon(type) {
       const icons = {
         'calendar_reminder': '🔔',
+        'mail_new': '✉️',
+        'mail_sla': '⏰',
+        'mention': '💬',
         'event_invite': '📅',
         'event_updated': '✏️',
         'event_cancelled': '❌'
@@ -240,7 +253,10 @@
     if (markAll) {
       markAll.addEventListener('click', async function() {
         try {
-          const res = await fetch('/calendar/ajax/notifications_mark_all_read.php', { method: 'POST' });
+          const res = await fetch('/calendar/ajax/notifications_mark_all_read.php', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': csrfToken }
+          });
           const data = await res.json();
           if (data.ok) {
             loadNotifications();
@@ -256,7 +272,7 @@
       try {
         await fetch('/calendar/ajax/notifications_mark_read.php', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({ id: notificationId })
         });
       } catch (err) {

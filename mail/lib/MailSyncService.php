@@ -19,6 +19,8 @@ class MailSyncService
     public const INITIAL_DAYS = 30;
     public const INITIAL_MAX = 200;
     public const INCREMENTAL_MAX = 400;
+    /** More new conversations than this in one sync become a single "N new emails" phone notification. */
+    public const PUSH_MAX = 8;
     public const MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
     public const FLAG_WINDOW = 300;
 
@@ -285,7 +287,10 @@ class MailSyncService
             $have = self::existingUids($db, $accountId, $server, $uids);
             $todo = array_values(array_diff($uids, $have));
             rsort($todo); // newest first so the inbox fills from the top
-            $done = self::fetchAndIngest($db, $c, $acc, $local, $server, $todo, $deadline, $incoming, null);
+            // The first import of a mailbox (up to INITIAL_MAX old messages) is not "new mail":
+            // it must not ring the bell or the phone.
+            $imported = [];
+            $done = self::fetchAndIngest($db, $c, $acc, $local, $server, $todo, $deadline, $imported, null);
             $new += $done['new'];
             if ($done['complete']) {
                 $max = $uids ? max($uids) : 0;
@@ -480,10 +485,13 @@ class MailSyncService
     {
         if (!$emailIds) return;
         try {
-            $prefs = MailRepo::prefs($db, (int)$acc['company_id'], (int)$acc['user_id']);
+            require_once __DIR__ . '/../../includes/notify.php';
+            $companyId = (int)$acc['company_id'];
+            $userId = (int)$acc['user_id'];
+            $prefs = MailRepo::prefs($db, $companyId, $userId);
             if (!$prefs['notification_enabled']) return;
             $in = implode(',', array_fill(0, count($emailIds), '?'));
-            $st = $db->prepare("SELECT email_id, thread_id, sender, sender_name, subject FROM emails
+            $st = $db->prepare("SELECT email_id, thread_id, sender, sender_name, subject, body_text FROM emails
                                  WHERE email_id IN ($in) AND folder = 'INBOX' AND is_read = 0 ORDER BY email_id DESC");
             $st->execute($emailIds);
             $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -494,11 +502,64 @@ class MailSyncService
             $title = $n === 1 ? 'New email from ' . $who : $n . ' new emails';
             $message = $n === 1 ? (string)$first['subject'] : 'Latest from ' . $who . ': ' . $first['subject'];
             $url = '/mail/?open=' . rawurlencode(MailRepo::keyFor($first));
-            $db->prepare("INSERT INTO notifications (company_id, user_id, type, title, message, url, created_at, is_read)
-                          VALUES (?, ?, 'mail_new', ?, ?, ?, NOW(), 0)")
-               ->execute([(int)$acc['company_id'], (int)$acc['user_id'], mb_substr($title, 0, 255), mb_substr($message, 0, 500), $url]);
+            // The bell gets one line per sync; the phone one notification per conversation.
+            fw_notify($db, $companyId, $userId, 'mail_new', $title, $message, $url, false);
+            self::push($db, $acc, $rows);
         } catch (Throwable $e) {
-            // notifications table is optional on some installs
+            error_log('[mail] new-mail notification for account ' . (int)$acc['account_id'] . ': ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Phone notifications, like a mail app: one per conversation showing its
+     * newest message, replaced (not stacked) when more arrive in it, with
+     * Mark as read / Archive / Reply buttons.
+     *
+     * @param array $rows unread INBOX messages, newest first
+     */
+    private static function push(PDO $db, array $acc, array $rows): void
+    {
+        $companyId = (int)$acc['company_id'];
+        $userId = (int)$acc['user_id'];
+        if (!fw_push_user_has_devices($db, $userId)) return;
+
+        $byKey = [];
+        foreach ($rows as $r) {
+            $k = MailRepo::keyFor($r);
+            if (!isset($byKey[$k])) $byKey[$k] = $r;
+        }
+        $mailbox = (string)($acc['email_address'] ?? '');
+
+        if (count($byKey) > self::PUSH_MAX) {
+            $first = $rows[0];
+            fw_push_queue($db, $userId, [
+                'ch' => 'mail', 'grp' => 'mail', 'app' => 'mail',
+                'tag' => 'mail:batch:' . (int)$acc['account_id'],
+                'title' => count($rows) . ' new emails',
+                'body' => 'Latest from ' . MailRepo::displayName($first['sender_name'], $first['sender']) . ': ' . $first['subject'],
+                'sub' => $mailbox,
+                'url' => fw_notify_push_url('/mail/', $companyId),
+            ], ['ttl' => 2 * 86400]);
+            return;
+        }
+
+        // Oldest first, so the newest ends up on top of the shade.
+        foreach (array_reverse($byKey, true) as $key => $r) {
+            $who = MailRepo::displayName($r['sender_name'], $r['sender']);
+            $subject = trim((string)$r['subject']) !== '' ? (string)$r['subject'] : '(no subject)';
+            $preview = HtmlSanitizer::snippet((string)$r['body_text'], 200);
+            fw_push_queue($db, $userId, [
+                'ch' => 'mail', 'grp' => 'mail', 'app' => 'mail',
+                'tag' => 'mail:' . $key,
+                'title' => $who,
+                'body' => $subject,
+                'big' => $subject . ($preview !== '' ? "\n" . $preview : ''),
+                'sub' => $mailbox,
+                'who' => $who,
+                'wkey' => (string)$r['sender'],
+                'url' => fw_notify_push_url('/mail/?open=' . rawurlencode($key), $companyId),
+                'eid' => (string)$r['email_id'],
+            ], ['ttl' => 2 * 86400, 'act_key' => $key, 'act_company' => $companyId]);
         }
     }
 }
