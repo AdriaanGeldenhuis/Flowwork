@@ -15,6 +15,8 @@ import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.service.notification.StatusBarNotification;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -27,6 +29,7 @@ import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -74,6 +77,7 @@ public final class Notifier {
     private static final String SUMMARY_PREFIX = "summary:";
     private static final String OPEN_ACTION = "app.flowwork.action.OPEN:";
     private static final int MAX_LINES = 6;
+    static final long SUMMARY_DELAY_MS = 900;
 
     private Notifier() {
     }
@@ -144,6 +148,10 @@ public final class Notifier {
             String eid = digits(d.get("eid"));
             if (!eid.isEmpty()) {
                 String reply = Links.BASE + "/mail/compose.php?mode=reply&email_id=" + eid;
+                String co = Uri.parse(url).getQueryParameter("fw_co"); // same company as the conversation
+                if (co != null && co.matches("\\d{1,10}")) {
+                    reply += "&fw_co=" + co;
+                }
                 b.addAction(0, ctx.getString(R.string.notif_reply),
                         openIntent(ctx, true, reply, tag, group, nid, tag + ":reply"));
             }
@@ -155,8 +163,33 @@ public final class Notifier {
             return; // permission revoked between the check and the post
         }
         if (!group.isEmpty()) {
-            refreshSummary(ctx, group, channel, mail, new Child(tag, title, body, sub, when), null);
+            scheduleSummary(ctx, group, channel, mail);
         }
+    }
+
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final Map<String, Runnable> PENDING_SUMMARIES = new HashMap<>();
+
+    /**
+     * Refresh a bundle's summary once things settle. A mail sync can deliver
+     * several pushes within a second, and Android drops notification updates
+     * beyond ~5 a second, so one summary update per burst keeps it accurate.
+     */
+    private static void scheduleSummary(Context ctx, String group, String channel, boolean mail) {
+        final Context app = ctx.getApplicationContext();
+        Runnable run = () -> {
+            synchronized (PENDING_SUMMARIES) {
+                PENDING_SUMMARIES.remove(group);
+            }
+            refreshSummary(app, group, channel, mail, null);
+        };
+        synchronized (PENDING_SUMMARIES) {
+            Runnable old = PENDING_SUMMARIES.put(group, run);
+            if (old != null) {
+                MAIN.removeCallbacks(old);
+            }
+        }
+        MAIN.postDelayed(run, SUMMARY_DELAY_MS);
     }
 
     /** Shown when a Mark as read / Archive tap could not reach the server. */
@@ -223,7 +256,7 @@ public final class Notifier {
             }
         }
         for (String g : groups) {
-            refreshSummary(ctx, g, null, Channels.isMail(g), null, tags);
+            refreshSummary(ctx, g, null, Channels.isMail(g), tags);
         }
     }
 
@@ -271,7 +304,7 @@ public final class Notifier {
         }
         Set<String> gone = new HashSet<>();
         gone.add(tag);
-        refreshSummary(ctx, group, null, Channels.isMail(group), null, gone);
+        refreshSummary(ctx, group, null, Channels.isMail(group), gone);
     }
 
     /** A notification (or one of its buttons) opened the app. */
@@ -288,21 +321,19 @@ public final class Notifier {
         cancelTags(ctx, tags);
         String g = safeKey(group);
         if (!g.isEmpty()) {
-            refreshSummary(ctx, g, null, Channels.isMail(g), null, tags);
+            refreshSummary(ctx, g, null, Channels.isMail(g), tags);
         }
     }
 
     // ------------------------------------------------------------------ bundles
 
     private static final class Child {
-        final String tag;
         final CharSequence title;
         final CharSequence text;
         final CharSequence sub;
         final long when;
 
-        Child(String tag, CharSequence title, CharSequence text, CharSequence sub, long when) {
-            this.tag = tag;
+        Child(CharSequence title, CharSequence text, CharSequence sub, long when) {
             this.title = title == null ? "" : title;
             this.text = text == null ? "" : text;
             this.sub = sub == null ? "" : sub;
@@ -315,11 +346,10 @@ public final class Notifier {
      * only bundles notifications that have a summary; with a single item
      * left the summary is removed so it shows on its own.
      *
-     * @param added a notification just posted (not yet visible in getActiveNotifications)
-     * @param gone  tags just cancelled (may still be listed for a moment)
+     * @param gone tags just cancelled (may still be listed for a moment)
      */
     private static void refreshSummary(Context ctx, String group, String channel, boolean mail,
-            Child added, Set<String> gone) {
+            Set<String> gone) {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (nm == null) {
             return;
@@ -329,20 +359,16 @@ public final class Notifier {
             Notification n = sbn.getNotification();
             String tag = sbn.getTag();
             if (!group.equals(n.getGroup()) || (n.flags & Notification.FLAG_GROUP_SUMMARY) != 0
-                    || tag == null || (gone != null && gone.contains(tag))
-                    || (added != null && tag.equals(added.tag))) {
+                    || tag == null || (gone != null && gone.contains(tag))) {
                 continue;
             }
             if (channel == null && Build.VERSION.SDK_INT >= 26) {
                 channel = n.getChannelId();
             }
             Bundle x = n.extras;
-            kids.add(new Child(tag, x.getCharSequence(Notification.EXTRA_TITLE),
+            kids.add(new Child(x.getCharSequence(Notification.EXTRA_TITLE),
                     x.getCharSequence(Notification.EXTRA_TEXT), x.getCharSequence(Notification.EXTRA_SUB_TEXT),
                     n.when));
-        }
-        if (added != null) {
-            kids.add(added);
         }
         if (kids.size() < 2) {
             nm.cancel(SUMMARY_PREFIX + group, ID);

@@ -225,10 +225,10 @@ assert_eq(1, count($retry), 'a retry row for the failed phone');
 $rp = json_decode($retry[0]['payload'], true);
 assert_eq(1, count($rp['only_devices']), 'retry targets one phone');
 assert_eq(1, (int)$retry[0]['attempts'], 'attempt counted');
-assert_true(strtotime($retry[0]['send_after']) > time(), 'retry waits (backoff)');
+assert_true(strtotime($retry[0]['send_after'] . ' UTC') > time(), 'retry waits (backoff, UTC clock)');
 $stats = fw_push_flush($DB, 10, 5.0, $fcm);
 assert_eq(0, $stats['claimed'], 'not sent again before the backoff');
-$DB->exec("UPDATE push_outbox SET send_after = NOW() WHERE sent_at IS NULL");
+$DB->exec("UPDATE push_outbox SET send_after = UTC_TIMESTAMP() WHERE sent_at IS NULL");
 $calls = [];
 $stats = fw_push_flush($DB, 10, 5.0, $fcm);
 assert_eq(1, $stats['sent'], 'retry delivered');
@@ -265,10 +265,73 @@ assert_eq('NORMAL', $msg['android']['priority'], 'dismiss does not wake the phon
 
 // Expired messages are not sent.
 $oid = fw_push_queue($DB, 1, ['title' => 'Old', 'body' => 'x'], ['ttl' => 60]);
-$DB->exec("UPDATE push_outbox SET expires_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE id = $oid");
+$DB->exec("UPDATE push_outbox SET expires_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE) WHERE id = $oid");
 $calls = [];
 fw_push_flush($DB, 10, 5.0, $fcm);
 assert_eq(0, count($calls), 'expired message skipped');
+
+// A 404 that is not UNREGISTERED (e.g. a wrong project_id) or a key of another
+// Firebase project is a server problem: the phones must not be forgotten.
+foreach ([
+    [404, '{"error":{"code":404,"status":"NOT_FOUND","message":"Requested entity was not found."}}'],
+    [403, json_encode(['error' => ['code' => 403, 'status' => 'PERMISSION_DENIED', 'message' => 'SenderId mismatch',
+                                   'details' => [['errorCode' => 'SENDER_ID_MISMATCH']]]])],
+] as $resp) {
+    $calls = [];
+    $responses = [$resp];
+    $oid = fw_push_queue($DB, 1, ['title' => 'Setup', 'body' => 'x']);
+    fw_push_flush($DB, 10, 5.0, $fcm);
+    assert_eq(2, count(fw_push_devices($DB, 1)), 'HTTP ' . $resp[0] . ': devices kept');
+    assert_eq(1, (int)outbox($DB, $oid)['attempts'], 'HTTP ' . $resp[0] . ': message kept for later');
+    $DB->exec("DELETE FROM push_outbox WHERE sent_at IS NULL");
+}
+
+// FCM refuses the message itself (not a token problem): dropped, not retried 6 times.
+$calls = [];
+$responses = [[400, '{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"Message is too big"}}']];
+$oid = fw_push_queue($DB, 1, ['title' => 'Too big', 'body' => 'x']);
+fw_push_flush($DB, 10, 5.0, $fcm);
+$o = outbox($DB, $oid);
+assert_true($o['sent_at'] !== null && (int)$o['sent_count'] === 0, 'refused message closed');
+assert_true(str_contains((string)$o['last_error'], 'INVALID_ARGUMENT'), 'reason kept');
+assert_eq(1, count($calls), 'not sent to the second phone either');
+assert_eq(2, count(fw_push_devices($DB, 1)), 'phones kept');
+
+// A retry sends only what is left of the lifetime.
+$calls = [];
+$oid = fw_push_queue($DB, 1, ['title' => 'Reminder', 'body' => 'x'], ['ttl' => 3600]);
+$DB->exec("UPDATE push_outbox SET expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 120 SECOND) WHERE id = $oid");
+fw_push_flush($DB, 10, 5.0, $fcm);
+$ttl = (int)json_decode($calls[0]['body'], true)['message']['android']['ttl'];
+assert_true($ttl > 0 && $ttl <= 120, 'ttl is what is left (' . $ttl . 's)');
+
+// Long non-Latin text stays inside FCM's 4 KB (bytes, not characters).
+$calls = [];
+fw_push_queue($DB, 1, ['title' => str_repeat('漢', 140), 'body' => str_repeat('字', 400), 'big' => str_repeat('語', 1200),
+                       'sub' => 'me@example.com', 'url' => '/mail/?open=t1'], ['act_key' => 't1', 'act_company' => 1]);
+fw_push_flush($DB, 10, 5.0, $fcm);
+$data = json_decode($calls[0]['body'], true)['message']['data'];
+assert_true(strlen(json_encode($data, JSON_UNESCAPED_UNICODE)) < 4000, 'payload under 4 KB with the action token');
+assert_true(mb_strlen($data['title']) > 20, 'title still meaningful');
+
+// The test button sends just its own row, whatever else is waiting.
+$calls = [];
+$other = fw_push_queue($DB, 1, ['title' => 'Waiting', 'body' => 'x']);
+$mine = fw_push_queue($DB, 1, ['title' => 'Test', 'body' => 'x']);
+fw_push_flush($DB, 1, 5.0, $fcm, $mine);
+assert_true(outbox($DB, $mine)['sent_at'] !== null, 'requested row sent');
+assert_true(outbox($DB, $other)['sent_at'] === null, 'other rows left for the worker');
+fw_push_flush($DB, 10, 5.0, $fcm);
+
+// A row claimed by a process that died is picked up after 5 minutes, not before.
+$calls = [];
+$oid = fw_push_queue($DB, 1, ['title' => 'Stuck', 'body' => 'x']);
+$DB->exec("UPDATE push_outbox SET claim_token = 'deadbeefdeadbeefdeadbeefdeadbeef', claimed_at = UTC_TIMESTAMP() WHERE id = $oid");
+fw_push_flush($DB, 10, 5.0, $fcm);
+assert_eq(0, count($calls), 'a live claim is respected');
+$DB->exec("UPDATE push_outbox SET claimed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 MINUTE) WHERE id = $oid");
+fw_push_flush($DB, 10, 5.0, $fcm);
+assert_true(outbox($DB, $oid)['sent_at'] !== null, 'a stale claim is taken over and sent');
 
 // fw_notify: bell row + push with nid, company and tag.
 $calls = [];

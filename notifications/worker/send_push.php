@@ -17,6 +17,8 @@ if ($lock && !flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0); // the previous run is still busy
 }
 
+if (random_int(1, 60) === 1) fw_push_cleanup($DB);
+
 if (fw_push_service_account() === null) {
     echo date('c') . " push not configured: add storage/firebase/service-account.json (see includes/push.php)\n";
     exit(0);
@@ -28,7 +30,5 @@ do {
     $r = fw_push_flush($DB, 100, max(1.0, $deadline - microtime(true)));
     foreach ($total as $k => $v) $total[$k] = $v + (int)($r[$k] ?? 0);
 } while ($r['claimed'] > 0 && microtime(true) < $deadline);
-
-if (random_int(1, 60) === 1) fw_push_cleanup($DB);
 
 echo date('c') . ' push ' . http_build_query($total, '', ' ') . "\n";

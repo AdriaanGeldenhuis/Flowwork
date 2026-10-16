@@ -94,13 +94,15 @@ function account_test_push(PDO $db, int $userId): void
     if ($devices === 0) {
         account_json(['ok' => false, 'error' => 'No phone is ready yet. Open the Flowwork app on your phone, sign in and allow notifications.'], 404);
     }
+    session_write_close(); // do not hold up the user's other requests while Firebase answers
     $id = fw_push_queue($db, $userId, [
         'ch' => 'general', 'grp' => 'general', 'tag' => 'test',
         'title' => 'Notifications are working',
         'body' => "This test came from Signed-in devices. New email, event reminders and mentions arrive like this.",
         'url' => '/account/',
     ], ['ttl' => 600]);
-    fw_push_flush($db, 20, 15.0);
+    if (!$id) account_json(['ok' => false, 'error' => 'No phone is ready yet.'], 404);
+    fw_push_flush($db, 1, 15.0, null, (int)$id);
 
     $st = $db->prepare("SELECT sent_at, sent_count, last_error FROM push_outbox WHERE id = ?");
     $st->execute([(int)$id]);

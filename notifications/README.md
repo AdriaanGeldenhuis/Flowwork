@@ -58,7 +58,7 @@ notifications. `config.example.php` uses 30 days, which suits the app.
    ```
 
    `storage/` is not web-readable, is not in git and is not touched by the
-   deploy. Elsewhere is fine too: `define('FCM_SERVICE_ACCOUNT_FILE', '/path/key.json');`
+   deploy. Until the key is there, nothing is queued or sent. Elsewhere is fine too: `define('FCM_SERVICE_ACCOUNT_FILE', '/path/key.json');`
    in `config.php`. Make it readable by PHP only (`chmod 600`). The folder
    must be writable by PHP: the OAuth access token is cached next to the key.
    Also check Firebase console › Project settings › Cloud Messaging: *Firebase

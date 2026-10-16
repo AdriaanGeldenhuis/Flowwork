@@ -21,6 +21,8 @@ import android.widget.Toast;
 
 import java.io.IOException;
 
+import app.flowwork.SystemBars;
+
 /**
  * One-time FlowDrive sign-in. After connecting, FlowDrive appears as a
  * location in the Android Files app (and every app's file picker), showing
@@ -121,6 +123,7 @@ public class DriveSetupActivity extends Activity {
         scroll.addView(column, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
+        SystemBars.fit(this, scroll);
     }
 
     private EditText addField(LinearLayout parent, String hint, int inputType) {

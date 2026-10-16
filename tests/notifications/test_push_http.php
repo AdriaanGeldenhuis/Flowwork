@@ -146,6 +146,26 @@ $r = http('GET', "$base/mail/?open=t$threadId&fw_nid=$nid&fw_co=1", $jar);
 assert_eq(200, $r['code'], 'tap opens the mailbox');
 assert_eq(1, (int)$DB->query("SELECT is_read FROM notifications WHERE id = $nid")->fetchColumn(), 'tap marks the bell item read');
 
+// A tap the day after: the PHP session is gone, "keep me signed in" restores it,
+// and the tap must still switch company and mark the bell item read.
+$nid2 = fw_notify($DB, 1, 1, 'mail_new', 'New email from Bob', 'Invoice', '/mail/?open=t' . $threadId, false);
+unset($jar['FLOWWORKSESSID']);
+assert_true(isset($jar['fw_remember']), 'the app keeps the "keep me signed in" cookie');
+$r = http('GET', "$base/mail/?open=t$threadId&fw_nid=$nid2&fw_co=1", $jar);
+assert_eq(200, $r['code'], 'restored and opened');
+assert_eq(1, (int)$DB->query("SELECT is_read FROM notifications WHERE id = $nid2")->fetchColumn(), 'tap after a restore marks it read');
+
+// Crafted array parameters must not break pages with PHP warnings.
+$jarArr = $jar + ['fw_push[x]' => 'y'];
+$r = http('GET', "$base/account/api/sessions.php?fw_nid[]=1&fw_co[]=2", $jarArr, null, ['Accept: application/json']);
+assert_true(json_decode($r['body'], true)['ok'] ?? false, 'array parameters ignored, JSON intact');
+assert_true(!str_contains($r['body'], 'Array to string'), 'no PHP warning in the response');
+$none = [];
+$r = http('POST', "$base/mail/api/push_action.php", $none, json_encode(['token' => ['x'], 'action' => ['read']]),
+          ['Content-Type: application/json'], false);
+assert_eq(400, $r['code'], 'array action rejected cleanly');
+assert_true(!str_contains($r['body'], 'Array to string'), 'no PHP warning from push_action');
+
 // ---------------------------------------------------------------- Mark as read button (no session)
 
 $deviceId = (int)$dev['id'];

@@ -12,6 +12,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Intent;
+import android.os.Looper;
 import android.service.notification.StatusBarNotification;
 
 import androidx.test.core.app.ApplicationProvider;
@@ -22,6 +23,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -67,6 +69,11 @@ public class NotifierTest {
         return d;
     }
 
+    /** Let the debounced bundle summary run. */
+    private static void settle() {
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(Notifier.SUMMARY_DELAY_MS + 100));
+    }
+
     private List<StatusBarNotification> active() {
         List<StatusBarNotification> out = new ArrayList<>();
         Collections.addAll(out, nm.getActiveNotifications());
@@ -89,6 +96,7 @@ public class NotifierTest {
     @Test
     public void newEmailNotification() {
         Notifier.show(app, mail("t5", "Ann Lee", "Quote 1042"));
+        settle();
 
         StatusBarNotification sbn = byTag("mail:t5");
         assertNotNull(sbn);
@@ -120,7 +128,8 @@ public class NotifierTest {
         assertTrue(shadowOf(n.contentIntent).isActivityIntent());
 
         Intent reply = shadowOf(n.actions[2].actionIntent).getSavedIntent();
-        assertEquals(Links.BASE + "/mail/compose.php?mode=reply&email_id=103", reply.getStringExtra(Notifier.EXTRA_URL));
+        assertEquals("Reply opens in the conversation's company",
+                Links.BASE + "/mail/compose.php?mode=reply&email_id=103&fw_co=1", reply.getStringExtra(Notifier.EXTRA_URL));
         assertTrue(shadowOf(n.actions[0].actionIntent).isBroadcastIntent());
 
         assertEquals("one email, no bundle summary yet", 1, active().size());
@@ -143,6 +152,8 @@ public class NotifierTest {
     public void conversationsBundleWithASummary() {
         Notifier.show(app, mail("t5", "Ann Lee", "Quote 1042"));
         Notifier.show(app, mail("t6", "Bob", "Invoice"));
+        assertEquals("summary waits for the burst to settle", 2, active().size());
+        settle();
 
         assertEquals(3, active().size());
         StatusBarNotification summary = byTag("summary:mail");
@@ -169,6 +180,8 @@ public class NotifierTest {
     public void readElsewhereRemovesItAndTheSummary() {
         Notifier.show(app, mail("t5", "Ann Lee", "Quote 1042"));
         Notifier.show(app, mail("t6", "Bob", "Invoice"));
+        settle();
+        assertNotNull(byTag("summary:mail"));
         Map<String, String> d = new HashMap<>();
         d.put("t", "d");
         d.put("tags", "mail:t5,sla:t5");
@@ -177,6 +190,21 @@ public class NotifierTest {
         assertEquals(null, byTag("mail:t5"));
         assertNotNull(byTag("mail:t6"));
         assertEquals("summary removed when one is left", null, byTag("summary:mail"));
+    }
+
+    @Test
+    public void aBurstGetsOneAccurateSummary() {
+        for (int i = 0; i < 8; i++) {
+            Notifier.show(app, mail("t" + (100 + i), "Sender " + i, "Subject " + i));
+        }
+        settle();
+        StatusBarNotification summary = byTag("summary:mail");
+        assertNotNull(summary);
+        Notification s = summary.getNotification();
+        assertEquals("8 new emails", s.extras.getCharSequence(Notification.EXTRA_TITLE).toString());
+        assertEquals(6, s.extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES).length);
+        assertEquals("+2 more", s.extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT).toString());
+        assertEquals(9, active().size());
     }
 
     @Test
@@ -197,6 +225,7 @@ public class NotifierTest {
         other.put("body", "Event starts at 9:00 AM");
         other.put("url", "/calendar/event_view.php?id=4");
         Notifier.show(app, other);
+        settle();
 
         Notifier.cancelGroup(app, "mail");
         List<StatusBarNotification> left = active();

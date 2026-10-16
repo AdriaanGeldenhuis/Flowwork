@@ -16,11 +16,11 @@ try {
 }
 
 // Phone notifications: tie the Android app's push token to this signed-in
-// device, and act on a notification tap (?fw_nid / ?fw_co). See includes/push.php.
+// device (see includes/push.php). auth_gate.php repeats it after a
+// "keep me signed in" restore and handles notification taps.
 require_once __DIR__ . '/includes/notify.php';
 try {
     fw_push_sync_device($DB);
-    fw_notify_apply_link($DB);
 } catch (Throwable $e) {
     error_log('[push] device sync failed: ' . $e->getMessage());
 }

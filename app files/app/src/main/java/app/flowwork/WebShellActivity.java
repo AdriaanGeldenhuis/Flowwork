@@ -123,6 +123,7 @@ public abstract class WebShellActivity extends AppCompatActivity {
     private boolean docStartScript;
     private String bridgeJs = "";
     private String failedUrl;
+    private boolean mainFrameError; // the current top-level load failed
     private boolean resumed;
     private boolean askedThisRun;
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -511,6 +512,7 @@ public abstract class WebShellActivity extends AppCompatActivity {
 
         @Override
         public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+            mainFrameError = false;
             progress.setProgress(5);
             progress.setVisibility(View.VISIBLE);
         }
@@ -518,6 +520,9 @@ public abstract class WebShellActivity extends AppCompatActivity {
         @Override
         public void onPageFinished(WebView view, String url) {
             progress.setVisibility(View.GONE);
+            if (!mainFrameError) {
+                showOffline(false, false); // e.g. Back to a page that loads fine
+            }
             backCallback.setEnabled(view.canGoBack());
             if (!docStartScript && bridgeSupported && Links.isInternal(url) && !bridgeJs.isEmpty()) {
                 view.evaluateJavascript(bridgeJs, null);
@@ -544,6 +549,7 @@ public abstract class WebShellActivity extends AppCompatActivity {
                 return; // a download or a link handed to another app, not a failure
             }
             failedUrl = request.getUrl().toString();
+            mainFrameError = true;
             showOffline(true, isOnline());
         }
 
@@ -645,7 +651,17 @@ public abstract class WebShellActivity extends AppCompatActivity {
          */
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-            WebView popup = new WebView(view.getContext());
+            if (!isUserGesture) {
+                return false; // like a browser's popup blocker (e.g. an ad in a third-party viewer)
+            }
+            final WebView popup = new WebView(view.getContext());
+            final boolean[] gone = {false};
+            final Runnable dispose = () -> {
+                if (!gone[0]) {
+                    gone[0] = true;
+                    popup.destroy();
+                }
+            };
             popup.setWebViewClient(new WebViewClient() {
                 private boolean done;
 
@@ -657,7 +673,7 @@ public abstract class WebShellActivity extends AppCompatActivity {
                         if (!route(u) && webView != null && Links.isInternal(u)) {
                             webView.loadUrl(u.toString());
                         }
-                        main.post(v::destroy);
+                        main.post(dispose);
                     }
                     return true;
                 }
@@ -665,6 +681,8 @@ public abstract class WebShellActivity extends AppCompatActivity {
             WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
             transport.setWebView(popup);
             resultMsg.sendToTarget();
+            // window.open('') that never navigates: do not keep it forever.
+            main.postDelayed(dispose, 15_000);
             return true;
         }
 
@@ -749,8 +767,9 @@ public abstract class WebShellActivity extends AppCompatActivity {
             return; // very old System WebView: everything else still works
         }
         bridgeSupported = true;
-        // Only FlowWork / FlowDrive pages (top frame or same-origin frames) get
-        // window.FlowWorkNative; email HTML runs in an opaque-origin sandbox.
+        // Only FlowWork / FlowDrive pages get window.FlowWorkNative, and only
+        // messages from the top frame are acted on. Email HTML is shown in a
+        // sandboxed frame without scripts, so it cannot use the object.
         WebViewCompat.addWebMessageListener(webView, "FlowWorkNative", BRIDGE_ORIGINS,
                 (view, message, sourceOrigin, isMainFrame, proxy) -> {
                     if (!isMainFrame || !BRIDGE_ORIGINS.contains(sourceOrigin.toString())) {

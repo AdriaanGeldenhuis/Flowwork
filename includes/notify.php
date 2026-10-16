@@ -50,7 +50,9 @@ function fw_notify(PDO $db, int $companyId, int $userId, string $type, string $t
         error_log('[notify] ' . $type . ' for user ' . $userId . ': ' . $e->getMessage());
     }
 
-    if ($push !== false) {
+    // No bell row, no push: a caller that retries a failed notification (the
+    // calendar cron) must not buzz the phone again on every attempt.
+    if ($push !== false && $id !== null) {
         try {
             $p = is_array($push) ? $push : [];
             $ch = (string)($p['ch'] ?? fw_notify_channel($type));
@@ -96,18 +98,20 @@ function fw_notify_push_url(string $url, int $companyId): string
 }
 
 /**
- * Called from init.php on every request. A notification tap from the app
- * adds ?fw_nid= (mark that bell item read) and ?fw_co= (switch to the company
- * it belongs to, when the user is a member). Both only act for the signed-in
- * user's own rows/companies, and the company switch only for the app.
+ * Called from auth_gate.php once the device is signed in (also after a
+ * "keep me signed in" restore) and before the active company is resolved.
+ * A notification tap from the app adds ?fw_nid= (mark that bell item read)
+ * and ?fw_co= (switch to the company it belongs to, when the user is a
+ * member). Both only act for the signed-in user's own rows/companies, and
+ * the company switch only for the app.
  */
 function fw_notify_apply_link(PDO $db): void
 {
     if (PHP_SAPI === 'cli' || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET' || empty($_SESSION['user_id'])) return;
     $uid = (int)$_SESSION['user_id'];
 
-    $nid = (string)($_GET['fw_nid'] ?? '');
-    if ($nid !== '' && ctype_digit($nid) && strlen($nid) <= 18) {
+    $nid = $_GET['fw_nid'] ?? '';
+    if (is_string($nid) && $nid !== '' && ctype_digit($nid) && strlen($nid) <= 18) {
         try {
             $db->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE id = ? AND user_id = ? AND is_read = 0")
                ->execute([(int)$nid, $uid]);
@@ -116,8 +120,9 @@ function fw_notify_apply_link(PDO $db): void
         }
     }
 
-    $co = (string)($_GET['fw_co'] ?? '');
-    if ($co !== '' && ctype_digit($co) && function_exists('fw_auth_is_app') && fw_auth_is_app()) {
+    $co = $_GET['fw_co'] ?? '';
+    if (is_string($co) && $co !== '' && ctype_digit($co) && strlen($co) <= 10
+        && function_exists('fw_auth_is_app') && fw_auth_is_app()) {
         try {
             require_once __DIR__ . '/companies.php';
             if ((int)$co !== (int)($_SESSION['company_id'] ?? 0)) fw_set_active_company($uid, (int)$co);

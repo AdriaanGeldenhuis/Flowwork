@@ -31,17 +31,19 @@ $raw = (string)file_get_contents('php://input', false, null, 0, 8192);
 $in = json_decode($raw, true);
 if (!is_array($in)) push_action_reply(['ok' => false, 'error' => 'Bad request'], 400);
 
-$action = (string)($in['action'] ?? '');
-if (!in_array($action, ['read', 'archive'], true)) {
+$action = $in['action'] ?? '';
+if (!is_string($action) || !in_array($action, ['read', 'archive'], true)) {
     push_action_reply(['ok' => false, 'error' => 'Unknown action'], 400);
 }
 
+// Generous per address (offices share one); the real limit is per device below.
 $ip = substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
-if (RateLimiter::hit('push_action_ip:' . $ip, 60, 300) > 0) {
+if (RateLimiter::hit('push_action_ip:' . $ip, 600, 300) > 0) {
     push_action_reply(['ok' => false, 'error' => 'Too many requests'], 429);
 }
 
-$claims = fw_push_action_verify((string)($in['token'] ?? ''));
+$token = $in['token'] ?? '';
+$claims = is_string($token) ? fw_push_action_verify($token) : null;
 if ($claims === null) push_action_reply(['ok' => false, 'error' => 'This notification has expired'], 401);
 if (RateLimiter::hit('push_action_device:' . $claims['d'], 30, 300) > 0) {
     push_action_reply(['ok' => false, 'error' => 'Too many requests'], 429);

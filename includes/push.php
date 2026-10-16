@@ -17,7 +17,11 @@
 // Server setup: Firebase console › Project settings › Service accounts ›
 // Generate new private key. Upload the JSON to storage/firebase/service-account.json
 // (storage/ is not web-readable) or define FCM_SERVICE_ACCOUNT_FILE in config.php.
-// Without it nothing is sent and the queue simply waits.
+// Until it is there nothing is queued (so no backlog of stale pushes builds up).
+
+// Queue times (send_after, expires_at, claimed_at, sent_at) are UTC_TIMESTAMP():
+// some connections switch their session time zone (the mail code does), and
+// mixing NOW() across them would make retries late or rows look stale.
 
 const FW_PUSH_COOKIE = 'fw_push';
 const FW_PUSH_TOUCH_EVERY = 86400;       // refresh a bound device's last_seen_at daily
@@ -98,8 +102,8 @@ function fw_push_sync_device(PDO $db): void
     if (PHP_SAPI === 'cli' || session_status() !== PHP_SESSION_ACTIVE) return;
     $uid = (int)($_SESSION['user_id'] ?? 0);
     $sid = (int)($_SESSION['auth_sid'] ?? 0);
-    $token = (string)($_COOKIE[FW_PUSH_COOKIE] ?? '');
-    if ($uid <= 0 || $sid <= 0 || !fw_push_valid_token($token)) return;
+    $token = $_COOKIE[FW_PUSH_COOKIE] ?? '';
+    if ($uid <= 0 || $sid <= 0 || !is_string($token) || !fw_push_valid_token($token)) return;
 
     $hash = hash('sha256', $token);
     $mark = $hash . ':' . $uid . ':' . $sid;
@@ -192,7 +196,8 @@ function fw_push_user_has_devices(PDO $db, int $userId): bool
  */
 function fw_push_queue(PDO $db, int $userId, array $data, array $opts = []): ?int
 {
-    if ($userId <= 0 || !fw_push_user_has_devices($db, $userId)) return null;
+    // Not set up yet: queueing would only pile up stale pushes for the day the key arrives.
+    if ($userId <= 0 || fw_push_service_account() === null || !fw_push_user_has_devices($db, $userId)) return null;
 
     $limits = ['title' => 140, 'body' => 400, 'big' => 1200, 'sub' => 120, 'who' => 120, 'url' => 1000, 'tags' => 1000];
     $clean = [];
@@ -203,6 +208,15 @@ function fw_push_queue(PDO $db, int $userId, array $data, array $opts = []): ?in
         $clean[$k] = $v;
     }
     if (!isset($clean['ts'])) $clean['ts'] = (string)time();
+    // FCM takes 4 KB of data in bytes; non-Latin text is 2-4 bytes a character.
+    // Keep room for the per-device action token.
+    $size = fn() => strlen(json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    foreach (['big', 'body', 'title'] as $k) {
+        while (isset($clean[$k]) && $size() > 3000 && mb_strlen($clean[$k]) > 24) {
+            $clean[$k] = rtrim(mb_substr($clean[$k], 0, (int)(mb_strlen($clean[$k]) * 0.8))) . '…';
+        }
+    }
+    if ($size() > 3000) unset($clean['big'], $clean['sub']);
 
     $ttl = max(60, min(28 * 86400, (int)($opts['ttl'] ?? 86400)));
     $payload = [
@@ -219,7 +233,7 @@ function fw_push_queue(PDO $db, int $userId, array $data, array $opts = []): ?in
     $delay = max(0, (int)($opts['delay'] ?? 0));
     $id = (int)fw_push_db($db, function () use ($db, $userId, $payload, $ttl, $delay) {
         $db->prepare("INSERT INTO push_outbox (user_id, payload, send_after, expires_at)
-                      VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), DATE_ADD(NOW(), INTERVAL ? SECOND))")
+                      VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND))")
            ->execute([$userId, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), $delay, $ttl]);
         return $db->lastInsertId();
     });
@@ -270,9 +284,10 @@ function fw_push_flush_at_shutdown(PDO $db): void
 
 /**
  * Send due messages. Safe to run from several processes at once: rows are
- * claimed first. Returns counts for the worker's log.
+ * claimed first, and only the claimant may finish them. Returns counts for
+ * the worker's log. $onlyId sends just that queue row (the test button).
  */
-function fw_push_flush(PDO $db, int $limit = 50, float $budget = 20.0, ?FwFcmClient $fcm = null): array
+function fw_push_flush(PDO $db, int $limit = 50, float $budget = 20.0, ?FwFcmClient $fcm = null, ?int $onlyId = null): array
 {
     $stats = ['claimed' => 0, 'sent' => 0, 'devices' => 0, 'failed' => 0, 'retry' => 0, 'skipped' => 0];
     $deadline = microtime(true) + $budget;
@@ -280,13 +295,20 @@ function fw_push_flush(PDO $db, int $limit = 50, float $budget = 20.0, ?FwFcmCli
     if ($account === null) return $stats + ['error' => 'not_configured'];
 
     $claim = bin2hex(random_bytes(16));
-    $claimed = fw_push_db($db, function () use ($db, $claim, $limit) {
-        $db->prepare("UPDATE push_outbox SET claim_token = ?, claimed_at = NOW()
-                       WHERE sent_at IS NULL AND attempts < ? AND send_after <= NOW() AND expires_at > NOW()
-                         AND (claim_token IS NULL OR claimed_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE))
-                    ORDER BY id LIMIT " . max(1, min(500, $limit)))
-           ->execute([$claim, FW_PUSH_MAX_ATTEMPTS]);
-        $st = $db->prepare("SELECT id, user_id, payload, attempts FROM push_outbox WHERE claim_token = ? ORDER BY id");
+    $claimed = fw_push_db($db, function () use ($db, $claim, $limit, $onlyId) {
+        $where = "sent_at IS NULL AND attempts < ? AND send_after <= UTC_TIMESTAMP() AND expires_at > UTC_TIMESTAMP()
+                  AND (claim_token IS NULL OR claimed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE))";
+        $args = [$claim, FW_PUSH_MAX_ATTEMPTS];
+        if ($onlyId !== null) {
+            $where .= ' AND id = ?';
+            $args[] = $onlyId;
+        }
+        $db->prepare("UPDATE push_outbox SET claim_token = ?, claimed_at = UTC_TIMESTAMP()
+                       WHERE $where ORDER BY id LIMIT " . max(1, min(500, $limit)))
+           ->execute($args);
+        $st = $db->prepare("SELECT id, user_id, payload, attempts,
+                                   GREATEST(1, TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), expires_at)) AS ttl_left
+                              FROM push_outbox WHERE claim_token = ? ORDER BY id");
         $st->execute([$claim]);
         return $st->fetchAll(PDO::FETCH_ASSOC);
     });
@@ -294,28 +316,34 @@ function fw_push_flush(PDO $db, int $limit = 50, float $budget = 20.0, ?FwFcmCli
     if (!$claimed) return $stats;
 
     $fcm = $fcm ?? new FwFcmClient($account);
-    $done = $db->prepare("UPDATE push_outbox SET sent_at = NOW(), sent_count = ?, last_error = ?, claim_token = NULL WHERE id = ?");
+    // Every write below is "... AND claim_token = ?": a row another process
+    // re-claimed (ours took over 5 minutes) is no longer ours to finish.
+    $done = $db->prepare("UPDATE push_outbox SET sent_at = UTC_TIMESTAMP(), sent_count = ?, last_error = ?, claim_token = NULL
+                           WHERE id = ? AND claim_token = ?");
     $later = $db->prepare("UPDATE push_outbox SET attempts = attempts + 1, claim_token = NULL, last_error = ?,
-                                  send_after = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?");
-    $release = $db->prepare("UPDATE push_outbox SET claim_token = NULL WHERE id = ?");
+                                  send_after = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND) WHERE id = ? AND claim_token = ?");
+    $release = $db->prepare("UPDATE push_outbox SET claim_token = NULL WHERE id = ? AND claim_token = ?");
 
     foreach ($claimed as $row) {
+        $rowId = (int)$row['id'];
         if (microtime(true) > $deadline) {
-            $release->execute([(int)$row['id']]);
+            $release->execute([$rowId, $claim]);
             continue;
         }
         $p = json_decode((string)$row['payload'], true);
         if (!is_array($p) || empty($p['data'])) {
-            $done->execute([0, 'bad payload', (int)$row['id']]);
+            $done->execute([0, 'bad payload', $rowId, $claim]);
             $stats['skipped']++;
             continue;
         }
         $devices = fw_push_devices($db, (int)$row['user_id'], $p['only_devices'] ?? null);
         if (!$devices) {
-            $done->execute([0, 'no devices', (int)$row['id']]);
+            $done->execute([0, 'no devices', $rowId, $claim]);
             $stats['skipped']++;
             continue;
         }
+        // What is left of its lifetime: a late retry must not outlive the event it is about.
+        $ttl = max(1, min((int)$p['ttl'], (int)$row['ttl_left']));
 
         $ok = 0;
         $retryIds = [];
@@ -326,7 +354,7 @@ function fw_push_flush(PDO $db, int $limit = 50, float $budget = 20.0, ?FwFcmCli
                 $data['act'] = fw_push_action_token((int)$row['user_id'], (int)($p['act_company'] ?? 0),
                                                     (string)$p['act_key'], (int)$dev['id'], $account);
             }
-            $r = $fcm->send((string)$dev['token'], $data, (int)$p['ttl'], (string)$p['priority']);
+            $r = $fcm->send((string)$dev['token'], $data, $ttl, (string)$p['priority']);
             $stats['devices']++;
             if ($r['status'] === 'ok') {
                 $ok++;
@@ -347,24 +375,33 @@ function fw_push_flush(PDO $db, int $limit = 50, float $budget = 20.0, ?FwFcmCli
                 foreach (array_slice($devices, $i + 1) as $rest) $retryIds[] = (int)$rest['id'];
                 break;
             }
+            if ($r['status'] === 'drop') {
+                // FCM refuses the message itself (not the phone): retrying cannot help.
+                $retryIds = [];
+                $lastError = $r['error'];
+                $stats['failed']++;
+                break;
+            }
         }
 
         $attempts = (int)$row['attempts'] + 1;
         if ($retryIds && $attempts < FW_PUSH_MAX_ATTEMPTS) {
             if ($ok > 0) {
                 // Some phones got it; retry only the rest so nobody gets it twice.
-                $done->execute([$ok, null, (int)$row['id']]);
-                fw_push_db($db, fn() => $db->prepare("INSERT INTO push_outbox (user_id, payload, send_after, expires_at, attempts)
-                                                      SELECT user_id, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), expires_at, ?
-                                                        FROM push_outbox WHERE id = ?")
-                                         ->execute([json_encode(['only_devices' => $retryIds] + $p, JSON_UNESCAPED_UNICODE),
-                                                    fw_push_backoff($attempts), $attempts, (int)$row['id']]));
+                $done->execute([$ok, null, $rowId, $claim]);
+                if ($done->rowCount() === 1) {
+                    fw_push_db($db, fn() => $db->prepare("INSERT INTO push_outbox (user_id, payload, send_after, expires_at, attempts)
+                                                          SELECT user_id, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), expires_at, ?
+                                                            FROM push_outbox WHERE id = ?")
+                                             ->execute([json_encode(['only_devices' => $retryIds] + $p, JSON_UNESCAPED_UNICODE),
+                                                        fw_push_backoff($attempts), $attempts, $rowId]));
+                }
             } else {
-                $later->execute([mb_substr((string)$lastError, 0, 255), fw_push_backoff($attempts), (int)$row['id']]);
+                $later->execute([mb_substr((string)$lastError, 0, 255), fw_push_backoff($attempts), $rowId, $claim]);
             }
             $stats['retry']++;
         } else {
-            $done->execute([$ok, $retryIds ? mb_substr((string)$lastError, 0, 255) : null, (int)$row['id']]);
+            $done->execute([$ok, ($retryIds || $ok === 0) && $lastError ? mb_substr((string)$lastError, 0, 255) : null, $rowId, $claim]);
         }
         if ($ok > 0) $stats['sent']++;
     }
@@ -380,8 +417,8 @@ function fw_push_backoff(int $attempt): int
 function fw_push_cleanup(PDO $db): void
 {
     try {
-        $db->exec("DELETE FROM push_outbox WHERE (sent_at IS NOT NULL AND sent_at < DATE_SUB(NOW(), INTERVAL 7 DAY))
-                                         OR expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)");
+        $db->exec("DELETE FROM push_outbox WHERE (sent_at IS NOT NULL AND sent_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY))
+                                         OR expires_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)");
         $db->exec("DELETE FROM push_devices WHERE disabled_at IS NOT NULL AND disabled_at < DATE_SUB(NOW(), INTERVAL 60 DAY)");
     } catch (Throwable $e) {
         error_log('[push] cleanup: ' . $e->getMessage());
@@ -483,7 +520,8 @@ final class FwFcmClient
 
     /**
      * @return array{status:string,error:string} status: ok | invalid (forget this token)
-     *         | retry (try again later) | fatal (configuration problem)
+     *         | retry (try again later) | fatal (configuration problem, keep everything)
+     *         | drop (FCM refuses this message; retrying cannot help)
      */
     public function send(string $token, array $data, int $ttl, string $priority): array
     {
@@ -521,15 +559,17 @@ final class FwFcmClient
         }
         $msg = trim($code . ' ' . ($fcmCode ?: $status) . ' ' . (string)($j['error']['message'] ?? ''));
         if ($code === 0) return ['status' => 'retry', 'error' => 'network: ' . $resp];
-        if ($code === 404 || $fcmCode === 'UNREGISTERED' || $fcmCode === 'SENDER_ID_MISMATCH') {
-            return ['status' => 'invalid', 'error' => $msg];
-        }
-        if ($code === 400 && ($fcmCode === 'INVALID_ARGUMENT' || $status === 'INVALID_ARGUMENT')
-            && stripos($resp, 'registration token') !== false) {
-            return ['status' => 'invalid', 'error' => $msg];
+        // Only these mean "this phone's token is dead". A 404 for any other
+        // reason (wrong project_id) or SENDER_ID_MISMATCH (key of another
+        // Firebase project) is a server setup problem: never blame the phones.
+        if ($fcmCode === 'UNREGISTERED') return ['status' => 'invalid', 'error' => $msg];
+        if ($code === 400 && ($fcmCode === 'INVALID_ARGUMENT' || $status === 'INVALID_ARGUMENT')) {
+            return stripos($resp, 'registration token') !== false
+                ? ['status' => 'invalid', 'error' => $msg]
+                : ['status' => 'drop', 'error' => $msg];
         }
         if ($code === 429 || $code >= 500) return ['status' => 'retry', 'error' => $msg];
-        if ($code === 401 || $code === 403) return ['status' => 'fatal', 'error' => $msg]; // wrong key / API disabled
+        if (in_array($code, [401, 403, 404], true)) return ['status' => 'fatal', 'error' => $msg];
         return ['status' => 'retry', 'error' => $msg];
     }
 
