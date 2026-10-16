@@ -29,6 +29,20 @@
     if (!m) return null;
     return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   }
+  // "Now" on the company's wall clock. Event times are company times, so today,
+  // the now-line and new-event defaults follow the company zone, not the device's.
+  const coClock = (() => {
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: C.settings.timezone, hourCycle: 'h23', year: 'numeric', month: '2-digit',
+                                                day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) { return null; }
+  })();
+  function nowCo() {
+    if (!coClock) return new Date();
+    const p = {};
+    coClock.formatToParts(new Date()).forEach((x) => { p[x.type] = x.value; });
+    return new Date(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+  }
   const day0 = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
   const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, d.getHours(), d.getMinutes(), d.getSeconds());
@@ -56,7 +70,7 @@
   const fmtShort = (d) => `${dow3(d)} ${d.getDate()} ${mon3(d)}`;
   function whenText(e) {
     const s = e.start, en = e.end;
-    const yr = s.getFullYear() !== new Date().getFullYear();
+    const yr = s.getFullYear() !== nowCo().getFullYear();
     if (e.allDay) {
       if (sameDay(s, en)) return fmtDay(s, yr);
       return `${fmtShort(s)} – ${fmtShort(en)}${yr ? ' ' + en.getFullYear() : ''}`;
@@ -74,7 +88,7 @@
     settings: C.settings,
     sources: C.sources,
     view: 'week',
-    anchor: day0(new Date()),
+    anchor: day0(nowCo()),
     events: [],
     items: [],
     loadedKey: '',
@@ -125,7 +139,7 @@
   const isBar = (e) => e.allDay || (e.end - e.start) >= 86400000 - 1000;
   function evClasses(e, extra = []) {
     const c = ['fwc-ev', ...extra];
-    if (e.end < new Date()) c.push('is-past');
+    if (e.end < nowCo()) c.push('is-past');
     if (e.kind === 'item') {
       c.push('is-src');
       if (e.it.status === 'overdue') c.push('is-overdue');
@@ -258,7 +272,7 @@
       eyebrow = 'The year at a glance';
     } else {
       title = 'Schedule';
-      eyebrow = `From ${a.getDate()} ${MONTHS[a.getMonth()]}${a.getFullYear() !== new Date().getFullYear() ? ' ' + a.getFullYear() : ''}`;
+      eyebrow = `From ${a.getDate()} ${MONTHS[a.getMonth()]}${a.getFullYear() !== nowCo().getFullYear() ? ' ' + a.getFullYear() : ''}`;
     }
     el.title.innerHTML = title;
     el.eyebrow.innerHTML = eyebrow;
@@ -272,7 +286,7 @@
     if (!miniMonth || S._miniFollow !== ymd(S.anchor)) { miniMonth = new Date(S.anchor.getFullYear(), S.anchor.getMonth(), 1); S._miniFollow = ymd(S.anchor); }
     const first = miniMonth;
     const start = startOfWeek(first);
-    const today = new Date();
+    const today = nowCo();
     const r = range();
     const busy = new Set();
     for (const e of entries()) {
@@ -409,7 +423,7 @@
   }
   function renderTimeGrid(days) {
     const n = days.length;
-    const today = new Date();
+    const today = nowCo();
     const hh = hourH();
     const list = entries();
     const [ws, we] = [S.settings.work_start, S.settings.work_end].map((t) => { const [h, m] = t.split(':'); return +h * 60 + +m; });
@@ -502,13 +516,13 @@
   function scrollToWork() {
     const hh = hourH();
     const days = viewDays();
-    const now = new Date();
+    const now = nowCo();
     let mins = (+S.settings.work_start.split(':')[0]) * 60 - 30;
     if (days.some((d) => sameDay(d, now))) mins = Math.max(0, Math.min(minsOf(now) - 120, mins + 240));
     el.view.scrollTop = Math.max(0, mins / 60 * hh);
   }
   function tickNow() {
-    const now = new Date();
+    const now = nowCo();
     const hh = hourH();
     $$('.fwc-now', el.view).forEach((n) => { n.style.top = (minsOf(now) / 60 * hh).toFixed(1) + 'px'; });
     if (!$('.fwc-col.is-today', el.view) && $$('.fwc-col', el.view).some((c) => c.dataset.date === ymd(now))) render({ keepScroll: true });
@@ -518,7 +532,7 @@
   // ---------------------------------------------------------------- month
   function renderMonth() {
     const g = monthGrid();
-    const today = new Date();
+    const today = nowCo();
     const showWe = S.settings.show_weekends;
     const allDays = [];
     for (let i = 0; i < g.weeks * 7; i++) allDays.push(addDays(g.start, i));
@@ -587,7 +601,7 @@
   // ---------------------------------------------------------------- year
   function renderYear() {
     const y = S.anchor.getFullYear();
-    const today = new Date();
+    const today = nowCo();
     const counts = {};
     for (const e of entries()) {
       for (let d = day0(e.start), i = 0; d <= e.end && i < 400; d = addDays(d, 1), i++) { const k = ymd(d); counts[k] = (counts[k] || 0) + 1; }
@@ -645,7 +659,7 @@
       if (e.it.status === 'overdue') side += '<span class="fwm-tag fwm-tag--danger">Overdue</span>';
       if (e.it.status === 'done') side += '<span class="fwm-tag fwm-tag--plain">Done</span>';
     }
-    const cls = ['fwc-row', e.end < new Date() ? 'is-past' : '', e.kind === 'item' ? 'is-src' : '', e.kind === 'item' && e.it.status === 'done' ? 'is-done' : '',
+    const cls = ['fwc-row', e.end < nowCo() ? 'is-past' : '', e.kind === 'item' ? 'is-src' : '', e.kind === 'item' && e.it.status === 'done' ? 'is-done' : '',
       e.kind === 'event' && e.ev.invited && e.ev.response === 'pending' ? 'is-pending' : '', S.selKey === e.key ? 'is-selected' : ''];
     return `<button type="button" class="${cls.filter(Boolean).join(' ')}" style="--c:${esc(e.kind === 'item' && e.it.status === 'overdue' ? 'var(--danger)' : e.color)}" data-key="${esc(e.key)}">
       <span class="fwc-row__time">${esc(time)}</span>
@@ -654,7 +668,7 @@
   }
   function renderAgenda() {
     const list = entries();
-    const today = new Date();
+    const today = nowCo();
     let html = '';
     for (let i = 0; i < S.agendaDays; i++) {
       const d = addDays(S.anchor, i);
@@ -953,7 +967,7 @@
     S.view = v;
     load({ dir: 0 });
   }
-  function goToday() { clearSearch(false); S.anchor = day0(new Date()); load(); }
+  function goToday() { clearSearch(false); S.anchor = day0(nowCo()); load(); }
   function goToDate(anchor) {
     popover(anchor || el.title, `<div style="padding:6px"><label class="label" for="gotoDate" style="display:block;margin:4px 4px 8px">Go to date</label>
       <input class="input" type="date" id="gotoDate" value="${ymd(S.anchor)}"><div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn btn--primary btn--sm" data-v="go">Go</button></div></div>`,
@@ -1301,7 +1315,7 @@
     const cals = addableCalendars();
     if (!cals.length) { toast('You do not have a calendar you can add events to.'); return; }
     const isEdit = mode === 'edit' && event;
-    const now = new Date();
+    const now = nowCo();
     let start, end, allDay;
     if (isEdit) {
       allDay = event.all_day; start = parseDT(event.start); end = parseDT(event.end);
@@ -1779,7 +1793,7 @@
       setTimeout(() => { S.focusKey = null; }, 4000);
     }
     if (p.get('new')) {
-      const date = parseDT(p.get('date') || '') || day0(new Date());
+      const date = parseDT(p.get('date') || '') || day0(nowCo());
       const allDay = p.get('all_day') === '1';
       let start = new Date(date), end;
       const tm = (s) => (/^\d{2}:\d{2}$/.test(s || '') ? s.split(':').map(Number) : null);

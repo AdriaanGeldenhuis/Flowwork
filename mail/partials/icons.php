@@ -1,6 +1,5 @@
 <?php
-// /mail/partials/icons.php — inline SVG sprite (use: <svg class="i"><use href="#i-inbox"/>  <symbol id="i-calendar-plus" viewBox="0 0 24 24"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="M19 16v6"/><path d="M16 19h6"/></symbol>
-</svg>)
+// /mail/partials/icons.php — inline SVG sprite (use: <svg class="i"><use href="#i-inbox"/></svg>)
 ?>
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
   <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>

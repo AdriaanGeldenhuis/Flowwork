@@ -996,6 +996,13 @@ final class CalendarRepo
                     $find->execute([$this->companyId, $calendarId, $ev['uid'], $ev['recurrence_id']]);
                     $existing = (int)$find->fetchColumn() ?: null;
                 }
+                // A changed occurrence skips its date in the series (again after the
+                // series was re-imported, which resets its skipped dates to the file's).
+                $master = 0;
+                if ($ev['recurrence_id'] && $ev['uid']) {
+                    $find->execute([$this->companyId, $calendarId, $ev['uid'], null]);
+                    if ($master = (int)$find->fetchColumn()) $this->addExdate($master, substr($ev['recurrence_id'], 0, 10));
+                }
                 if ($existing) {
                     $this->writeFields($existing, $data);
                     $this->db->prepare("UPDATE calendar_events SET exdates_json = ? WHERE id = ?")->execute([$ex, $existing]);
@@ -1003,13 +1010,7 @@ final class CalendarRepo
                     continue;
                 }
                 $extra = ['ics_uid' => $ev['uid'], 'exdates_json' => $ex];
-                if ($ev['recurrence_id'] && $ev['uid']) {
-                    $find->execute([$this->companyId, $calendarId, $ev['uid'], null]);
-                    if ($master = (int)$find->fetchColumn()) {
-                        $this->addExdate($master, substr($ev['recurrence_id'], 0, 10));
-                        $extra += ['series_id' => $master, 'recurrence_id' => $ev['recurrence_id']];
-                    }
-                }
+                if ($master) $extra += ['series_id' => $master, 'recurrence_id' => $ev['recurrence_id']];
                 $id = $this->insertEvent($data, $extra);
                 $this->setParticipants($id, [], [], $this->userId);
                 $added++;
