@@ -421,7 +421,7 @@
       : `<button class="fwp-name__sub" type="button" data-subs="${it.id}" aria-label="Subitems" aria-expanded="${S.expanded.has(it.id)}" title="${n} subitems done">${icon('chev-right')}${n}</button>`;
     const sel = S.selected.has(it.id);
     return `<div class="fwp-row fwp-grid ${sel ? 'is-selected' : ''} ${S.openItem === it.id ? 'is-open' : ''} ${S.expanded.has(it.id) ? 'is-expanded' : ''}" data-iid="${it.id}" role="row" style="--cols:${colsTemplate(vc)}">
-      <div class="fwp-cell fwp-cell--check" style="position:sticky;left:0;z-index:2;background:inherit"><button class="fwp-check ${sel ? 'is-on' : ''}" type="button" data-sel="${it.id}" role="checkbox" aria-checked="${sel}" aria-label="Select ${esc(it.title)}">${icon('check')}</button></div>
+      <div class="fwp-cell fwp-cell--check" style="position:sticky;left:0;z-index:2"><button class="fwp-check ${sel ? 'is-on' : ''}" type="button" data-sel="${it.id}" role="checkbox" aria-checked="${sel}" aria-label="Select ${esc(it.title)}">${icon('check')}</button></div>
       <div class="fwp-cell fwp-cell--name" style="left:${CHECK_W}px" data-cid="name" tabindex="-1">
         ${canEdit() && !S.sort.length && finePointer() ? `<span class="fwp-grip" draggable="true" data-drag="${it.id}" aria-hidden="true">${icon('grip')}</span>` : ''}
         <span class="fwp-name"><span class="fwp-name__text" ${canEdit() ? 'data-rename' : ''}>${esc(it.title)}</span>${subs}</span>
