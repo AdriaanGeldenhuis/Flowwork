@@ -1,0 +1,12 @@
+# The Calendar API moved to /calendar/api/ (and the notification bell to
+# /notifications/api/). Deploys do not delete files, so older copies of the
+# endpoints that used to live here may still exist on the server. Several of
+# them changed data on GET or trusted client input. Block them all
+# (Apache 2.4 and 2.2 syntax).
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

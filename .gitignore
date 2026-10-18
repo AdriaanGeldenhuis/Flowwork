@@ -75,3 +75,8 @@ storage/firebase/
 # Web tick lock + run summary (notifications/api/tick.php)
 # ---------------------------------------------------------------------------
 storage/cron/
+
+# ---------------------------------------------------------------------------
+# Calendar runtime data (event attachments, schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/calendar/

@@ -12,18 +12,26 @@ fw_require_admin();
 $success = $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_calendar') {
     try {
+        $tz = trim($_POST['calendar_timezone'] ?? 'Africa/Johannesburg');
+        if (!in_array($tz, DateTimeZone::listIdentifiers(), true)) throw new Exception('Choose a valid timezone');
+        $hm = function ($v, $d) { $v = trim((string)$v); return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $v) ? $v : $d; };
+        $view = trim($_POST['calendar_default_view'] ?? 'week');
         $settings = [
-            'calendar_timezone' => trim($_POST['calendar_timezone'] ?? 'Africa/Johannesburg'),
-            'calendar_week_start' => trim($_POST['calendar_week_start'] ?? '1'),
-            'calendar_work_hours_start' => trim($_POST['calendar_work_hours_start'] ?? '08:00'),
-            'calendar_work_hours_end' => trim($_POST['calendar_work_hours_end'] ?? '17:00'),
-            'calendar_default_view' => trim($_POST['calendar_default_view'] ?? 'week'),
-            'calendar_default_reminder' => trim($_POST['calendar_default_reminder'] ?? '15'),
+            'calendar_timezone' => $tz,
+            'calendar_week_start' => ($_POST['calendar_week_start'] ?? '1') === '0' ? '0' : '1',
+            'calendar_work_hours_start' => $hm($_POST['calendar_work_hours_start'] ?? '', '08:00'),
+            'calendar_work_hours_end' => $hm($_POST['calendar_work_hours_end'] ?? '', '17:00'),
+            'calendar_default_view' => in_array($view, ['day', 'week', 'month', 'year', 'agenda'], true) ? $view : 'week',
+            'calendar_default_reminder' => (string)max(0, min(10080, (int)($_POST['calendar_default_reminder'] ?? 15))),
             'calendar_show_weekends' => isset($_POST['calendar_show_weekends']) ? '1' : '0',
             'calendar_sync_invoice_due' => isset($_POST['calendar_sync_invoice_due']) ? '1' : '0',
+            'calendar_sync_quotes' => isset($_POST['calendar_sync_quotes']) ? '1' : '0',
             'calendar_sync_project_dates' => isset($_POST['calendar_sync_project_dates']) ? '1' : '0',
+            'calendar_sync_tasks' => isset($_POST['calendar_sync_tasks']) ? '1' : '0',
+            'calendar_sync_deals' => isset($_POST['calendar_sync_deals']) ? '1' : '0',
             'calendar_sync_payroll_dates' => isset($_POST['calendar_sync_payroll_dates']) ? '1' : '0',
         ];
+        if ($settings['calendar_work_hours_end'] <= $settings['calendar_work_hours_start']) throw new Exception('Work hours must end after they start');
 
         foreach ($settings as $key => $value) {
             setCRMSetting($key, $value);
@@ -51,11 +59,15 @@ $s = [
     'calendar_default_reminder' => getCRMSetting('calendar_default_reminder', '15'),
     'calendar_show_weekends' => getCRMSetting('calendar_show_weekends', '1'),
     'calendar_sync_invoice_due' => getCRMSetting('calendar_sync_invoice_due', '1'),
+    'calendar_sync_quotes' => getCRMSetting('calendar_sync_quotes', '1'),
     'calendar_sync_project_dates' => getCRMSetting('calendar_sync_project_dates', '1'),
+    'calendar_sync_tasks' => getCRMSetting('calendar_sync_tasks', '1'),
+    'calendar_sync_deals' => getCRMSetting('calendar_sync_deals', '1'),
     'calendar_sync_payroll_dates' => getCRMSetting('calendar_sync_payroll_dates', '0'),
 ];
 
-$timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairobi','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Europe/Paris','Europe/Berlin','Asia/Dubai','Asia/Singapore','Asia/Tokyo','Australia/Sydney','Pacific/Auckland'];
+$timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairobi','Africa/Windhoek','Africa/Gaborone','Africa/Harare','Africa/Maputo','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Europe/Paris','Europe/Berlin','Asia/Dubai','Asia/Singapore','Asia/Tokyo','Australia/Sydney','Pacific/Auckland'];
+if (!in_array($s['calendar_timezone'], $timezones, true)) $timezones[] = $s['calendar_timezone'];
 ?>
 <?php
   $pageTitle = 'Calendar Settings – Admin';
@@ -64,7 +76,7 @@ $timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairob
             <header class="fw-admin__page-header">
                 <div>
                     <h1 class="fw-admin__page-title">Calendar Settings</h1>
-                    <p class="fw-admin__page-subtitle">Configure work hours, timezone, and calendar defaults</p>
+                    <p class="fw-admin__page-subtitle">Company defaults for everyone's calendar — people can change their own view, hours and reminders in Calendar settings.</p>
                 </div>
             </header>
 
@@ -92,6 +104,7 @@ $timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairob
                     <div class="fw-admin__form-grid">
                         <div class="fw-admin__form-group">
                             <label class="fw-admin__label">Timezone</label>
+                            <small class="fw-admin__help" style="display:block;margin:-2px 0 6px;opacity:.75">Event times and reminders run in this time zone for the whole company.</small>
                             <select name="calendar_timezone" class="fw-admin__select">
                                 <?php foreach ($timezones as $tz): ?>
                                 <option value="<?= $tz ?>" <?= $s['calendar_timezone'] === $tz ? 'selected' : '' ?>><?= $tz ?></option>
@@ -113,6 +126,8 @@ $timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairob
                                 <option value="day" <?= $s['calendar_default_view'] === 'day' ? 'selected' : '' ?>>Day</option>
                                 <option value="week" <?= $s['calendar_default_view'] === 'week' ? 'selected' : '' ?>>Week</option>
                                 <option value="month" <?= $s['calendar_default_view'] === 'month' ? 'selected' : '' ?>>Month</option>
+                                <option value="year" <?= $s['calendar_default_view'] === 'year' ? 'selected' : '' ?>>Year</option>
+                                <option value="agenda" <?= $s['calendar_default_view'] === 'agenda' ? 'selected' : '' ?>>Schedule</option>
                             </select>
                         </div>
 
@@ -154,24 +169,43 @@ $timezones = ['Africa/Johannesburg','Africa/Cairo','Africa/Lagos','Africa/Nairob
 
                 <!-- Integrations -->
                 <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Calendar Integrations</h2>
+                    <h2 class="fw-admin__card-title">Dates from Flowwork</h2>
+                    <p class="fw-admin__page-subtitle" style="margin:-6px 0 14px">Shown live on the calendar — nothing is copied, so they always match the record. Each person can still hide them for themselves.</p>
                     <div class="fw-admin__form-grid">
                         <div class="fw-admin__form-group fw-admin__form-group--full">
                             <label class="fw-admin__checkbox">
                                 <input type="checkbox" name="calendar_sync_invoice_due" value="1" <?= $s['calendar_sync_invoice_due'] === '1' ? 'checked' : '' ?>>
-                                <span>Show invoice due dates on calendar</span>
+                                <span>Invoices due — unpaid invoices on their due date</span>
+                            </label>
+                        </div>
+                        <div class="fw-admin__form-group fw-admin__form-group--full">
+                            <label class="fw-admin__checkbox">
+                                <input type="checkbox" name="calendar_sync_quotes" value="1" <?= $s['calendar_sync_quotes'] === '1' ? 'checked' : '' ?>>
+                                <span>Quotes expiring — sent quotes on their expiry date</span>
                             </label>
                         </div>
                         <div class="fw-admin__form-group fw-admin__form-group--full">
                             <label class="fw-admin__checkbox">
                                 <input type="checkbox" name="calendar_sync_project_dates" value="1" <?= $s['calendar_sync_project_dates'] === '1' ? 'checked' : '' ?>>
-                                <span>Show project deadlines on calendar</span>
+                                <span>Projects — start and due dates (for people on the project)</span>
+                            </label>
+                        </div>
+                        <div class="fw-admin__form-group fw-admin__form-group--full">
+                            <label class="fw-admin__checkbox">
+                                <input type="checkbox" name="calendar_sync_tasks" value="1" <?= $s['calendar_sync_tasks'] === '1' ? 'checked' : '' ?>>
+                                <span>Tasks — board items on their due date, for the person they are assigned to</span>
+                            </label>
+                        </div>
+                        <div class="fw-admin__form-group fw-admin__form-group--full">
+                            <label class="fw-admin__checkbox">
+                                <input type="checkbox" name="calendar_sync_deals" value="1" <?= $s['calendar_sync_deals'] === '1' ? 'checked' : '' ?>>
+                                <span>Deals — open CRM deals on their expected close date, for their owner</span>
                             </label>
                         </div>
                         <div class="fw-admin__form-group fw-admin__form-group--full">
                             <label class="fw-admin__checkbox">
                                 <input type="checkbox" name="calendar_sync_payroll_dates" value="1" <?= $s['calendar_sync_payroll_dates'] === '1' ? 'checked' : '' ?>>
-                                <span>Show payroll dates on calendar</span>
+                                <span>Pay days — payroll pay dates (admins and bookkeepers only)</span>
                             </label>
                         </div>
                     </div>

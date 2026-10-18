@@ -872,10 +872,10 @@ window.CRM = window.CRM || {};
           <div class="fw-crm__timeline-item">
             <div class="fw-crm__timeline-icon">⏰</div>
             <div class="fw-crm__timeline-content">
-              <div class="fw-crm__timeline-title">${escapeHtml(ev.title)}</div>
+              <div class="fw-crm__timeline-title">${/^\/calendar\//.test(ev.url || '') ? `<a href="${escapeHtml(ev.url)}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}</div>
               <div class="fw-crm__timeline-meta">
-                ${escapeHtml((ev.start_datetime || '').substring(0, 16))}
-                ${ev.channels && ev.channels.length ? ' • reminder: ' + escapeHtml(ev.channels.join(', ')) : ''}
+                ${escapeHtml((ev.start_datetime || '').substring(0, ev.all_day ? 10 : 16))}
+                ${ev.channels && ev.channels.length ? ' • reminder: ' + escapeHtml(ev.channels.map(c => c === 'in_app' ? 'notification' : c).join(', ')) : ''}
               </div>
             </div>
           </div>`).join('');

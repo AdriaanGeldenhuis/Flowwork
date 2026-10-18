@@ -1,16 +1,18 @@
 <?php
 // /crm/ajax/followups_list.php
-// Upcoming follow-ups for a CRM account or opportunity.
+// Upcoming follow-ups (and other calendar events) linked to a CRM account or opportunity.
 // GET: linked_type (account|opportunity), linked_id
-// → { ok: true, events: [{id, title, start_datetime, channels}] }
+// → { ok: true, events: [{id, title, start_datetime, all_day, channels, url}] }
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../../calendar/lib/autoload.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
+$companyId = (int)$_SESSION['company_id'];
+$userId = (int)$_SESSION['user_id'];
 
 try {
     $linkedType = trim($_GET['linked_type'] ?? 'account');
@@ -31,34 +33,8 @@ try {
         throw new Exception('Record not found');
     }
 
-    $stmt = $DB->prepare("
-        SELECT
-            e.id,
-            e.title,
-            e.start_datetime,
-            GROUP_CONCAT(DISTINCT r.channel) AS channels
-        FROM calendar_event_links l
-        JOIN calendar_events e ON e.id = l.event_id
-        LEFT JOIN calendar_event_reminders r ON r.event_id = e.id
-        WHERE l.linked_type = ?
-          AND l.linked_id = ?
-          AND e.company_id = ?
-          AND e.start_datetime >= NOW()
-        GROUP BY e.id, e.title, e.start_datetime
-        ORDER BY e.start_datetime ASC
-        LIMIT 10
-    ");
-    $stmt->execute([$linkedType, $linkedId, $companyId]);
-
-    $events = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $events[] = [
-            'id' => (int)$row['id'],
-            'title' => $row['title'],
-            'start_datetime' => $row['start_datetime'],
-            'channels' => $row['channels'] ? explode(',', $row['channels']) : [],
-        ];
-    }
+    // Only events this user may see (private events of colleagues stay hidden).
+    $events = CalendarLink::upcomingFor($DB, $companyId, $userId, (string)($_SESSION['role'] ?? 'viewer'), $linkedType, $linkedId, 10);
 
     echo json_encode(['ok' => true, 'events' => $events]);
 

@@ -38,9 +38,12 @@ fw_auth_db($DB, fn() => $DB->exec("INSERT INTO user_sessions (user_id, device_la
 fw_push_bind($DB, 1, (int)$DB->lastInsertId(), str_repeat('t', 22) . ':APA91b' . str_repeat('tx_-', 40), 'FlowWorkApp/1.2');
 
 $DB->exec("DELETE FROM calendar_event_reminders");
+// Event times are wall-clock times in the company's calendar time zone (Africa/Johannesburg by default).
+$calTz = new DateTimeZone('Africa/Johannesburg');
+$eventStart = (new DateTimeImmutable('+10 minutes', $calTz))->format('Y-m-d H:i:s');
 $DB->prepare("INSERT INTO calendar_events (company_id, calendar_id, title, start_datetime, end_datetime, created_by)
               VALUES (1, 1, 'Site visit', ?, ?, 1)")
-   ->execute([date('Y-m-d H:i:s', time() + 600), date('Y-m-d H:i:s', time() + 3600)]);
+   ->execute([$eventStart, (new DateTimeImmutable('+60 minutes', $calTz))->format('Y-m-d H:i:s')]);
 $eventId = (int)$DB->lastInsertId();
 $DB->prepare("INSERT INTO calendar_event_reminders (event_id, user_id, minutes_before, channel) VALUES (?, 1, 15, 'in_app')")
    ->execute([$eventId]);
@@ -106,7 +109,7 @@ assert_true($sent, 'calendar reminder sent by the tick');
 $n = $DB->query("SELECT * FROM notifications WHERE type = 'calendar_reminder' ORDER BY id DESC LIMIT 1")->fetch();
 assert_true((bool)$n, 'bell notification stored');
 assert_eq('Site visit', $n['title'], 'reminder title');
-assert_eq('/calendar/event_view.php?id=' . $eventId, $n['link'], 'reminder link');
+assert_eq('/calendar/?event=' . $eventId . '&date=' . substr($eventStart, 0, 10), $n['link'], 'reminder link');
 $push = $DB->query("SELECT payload FROM push_outbox WHERE payload LIKE '%cal:r$reminderId%'")->fetchColumn();
 assert_true((bool)$push, 'phone notification queued for the reminder');
 

@@ -152,7 +152,7 @@
 
     async function loadNotifications() {
       try {
-        const res = await fetch('/calendar/ajax/notifications_get.php');
+        const res = await fetch('/notifications/api/list.php');
         const data = await res.json();
         if (data.ok) {
           renderNotifications(data.notifications);
@@ -203,7 +203,8 @@
         'mention': '💬',
         'event_invite': '📅',
         'event_updated': '✏️',
-        'event_cancelled': '❌'
+        'event_cancelled': '❌',
+        'event_response': '✅'
       };
       return icons[type] || '📬';
     }
@@ -253,9 +254,10 @@
     if (markAll) {
       markAll.addEventListener('click', async function() {
         try {
-          const res = await fetch('/calendar/ajax/notifications_mark_all_read.php', {
+          const res = await fetch('/notifications/api/read.php', {
             method: 'POST',
-            headers: { 'X-CSRF-Token': csrfToken }
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+            body: JSON.stringify({ all: true })
           });
           const data = await res.json();
           if (data.ok) {
@@ -270,7 +272,7 @@
     // Expose function to mark a single notification as read
     window.markDashboardNotificationRead = async function(notificationId) {
       try {
-        await fetch('/calendar/ajax/notifications_mark_read.php', {
+        await fetch('/notifications/api/read.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           body: JSON.stringify({ id: notificationId })
