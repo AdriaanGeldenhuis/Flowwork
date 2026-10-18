@@ -155,6 +155,71 @@ final class QiDocument
         return $m;
     }
 
+    /**
+     * The model of an unsaved editor draft, for the live preview. $d is
+     * QiWriter::normalize() output (lenient); $row the stored document when
+     * editing; $number the document's number or the next one. A recurring
+     * template previews as the invoice it will generate.
+     */
+    public static function fromDraft(PDO $db, int $companyId, array $d, ?array $row, string $number): array
+    {
+        $type = $d['type'] === 'recurring' ? 'invoice' : $d['type'];
+        $company = self::company($db, $companyId);
+        $customer = !empty($d['customer_id'])
+            ? self::customer($db, $companyId, (int)$d['customer_id'], (int)($d['contact_id'] ?? 0))
+            : ['id' => 0, 'name' => 'Your customer', 'legal_name' => '', 'contact' => '', 'email' => '', 'phone' => '', 'vat' => '', 'reg' => '', 'address' => [], 'found' => false];
+        $numberKey = ['quote' => 'quote_number', 'invoice' => 'invoice_number', 'credit_note' => 'credit_note_number'][$type];
+        $doc = [
+            'id' => (int)($row['id'] ?? 0), $numberKey => $number, 'issue_date' => $d['issue_date'] ?? date('Y-m-d'),
+            'reference' => $d['reference'] ?? '', 'currency' => $d['currency'] ?? Currencies::BASE, 'exchange_rate' => $d['exchange_rate'] ?? 1,
+            'terms' => $d['terms'] ?? '', 'customer_notes' => $d['customer_notes'] ?? '',
+            'status' => $d['type'] === 'recurring' ? 'sent' : (string)($row['status'] ?? 'draft'),
+            'expiry_date' => $d['expiry_date'] ?? null, 'accepted_at' => null,
+        ];
+        if ($d['type'] === 'recurring') {
+            $days = (int)($d['payment_terms_days'] ?? 30);
+            $doc['due_date'] = date('Y-m-d', strtotime($doc['issue_date'] . ' +' . $days . ' days'));
+        } else {
+            $doc['due_date'] = $d['due_date'] ?? null;
+        }
+        $m = self::base($type, $doc, $company, $customer);
+        $merged = [];
+        foreach ($d['rows'] ?? [] as $r) {
+            if ($r['kind'] === 'heading') {
+                $merged[] = ['_kind' => 'heading', 'title' => $r['title']];
+            } else {
+                $merged[] = ['_kind' => 'item', 'item_description' => $r['description'], 'quantity' => $r['qty'], 'unit' => $r['unit'],
+                             'unit_price' => $r['price'], 'discount' => $r['discount'], 'tax_rate' => $r['rate'], 'tax_code' => $r['tax_code']];
+            }
+        }
+        $m['rows'] = self::rows($merged);
+        $m['totals'] = self::totals($m['rows'], ['total' => null], $type);
+        if ($type === 'quote') {
+            $m['expiry_date'] = $doc['expiry_date'];
+            $m['accepted'] = null;
+            $m['links']['public'] = !empty($row['public_token']) ? self::url('/qi/p/quote.php?token=' . rawurlencode($row['public_token'])) : null;
+        } elseif ($type === 'invoice') {
+            $m['due_date'] = $doc['due_date'];
+            $m['links']['public'] = !empty($row['public_token']) ? self::url('/qi/p/invoice.php?token=' . rawurlencode($row['public_token'])) : null;
+            $m['links']['pay'] = !empty($row['yoco_checkout_id']) && !empty($row['yoco_payment_link']) ? (string)$row['yoco_payment_link'] : null;
+        } else {
+            $m['reason'] = (string)($d['reason'] ?? '');
+            if (!empty($d['invoice'])) {
+                $m['invoice'] = ['id' => (int)$d['invoice']['id'], 'number' => $d['invoice']['invoice_number'], 'date' => $d['invoice']['issue_date']];
+            }
+        }
+        foreach ($d['milestones'] ?? [] as $i => $ms) {
+            $m['milestones'][] = ['label' => $ms['label'], 'percentage' => (float)$ms['percentage'], 'amount' => $ms['amount_c'] / 100,
+                                  'due_date' => $ms['due_date'], 'status' => $i === 0 ? 'due' : 'pending', 'paid' => 0.0];
+        }
+        if (!empty($d['project_id'])) {
+            $st = $db->prepare("SELECT name FROM projects WHERE project_id = ? AND company_id = ?");
+            try { $st->execute([(int)$d['project_id'], $companyId]); $m['project'] = $st->fetchColumn() ?: null; } catch (Throwable $e) { $m['project'] = null; }
+        }
+        $m['status'] = self::status($type, $doc + ['balance_due' => $m['totals']['balance'] ?? null], $m['totals']);
+        return $m;
+    }
+
     // ------------------------------------------------------------- pieces
 
     public static function table(string $type): string
