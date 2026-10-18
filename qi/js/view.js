@@ -384,7 +384,12 @@
         return modal('Cancel ' + V.number + '?', field('Reason <small>(optional)</small>', '<input class="input" name="reason" maxlength="255">'), 'Cancel credit note',
           { danger: true, lead: V.raw_status === 'approved' ? 'Its ledger entry is reversed.' : '', submit: async (f) => { await act('cancel', { reason: val(f, 'reason') }, { fail: (e) => { throw e; } }); toast('Credit note cancelled'); } });
       case 'run': {
-        const ok = await dialog({ title: 'Generate the next invoice now?', body: 'An invoice for ' + esc(m$(s.total)) + ' is created and issued today' + (s.auto_send ? ' and emailed to the customer' : '') + '. The schedule moves on to the following date.', confirm: 'Generate invoice' });
+        // the run bills the period that is due next; made ahead of time, the next one is a full period later
+        const after = (V.upcoming || [])[1];
+        const when = s.next && s.next > V.today
+          ? 'It is the invoice due on ' + esc(fmtDate(s.next)) + ', made early' + (after ? ' — the one after it follows on ' + esc(fmtDate(after)) : '') + '.'
+          : (after ? 'The next one follows on ' + esc(fmtDate(after)) + '.' : 'The schedule moves on to the following date.');
+        const ok = await dialog({ title: 'Generate the next invoice now?', body: 'An invoice for ' + esc(m$(s.total)) + ' is created and issued today' + (s.auto_send ? ' and emailed to the customer' : '') + '. ' + when, confirm: 'Generate invoice' });
         if (!ok) return;
         try {
           const r = await act('run', {});
