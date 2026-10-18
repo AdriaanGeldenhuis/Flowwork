@@ -3,13 +3,14 @@
 //
 // Generates a simple PDF report listing outstanding invoice balances per customer
 // grouped into aging buckets. This script computes the same data as the CSV
-// version but renders it into a plain text PDF. A minimal PDF generator is
-// implemented inline to avoid external dependencies.
+// version but renders it into a plain text PDF via the dependency-free
+// generator in includes/pdf/text_report_pdf.php.
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/permissions.php';
 requireRoles(['admin', 'bookkeeper', 'viewer']); // gate this finance export
+require_once __DIR__ . '/../../includes/pdf/text_report_pdf.php';
 
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) {
@@ -126,55 +127,7 @@ $lines[] = sprintf(
     number_format($totalBuckets['total'], 2, '.', '')
 );
 
-// Helper to escape PDF text
-function pdf_escape($str)
-{
-    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $str);
-}
-
-// Generate a minimal PDF document with the given lines of text. Each line
-// is rendered at a fixed vertical offset using the Courier font. This
-// generator produces a basic PDF with a single page.
-function generate_simple_pdf_content(array $lines): string
-{
-    $pdf = "%PDF-1.4\n";
-    $offsets = [];
-    // 1: Catalog
-    $offsets[] = strlen($pdf);
-    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-    // 2: Pages
-    $offsets[] = strlen($pdf);
-    $pdf .= "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
-    // 3: Page
-    $offsets[] = strlen($pdf);
-    $pdf .= "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>\nendobj\n";
-    // 4: Font
-    $offsets[] = strlen($pdf);
-    $pdf .= "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n";
-    // Prepare content stream
-    $yPos = 812; // Starting y coordinate (offset from top)
-    $content = "BT\n/F1 12 Tf\n";
-    foreach ($lines as $line) {
-        $content .= sprintf("36 %.2f Td (%s) Tj\n", $yPos, pdf_escape($line));
-        $yPos -= 14;
-    }
-    $content .= "ET";
-    // 5: Content stream
-    $offsets[] = strlen($pdf);
-    $pdf .= "5 0 obj\n<< /Length " . strlen($content) . " >>\nstream\n";
-    $pdf .= $content . "\nendstream\nendobj\n";
-    // Cross‑reference table
-    $xrefOffset = strlen($pdf);
-    $pdf .= "xref\n0 6\n0000000000 65535 f \n";
-    foreach ($offsets as $off) {
-        $pdf .= sprintf("%010d 00000 n \n", $off);
-    }
-    // Trailer
-    $pdf .= "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" . $xrefOffset . "\n%%EOF";
-    return $pdf;
-}
-
-$pdfContent = generate_simple_pdf_content($lines);
+$pdfContent = fw_text_report_pdf($lines);
 
 header('Content-Type: application/pdf');
 header('Content-Disposition: attachment; filename="ar_aging.pdf"');
