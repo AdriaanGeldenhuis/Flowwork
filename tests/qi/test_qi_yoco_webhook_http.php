@@ -11,7 +11,7 @@ require_once FLOWWORK_ROOT . '/qi/lib/QiSchema.php';
 require_once FLOWWORK_ROOT . '/qi/lib/QiActions.php';
 
 // The server below must only ever reach the local test database.
-if (getenv('DB_NAME') !== 'flowwork_test' || !in_array(getenv('DB_HOST'), ['127.0.0.1', 'localhost'], true)) {
+if (getenv('DB_NAME') !== (getenv('TEST_DB_NAME') ?: 'flowwork_test') || !in_array(getenv('DB_HOST'), ['127.0.0.1', 'localhost'], true)) {
     fail('refusing to start a web server outside the local test database');
 }
 QiSchema::ensure($DB);

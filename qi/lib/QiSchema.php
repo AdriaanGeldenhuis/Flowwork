@@ -6,15 +6,15 @@
 //   - creates qi_designs (the document designer) and qi_activity (the
 //     document timeline),
 //   - adds the new document columns (reference, notes to the customer, public
-//     invoice link, sent /
-//     viewed times, recurring link, Yoco checkout), credit-note line accounts,
-//     recurring currency / anchor day / auto-send / last scheduled attempt, and
-//     the numbering + default
-//     settings on qi_settings,
+//     invoice link, sent / viewed times, recurring link, Yoco checkout),
+//     credit-note line accounts, recurring currency / anchor day / auto-send /
+//     last scheduled attempt, and the numbering + default settings on
+//     qi_settings,
 //   - gives quotes that never had one a public link token.
 // It never drops or retypes an existing column. Mirrors
-// Migrations/2026-10-18-quotes-invoices-overhaul.sql. Runs once per
-// SCHEMA_VERSION (a marker file under storage/qi/).
+// Migrations/2026-10-18-quotes-invoices-overhaul.sql (which also creates the
+// headings table that LineHeadings provisions). Runs once per SCHEMA_VERSION
+// (a marker file under storage/qi/).
 
 final class QiSchema
 {
@@ -159,6 +159,8 @@ final class QiSchema
                            'idx_invoices_recurring' => 'KEY `idx_invoices_recurring` (`company_id`, `recurring_invoice_id`)'],
             'quotes'   => ['idx_quotes_public_token' => 'KEY `idx_quotes_public_token` (`public_token`)'],
         ];
+        // an empty token is "no link yet"; empty strings would collide in the unique key
+        try { $db->exec("UPDATE invoices SET public_token = NULL, updated_at = updated_at WHERE public_token = ''"); } catch (Throwable $e) { }
         foreach ($want as $table => $indexes) {
             $have = [];
             foreach ($db->query("SHOW INDEX FROM `$table`")->fetchAll(PDO::FETCH_ASSOC) as $r) $have[$r['Key_name']] = true;
