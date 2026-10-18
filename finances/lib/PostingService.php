@@ -790,7 +790,7 @@ class PostingService
      * the receipt's Dr Bank / Cr AR stayed posted, so the GL bank was overstated
      * by the cash paid out and AR control no longer tied to the invoice.
      *
-     * qi/ajax/refund_invoice.php stores the refund payment and its allocation as
+     * QiActions::refund (qi/lib/QiActions.php) stores the refund payment and its allocation as
      * NEGATIVE amounts (so the subledger nets and the payments-basis VAT201
      * claws back the receipt's output tax via the negative allocation); here we
      * post the absolute values as positive debit/credit legs so journal_lines

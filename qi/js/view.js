@@ -295,6 +295,13 @@
       case 'payment': return paymentDialog();
       case 'refund': return refundDialog();
       case 'link': return linkDialog('link');
+      case 'calendar':
+        try {
+          const res = await fetch('/qi/ajax/get_calendar_link.php?type=' + T + '&id=' + V.id, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+          const d = await res.json();
+          if (d.ok && d.url) location.href = d.url; else toast(d.error || 'Not on the calendar yet.');
+        } catch (e) { toastError(e); }
+        return;
       case 'pay_link': return linkDialog('pay_link');
       case 'mark_sent': return act('mark_sent', {}, { done: () => toast('Marked as sent') }).catch(() => {});
       case 'issue': {

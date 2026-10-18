@@ -152,6 +152,7 @@ final class QiView
             if ($writer && in_array($s, ['draft', 'sent', 'viewed', 'expired', 'accepted'], true) && empty($v['related'])) $add('decline', 'Mark as declined', 'iq-decline');
             if ($writer && $s === 'draft') $add('mark_sent', 'Mark as sent', 'check');
             if ($writer) $add('link', 'Copy customer link', 'link');
+            if (!empty($row['expiry_date'])) $add('calendar', 'Show in calendar', 'calendar');
             if ($writer) $add('duplicate', 'Duplicate', 'copy');
             if ($writer && $s !== 'converted' && empty($v['related'])) $add('delete', 'Delete', 'trash', 'more', 'danger');
         } elseif ($type === 'invoice') {
@@ -183,6 +184,7 @@ final class QiView
             if ($writer && empty($row['archived_at']) && !$open && $s !== 'draft') $add('archive', 'Archive', 'archive');
             if ($writer && !empty($row['archived_at'])) $add('unarchive', 'Restore from archive', 'archive', 'main');
             if ($writer) $add('link', 'Copy customer link', 'link');
+            if (!empty($row['due_date']) && $s !== 'draft') $add('calendar', 'Show in calendar', 'calendar');
             if ($writer) $add('recurring', 'Make it recurring', 'iq-recurring');
             if ($writer) $add('duplicate', 'Duplicate', 'copy');
             if ($writer && $s === 'draft') $add('delete', 'Delete', 'trash', 'more', 'danger');

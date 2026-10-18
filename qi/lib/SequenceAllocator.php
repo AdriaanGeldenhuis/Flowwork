@@ -86,6 +86,11 @@ class SequenceAllocator {
 
     /** The number the next document would get, without reserving it (editor, settings). */
     public function peek(int $companyId, string $type, ?string $issueDate = null): string {
+        return $this->peekParts($companyId, $type, $issueDate)['code'];
+    }
+
+    /** @return array{code:string, num:int} */
+    public function peekParts(int $companyId, string $type, ?string $issueDate = null): array {
         $fmt = self::format($this->db, $companyId, $type);
         $year = self::sequenceYear($fmt, $issueDate);
         $stmt = $this->db->prepare("SELECT next_number FROM qi_sequences WHERE company_id=? AND type=? AND year=?");
@@ -95,7 +100,7 @@ class SequenceAllocator {
         for ($guard = 0; $guard < 2000 && $this->exists($companyId, $type, $code); $guard++) {
             $code = self::code($fmt, $year, ++$num);
         }
-        return $code;
+        return ['code' => $code, 'num' => $num];
     }
 
     /** Settings: set the next number for this year's (or the continuous) sequence. */
