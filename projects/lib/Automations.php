@@ -40,46 +40,89 @@ final class Automations
         ['column_changed', 'notify', 'When a column changes, notify someone'],
     ];
 
+    /** A board's active recipes, loaded once per request (forget() after they change). */
+    private static array $rules = [];
+    /**
+     * One change and everything its recipes set off (a "chain"): how deep we are,
+     * how many actions ran and which recipe already ran on which item. A recipe
+     * runs at most once per item in a chain, and a chain stops after MAX_ACTIONS.
+     */
+    private static int $level = 0;
+    private static int $actions = 0;
+    private static array $seen = [];
+    private const MAX_ACTIONS = 100;
+
+    public static function forget(int $boardId): void
+    {
+        unset(self::$rules[$boardId]);
+    }
+
+    private static function rulesOf(PDO $db, int $boardId): array
+    {
+        if (!isset(self::$rules[$boardId])) {
+            $st = $db->prepare("SELECT * FROM board_automations WHERE board_id = ? AND is_active = 1 ORDER BY id");
+            $st->execute([$boardId]);
+            self::$rules[$boardId] = $st->fetchAll(PDO::FETCH_ASSOC);
+        }
+        return self::$rules[$boardId];
+    }
+
     /**
      * Run the recipes an event matches. @return int[] items the recipes changed
-     * @param array $ctx event details: column_id, type, old, new (value_changed) / group_id
+     * @param array $ctx event details: column_id, type, old, new (value_changed) / group_id; board_id when known
      */
     public static function fire(ProjectRepo $repo, string $event, int $itemId, array $ctx = []): array
     {
         try {
+            // Most boards have no recipes: skip the item lookup when the caller knows the board.
+            if (!empty($ctx['board_id']) && !self::rulesOf($repo->db, (int)$ctx['board_id'])) return [];
             $st = $repo->db->prepare("SELECT i.*, b.company_id AS b_company FROM board_items i JOIN project_boards b ON b.board_id = i.board_id
                                        WHERE i.id = ? AND i.company_id = ?");
             $st->execute([$itemId, $repo->companyId]);
             $item = $st->fetch(PDO::FETCH_ASSOC);
             if (!$item) return [];
-            $st = $repo->db->prepare("SELECT * FROM board_automations WHERE board_id = ? AND is_active = 1 ORDER BY id");
-            $st->execute([(int)$item['board_id']]);
-            $rules = $st->fetchAll(PDO::FETCH_ASSOC);
+            $rules = self::rulesOf($repo->db, (int)$item['board_id']);
         } catch (Throwable $e) {
             error_log('[projects] automations load: ' . $e->getMessage());
             return [];
         }
+        if (!$rules) return [];
+        if (self::$level === 0) { self::$actions = 0; self::$seen = []; }
+        self::$level++;
         $touched = [];
-        foreach ($rules as $r) {
-            $tc = json_decode((string)$r['trigger_config'], true) ?: [];
-            if (!self::matches($r['trigger_type'], $tc, $event, $ctx)) continue;
-            $ac = json_decode((string)$r['action_config'], true) ?: [];
-            $ok = true;
-            $err = null;
-            try {
-                self::act($repo, $r, $ac, $item);
-                $touched[] = $itemId;
-            } catch (Throwable $e) {
-                $ok = false;
-                $err = mb_substr($e->getMessage(), 0, 500);
-                if (!($e instanceof ProjectUserError)) error_log('[projects] automation ' . $r['id'] . ': ' . $e->getMessage());
+        try {
+            foreach ($rules as $r) {
+                $tc = json_decode((string)$r['trigger_config'], true) ?: [];
+                if (!self::matches($r['trigger_type'], $tc, $event, $ctx)) continue;
+                $key = (int)$r['id'] . ':' . $itemId;
+                if (isset(self::$seen[$key])) continue; // already ran on this item in this chain: no loops
+                self::$seen[$key] = true;
+                $ac = json_decode((string)$r['action_config'], true) ?: [];
+                $ok = true;
+                $err = null;
+                $stop = ++self::$actions > self::MAX_ACTIONS;
+                if ($stop) {
+                    $ok = false;
+                    $err = 'Automation limit reached for this change (' . self::MAX_ACTIONS . ' actions).';
+                } else {
+                    try {
+                        self::act($repo, $r, $ac, $item);
+                        $touched[] = $itemId;
+                    } catch (Throwable $e) {
+                        $ok = false;
+                        $err = mb_substr($e->getMessage(), 0, 500);
+                        if (!($e instanceof ProjectUserError)) error_log('[projects] automation ' . $r['id'] . ': ' . $e->getMessage());
+                    }
+                }
+                try {
+                    $repo->db->prepare("INSERT INTO board_automation_logs (automation_id, item_id, executed_at, success, error_message) VALUES (?, ?, NOW(), ?, ?)")
+                        ->execute([(int)$r['id'], $itemId, $ok ? 1 : 0, $err]);
+                } catch (Throwable $e) { /* logging is best effort */ }
+                // An archived item takes no more actions; a chain over its limit takes none at all.
+                if ($stop || ($ok && $r['action_type'] === 'archive')) break;
             }
-            try {
-                $repo->db->prepare("INSERT INTO board_automation_logs (automation_id, item_id, executed_at, success, error_message) VALUES (?, ?, NOW(), ?, ?)")
-                    ->execute([(int)$r['id'], $itemId, $ok ? 1 : 0, $err]);
-            } catch (Throwable $e) { /* logging is best effort */ }
-            // An archived item takes no more actions.
-            if ($ok && $r['action_type'] === 'archive') break;
+        } finally {
+            self::$level--;
         }
         return array_values(array_unique($touched));
     }
@@ -251,6 +294,7 @@ final class Automations
         $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 255) ?: 'Automation';
         $id = (int)($in['id'] ?? 0);
         if ($id) {
+            self::requireOnBoard($repo, $boardId, $id);
             $repo->db->prepare("UPDATE board_automations SET name = ?, trigger_type = ?, trigger_config = ?, action_type = ?, action_config = ?, is_active = ? WHERE id = ? AND board_id = ?")
                 ->execute([$name, $trigger, json_encode($t), $action, json_encode($a, JSON_UNESCAPED_UNICODE), empty($in['active']) && array_key_exists('active', $in) ? 0 : 1, $id, $boardId]);
         } else {
@@ -261,20 +305,37 @@ final class Automations
                 ->execute([$boardId, $name, $trigger, json_encode($t), $action, json_encode($a, JSON_UNESCAPED_UNICODE), $repo->userId]);
             $id = (int)$repo->db->lastInsertId();
         }
+        self::forget($boardId);
         Activity::log($repo->db, $repo->companyId, $repo->userId, $boardId, null, 'automation_saved', ['name' => $name]);
         return $id;
+    }
+
+    /** @return string the recipe's name; throws unless it is on this board */
+    private static function requireOnBoard(ProjectRepo $repo, int $boardId, int $id): string
+    {
+        $st = $repo->db->prepare("SELECT name FROM board_automations WHERE id = ? AND board_id = ?");
+        $st->execute([$id, $boardId]);
+        $name = $st->fetchColumn();
+        if ($name === false) throw new ProjectUserError('Automation not found.');
+        return (string)$name;
     }
 
     public static function toggle(ProjectRepo $repo, int $boardId, int $id, bool $on): void
     {
         $repo->requireBoard($boardId, 3);
+        $name = self::requireOnBoard($repo, $boardId, $id);
         $repo->db->prepare("UPDATE board_automations SET is_active = ? WHERE id = ? AND board_id = ?")->execute([$on ? 1 : 0, $id, $boardId]);
+        self::forget($boardId);
+        Activity::log($repo->db, $repo->companyId, $repo->userId, $boardId, null, 'automation_toggled', ['name' => $name, 'active' => $on]);
     }
 
     public static function delete(ProjectRepo $repo, int $boardId, int $id): void
     {
         $repo->requireBoard($boardId, 3);
+        $name = self::requireOnBoard($repo, $boardId, $id);
         $repo->db->prepare("DELETE FROM board_automation_logs WHERE automation_id = ?")->execute([$id]);
         $repo->db->prepare("DELETE FROM board_automations WHERE id = ? AND board_id = ?")->execute([$id, $boardId]);
+        self::forget($boardId);
+        Activity::log($repo->db, $repo->companyId, $repo->userId, $boardId, null, 'automation_deleted', ['name' => $name]);
     }
 }

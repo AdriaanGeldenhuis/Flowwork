@@ -190,8 +190,12 @@
   async function renderSchedule() {
     const pr = p();
     const t = parseYmd(today());
-    const from = ymd(addDays(pr.start ? parseYmd(pr.start) : t, -14));
-    const to = ymd(addDays(pr.end ? parseYmd(pr.end) : addDays(t, 120), 30));
+    // Built from the dates the project has, so the range never ends before it starts
+    // (only an old due date, or only a start far ahead).
+    const s0 = pr.start ? parseYmd(pr.start) : (pr.end && parseYmd(pr.end) < t ? parseYmd(pr.end) : t);
+    const e0 = pr.end ? parseYmd(pr.end) : addDays(s0 > t ? s0 : t, 120);
+    const from = ymd(addDays(s0, -14));
+    const to = ymd(addDays(e0, 30));
     el.view.innerHTML = `<div class="fwp-pad"><div class="fwp-mw">
       <div class="fwp-sec"><h3>Schedule</h3><a class="fwp-link" href="/calendar/?new=1&link=project:${pr.id}&title=${encodeURIComponent(pr.name + ' — ')}">${icon('calendar-plus')}Add event</a><a class="fwp-link" href="/calendar/?view=month&date=${esc(today())}">${icon('calendar')}Open Calendar</a></div>
       <div id="sched"><div class="fwm-skel"><div class="fwm-skel__a"></div><div><div class="fwm-skel__l" style="width:55%"></div><div class="fwm-skel__l" style="width:30%"></div></div></div></div></div></div>`;
@@ -249,13 +253,17 @@
       <div class="fwp-kpis">
         <div class="fwp-kpi"><span class="fwp-kpi__label">${icon('target')}Budget</span><span class="fwp-kpi__value">${m.budget ? esc(fmtMoney(m.budget, { short: true })) : '—'}</span><span class="fwp-kpi__sub">${m.budget ? 'Excluding VAT' : canManage() ? '<button class="fwp-link" data-act="edit" type="button">Set a budget</button>' : 'No budget set'}</span></div>
         <div class="fwp-kpi ${m.budget_used > 100 ? 'is-danger' : ''}"><span class="fwp-kpi__label">${icon('wallet')}Actual cost</span><span class="fwp-kpi__value">${esc(fmtMoney(totalCost, { short: true }))}</span>
-          ${m.budget ? `<span class="fwp-bar ${m.budget_used > 100 ? 'is-over' : ''}" style="--p:${Math.min(100, m.budget_used || 0)}%"><i></i></span>` : ''}<span class="fwp-kpi__sub">${m.budget ? `${m.budget_used}% of budget` : 'Costs so far'}${m.committed ? ' · ' + esc(fmtMoney(m.committed, { short: true })) + ' in bills not yet posted' : ''}</span></div>
+          ${m.budget ? `<span class="fwp-bar ${m.budget_used > 100 ? 'is-over' : ''}" style="--p:${Math.min(100, m.budget_used || 0)}%"><i></i></span>` : ''}<span class="fwp-kpi__sub">${m.budget ? `${m.budget_used}% of budget` : 'Costs so far'}${m.committed ? ' · ' + esc(fmtMoney(m.committed, { short: true })) + ' in bills not yet posted' : ''}${m.tracked && m.budget ? ` · <span style="${m.tracked > m.budget ? 'color:var(--danger);font-weight:600' : ''}">boards: ${Math.round(m.tracked * 100 / m.budget)}%</span>` : ''}</span></div>
         <div class="fwp-kpi"><span class="fwp-kpi__label">${icon('receipt')}Invoiced</span><span class="fwp-kpi__value">${esc(fmtMoney(m.invoiced, { short: true }))}</span><span class="fwp-kpi__sub">${esc(fmtMoney(m.paid, { short: true }))} paid · ${esc(fmtMoney(m.outstanding, { short: true }))} outstanding</span></div>
         <div class="fwp-kpi ${m.margin < 0 ? 'is-danger' : m.margin > 0 ? 'is-good' : ''}"><span class="fwp-kpi__label">${icon('gauge')}Margin</span><span class="fwp-kpi__value">${esc(fmtMoney(m.margin, { short: true }))}</span><span class="fwp-kpi__sub">${m.invoiced ? Math.round(m.margin * 100 / m.invoiced) + '% of invoiced' : 'Invoiced minus costs'}</span></div>
       </div>
       ${costParts.length ? `<div class="fwp-panelcard" style="padding:16px 18px"><span class="fwp-kpi__label">${icon('pie')}Where the money went</span>
         <div class="fwp-money-bar">${costParts.map(([l, v, c]) => `<i style="background:${c};width:${(v * 100 / totalCost).toFixed(2)}%" title="${esc(l)}: ${esc(fmtMoney(v))}"></i>`).join('')}</div>
         <div class="fwp-legend">${costParts.map(([l, v, c]) => `<span><i style="--c:${c}"></i>${esc(l)} · ${esc(fmtMoney(v, { short: true }))}</span>`).join('')}${m.labour_hours ? `<span>${icon('clock', 'i--xs')}${fmtNum(m.labour_hours, 1)} hours logged</span>` : ''}</div></div>` : ''}
+
+      ${(m.board_costs || []).length ? `<div class="fwp-panelcard" style="padding:14px 18px;margin-top:14px"><span class="fwp-kpi__label">${icon('table')}Tracked on boards · ${esc(fmtMoney(m.tracked, { short: true }))}</span>
+        <div class="fwp-legend" style="margin-top:8px">${m.board_costs.map((b) => `<a href="${esc(b.url)}"><i style="--c:#b08d57"></i>${esc(b.board)} · ${esc(b.column)}: <b>${esc(fmtMoney(b.total))}</b></a>`).join('')}</div>
+        <p class="hint" style="margin:8px 0 0">As entered on the boards. Shown beside the actual cost, not added to it — a receipt posted to a board is in both.</p></div>` : ''}
 
       <div class="fwp-sec"><h3>Invoices<small>${m.invoices.length}</small></h3><a class="btn btn--sm" href="${esc(qiNew('invoice'))}">${icon('plus')}New invoice</a></div>
       ${m.invoices.length ? `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Status</th><th class="is-num">Excl. VAT</th><th class="is-num">Balance</th></tr></thead><tbody>
@@ -274,6 +282,7 @@
           <td>${canEdit() ? `<button class="icon-btn icon-btn--sm" type="button" data-costmenu="${c.id}" aria-label="Cost actions">${icon('more-h', 'i--sm')}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
         : `<div class="fwp-panelcard"><div class="fwp-panelcard__empty">Record materials, hire and other costs that do not go through Finance.</div></div>`}
 
+      ${m.finance === false ? `<p class="hint" style="margin:14px 2px 0">Costs posted in Finance, bills awaiting posting and labour cost from timesheets are shown to the company’s finance roles.</p>` : ''}
       ${m.gl_lines.length ? `<div class="fwp-sec"><h3>Costs from Finance<small>${esc(fmtMoney(m.gl_cost))}</small></h3><a class="fwp-link" href="/finances/reports.php">${icon('external')}Reports</a></div>
         <div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>Account</th><th class="is-num">Amount</th></tr></thead><tbody>
         ${m.gl_lines.map((l) => `<tr style="cursor:default"><td>${esc(fmtDate(l.date))}</td><td>${esc(l.reference)}</td><td>${esc(l.description)}</td><td>${esc(l.account)}</td><td class="is-num">${esc(fmtMoney(l.amount))}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -298,8 +307,10 @@
       <div class="fwm-dialog__foot"><span class="fwp-err" id="cErr"></span><button class="btn" data-close type="button">Cancel</button><button class="btn btn--primary" id="cSave" type="button">${c ? 'Save' : 'Add cost'}</button></div>`, '', 'width:min(560px,100%)');
     const go = async () => {
       try {
+        // supplier_id: an edit keeps the supplier the cost already has (the dialog does not show it).
         const d = await api.post('money.php', { action: 'cost_save', project_id: p().id, id: c ? c.id : undefined, description: $('#cDesc', m).value, type: $('#cType', m).value,
-                                                item_id: Number($('#cItem', m).value) || 0, qty: $('#cQty', m).value, unit_cost: $('#cUnit', m).value });
+                                                item_id: Number($('#cItem', m).value) || 0, qty: $('#cQty', m).value, unit_cost: $('#cUnit', m).value,
+                                                supplier_id: c ? (c.supplier_id || 0) : undefined });
         S.money = d.money;
         closeModal(m);
         toast(c ? 'Cost saved' : 'Cost added');
@@ -344,7 +355,7 @@
     el.view.innerHTML = `<div class="fwp-pad"><div class="fwp-mw">
       <div class="fwp-sec"><h3>Team<small>${S.members.length}</small></h3>${canManage() ? `<button class="btn btn--sm btn--primary" type="button" id="addPeople">${icon('plus')}Add people</button>` : ''}</div>
       <div class="fwp-panelcard">${S.members.map((m) => `<div class="fwp-member">${avatar(m.name, m.email)}<div class="fwp-member__who"><b>${esc(m.name)}${m.id === P.me.id ? ' <span class="fwp-muted">(you)</span>' : ''}</b><small>${esc(m.email || '')}${m.active === false ? ' · no longer active' : ''}</small></div>
-        ${canManage() && !m.implicit ? `<select class="select" data-role="${m.id}" aria-label="Role">${['owner', 'manager', 'member', 'viewer'].map((r) => `<option value="${r}" ${m.role === r ? 'selected' : ''} ${r === 'owner' && level() < 4 ? 'disabled' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}</select>
+        ${canManage() && !m.implicit && (m.role !== 'owner' || level() >= 4) ? `<select class="select" data-role="${m.id}" aria-label="Role">${['owner', 'manager', 'member', 'viewer'].map((r) => `<option value="${r}" ${m.role === r ? 'selected' : ''} ${r === 'owner' && level() < 4 ? 'disabled' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}</select>
           <button class="icon-btn icon-btn--sm" type="button" data-remove="${m.id}" aria-label="Remove from project" data-tip="Remove">${icon('x', 'i--sm')}</button>`
           : `<span class="fwm-badge ${m.role === 'owner' || m.role === 'manager' ? 'fwm-badge--accent' : ''}" title="${esc(ROLE_HINTS[m.role] || '')}">${esc(m.role)}</span>${m.id === P.me.id && !m.implicit && m.role !== 'owner' ? `<button class="btn btn--sm btn--ghost" type="button" data-remove="${m.id}">Leave</button>` : ''}`}</div>`).join('')}</div>
       <div class="fwp-sec"><h3>Who can see this project</h3></div>
@@ -411,6 +422,8 @@
       S.members = d.members;
       S.events = d.events;
       S.activity = d.activity;
+      S.breakdown = d.breakdown || {};
+      S.due = d.due || [];
       render();
     } catch (x) { toastError(x); }
   }

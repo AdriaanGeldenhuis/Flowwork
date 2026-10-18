@@ -52,9 +52,15 @@ final class Activity
             $args[] = (int)$scope['board_id'];
         } elseif (!empty($scope['project_id'])) {
             $pid = (int)$scope['project_id'];
-            $where[] = "(l.board_id IN (SELECT board_id FROM project_boards WHERE project_id = ? AND company_id = ?)
-                         OR (l.board_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(l.details, '$.project_id')) = ?))";
-            array_push($args, $pid, $repo->companyId, (string)$pid);
+            if ($repo->projectLevel($pid) >= 1) {
+                $where[] = "(l.board_id IN (SELECT board_id FROM project_boards WHERE project_id = ? AND company_id = ?)
+                             OR (l.board_id IS NULL AND JSON_UNQUOTE(JSON_EXTRACT(l.details, '$.project_id')) = ?))";
+                array_push($args, $pid, $repo->companyId, (string)$pid);
+            } else {
+                // Board members who are not on the project: only the boards they can open.
+                $ids = array_map(fn($b) => (int)$b['id'], $repo->boardsOf($pid, true));
+                $where[] = 'l.board_id IN (' . ($ids ? implode(',', $ids) : '0') . ')';
+            }
         } else {
             return [];
         }

@@ -102,7 +102,7 @@ include __DIR__ . '/partials/head.php';
   function check() {
     if (told || document.visibilityState !== 'visible') return;
     fetch('/projects/guest-changes.php?token=' + encodeURIComponent(token), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) { return (r.ok || r.status === 401) ? r.json() : null; })
       .then(function (d) {
         if (!d) return;
         if (d.signed_out) { location.href = '/projects/guest-login.php?token=' + encodeURIComponent(token); return; }

@@ -21,6 +21,8 @@
   const finePointer = () => window.matchMedia('(pointer: fine)').matches;
   const safeColor = (c, fallback = '#85766b') => (/^#[0-9a-f]{6}$/i.test(String(c || '')) ? c : fallback);
 
+  const isGuestPage = () => document.body.classList.contains('is-guest');
+
   class ApiError extends Error {
     constructor(message, status, data) { super(message); this.status = status; this.data = data; }
   }
@@ -37,6 +39,8 @@
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
     if (res.status === 401) {
+      // A guest has no Flowwork session: never send them to the staff sign-in page.
+      if (isGuestPage()) throw new ApiError('That is not available on a shared board.', 401);
       location.href = '/login.php?redirect=' + encodeURIComponent(location.pathname + location.search + location.hash);
       throw new ApiError('Your session has expired.', 401);
     }
@@ -65,7 +69,11 @@
         x.onload = () => {
           let d = null;
           try { d = JSON.parse(x.responseText); } catch (e) { d = null; }
-          if (x.status === 401) { location.href = '/login.php'; return reject(new ApiError('Your session has expired.', 401)); }
+          if (x.status === 401) {
+            if (isGuestPage()) return reject(new ApiError('That is not available on a shared board.', 401));
+            location.href = '/login.php';
+            return reject(new ApiError('Your session has expired.', 401));
+          }
           if (x.status >= 400 || !d || d.ok === false) return reject(new ApiError((d && d.error) || `Upload failed (${x.status}).`, x.status, d));
           resolve(d);
         };
@@ -172,12 +180,14 @@
   window.addEventListener('resize', closePop);
 
   // ---------------------------------------------------------------- dialogs
-  let lastFocus = null;
+  const openers = []; // focus to return to, one per open dialog
   function openModal(m) {
     if (typeof m === 'string') m = document.getElementById(m);
     if (!m) return null;
+    // Opened from a popover item: return to the popover's button, the item is about to go.
+    const prev = activePop && activePop.el.contains(document.activeElement) ? activePop.anchor : document.activeElement;
     closePop();
-    lastFocus = document.activeElement;
+    openers.push([m, prev]);
     m.hidden = false;
     const f = $('[autofocus], input:not([type=hidden]):not([type=file]):not([type=checkbox]):not([type=radio]), select, textarea, button.btn--primary', m);
     setTimeout(() => f && f.focus(), 30);
@@ -190,7 +200,9 @@
     m.hidden = true;
     if (m._onClose) m._onClose();
     if (m.dataset.temp) m.remove();
-    if (lastFocus && lastFocus.focus && lastFocus.isConnected) lastFocus.focus();
+    const i = openers.findIndex((x) => x[0] === m);
+    const back = i >= 0 ? openers.splice(i, 1)[0][1] : null;
+    if (back && back.focus && back.isConnected) back.focus();
   }
   document.addEventListener('click', (e) => {
     const closer = e.target.closest('[data-close]');
@@ -198,18 +210,44 @@
     if (e.target.classList && e.target.classList.contains('fwm-modal')) closeModal(e.target);
   });
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') { trapTab(e); return; }
     if (e.key !== 'Escape') return;
-    if (activePop) return;
+    if (activePop) {
+      // Inside the popover its own handler answers; from anywhere else (Filter, Sort keep focus on their button) close it here.
+      if (!activePop.el.contains(e.target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const a = activePop.anchor;
+        closePop();
+        if (a && a.isConnected && a.focus) a.focus();
+      }
+      return;
+    }
     const open = $$('.fwm-modal:not([hidden])').pop();
     if (open) { e.preventDefault(); e.stopPropagation(); closeModal(open); }
   }, true);
+  /** Tab stays inside the open dialog. */
+  function trapTab(e) {
+    const m = $$('.fwm-modal:not([hidden])').pop();
+    if (!m || (activePop && activePop.el.contains(e.target))) return;
+    const els = $$('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])', m).filter((x) => x.offsetParent !== null);
+    if (!els.length) return;
+    const first = els[0], last = els[els.length - 1];
+    if (!m.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
 
+  let dlgSeq = 0;
   function tempModal(html, cls = '', style = '') {
     const m = document.createElement('div');
     m.className = 'fwm-modal';
     m.dataset.temp = '1';
     m.hidden = true;
     m.innerHTML = `<div class="fwm-dialog ${cls}" role="dialog" aria-modal="true" style="${style}">${html}</div>`;
+    // Named by its heading.
+    const h = $('h2', m);
+    if (h) { h.id = h.id || 'fwpDlg' + (++dlgSeq); $('[role=dialog]', m).setAttribute('aria-labelledby', h.id); }
     document.body.appendChild(m);
     return m;
   }
@@ -323,10 +361,15 @@
     let s;
     if (opts.short && abs >= 1e6) s = (abs / 1e6).toFixed(abs >= 1e7 ? 1 : 2).replace(/\.0+$/, '') + 'm';
     else if (opts.short && abs >= 1e4) s = (abs / 1e3).toFixed(abs >= 1e5 ? 0 : 1).replace(/\.0$/, '') + 'k';
-    else s = abs.toLocaleString('en-ZA', { minimumFractionDigits: opts.cents === false ? 0 : 2, maximumFractionDigits: opts.cents === false ? 0 : 2 }).replace(/,/g, ' ');
+    else s = group(abs, opts.cents === false ? 0 : 2);
     return (v < 0 ? '−' : '') + 'R ' + s;
   }
-  const fmtNum = (v, p = 2) => (Number(v) || 0).toLocaleString('en-ZA', { minimumFractionDigits: p, maximumFractionDigits: p }).replace(/,/g, ' ');
+  /** 1234.5 → "1 234.50", whatever the browser's locale (en-ZA itself writes a decimal comma). Same as PHP number_format(v, p, '.', ' '). */
+  function group(v, p) {
+    const [i, f] = Math.abs(v).toFixed(p).split('.');
+    return (v < 0 ? '-' : '') + i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (f ? '.' + f : '');
+  }
+  const fmtNum = (v, p = 2) => group(Number(v) || 0, p);
   const STATUS_NAMES = { draft: 'Planning', active: 'Active', on_hold: 'On hold', completed: 'Completed', cancelled: 'Cancelled', archived: 'Archived' };
   const STATUS_COLORS = { draft: '#7a5ab8', active: '#2f8a5f', on_hold: '#d39a32', completed: '#2f5c84', cancelled: '#85766b', archived: '#5b6670' };
   const projectStatusPill = (s, soft = true) => `<span class="fwp-pill ${soft ? 'fwp-pill--soft' : ''}" style="--c:${STATUS_COLORS[s] || '#85766b'}">${esc(STATUS_NAMES[s] || s)}</span>`;
@@ -733,18 +776,26 @@
       case 'file_removed': return `${who} removed <b>${esc(d.name)}</b> from ${item}`;
       case 'subitem_added': return `${who} added subitem <q>${esc(d.title)}</q> to ${item}`;
       case 'subitem_done': return `${who} ${d.done ? 'completed' : 'reopened'} <q>${esc(d.title)}</q> on ${item}`;
+      case 'subitem_updated': return `${who} changed subitem <q>${esc(d.title)}</q> on ${item}`;
+      case 'subitem_promoted': return `${who} made subitem <q>${esc(d.title)}</q> of ${item} an item of its own`;
       case 'group_created': return `${who} added group <b>${esc(d.name)}</b> to ${board}`;
       case 'column_created': return `${who} added column <b>${esc(d.name)}</b> to ${board}`;
       case 'cost_saved': return `${who} recorded a cost: <q>${esc(d.description)}</q> (${esc(fmtMoney(d.amount))})`;
+      case 'cost_deleted': return `${who} deleted a cost: <q>${esc(d.description)}</q> (${esc(fmtMoney(d.amount))})`;
       case 'email_linked': return `${who} linked an email to ${item}`;
       case 'guest_invited': return `${who} invited <b>${esc(d.email)}</b> to ${board}`;
       case 'automation_saved': return `${who} saved automation <q>${esc(d.name)}</q> on ${board}`;
+      case 'automation_toggled': return `${who} turned automation <q>${esc(d.name)}</q> ${d.active ? 'on' : 'off'} on ${board}`;
+      case 'automation_deleted': return `${who} deleted automation <q>${esc(d.name)}</q> from ${board}`;
       case 'board_exported': return `${who} exported ${board}`;
       case 'board_imported': return `${who} imported ${d.items} items into ${board}`;
       case 'board_updated': return `${who} updated the settings of ${board}`;
       case 'board_moved': return `${who} moved ${board} to another project`;
       case 'column_renamed': return `${who} renamed column <q>${esc(d.from)}</q> to <b>${esc(d.to)}</b>`;
-      case 'column_updated': return `${who} changed the settings of column <b>${esc(d.name)}</b>`;
+      case 'column_updated':
+        if (d.reordered) return `${who} reordered the columns on ${board}`;
+        if (Array.isArray(d.fields) && d.fields.length === 1 && d.fields[0] === 'width') return `${who} resized column <b>${esc(d.name)}</b>`;
+        return `${who} changed the settings of column <b>${esc(d.name)}</b>`;
       case 'column_deleted': return `${who} deleted column <b>${esc(d.name)}</b>`;
       case 'group_renamed': return `${who} renamed group <q>${esc(d.from)}</q> to <b>${esc(d.to)}</b>`;
       case 'groups_reordered': return `${who} reordered the groups on ${board}`;
@@ -753,6 +804,7 @@
       case 'item_moved_board': return d.arrived ? `${who} moved ${item} here from another board` : `${who} moved ${item} to <b>${esc(d.to_board || 'another board')}</b>`;
       case 'subitem_deleted': return `${who} deleted subitem <q>${esc(d.title)}</q> from ${item}`;
       case 'update_deleted': return `${who} deleted an update on ${item}`;
+      case 'update_edited': return `${who} edited an update on ${item}`;
       case 'dependency_added': return `${who} set ${item} to wait on <q>${esc(d.waiting_on)}</q>`;
       case 'dependency_removed': return `${who} removed a dependency from ${item}`;
       case 'project_deleted': return `${who} deleted the project`;

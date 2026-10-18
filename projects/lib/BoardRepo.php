@@ -134,6 +134,12 @@ final class BoardRepo
             try { $this->db->exec("DELETE FROM email_links WHERE linked_type = 'item' AND linked_id IN ($in)"); } catch (Throwable $e) { /* mail not installed */ }
             $this->db->exec("UPDATE board_audit_log SET item_id = NULL WHERE item_id IN ($in)");
         }
+        // Emails and events linked to the board itself.
+        try {
+            $this->db->prepare("DELETE l FROM calendar_event_links l JOIN calendar_events e ON e.id = l.event_id
+                                 WHERE l.linked_type = 'board' AND l.linked_id = ? AND e.company_id = ?")->execute([$boardId, $co]);
+        } catch (Throwable $e) { /* calendar not installed */ }
+        try { $this->db->prepare("DELETE FROM email_links WHERE linked_type = 'board' AND linked_id = ?")->execute([$boardId]); } catch (Throwable $e) { /* mail not installed */ }
         $this->db->prepare("DELETE FROM board_items WHERE board_id = ? AND company_id = ?")->execute([$boardId, $co]);
         $this->db->prepare("DELETE FROM board_columns WHERE board_id = ? AND company_id = ?")->execute([$boardId, $co]);
         // Tables keyed by board only — the caller has already checked the board is this company's.
@@ -172,9 +178,16 @@ final class BoardRepo
             $st = $this->db->prepare("SELECT * FROM board_columns WHERE board_id = ? AND company_id = ? ORDER BY position, column_id");
             $st->execute([$boardId, $co]);
             $ci = $this->db->prepare("INSERT INTO board_columns (board_id, company_id, name, type, config, position, visible, width, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $srcCols = $st->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($srcCols as $c) {
                 $ci->execute([$nb, $co, $c['name'], $c['type'], $c['config'], $c['position'], $c['visible'], $c['width'], $c['description'] ?? null]);
                 $colMap[(int)$c['column_id']] = (int)$this->db->lastInsertId();
+            }
+            // Configs that name columns by id (progress sources, [#12] in formulas) point at the copies.
+            $cu = $this->db->prepare("UPDATE board_columns SET config = ? WHERE column_id = ? AND company_id = ?");
+            foreach ($srcCols as $c) {
+                $cfg = self::remapColumnIds($c, $colMap);
+                if ($cfg !== null) $cu->execute([$cfg, $colMap[(int)$c['column_id']], $co]);
             }
             $groupMap = [];
             $st = $this->db->prepare("SELECT * FROM board_groups WHERE board_id = ? ORDER BY position, id");
@@ -187,11 +200,7 @@ final class BoardRepo
             if ($withItems && $groupMap) {
                 $st = $this->db->prepare("SELECT * FROM board_items WHERE board_id = ? AND company_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY position, id");
                 $st->execute([$boardId, $co]);
-                $items = new ItemRepo($this->repo);
-                foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $it) {
-                    if (!isset($groupMap[(int)$it['group_id']])) continue;
-                    $items->copyItemRow($it, $nb, $groupMap[(int)$it['group_id']], $colMap, (int)$it['position']);
-                }
+                (new ItemRepo($this->repo))->copyItemRows($st->fetchAll(PDO::FETCH_ASSOC), $nb, $groupMap, $colMap);
             }
             Activity::log($this->db, $co, $this->repo->userId, $nb, null, 'board_created', ['title' => $b['title'], 'project_id' => $targetProjectId, 'copied_from' => $boardId]);
             if ($own) $this->db->commit();
@@ -199,8 +208,28 @@ final class BoardRepo
             if ($own) $this->db->rollBack();
             throw $e;
         }
-        if ($withItems) self::refreshMirrors($this->db, $co, $nb);
+        if ($withItems) {
+            self::computeFormulas($this->db, $co, $nb);
+            self::refreshMirrors($this->db, $co, $nb);
+        }
         return $nb;
+    }
+
+    /** A copied column's config with column ids mapped to the copies (null when it names none). */
+    private static function remapColumnIds(array $c, array $colMap): ?string
+    {
+        $cfg = Columns::config($c);
+        if ($c['type'] === 'progress' && $cfg['sources']) {
+            $cfg['sources'] = array_values(array_filter(array_map(fn($id) => $colMap[(int)$id] ?? 0, $cfg['sources'])));
+            return Columns::encodeConfig('progress', $cfg);
+        }
+        if ($c['type'] === 'formula') {
+            $f = preg_replace_callback('/([\[{])\s*#(\d+)\s*([\]}])/', fn($m) => isset($colMap[(int)$m[2]]) ? $m[1] . '#' . $colMap[(int)$m[2]] . $m[3] : $m[0], $cfg['formula']);
+            if ($f === $cfg['formula']) return null;
+            $cfg['formula'] = $f;
+            return Columns::encodeConfig('formula', $cfg);
+        }
+        return null;
     }
 
     /** Move a board to another project. */
@@ -277,15 +306,17 @@ final class BoardRepo
         $st->execute([$boardId]);
         $automations = (int)$st->fetchColumn();
 
-        $st = $this->db->prepare("SELECT COUNT(*) FROM board_items WHERE board_id = ? AND company_id = ? AND archived = 1");
+        $st = $this->db->prepare("SELECT SUM(archived = 1), SUM(archived = 0 OR archived IS NULL) FROM board_items WHERE board_id = ? AND company_id = ?");
         $st->execute([$boardId, $co]);
-        $archivedCount = (int)$st->fetchColumn();
+        [$archivedCount, $liveCount] = array_map('intval', $st->fetch(PDO::FETCH_NUM) ?: [0, 0]);
 
         $project = $this->repo->projectRow((int)$b['project_id']);
         return [
             'board' => ProjectRepo::boardSummary($b) + ['level' => (int)$b['level'], 'starred' => $starred, 'project_name' => $b['project_name'],
                        'project_color' => ProjectRepo::projectColor($project ?: ['project_id' => $b['project_id']]), 'project_status' => $b['project_status'],
-                       'automations' => $automations, 'archived_items' => $archivedCount],
+                       'automations' => $automations, 'archived_items' => $archivedCount,
+                       // More live items than the page loads (boards filled before the limit): the page says so.
+                       'items_total' => $liveCount, 'truncated' => $liveCount > ItemRepo::MAX_ITEMS],
             'columns' => array_map([self::class, 'columnOut'], $cols),
             'groups' => array_map(fn($g) => self::groupOut($g, $prefs), $groups),
             'items' => $items,
@@ -305,6 +336,7 @@ final class BoardRepo
     public function itemsPayload(int $boardId, array $cols, ?array $ids, bool $archived = false): array
     {
         $co = $this->repo->companyId;
+        self::refreshTimeFormulas($this->db, $co, $boardId, $cols);
         $where = "i.board_id = ? AND i.company_id = ? AND " . ($archived ? "i.archived = 1" : "(i.archived = 0 OR i.archived IS NULL)");
         $args = [$boardId, $co];
         if ($ids !== null) {
@@ -315,7 +347,7 @@ final class BoardRepo
         $st = $this->db->prepare("SELECT i.id, i.group_id, i.title, i.description, i.position, i.created_by, i.created_at, i.updated_at, i.archived
                                     FROM board_items i LEFT JOIN board_groups g ON g.id = i.group_id
                                    WHERE $where
-                                ORDER BY g.position, i.group_id, i.position, i.id LIMIT 5000");
+                                ORDER BY g.position, i.group_id, i.position, i.id LIMIT " . ItemRepo::MAX_ITEMS);
         $st->execute($args);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) return [];
@@ -452,9 +484,14 @@ final class BoardRepo
             $st = $this->db->prepare("SELECT id FROM board_groups WHERE board_id = ? AND id <> ? ORDER BY position, id LIMIT 1");
             $st->execute([$boardId, $groupId]);
             $fallback = (int)$st->fetchColumn();
-            $this->db->prepare("UPDATE board_items SET archived = 1, group_id = ? WHERE group_id = ? AND board_id = ? AND company_id = ?")
-                ->execute([$fallback, $groupId, $boardId, $this->repo->companyId]);
+            // After the fallback group's own items, so restored ones come back as a block below them.
+            $st = $this->db->prepare("SELECT COALESCE(MAX(position), -1) + 1 FROM board_items WHERE group_id = ? AND board_id = ?");
+            $st->execute([$fallback, $boardId]);
+            $base = (int)$st->fetchColumn();
+            $this->db->prepare("UPDATE board_items SET archived = 1, group_id = ?, position = position + ? WHERE group_id = ? AND board_id = ? AND company_id = ?")
+                ->execute([$fallback, $base, $groupId, $boardId, $this->repo->companyId]);
             $this->db->prepare("DELETE FROM board_groups WHERE id = ?")->execute([$groupId]);
+            $this->stopAutomationsUsing($boardId, 'group_id', $groupId);
             Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'group_deleted', ['group_id' => $groupId, 'name' => $g['name']]);
             $this->db->commit();
         } catch (Throwable $e) {
@@ -463,30 +500,50 @@ final class BoardRepo
         }
     }
 
+    /** Recipes that name a deleted column or group can only fail from now on: switch them off. */
+    private function stopAutomationsUsing(int $boardId, string $key, int $id): void
+    {
+        try {
+            $st = $this->db->prepare("SELECT id, trigger_config, action_config FROM board_automations WHERE board_id = ? AND is_active = 1");
+            $st->execute([$boardId]);
+            $off = $this->db->prepare("UPDATE board_automations SET is_active = 0 WHERE id = ? AND board_id = ?");
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $a) {
+                $tc = json_decode((string)$a['trigger_config'], true) ?: [];
+                $ac = json_decode((string)$a['action_config'], true) ?: [];
+                if ((int)($tc[$key] ?? 0) === $id || (int)($ac[$key] ?? 0) === $id) $off->execute([(int)$a['id'], $boardId]);
+            }
+            Automations::forget($boardId);
+        } catch (Throwable $e) { /* optional table */ }
+    }
+
     /** Copy a group with its items (values, subitems) right below it. */
     public function duplicateGroup(int $groupId): array
     {
         $g = $this->groupRow($groupId);
         $boardId = (int)$g['board_id'];
         $this->repo->requireBoard($boardId, 2);
+        $st = $this->db->prepare("SELECT * FROM board_items WHERE group_id = ? AND board_id = ? AND company_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY position, id");
+        $st->execute([$groupId, $boardId, $this->repo->companyId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        $items = new ItemRepo($this->repo);
+        $items->requireRoom($boardId, count($rows));
         $this->db->beginTransaction();
         try {
             $this->db->prepare("UPDATE board_groups SET position = position + 1 WHERE board_id = ? AND position > ?")->execute([$boardId, (int)$g['position']]);
             $this->db->prepare("INSERT INTO board_groups (board_id, name, position, collapsed, color, created_at) VALUES (?, ?, ?, 0, ?, NOW())")
                 ->execute([$boardId, mb_substr('Copy of ' . $g['name'], 0, 255), (int)$g['position'] + 1, $g['color']]);
             $ng = (int)$this->db->lastInsertId();
-            $st = $this->db->prepare("SELECT * FROM board_items WHERE group_id = ? AND board_id = ? AND company_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY position, id");
-            $st->execute([$groupId, $boardId, $this->repo->companyId]);
-            $items = new ItemRepo($this->repo);
-            $ids = [];
-            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $it) $ids[] = $items->copyItemRow($it, $boardId, $ng, null, (int)$it['position']);
+            $ids = array_values($items->copyItemRows($rows, $boardId, [$groupId => $ng], null));
             Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'group_created', ['group_id' => $ng, 'name' => 'Copy of ' . $g['name'], 'copied_from' => $groupId]);
             $this->db->commit();
         } catch (Throwable $e) {
             $this->db->rollBack();
             throw $e;
         }
-        if ($ids) self::refreshMirrors($this->db, $this->repo->companyId, $boardId, $ids);
+        if ($ids) {
+            self::computeFormulas($this->db, $this->repo->companyId, $boardId, $ids); // Created / Last updated are new
+            self::refreshMirrors($this->db, $this->repo->companyId, $boardId, $ids);
+        }
         return ['group' => self::groupOut($this->groupRow($ng)), 'items' => $this->itemsPayload($boardId, $this->columnRows($boardId), $ids)];
     }
 
@@ -514,6 +571,7 @@ final class BoardRepo
         for ($i = 2; in_array(mb_strtolower($name), $taken, true); $i++) $name = mb_substr($base, 0, 95) . ' ' . $i;
         $config = isset($in['config']) && is_array($in['config']) ? Columns::encodeConfig($type, $in['config'])
                 : ($type === 'status' ? json_encode(['labels' => Columns::DEFAULT_STATUS]) : null);
+        if ($type === 'formula') self::refuseFormulaLoop($cols, ['column_id' => 0, 'name' => $name, 'type' => 'formula', 'config' => $config]);
         $after = (int)($in['after'] ?? 0);
         $pos = count($cols);
         if ($after) {
@@ -526,7 +584,9 @@ final class BoardRepo
             ->execute([$boardId, $this->repo->companyId, $name, $type, $config, $pos, $width, mb_substr(trim((string)($in['description'] ?? '')), 0, 255) ?: null]);
         $id = (int)$this->db->lastInsertId();
         Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_created', ['column_id' => $id, 'name' => $name, 'type' => $type]);
-        if (in_array($type, ['status', 'people', 'date', 'timeline', 'priority', 'progress'], true)) self::refreshMirrors($this->db, $this->repo->companyId, $boardId);
+        // A new formula fills in at once (and a new name may be one a formula was waiting for).
+        $this->recomputeFormulas($boardId);
+        if (in_array($type, ['status', 'people', 'date', 'timeline', 'priority', 'progress'], true)) self::refreshMirrors($this->db, $this->repo->companyId, $boardId, null, $type === 'people');
         return self::columnOut($this->columnRow($id));
     }
 
@@ -554,25 +614,41 @@ final class BoardRepo
             if (!in_array($type, $text, true) || !in_array($in['type'], $text, true)) throw new ProjectUserError('This column cannot change to that type.');
             $f['type'] = $type = (string)$in['type'];
         }
-        $formulaChanged = false;
+        $old = null;
         if (array_key_exists('config', $in) && is_array($in['config'])) {
             $old = Columns::config($c);
-            $new = Columns::encodeConfig($type, $in['config']);
-            if ($type === 'status' && $new) $this->remapStatusValues($c, $old, json_decode($new, true));
-            $f['config'] = $new;
-            $formulaChanged = $type === 'formula';
+            $f['config'] = Columns::encodeConfig($type, $in['config']);
         }
         if (!$f) return self::columnOut($c);
-        $set = implode(', ', array_map(fn($k) => "`$k` = ?", array_keys($f)));
-        $this->db->prepare("UPDATE board_columns SET $set WHERE column_id = ? AND company_id = ?")->execute(array_merge(array_values($f), [$columnId, $this->repo->companyId]));
-        if (isset($f['name']) && $f['name'] !== $c['name']) {
-            Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_renamed', ['column_id' => $columnId, 'from' => $c['name'], 'to' => $f['name']]);
-            $this->renameInFormulas($boardId, (string)$c['name'], $f['name']);
-        } elseif (isset($f['config']) || isset($f['type'])) {
-            Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_updated', ['column_id' => $columnId, 'name' => $c['name']]);
+        if ($type === 'formula' && (isset($f['config']) || isset($f['name']))) {
+            self::refuseFormulaLoop($this->columnRows($boardId), ['column_id' => $columnId, 'name' => $f['name'] ?? $c['name'], 'type' => 'formula', 'config' => $f['config'] ?? $c['config']]);
         }
-        if ($formulaChanged || isset($f['name'])) $this->recomputeFormulas($boardId);
-        if (isset($f['config']) && in_array($type, ['status', 'progress'], true)) self::refreshMirrors($this->db, $this->repo->companyId, $boardId);
+        $renamed = isset($f['name']) && $f['name'] !== $c['name'];
+        // One transaction: the cells, the column and the formulas that name it change together or not at all.
+        $this->db->beginTransaction();
+        try {
+            if (!empty($f['config']) && $type === 'status') $this->remapStatusValues($c, $old, json_decode($f['config'], true));
+            if (!empty($f['config']) && $type === 'dropdown') $this->remapDropdownValues($c, $old, json_decode($f['config'], true), (array)($in['config']['options'] ?? []));
+            $set = implode(', ', array_map(fn($k) => "`$k` = ?", array_keys($f)));
+            $this->db->prepare("UPDATE board_columns SET $set WHERE column_id = ? AND company_id = ?")->execute(array_merge(array_values($f), [$columnId, $this->repo->companyId]));
+            if ($renamed) {
+                Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_renamed', ['column_id' => $columnId, 'from' => $c['name'], 'to' => $f['name']]);
+                $this->renameInFormulas($boardId, (string)$c['name'], $f['name']);
+            } elseif (array_intersect_key($f, array_flip(['config', 'type', 'width', 'description']))) {
+                // Also width and description, so other open boards pick them up.
+                Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_updated', ['column_id' => $columnId, 'name' => $c['name'], 'fields' => array_keys($f)]);
+            }
+            $this->db->commit();
+        } catch (Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+        // Formulas read every column's values, labels and names.
+        if (isset($f['config']) || isset($f['type']) || isset($f['name'])) $this->recomputeFormulas($boardId);
+        // The items' fields follow status and progress settings; a date column's name decides which one is the due date.
+        if ((isset($f['config']) && in_array($type, ['status', 'progress'], true)) || ($renamed && $type === 'date')) {
+            self::refreshMirrors($this->db, $this->repo->companyId, $boardId, null, false);
+        }
         return self::columnOut($this->columnRow($columnId));
     }
 
@@ -596,6 +672,45 @@ final class BoardRepo
         }
     }
 
+    /**
+     * Dropdown options renamed (the editor sends each option's former label as
+     * `was`) or removed: rewrite the stored cells in one pass, so swapped names
+     * and several options in one cell come out right. Text that was not an
+     * option before is left as it is.
+     */
+    private function remapDropdownValues(array $col, array $old, array $new, array $posted): void
+    {
+        $now = [];
+        foreach ($new['options'] as $o) $now[mb_strtolower($o['label'])] = $o['label'];
+        $map = [];
+        foreach ($old['options'] as $o) $map[mb_strtolower($o['label'])] = $now[mb_strtolower($o['label'])] ?? null; // kept, or removed …
+        foreach ($posted as $p) { // … unless renamed
+            if (!is_array($p) || !is_string($p['was'] ?? null)) continue;
+            $was = mb_strtolower(trim($p['was']));
+            $to = $now[mb_strtolower(trim((string)($p['label'] ?? '')))] ?? null;
+            if ($to !== null && array_key_exists($was, $map)) $map[$was] = $to;
+        }
+        $same = true;
+        foreach ($old['options'] as $o) if ($map[mb_strtolower($o['label'])] !== $o['label']) { $same = false; break; }
+        if ($same) return;
+        $st = $this->db->prepare("SELECT id, value FROM board_item_values WHERE column_id = ?");
+        $st->execute([(int)$col['column_id']]);
+        $up = $this->db->prepare("UPDATE board_item_values SET value = ? WHERE id = ?");
+        $del = $this->db->prepare("DELETE FROM board_item_values WHERE id = ?");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $out = [];
+            foreach ((array)Columns::decode($col, $r['value']) as $l) {
+                $k = mb_strtolower($l);
+                $v = array_key_exists($k, $map) ? $map[$k] : $l;
+                if ($v !== null) $out[mb_strtolower($v)] = $v;
+            }
+            $out = array_values($out);
+            $raw = !$out ? null : (count($out) === 1 ? $out[0] : json_encode($out, JSON_UNESCAPED_UNICODE));
+            if ($raw === null) $del->execute([(int)$r['id']]);
+            elseif ($raw !== (string)$r['value']) $up->execute([$raw, (int)$r['id']]);
+        }
+    }
+
     private function renameInFormulas(int $boardId, string $from, string $to): void
     {
         foreach ($this->columnRows($boardId) as $c) {
@@ -610,6 +725,8 @@ final class BoardRepo
                 return '{' . $to . $suffix . '}';
             }, $f);
             if ($nf !== $f) {
+                // Never cut a formula short (encodeConfig keeps 1000 characters): refuse the rename.
+                if (mb_strlen(trim($nf)) > 1000) throw new ProjectUserError('“' . $c['name'] . '” uses this column and would become longer than 1000 characters. Shorten the name or the formula first.');
                 $cfg['formula'] = $nf;
                 $this->db->prepare("UPDATE board_columns SET config = ? WHERE column_id = ?")->execute([Columns::encodeConfig('formula', $cfg), (int)$c['column_id']]);
             }
@@ -621,7 +738,10 @@ final class BoardRepo
         $this->repo->requireBoard($boardId, 2);
         $st = $this->db->prepare("UPDATE board_columns SET position = ? WHERE column_id = ? AND board_id = ? AND company_id = ?");
         foreach (array_values(array_map('intval', $ids)) as $i => $id) $st->execute([$i, $id, $boardId, $this->repo->companyId]);
-        self::refreshMirrors($this->db, $this->repo->companyId, $boardId);
+        // The first column of each kind feeds the items' fields; who is on an item does not change.
+        self::refreshMirrors($this->db, $this->repo->companyId, $boardId, null, false);
+        // Logged as a column change so other open boards reload the order.
+        Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_updated', ['reordered' => true]);
     }
 
     public function deleteColumn(int $columnId): void
@@ -634,6 +754,15 @@ final class BoardRepo
             $this->db->prepare("DELETE FROM board_item_values WHERE column_id = ?")->execute([$columnId]);
             $this->db->prepare("UPDATE board_item_attachments SET column_id = NULL WHERE column_id = ?")->execute([$columnId]);
             $this->db->prepare("DELETE FROM board_columns WHERE column_id = ? AND company_id = ?")->execute([$columnId, $this->repo->companyId]);
+            $this->stopAutomationsUsing($boardId, 'column_id', $columnId);
+            // Progress columns counting this status column count the others.
+            foreach ($this->columnRows($boardId) as $pc) {
+                if ($pc['type'] !== 'progress') continue;
+                $cfg = Columns::config($pc);
+                if (!in_array($columnId, $cfg['sources'], true)) continue;
+                $cfg['sources'] = array_values(array_diff($cfg['sources'], [$columnId]));
+                $this->db->prepare("UPDATE board_columns SET config = ? WHERE column_id = ? AND company_id = ?")->execute([Columns::encodeConfig('progress', $cfg), (int)$pc['column_id'], $this->repo->companyId]);
+            }
             Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, null, 'column_deleted', ['column_id' => $columnId, 'name' => $c['name'], 'type' => $c['type']]);
             $this->db->commit();
         } catch (Throwable $e) {
@@ -641,7 +770,7 @@ final class BoardRepo
             throw $e;
         }
         $this->recomputeFormulas($boardId);
-        self::refreshMirrors($this->db, $this->repo->companyId, $boardId);
+        self::refreshMirrors($this->db, $this->repo->companyId, $boardId, null, $c['type'] === 'people');
     }
 
     public function duplicateColumn(int $columnId): array
@@ -650,7 +779,9 @@ final class BoardRepo
         $boardId = (int)$c['board_id'];
         $new = $this->createColumn($boardId, ['type' => $c['type'], 'name' => $c['name'] . ' copy', 'after' => $columnId,
                                               'config' => Columns::config($c), 'description' => $c['description'] ?? '']);
-        $this->db->prepare("INSERT INTO board_item_values (item_id, column_id, value) SELECT item_id, ?, value FROM board_item_values WHERE column_id = ?")->execute([$new['id'], $columnId]);
+        // IGNORE: a duplicated formula already has its values (createColumn computed them).
+        $this->db->prepare("INSERT IGNORE INTO board_item_values (item_id, column_id, value) SELECT item_id, ?, value FROM board_item_values WHERE column_id = ?")->execute([$new['id'], $columnId]);
+        $this->recomputeFormulas($boardId); // formulas that use the new name
         return $new;
     }
 
@@ -688,14 +819,16 @@ final class BoardRepo
         foreach ($db->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN ($in)")->fetchAll(PDO::FETCH_ASSOC) as $v) {
             $vals[(int)$v['item_id']][(int)$v['column_id']] = $v['value'];
         }
-        $byKey = [];
-        $byId = [];
-        foreach ($cols as $c) {
-            $byId[(int)$c['column_id']] = $c;
-            $byKey[$c['name']] = $byKey[$c['name']] ?? $c;
+        // Progress that follows subitems is computed, never stored: formulas need each item's share.
+        $subs = [];
+        if (array_filter($cols, fn($c) => $c['type'] === 'progress')) {
+            foreach ($db->query("SELECT parent_item_id, COUNT(*) n, SUM(completed = 1) d FROM board_subitems WHERE parent_item_id IN ($in) GROUP BY parent_item_id")->fetchAll(PDO::FETCH_ASSOC) as $s) {
+                $subs[(int)$s['parent_item_id']] = (int)$s['n'] ? (int)$s['d'] * 100 / (int)$s['n'] : null;
+            }
         }
-        $loose = [];
-        foreach ($cols as $c) $loose[Formula::nameKey($c['name'])] = $loose[Formula::nameKey($c['name'])] ?? $c;
+        [$byId, $byKey, $loose] = self::refIndex($cols);
+        // Each formula after the formulas it reads; one on a loop (or reading one) stays empty.
+        $order = self::formulaOrder(self::formulaDeps($cols));
 
         $upsert = $db->prepare("INSERT INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)");
         $delete = $db->prepare("DELETE FROM board_item_values WHERE item_id = ? AND column_id = ?");
@@ -703,27 +836,19 @@ final class BoardRepo
         foreach ($items as $it) {
             $iid = (int)$it['id'];
             $raw = $vals[$iid] ?? [];
-            $resolve = function (string $ref) use (&$raw, $byId, $byKey, $loose, $it) {
-                $part = null;
-                if ($ref !== '' && $ref[0] === '#') {
-                    $c = $byId[(int)substr($ref, 1)] ?? null;
-                } else {
-                    $c = $byKey[$ref] ?? $loose[Formula::nameKey($ref)] ?? null;
-                    if (!$c && preg_match('/^(.*)\.(start|end)$/i', trim($ref), $m)) {
-                        $c = $byKey[trim($m[1])] ?? $loose[Formula::nameKey($m[1])] ?? null;
-                        $part = strtolower($m[2]);
-                    }
-                }
+            // A formula sees only what this run computed — never its own (or a loop's) last result.
+            foreach ($formulas as $f) unset($raw[(int)$f['column_id']]);
+            $sub = $subs[$iid] ?? null;
+            $resolve = function (string $ref) use (&$raw, $byId, $byKey, $loose, $it, $cols, $sub) {
+                [$c, $part] = self::refColumn($ref, $byId, $byKey, $loose);
                 if (!$c) return null;
+                if ($c['type'] === 'progress') return Columns::progressValue($c, $cols, $raw, $sub);
                 return self::formulaValue($c, $raw[(int)$c['column_id']] ?? null, $part, $it);
             };
-            // Formulas can use other formulas: evaluate in column order, twice, so later ones settle.
-            for ($pass = 0; $pass < (count($formulas) > 1 ? 2 : 1); $pass++) {
-                foreach ($formulas as $f) {
-                    $cfg = Columns::config($f);
-                    $res = Formula::evaluate($cfg['formula'], $resolve);
-                    $raw[(int)$f['column_id']] = $res === null ? null : Formula::format($res, $cfg['precision']);
-                }
+            foreach ($order as $fid) {
+                $cfg = Columns::config($byId[$fid]);
+                $res = Formula::evaluate($cfg['formula'], $resolve);
+                $raw[$fid] = $res === null ? null : Formula::format($res, $cfg['precision']);
             }
             foreach ($formulas as $f) {
                 $fid = (int)$f['column_id'];
@@ -735,6 +860,120 @@ final class BoardRepo
             }
         }
         return $out;
+    }
+
+    /** Lookups for refColumn(): columns by id, by exact name and by loose name (the first column wins). */
+    private static function refIndex(array $cols): array
+    {
+        $byId = [];
+        $byKey = [];
+        $loose = [];
+        foreach ($cols as $c) {
+            $byId[(int)$c['column_id']] = $c;
+            $byKey[$c['name']] = $byKey[$c['name']] ?? $c;
+            $loose[Formula::nameKey($c['name'])] = $loose[Formula::nameKey($c['name'])] ?? $c;
+        }
+        return [$byId, $byKey, $loose];
+    }
+
+    /** The column a formula reference names ('#12', a name, 'Timeline.start') and the timeline part it wants. */
+    private static function refColumn(string $ref, array $byId, array $byKey, array $loose): array
+    {
+        if ($ref !== '' && $ref[0] === '#') return [$byId[(int)substr($ref, 1)] ?? null, null];
+        $c = $byKey[$ref] ?? $loose[Formula::nameKey($ref)] ?? null;
+        if (!$c && preg_match('/^(.*)\.(start|end)$/i', trim($ref), $m)) {
+            return [$byKey[trim($m[1])] ?? $loose[Formula::nameKey($m[1])] ?? null, strtolower($m[2])];
+        }
+        return [$c, null];
+    }
+
+    /** For each formula column, the formula columns it reads: column_id => [column_id => true]. */
+    private static function formulaDeps(array $cols): array
+    {
+        [$byId, $byKey, $loose] = self::refIndex($cols);
+        $deps = [];
+        foreach ($cols as $f) {
+            if ($f['type'] !== 'formula') continue;
+            $fid = (int)$f['column_id'];
+            $deps[$fid] = [];
+            foreach (Formula::references(Columns::config($f)['formula']) as $ref) {
+                [$c] = self::refColumn($ref, $byId, $byKey, $loose);
+                if ($c && $c['type'] === 'formula') $deps[$fid][(int)$c['column_id']] = true;
+            }
+        }
+        return $deps;
+    }
+
+    /** Formula columns in an order that evaluates each after the ones it reads, leaving out loops and what reads them. @return int[] */
+    private static function formulaOrder(array $deps): array
+    {
+        $order = [];
+        $state = []; // 1 being visited, 2 in order, 3 on or behind a loop
+        $visit = function (int $id) use (&$visit, &$order, &$state, $deps): bool {
+            $s = $state[$id] ?? 0;
+            if ($s === 2) return true;
+            if ($s !== 0) return false;
+            $state[$id] = 1;
+            $ok = true;
+            foreach (array_keys($deps[$id] ?? []) as $d) if (!$visit($d)) $ok = false;
+            $state[$id] = $ok ? 2 : 3;
+            if ($ok) $order[] = $id;
+            return $ok;
+        };
+        foreach (array_keys($deps) as $id) $visit($id);
+        return $order;
+    }
+
+    /** Refuse a formula ($col, with its new name / config) that reads itself, directly or through other formulas. */
+    private static function refuseFormulaLoop(array $cols, array $col): void
+    {
+        $id = (int)$col['column_id'];
+        $cols = array_values(array_filter($cols, fn($c) => (int)$c['column_id'] !== $id));
+        $cols[] = $col;
+        $deps = self::formulaDeps($cols);
+        $seen = [];
+        $stack = array_keys($deps[$id] ?? []);
+        while ($stack) {
+            $n = array_pop($stack);
+            if ($n === $id) throw new ProjectUserError('A formula cannot refer to itself, directly or through another formula.');
+            if (isset($seen[$n])) continue;
+            $seen[$n] = true;
+            foreach (array_keys($deps[$n] ?? []) as $m) $stack[] = $m;
+        }
+    }
+
+    /**
+     * Formulas that read the clock — TODAY(), or a Created / Last updated column —
+     * go stale overnight: recompute the board when it is read, once a day.
+     */
+    public static function refreshTimeFormulas(PDO $db, int $companyId, int $boardId, array $cols): void
+    {
+        if (!self::readsClock($cols)) return;
+        $today = date('Y-m-d');
+        try {
+            $st = $db->prepare("SELECT formulas_on FROM project_boards WHERE board_id = ? AND company_id = ?");
+            $st->execute([$boardId, $companyId]);
+            if ((string)$st->fetchColumn() === $today) return;
+            self::computeFormulas($db, $companyId, $boardId);
+            $db->prepare("UPDATE project_boards SET formulas_on = ? WHERE board_id = ? AND company_id = ?")->execute([$today, $boardId, $companyId]);
+        } catch (Throwable $e) {
+            error_log('[projects] daily formulas, board ' . $boardId . ': ' . $e->getMessage());
+        }
+    }
+
+    private static function readsClock(array $cols): bool
+    {
+        [$byId, $byKey, $loose] = self::refIndex($cols);
+        foreach ($cols as $f) {
+            if ($f['type'] !== 'formula') continue;
+            $formula = Columns::config($f)['formula'];
+            if (preg_match('/TODAY\s*\(/i', $formula)) return true;
+            foreach (Formula::references($formula) as $ref) {
+                [$c] = self::refColumn($ref, $byId, $byKey, $loose);
+                if ($c && in_array($c['type'], ['created', 'updated'], true)) return true;
+            }
+        }
+        return false;
     }
 
     /** A cell's value as a formula sees it. */
@@ -769,8 +1008,9 @@ final class BoardRepo
     /**
      * Recompute the items' own fields (status_label, assigned_to, dates …) and
      * board_item_people from the cells, for a board or some of its items.
+     * $people = false leaves board_item_people alone (column order, labels).
      */
-    public static function refreshMirrors(PDO $db, int $companyId, int $boardId, ?array $itemIds = null): void
+    public static function refreshMirrors(PDO $db, int $companyId, int $boardId, ?array $itemIds = null, bool $people = true): void
     {
         $st = $db->prepare("SELECT * FROM board_columns WHERE board_id = ? AND company_id = ? ORDER BY position, column_id");
         $st->execute([$boardId, $companyId]);
@@ -797,17 +1037,45 @@ final class BoardRepo
         $peopleCols = array_values(array_filter($cols, fn($c) => $c['type'] === 'people'));
         $fields = ['status_label', 'assigned_to', 'priority', 'progress', 'start_date', 'end_date', 'due_date'];
         $upd = $db->prepare("UPDATE board_items SET " . implode(', ', array_map(fn($f) => "`$f` = ?", $fields)) . ", updated_at = updated_at WHERE id = ?");
-        $db->exec("DELETE FROM board_item_people WHERE item_id IN ($in)");
-        $ins = $db->prepare("INSERT IGNORE INTO board_item_people (item_id, user_id, company_id, board_id) VALUES (?, ?, ?, ?)");
-        foreach ($items as $it) {
-            $iid = (int)$it['id'];
-            $m = Columns::mirrors($cols, $vals[$iid] ?? [], $subs[$iid] ?? null);
-            $changed = false;
-            foreach ($fields as $f) if ((string)($it[$f] ?? '') !== (string)($m[$f] ?? '')) { $changed = true; break; }
-            if ($changed) $upd->execute(array_merge(array_map(fn($f) => $m[$f], $fields), [$iid]));
-            foreach ($peopleCols as $pc) {
-                foreach ((array)Columns::decode($pc, $vals[$iid][(int)$pc['column_id']] ?? null) as $uid) $ins->execute([$iid, (int)$uid, $companyId, $boardId]);
+        // The people index: what it holds now (rows left from another board count as gone).
+        $have = [];
+        $stale = [];
+        if ($people) {
+            foreach ($db->query("SELECT item_id, user_id, company_id, board_id FROM board_item_people WHERE item_id IN ($in)")->fetchAll(PDO::FETCH_NUM) as [$i, $u, $c, $b]) {
+                if ((int)$c === $companyId && (int)$b === $boardId) $have[$i . ':' . $u] = true;
+                else $stale[] = [(int)$i, (int)$u];
             }
+        }
+        // One transaction (callers may hold their own): readers never see a half-written index.
+        $own = !$db->inTransaction();
+        if ($own) $db->beginTransaction();
+        try {
+            $want = [];
+            foreach ($items as $it) {
+                $iid = (int)$it['id'];
+                $m = Columns::mirrors($cols, $vals[$iid] ?? [], $subs[$iid] ?? null);
+                $changed = false;
+                foreach ($fields as $f) if ((string)($it[$f] ?? '') !== (string)($m[$f] ?? '')) { $changed = true; break; }
+                if ($changed) $upd->execute(array_merge(array_map(fn($f) => $m[$f], $fields), [$iid]));
+                if (!$people) continue;
+                foreach ($peopleCols as $pc) {
+                    foreach ((array)Columns::decode($pc, $vals[$iid][(int)$pc['column_id']] ?? null) as $uid) $want[$iid . ':' . (int)$uid] = [$iid, (int)$uid, $companyId, $boardId];
+                }
+            }
+            if ($people) {
+                // Write only the difference.
+                $del = $db->prepare("DELETE FROM board_item_people WHERE item_id = ? AND user_id = ?");
+                foreach ($stale as $pair) $del->execute($pair);
+                foreach (array_keys(array_diff_key($have, $want)) as $k) $del->execute(array_map('intval', explode(':', $k)));
+                foreach (array_chunk(array_values(array_diff_key($want, $have)), 500) as $chunk) {
+                    $db->prepare("INSERT IGNORE INTO board_item_people (item_id, user_id, company_id, board_id) VALUES " . implode(', ', array_fill(0, count($chunk), '(?, ?, ?, ?)')))
+                       ->execute(array_merge(...$chunk));
+                }
+            }
+            if ($own) $db->commit();
+        } catch (Throwable $e) {
+            if ($own) $db->rollBack();
+            throw $e;
         }
     }
 
@@ -815,7 +1083,7 @@ final class BoardRepo
      * Before the new boards, an empty status / person / date cell showed the
      * item's own status_label / assigned_to / due_date (kanban and bulk edits
      * wrote only those). Copy them into the board's first column of each kind
-     * so nothing that people could see is lost. Runs once (schema backfill).
+     * so nothing that people could see is lost. Runs once ever (schema backfill).
      */
     public static function migrateLegacyFields(PDO $db, int $companyId, int $boardId): void
     {
@@ -844,15 +1112,23 @@ final class BoardRepo
         $st = $db->prepare("SELECT id, status_label, assigned_to, due_date, priority FROM board_items
                              WHERE board_id = ? AND company_id = ? AND (status_label IS NOT NULL OR assigned_to IS NOT NULL OR due_date IS NOT NULL OR priority IN ('low','high','urgent'))");
         $st->execute([$boardId, $companyId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        // due_date is a mirror once the engine has run (a timeline's end when the date is empty):
+        // only a date the cells do not explain was typed into the old boards.
+        $vals = [];
+        if ($date && $rows) {
+            $in = implode(',', array_map(fn($r) => (int)$r['id'], $rows));
+            foreach ($db->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN ($in)")->fetchAll(PDO::FETCH_ASSOC) as $v) $vals[(int)$v['item_id']][(int)$v['column_id']] = $v['value'];
+        }
         $ins = $db->prepare("INSERT IGNORE INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?)");
-        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $it) {
+        foreach ($rows as $it) {
             $iid = (int)$it['id'];
             if (!empty($first['status']) && ($it['status_label'] ?? '') !== '') {
                 $l = Columns::statusOf(Columns::config($first['status']), (string)$it['status_label']);
                 if ($l) $ins->execute([$iid, (int)$first['status']['column_id'], $l['key']]);
             }
             if (!empty($first['people']) && (int)$it['assigned_to'] > 0) $ins->execute([$iid, (int)$first['people']['column_id'], (string)(int)$it['assigned_to']]);
-            if ($date && ($d = Columns::date($it['due_date']))) $ins->execute([$iid, (int)$date['column_id'], $d]);
+            if ($date && ($d = Columns::date($it['due_date'])) && $d !== Columns::mirrors($cols, $vals[$iid] ?? [])['due_date']) $ins->execute([$iid, (int)$date['column_id'], $d]);
             if (!empty($first['priority']) && in_array($it['priority'], ['low', 'high', 'urgent'], true)) $ins->execute([$iid, (int)$first['priority']['column_id'], $it['priority']]);
         }
     }

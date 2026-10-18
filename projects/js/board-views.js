@@ -210,8 +210,8 @@
     if (card) FWB.openItem(card.dataset.kid);
   });
   el.view.addEventListener('keydown', (e) => {
-    if (S.view !== 'kanban' && S.view !== 'calendar' && S.view !== 'workload') return;
-    const card = e.target.closest('[data-kid], [data-cid-item], [data-wlid]');
+    if (!['kanban', 'calendar', 'workload', 'gantt'].includes(S.view)) return;
+    const card = e.target.closest('[data-kid], [data-cid-item], [data-wlid], [data-gitem]');
     if (card && e.key === 'Enter') { e.preventDefault(); card.click(); }
   });
   FWB.registerView('kanban', kanban);
@@ -296,14 +296,16 @@
       }
       return best ? new Date(best.getFullYear(), best.getMonth(), 1) : here;
     },
-    async moveTo(it, day) {
+    /** $from: the day of the chip that was dragged — a multi-day item moves by the distance dragged, not to start on $day. */
+    async moveTo(it, day, from) {
       const c = this.col();
       const v = it.values[c.id];
       if (c.type === 'date') { if (v !== day) await FWB.setValue(it, c, day); }
+      else if (!v) await FWB.setValue(it, c, { start: day, end: day });
       else {
-        const len = v ? daysBetween(parseYmd(v.start), parseYmd(v.end)) : 0;
-        const nv = { start: day, end: ymd(addDays(parseYmd(day), len)) };
-        if (!v || v.start !== nv.start) await FWB.setValue(it, c, nv);
+        const shift = daysBetween(parseYmd(from || v.start), parseYmd(day));
+        const nv = { start: ymd(addDays(parseYmd(v.start), shift)), end: ymd(addDays(parseYmd(v.end), shift)) };
+        if (shift) await FWB.setValue(it, c, nv);
       }
       FWB.renderView();
     },
@@ -325,7 +327,8 @@
   el.view.addEventListener('dragstart', (e) => {
     const ev = e.target.closest('[data-cid-item]');
     if (!ev || S.view !== 'calendar') return;
-    calDrag = Number(ev.dataset.cidItem);
+    const cell = ev.closest('[data-day]');
+    calDrag = { id: Number(ev.dataset.cidItem), from: cell ? cell.dataset.day : null };
     ev.classList.add('is-dragging');
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', 'fwp-ev');
@@ -340,10 +343,11 @@
     if (calDrag == null || S.view !== 'calendar') return;
     e.preventDefault();
     const cell = e.target.closest('[data-day]');
-    const it = FWB.item(calDrag);
+    const d = calDrag;
+    const it = FWB.item(d.id);
     calDrag = null;
     $$('.is-drop, .is-dragging', el.view).forEach((x) => x.classList.remove('is-drop', 'is-dragging'));
-    if (cell && it) cal.moveTo(it, cell.dataset.day);
+    if (cell && it) cal.moveTo(it, cell.dataset.day, d.from);
   });
   el.view.addEventListener('dragend', () => { if (S.view !== 'calendar') return; calDrag = null; $$('.is-drop, .is-dragging', el.view).forEach((x) => x.classList.remove('is-drop', 'is-dragging')); });
   el.view.addEventListener('click', (e) => {
@@ -467,7 +471,7 @@
       const lane = 38;
       const ed = FWB.canEdit();
       const listHTML = rows.map((r) => r.it
-        ? `<div class="fwp-gantt__item" data-gitem="${r.it.id}" title="${esc(r.it.title)}"><span>${esc(r.it.title)}</span>${faces((FWB.primaryPeople() ? r.it.values[FWB.primaryPeople().id] : null) || [], 2, 'fwp-faces--sm')}</div>`
+        ? `<div class="fwp-gantt__item" data-gitem="${r.it.id}" title="${esc(r.it.title)}" tabindex="0" role="button"><span>${esc(r.it.title)}</span>${faces((FWB.primaryPeople() ? r.it.values[FWB.primaryPeople().id] : null) || [], 2, 'fwp-faces--sm')}</div>`
         : `<div class="fwp-gantt__grp ${this.collapsed.has(r.g.id) ? 'is-collapsed' : ''}" data-ggrp="${r.g.id}" style="--c:${safeColor(r.g.color)}">${icon('chev-down')}${esc(r.g.name)}</div>`).join('');
       const pos = new Map();
       const bars = rows.map((r, i) => {
@@ -545,8 +549,13 @@
     t.style.left = Math.min(x + 12, window.innerWidth - t.offsetWidth - 8) + 'px';
     t.style.top = (y - 36) + 'px';
   }
+  // Live updates wait while a bar is held (a re-render would drop it mid-drag).
+  FWB.ganttDragging = () => !!gDrag;
+  let lastPointer = '';
   el.view.addEventListener('pointerdown', (e) => {
-    if (S.view !== 'gantt' || !FWB.canEdit() || e.button !== 0) return;
+    lastPointer = e.pointerType;
+    // Touch pans the chart (a tap still opens the item): bars move with a mouse or a pen.
+    if (S.view !== 'gantt' || !FWB.canEdit() || e.button !== 0 || e.pointerType === 'touch' || !finePointer()) return;
     const bar = e.target.closest('[data-gbar]');
     if (!bar) return;
     const it = FWB.item(bar.dataset.gbar);
@@ -581,17 +590,21 @@
     else { g.bar.style.left = x + 'px'; g.bar.style.width = Math.max(gantt.dayW, (daysBetween(s, en) + 1) * gantt.dayW) + 'px'; }
     tip(g.ms ? fmtDate(g.ns, { dow: true }) : `${fmtRange(g.ns, g.ne)} · ${plural(daysBetween(s, en) + 1, 'day')}`, e.clientX, e.clientY);
   });
-  el.view.addEventListener('pointerup', async () => {
+  // On the window: a release outside the chart still ends the drag.
+  window.addEventListener('pointerup', async () => {
     if (S.view !== 'gantt' || !gDrag) return;
     const g = gDrag;
     gDrag = null;
     tip(null);
+    // The bar was re-rendered away under the pointer: drop the drag, save nothing.
+    if (!g.bar.isConnected) { FWB.renderView(); return; }
     if (!g.moved) { FWB.openItem(g.it.id); return; }
     if (!g.ns || (g.ns === g.s0 && g.ne === g.e0)) { FWB.renderView(); return; }
     await FWB.setValue(g.it, g.c, g.c.type === 'timeline' ? { start: g.ns, end: g.ne } : g.ns);
     FWB.renderView();
   });
   el.view.addEventListener('pointercancel', () => { if (gDrag) { gDrag = null; tip(null); FWB.renderView(); } });
+  document.addEventListener('lostpointercapture', (e) => { if (gDrag && e.target === gDrag.bar && !gDrag.bar.isConnected) { gDrag = null; tip(null); FWB.renderView(); } });
   el.view.addEventListener('pointerleave', () => { if (!gDrag) tip(null); });
   el.view.addEventListener('click', (e) => {
     if (S.view !== 'gantt') return;
@@ -607,7 +620,7 @@
       return;
     }
     const bar = e.target.closest('[data-gbar]');
-    if (bar && !FWB.canEdit()) FWB.openItem(bar.dataset.gbar);
+    if (bar && (!FWB.canEdit() || !finePointer() || lastPointer === 'touch')) FWB.openItem(bar.dataset.gbar);
   });
   // hover a list row ↔ its lane
   el.view.addEventListener('mouseover', (e) => {

@@ -20,14 +20,20 @@ $invite = $token !== '' ? Guests::byToken($DB, $token) : null;
 $error = '';
 $email = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = mb_substr(trim((string)($_POST['email'] ?? '')), 0, 255);
+    $email = mb_strtolower(trim(mb_substr((string)($_POST['email'] ?? ''), 0, 255)));
     $password = (string)($_POST['password'] ?? '');
+    // Only a valid plain address gets a per-email bucket (and reaches Guests::login): other spellings
+    // of an address would each get a bucket of their own. Every try counts against the client address.
+    $valid = (bool)filter_var($email, FILTER_VALIDATE_EMAIL);
     if (!pr_guest_csrf_ok()) {
         $error = 'The form expired — please try again.';
     } elseif ($email === '' || $password === '') {
         $error = 'Enter your email and password.';
-    } elseif (($wait = pr_guest_throttle('login', $email, 8, 900)) > 0) {
+    } elseif (($wait = pr_guest_throttle('login', $valid ? $email : '', 8, 900)) > 0) {
         $error = 'Too many sign-in attempts. Please wait ' . (int)ceil($wait / 60) . ' minute' . ($wait > 60 ? 's' : '') . ' and try again.';
+    } elseif (!$valid) {
+        usleep(random_int(200000, 450000)); // the same answer, at the same pace, as a wrong password
+        $error = 'That email and password do not match an active invitation.';
     } else {
         try {
             $g = Guests::login($DB, $email, mb_substr($password, 0, 200), $token);

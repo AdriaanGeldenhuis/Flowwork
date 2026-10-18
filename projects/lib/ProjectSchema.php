@@ -11,14 +11,15 @@
 //   - adds the hot-path indexes and the one-row-per-cell key,
 //   - fills board_item_people and the items' own fields (status, assignee,
 //     dates …) from the cell values once, so Calendar, Home and My work see
-//     the boards that were filled in before.
+//     the boards that were filled in before (the old boards' own fields are
+//     copied into cells only once ever).
 // It never drops or retypes an existing column. Mirrors
 // Migrations/2026-10-18-projects-overhaul.sql. Runs once per SCHEMA_VERSION
 // (a marker file under storage/projects/).
 
 final class ProjectSchema
 {
-    public const SCHEMA_VERSION = '2026-10-18-2';
+    public const SCHEMA_VERSION = '2026-10-18-3';
 
     public const COLUMN_TYPES = ['status', 'people', 'date', 'timeline', 'text', 'longtext', 'number', 'dropdown', 'checkbox',
                                  'tags', 'link', 'email', 'phone', 'formula', 'progress', 'priority', 'supplier', 'files',
@@ -36,18 +37,31 @@ final class ProjectSchema
         $failed = $marker !== null ? $marker . '.failed' : null;
         if ($failed !== null && is_file($failed) && filemtime($failed) > time() - 600) return;
 
-        $ok = true;
-        foreach (['createTables' => true, 'addColumns' => true, 'extendEnums' => true, 'addIndexes' => false, 'backfill' => false] as $step => $required) {
-            try {
-                self::$step($db);
-            } catch (Throwable $e) {
-                error_log('[projects] schema ' . $step . ' failed: ' . $e->getMessage());
-                if ($required) $ok = false;
+        // One request at a time: the first one after a deploy does the work (the
+        // backfill can take a while on big boards); others wait for it, then go on.
+        $locked = false;
+        $canLock = true;
+        try { $locked = (bool)$db->query("SELECT GET_LOCK('flowwork_projects_schema', 20)")->fetchColumn(); } catch (Throwable $e) { $canLock = false; /* run without */ }
+        if ($canLock && !$locked) return; // still busy elsewhere after 20 s; its tables already exist
+        try {
+            clearstatcache();
+            if ($marker !== null && is_file($marker)) return; // finished while this request waited
+
+            $ok = true;
+            foreach (['createTables' => true, 'addColumns' => true, 'extendEnums' => true, 'addIndexes' => false, 'backfill' => false] as $step => $required) {
+                try {
+                    self::$step($db);
+                } catch (Throwable $e) {
+                    error_log('[projects] schema ' . $step . ' failed: ' . $e->getMessage());
+                    if ($required) $ok = false;
+                }
             }
-        }
-        if ($marker !== null) {
-            if ($ok) { @file_put_contents($marker, date('c')); @unlink($failed); }
-            else @touch($failed);
+            if ($marker !== null) {
+                if ($ok) { @file_put_contents($marker, date('c')); @unlink($failed); }
+                else @touch($failed);
+            }
+        } finally {
+            if ($locked) { try { $db->query("SELECT RELEASE_LOCK('flowwork_projects_schema')"); } catch (Throwable $e) { /* released when the connection closes */ } }
         }
     }
 
@@ -177,7 +191,8 @@ final class ProjectSchema
               PRIMARY KEY (`id`),
               KEY `idx_items_board_group` (`board_id`,`group_id`,`position`,`company_id`,`archived`),
               KEY `idx_company_board_group` (`company_id`,`board_id`,`group_id`),
-              KEY `idx_assigned` (`assigned_to`)
+              KEY `idx_assigned` (`assigned_to`),
+              KEY `idx_due` (`due_date`)
             ) $tail");
         $db->exec("CREATE TABLE IF NOT EXISTS `board_item_values` (
               `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -377,6 +392,7 @@ final class ProjectSchema
             'project_boards' => [
                 'created_by' => "int(11) DEFAULT NULL",
                 'item_noun'  => "varchar(40) DEFAULT NULL",
+                'formulas_on' => "date DEFAULT NULL", // the day formulas that read the clock were last computed
             ],
             'board_columns' => [
                 'description' => "varchar(255) DEFAULT NULL",
@@ -425,13 +441,17 @@ final class ProjectSchema
         return $out;
     }
 
-    /** Is there an index (a unique one, when asked) whose columns are exactly $cols, in order? */
+    /**
+     * Is there an index (a unique one, when asked) whose columns are exactly $cols, in order?
+     * A plain index that starts with $cols serves as well.
+     */
     private static function hasIndexOn(array $indexes, array $cols, bool $unique): bool
     {
         foreach ($indexes as $ix) {
             $c = $ix['cols'];
             ksort($c);
             if (array_values($c) === $cols && (!$unique || $ix['unique'])) return true;
+            if (!$unique && array_slice(array_values($c), 0, count($cols)) === $cols) return true;
         }
         return false;
     }
@@ -442,44 +462,75 @@ final class ProjectSchema
             'board_item_values' => [['uniq_item_col', ['item_id', 'column_id'], true]],
             'board_items' => [['idx_company_assigned', ['company_id', 'assigned_to'], false],
                               ['idx_company_due', ['company_id', 'due_date'], false],
+                              ['idx_due', ['due_date'], false], // the reminders' tick, across companies
                               ['idx_board_company_archived', ['board_id', 'company_id', 'archived'], false]],
             'board_item_comments' => [['idx_item', ['item_id'], false]],
             'board_item_attachments' => [['idx_item', ['item_id'], false]],
             'board_subitems' => [['idx_parent', ['parent_item_id'], false]],
             'board_audit_log' => [['idx_board_id', ['board_id', 'id'], false]],
             'board_groups' => [['idx_board_position', ['board_id', 'position'], false]],
+            // Other modules' tables that Projects reads by item, project or board (item panel, Money tab).
+            'quote_lines' => [['idx_project_item', ['project_item_id'], false]],
+            'invoice_lines' => [['idx_project_item', ['project_item_id'], false]],
+            'ap_bill_lines' => [['idx_project_item', ['project_item_id'], false]],
+            'timesheet_entries' => [['idx_company_item', ['company_id', 'item_id'], false],
+                                    ['idx_ts_project', ['project_id'], false],
+                                    ['idx_ts_board', ['board_id'], false]],
+            'journal_lines' => [['idx_jl_board', ['board_id'], false]],
         ];
         foreach ($want as $table => $list) {
-            $have = self::indexes($db, $table);
-            foreach ($list as [$name, $cols, $unique]) {
-                if (self::hasIndexOn($have, $cols, $unique)) continue;
-                if ($unique && $table === 'board_item_values') {
-                    // Keep the newest row of each duplicated cell, then add the key.
-                    $db->exec("DELETE t1 FROM board_item_values t1 JOIN board_item_values t2
-                                 ON t1.item_id = t2.item_id AND t1.column_id = t2.column_id AND t1.id < t2.id");
+            try {
+                $have = self::indexes($db, $table);
+                foreach ($list as [$name, $cols, $unique]) {
+                    if (self::hasIndexOn($have, $cols, $unique)) continue;
+                    if ($unique && $table === 'board_item_values') {
+                        // Keep the newest row of each duplicated cell, then add the key.
+                        $db->exec("DELETE t1 FROM board_item_values t1 JOIN board_item_values t2
+                                     ON t1.item_id = t2.item_id AND t1.column_id = t2.column_id AND t1.id < t2.id");
+                    }
+                    $db->exec("ALTER TABLE `$table` ADD " . ($unique ? 'UNIQUE KEY' : 'KEY') . " `$name` (`" . implode('`,`', $cols) . "`)");
                 }
-                $db->exec("ALTER TABLE `$table` ADD " . ($unique ? 'UNIQUE KEY' : 'KEY') . " `$name` (`" . implode('`,`', $cols) . "`)");
+            } catch (Throwable $e) {
+                // A module that is not installed (or an older shape of its table): the rest still go ahead.
+                error_log('[projects] schema index on ' . $table . ': ' . $e->getMessage());
             }
         }
     }
 
     /**
-     * Once per version, for every board: copy item fields the old boards showed
-     * into cells, recompute formulas with the new engine (names now match
-     * loosely), then fill board_item_people and the items' own fields.
+     * Once per version, for every board: recompute formulas with the new engine
+     * (names now match loosely), then fill board_item_people and the items' own
+     * fields. Once ever (its own marker), before that: copy item fields the old
+     * boards showed into cells — after the first run those fields are mirrors,
+     * and copying them again would turn computed dates into typed ones.
      */
     private static function backfill(PDO $db): void
     {
         @set_time_limit(300);
+        $legacy = self::legacyPending();
         $boards = $db->query("SELECT board_id, company_id FROM project_boards")->fetchAll(PDO::FETCH_ASSOC);
         foreach ($boards as $b) {
             try {
-                BoardRepo::migrateLegacyFields($db, (int)$b['company_id'], (int)$b['board_id']);
+                if ($legacy) BoardRepo::migrateLegacyFields($db, (int)$b['company_id'], (int)$b['board_id']);
                 BoardRepo::computeFormulas($db, (int)$b['company_id'], (int)$b['board_id']);
                 BoardRepo::refreshMirrors($db, (int)$b['company_id'], (int)$b['board_id']);
             } catch (Throwable $e) {
                 error_log('[projects] backfill board ' . $b['board_id'] . ': ' . $e->getMessage());
             }
         }
+        $dir = ProjectPaths::storageDir();
+        if ($dir !== null && !is_file($dir . '/.legacy-fields-migrated')) @file_put_contents($dir . '/.legacy-fields-migrated', date('c'));
+    }
+
+    /** Has the old boards' field copy still to run? (Not when it ran, or when an earlier version's backfill did.) */
+    private static function legacyPending(): bool
+    {
+        $dir = ProjectPaths::storageDir();
+        if ($dir === null) return true;
+        if (is_file($dir . '/.legacy-fields-migrated')) return false;
+        foreach (glob($dir . '/.schema-*') ?: [] as $f) {
+            if (!str_ends_with($f, '.failed') && basename($f) !== '.schema-' . self::SCHEMA_VERSION) return false;
+        }
+        return true;
     }
 }

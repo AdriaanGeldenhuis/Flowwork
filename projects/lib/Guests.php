@@ -56,16 +56,18 @@ final class Guests
         $days = max(1, min(365, $days));
         $token = bin2hex(random_bytes(32));
         $expires = date('Y-m-d H:i:s', strtotime('+' . $days . ' days'));
+        // A guest who already accepted keeps their link (Extend only moves the expiry); a pending invitation gets a new one.
         $repo->db->prepare("INSERT INTO board_guests (board_id, company_id, email, token, status, invited_by, invited_at, expires_at)
                             VALUES (?, ?, ?, ?, 'pending', ?, NOW(), ?)
-                            ON DUPLICATE KEY UPDATE token = VALUES(token), invited_by = VALUES(invited_by), invited_at = NOW(), expires_at = VALUES(expires_at),
-                                                    status = IF(password_hash IS NULL, 'pending', 'active')")
+                            ON DUPLICATE KEY UPDATE token = IF(password_hash IS NULL, VALUES(token), token), invited_by = VALUES(invited_by), invited_at = NOW(),
+                                                    expires_at = VALUES(expires_at), status = IF(password_hash IS NULL, 'pending', 'active')")
             ->execute([$boardId, $repo->companyId, $email, $token, $repo->userId, $expires]);
         Activity::log($repo->db, $repo->companyId, $repo->userId, $boardId, null, 'guest_invited', ['email' => $email, 'days' => $days]);
-        $sent = self::sendInvite($repo, $b, $email, $token, $expires);
         $st = $repo->db->prepare("SELECT * FROM board_guests WHERE board_id = ? AND email = ?");
         $st->execute([$boardId, $email]);
-        return ['guest' => self::out($st->fetch(PDO::FETCH_ASSOC)), 'sent' => $sent, 'link' => self::inviteUrl($token)];
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        $sent = self::sendInvite($repo, $b, $email, (string)$row['token'], $expires);
+        return ['guest' => self::out($row), 'sent' => $sent, 'link' => self::inviteUrl((string)$row['token'])];
     }
 
     /** New link and expiry for an existing guest. */
@@ -151,7 +153,10 @@ final class Guests
     public static function login(PDO $db, string $email, string $password, string $token = ''): array
     {
         $email = mb_strtolower(trim($email));
-        $st = $db->prepare("SELECT * FROM board_guests WHERE email = ? AND status = 'active' AND password_hash IS NOT NULL
+        // Exactly the stored (lower-case, plain ASCII) address: the column's collation would also match
+        // accented, full-width or padded spellings, each with a sign-in limit of its own.
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new ProjectUserError('That email and password do not match an active invitation.');
+        $st = $db->prepare("SELECT * FROM board_guests WHERE BINARY LOWER(email) = ? AND status = 'active' AND password_hash IS NOT NULL
                                AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY (token = ?) DESC, last_access_at DESC, invited_at DESC");
         $st->execute([$email, $token]);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $g) {
@@ -203,13 +208,27 @@ final class Guests
         }
         $people = [];
         foreach ($repo->people() as $id => $p) if (isset($used[$id])) $people[] = ['id' => $id, 'name' => $p['name']];
+        // Like people: only the suppliers the board's cells name, not the company's supplier list.
+        $usedSup = [];
+        $supCols = array_filter($cols, fn($c) => $c['type'] === 'supplier');
+        foreach ($items as $it) {
+            foreach ($supCols as $c) if ($v = (int)(((array)$it['values'])[(int)$c['column_id']] ?? 0)) $usedSup[$v] = true;
+        }
         $suppliers = [];
-        if (array_filter($cols, fn($c) => $c['type'] === 'supplier')) {
-            $st = $db->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'supplier'");
-            $st->execute([$companyId]);
+        if ($usedSup) {
+            $ids = array_keys($usedSup);
+            $st = $db->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")");
+            $st->execute(array_merge([$companyId], $ids));
             foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $s) $suppliers[] = ['id' => (int)$s['id'], 'name' => $s['name']];
         }
-        foreach ($items as &$it) { $it['files'] = array_map(fn($f) => $f + ['guest' => true], $it['files']); }
+        // The item panel shows the description (the board payload only says whether there is one).
+        $st = $db->prepare("SELECT id, description FROM board_items WHERE board_id = ? AND company_id = ? AND (archived = 0 OR archived IS NULL)");
+        $st->execute([$boardId, $companyId]);
+        $desc = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+        foreach ($items as &$it) {
+            $it['files'] = array_map(fn($f) => $f + ['guest' => true], $it['files']);
+            $it['description'] = (string)($desc[$it['id']] ?? '');
+        }
         unset($it);
         return [
             'board' => ['id' => $boardId, 'title' => $g['board_title'], 'project_name' => $g['project_name'], 'level' => 0, 'guest' => true,

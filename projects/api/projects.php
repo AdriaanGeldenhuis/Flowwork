@@ -1,7 +1,7 @@
 <?php
 // /projects/api/projects.php
 //   GET  [?status=open|active|on_hold|completed|draft|cancelled|all&q=&mine=1&archived=1]   portfolio
-//   GET  ?id=5                                       one project: boards, members, stats, events, activity
+//   GET  ?id=5                                       one project: boards, breakdown, due soon, members, stats, events, activity
 //   POST {action:'create', name, description, client_id|client, site_address, start_date, end_date, budget,
 //         manager_id, color, visibility, template, members[{user_id, role}]}
 //   POST {action:'update', id, …same fields, status}
@@ -32,6 +32,8 @@ if (!pr_is_post()) {
         pr_json([
             'project' => $PR->projectSummary($p + $state, $stats[$id] ?? []) + ['level' => $level],
             'boards' => $PR->boardsOf($id, $level >= 3),
+            'breakdown' => $PR->boardBreakdown($id),
+            'due' => $PR->dueSoon($id, 12),
             'members' => $PR->members($id),
             'events' => $events,
             'activity' => Activity::feed($PR, ['project_id' => $id], 25),
@@ -76,10 +78,12 @@ switch ($action) {
         pr_json();
 
     case 'member_set':
+        pr_rate_limit('pr-write', 600, 600);
         $PR->setMember($id, pr_int($in, 'user_id'), pr_str($in, 'role', 20));
         pr_json(['members' => $PR->members($id)]);
 
     case 'member_remove':
+        pr_rate_limit('pr-write', 600, 600);
         $PR->removeMember($id, pr_int($in, 'user_id'));
         pr_json(['members' => $PR->members($id)]);
 

@@ -61,7 +61,8 @@
     const cfg = JSON.parse(JSON.stringify(c.config || {}));
     const T = TYPES[type] || { label: type };
     let labels = type === 'status' ? (cfg.labels && cfg.labels.length ? cfg.labels : [{ key: 'todo', label: 'To do', color: '#85766b' }, { key: 'working', label: 'Working on it', color: '#d39a32' }, { key: 'stuck', label: 'Stuck', color: '#c2412f' }, { key: 'done', label: 'Done', color: '#2f8a5f', done: true }]).map((l) => Object.assign({}, l)) : [];
-    let options = type === 'dropdown' ? (cfg.options || []).map((o) => Object.assign({}, o)) : [];
+    // Each option remembers the label it had, so a rename carries the cells that use it.
+    let options = type === 'dropdown' ? (cfg.options || []).map((o) => Object.assign({}, o, { was: o.label })) : [];
     const others = S.columns.filter((x) => x.id !== c.id);
     let body = `<div class="fwp-form-grid">
       <div class="field"><label class="label" for="csName">Name</label><input class="input" id="csName" maxlength="100" value="${esc(c.name || '')}" placeholder="${esc(T.label)}"></div>
@@ -172,7 +173,7 @@
         // keep existing keys so items keep their status; new labels use their text
         conf = { labels: clean.map((l) => ({ key: l.key || l.label.trim(), label: l.label.trim(), color: l.color, done: !!l.done })) };
       }
-      if (type === 'dropdown') conf = { options: options.filter((o) => String(o.label || '').trim()).map((o) => ({ label: o.label.trim(), color: o.color })), multi: $('#csMulti', m).checked };
+      if (type === 'dropdown') conf = { options: options.filter((o) => String(o.label || '').trim()).map((o) => ({ label: o.label.trim(), color: o.color, was: o.was || null })), multi: $('#csMulti', m).checked };
       if (type === 'number' || type === 'formula') {
         conf = { format: $('#csFormat', m).value, precision: Number($('#csPrec', m).value), unit: $('#csUnit', m).value.trim(), unit_pos: $('#csUnitPos', m).value, agg: $('#csAgg', m).value };
         if (type === 'formula') { conf.formula = fx.value.trim(); if (!conf.formula) throw new Error('Write the formula first — for example {Qty} * {Rate}.'); }
@@ -278,10 +279,13 @@
     let pop;
     const apply = () => {
       S.activeView = 0;
+      FWB.syncViewId();
       FWB.savePrefsSoon({ filters: S.rules.filter(complete) });
       FWB.renderView();
+      // Rules still waiting for a value neither filter nor count.
+      const n = S.rules.filter(complete).length;
       const fb = $('#filterBtn');
-      if (fb) { fb.classList.toggle('is-on', S.rules.length > 0); const badge = $('.fwp-badge', fb); if (badge) badge.textContent = S.rules.length; else if (S.rules.length) fb.insertAdjacentHTML('beforeend', `<span class="fwp-badge">${S.rules.length}</span>`); if (!S.rules.length && badge) badge.remove(); }
+      if (fb) { fb.classList.toggle('is-on', n > 0); const badge = $('.fwp-badge', fb); if (badge) badge.textContent = n; else if (n) fb.insertAdjacentHTML('beforeend', `<span class="fwp-badge">${n}</span>`); if (!n && badge) badge.remove(); }
     };
     const applySoon = debounce(apply, 250);
     const render = () => {
@@ -321,7 +325,7 @@
     });
     pop.el.addEventListener('input', (e) => { if (e.target.matches('input[data-fval]')) { S.rules[e.target.dataset.fval].value = e.target.value; applySoon(); } });
   }
-  const complete = (r) => r && r.col != null && r.op;
+  const complete = (r) => FWB.ruleReady(r);
 
   // ===========================================================================
   // Sort, hide
@@ -329,7 +333,7 @@
   function sort(anchor) {
     const cols = [['name', FWB.Noun() + ' name']].concat(S.columns.filter((c) => !['files'].includes(c.type)).map((c) => [c.id, c.name]));
     let pop;
-    const apply = () => { S.activeView = 0; FWB.savePrefsSoon({ sort: S.sort }); FWB.renderView(); const sb = $('#sortBtn'); if (sb) sb.classList.toggle('is-on', S.sort.length > 0); };
+    const apply = () => { S.activeView = 0; FWB.syncViewId(); FWB.savePrefsSoon({ sort: S.sort }); FWB.renderView(); const sb = $('#sortBtn'); if (sb) sb.classList.toggle('is-on', S.sort.length > 0); };
     const render = () => {
       $('.fwp-srules', pop.el).innerHTML = S.sort.length ? S.sort.map((s, i) => `<div class="fwp-frule" style="grid-template-columns:54px minmax(0,1fr) minmax(0,.8fr) 30px">
           <span>${i === 0 ? 'Sort by' : 'then'}</span><select class="select" data-scol="${i}">${cols.map(([v, l]) => opt(v, l, s.col)).join('')}</select>
@@ -353,7 +357,7 @@
   }
   function hide(anchor) {
     let pop;
-    const apply = () => { S.activeView = 0; FWB.savePrefsSoon({ hidden: Array.from(S.hidden) }); FWB.renderView(); const hb = $('#hideBtn'); if (hb) hb.classList.toggle('is-on', S.hidden.size > 0); };
+    const apply = () => { S.activeView = 0; FWB.syncViewId(); FWB.savePrefsSoon({ hidden: Array.from(S.hidden) }); FWB.renderView(); const hb = $('#hideBtn'); if (hb) hb.classList.toggle('is-on', S.hidden.size > 0); };
     const render = (q = '') => {
       const ql = q.toLowerCase();
       $('.fwp-colsel', pop.el).innerHTML = S.columns.filter((c) => !ql || c.name.toLowerCase().includes(ql)).map((c) => `<label>${icon(C.TYPE_ICON[c.type] || 'text')}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</span>
@@ -389,7 +393,7 @@
           const v = mine.find((x) => x.id === S.activeView);
           if (v) try { const d = await api.post('views.php', { action: 'save', board_id: S.board.id, id: v.id, name: v.name, view: S.view, shared: v.shared, config: currentConfig() }); S.views = d.views; toast('View updated'); } catch (x) { toastError(x); }
         }
-        if (k === 'reset') { S.rules = []; S.sort = []; S.hidden = new Set(); S.person = null; S.activeView = 0; FWB.savePrefsSoon({ filters: [], sort: [], hidden: [], person: null }); FWB.renderTools(); FWB.renderView(); }
+        if (k === 'reset') { S.rules = []; S.sort = []; S.hidden = new Set(); S.person = null; S.activeView = 0; FWB.syncViewId(); FWB.savePrefsSoon({ filters: [], sort: [], hidden: [], person: null }); FWB.renderTools(); FWB.renderView(); }
         if (k === 'menu') { setTimeout(() => viewMenu(anchor, mine.find((x) => x.id === Number(id))), 0); }
       },
     });
@@ -412,7 +416,7 @@
           if (k === 'delete') {
             if (!(await dialog({ title: `Delete “${v.name}”?`, confirm: 'Delete', danger: true }))) return;
             S.views = (await api.post('views.php', { action: 'delete', board_id: S.board.id, id: v.id })).views;
-            if (S.activeView === v.id) { S.activeView = 0; FWB.renderTools(); }
+            if (S.activeView === v.id) { S.activeView = 0; FWB.syncViewId(); FWB.renderTools(); }
           }
         } catch (x) { toastError(x); }
       },
@@ -782,23 +786,25 @@
   }
   async function projectChoices(excludeCurrent) {
     try {
-      const d = await api.get('pickers.php', { type: 'projects' });
+      // keep: the board's own project, even when it is completed, cancelled or archived.
+      const d = await api.get('pickers.php', { type: 'projects', keep: S.project.id });
       return d.projects.filter((p) => !excludeCurrent || p.id !== S.project.id);
     } catch (x) { toastError(x); return []; }
   }
   async function duplicateBoard() {
     const projects = await projectChoices(false);
     const m = modal('Duplicate board', `<div class="field"><span class="label">Copy</span><div class="fwm-results" style="margin-top:4px">
-        <label class="fwm-result"><input type="radio" name="dbWith" value="0" checked style="accent-color:var(--accent)"><span class="fwm-result__text"><b>The structure</b><small>Groups, columns, views and automations — no ${esc(FWB.noun())}s.</small></span></label>
+        <label class="fwm-result"><input type="radio" name="dbWith" value="0" checked style="accent-color:var(--accent)"><span class="fwm-result__text"><b>The structure</b><small>Groups and columns — no ${esc(FWB.noun())}s. Saved views and automations are not copied.</small></span></label>
         <label class="fwm-result"><input type="radio" name="dbWith" value="1" style="accent-color:var(--accent)"><span class="fwm-result__text"><b>Structure and ${esc(FWB.noun())}s</b><small>Everything, including values and subitems (not updates or files).</small></span></label></div></div>
       <div class="field" style="margin-top:14px"><label class="label" for="dbProject">Into project</label><select class="select" id="dbProject">${projects.map((p) => opt(p.id, p.label, S.project.id)).join('') || opt(S.project.id, S.project.name, S.project.id)}</select></div>`,
       `<button class="btn" type="button" data-close>Cancel</button><button class="btn btn--primary" type="button" id="dbGo">${icon('copy')}Duplicate</button>`);
     $('#dbGo', m).addEventListener('click', async (e) => {
-      e.currentTarget.classList.add('is-busy');
+      const btn = e.currentTarget; // gone from the event once it is awaited
+      btn.classList.add('is-busy');
       try {
         const d = await api.post('boards.php', { action: 'duplicate', id: S.board.id, with_items: ($('input[name=dbWith]:checked', m) || {}).value === '1', project_id: Number($('#dbProject', m).value) });
         location.href = d.url;
-      } catch (x) { toastError(x); e.currentTarget.classList.remove('is-busy'); }
+      } catch (x) { toastError(x); btn.classList.remove('is-busy'); }
     });
     openModal(m);
   }
@@ -809,9 +815,10 @@
       <div class="hint">You need to manage both projects. The board keeps its items, updates and files; people who are only on this project lose access to it.</div></div>`,
       `<button class="btn" type="button" data-close>Cancel</button><button class="btn btn--primary" type="button" id="mbGo">${icon('move')}Move board</button>`);
     $('#mbGo', m).addEventListener('click', async (e) => {
-      e.currentTarget.classList.add('is-busy');
+      const btn = e.currentTarget;
+      btn.classList.add('is-busy');
       try { await api.post('boards.php', { action: 'move', id: S.board.id, project_id: Number($('#mbProject', m).value) }); location.reload(); }
-      catch (x) { toastError(x); e.currentTarget.classList.remove('is-busy'); }
+      catch (x) { toastError(x); btn.classList.remove('is-busy'); }
     });
     openModal(m);
   }

@@ -62,7 +62,8 @@
   // ===========================================================================
   // Open / close
   // ===========================================================================
-  async function open(id, tab) {
+  /** opts.focus: opened from the keyboard — the keyboard comes along. */
+  async function open(id, tab, opts) {
     id = Number(id);
     st.mode = 'item';
     const switching = st.id !== id;
@@ -89,9 +90,12 @@
       host.innerHTML = shell('Item not found', false) ;
       $('.fwp-panel__body', host).innerHTML = `<div class="fwp-panelcard__empty">${esc(x.message || 'This item could not be opened.')}</div>`;
     }
+    if (opts && opts.focus && seq === st.seq) { const b = $('[data-p=close]', host); if (b) b.focus(); }
   }
   function close() {
     if (host.hidden) return;
+    const id = st.id;
+    const had = host.contains(document.activeElement);
     flushDescription();
     closePop();
     host.hidden = true;
@@ -100,19 +104,31 @@
     st.detail = null;
     st.mode = 'item';
     FWB.panelClosed();
+    // The keyboard goes back to the item it came from.
+    if (had && id) {
+      const b = FWB.el.view.querySelector(`.fwp-row[data-iid="${id}"] [data-open], [data-kid="${id}"], [data-cid-item="${id}"], [data-gitem="${id}"]`);
+      if (b) b.focus({ preventScroll: true });
+    }
   }
   async function refresh(id, quiet) {
     if (st.mode !== 'item' || Number(id) !== st.id) return;
     try {
       const d = await load(st.id);
       if (Number(id) !== st.id) return;
+      if (!S.guest && d.board_id && d.board_id !== S.board.id) { close(); toast(`This ${FWB.noun()} was moved to ${d.board || 'another board'}.`); return; }
       const typing = document.activeElement && host.contains(document.activeElement) && document.activeElement.matches('textarea, input, [contenteditable="true"]');
       st.detail = d;
-      if (quiet && typing) { renderHead(); if (st.tab === 'details') renderFields(); return; }
+      // Whoever asks (a live update, a colleague's column change), what is being typed stays.
+      if (typing || st.descDirty) { renderHead(); renderTabs(); if (st.tab === 'details') renderFields(); return; }
       render();
       if (st.tab === 'updates') loadUpdates(true);
       if (st.tab === 'activity') loadActivity();
-    } catch (x) { if (!quiet) toastError(x); }
+    } catch (x) {
+      if (Number(id) !== st.id) return;
+      // Deleted, or moved where this person cannot follow: nothing to show any more.
+      if (x.status === 404 || (S.guest && !FWB.item(st.id))) { close(); toast(`This ${FWB.noun()} was deleted or moved away.`); return; }
+      if (!quiet) toastError(x);
+    }
   }
   /** board.js tells us an item changed (a cell edit, live update…). */
   function onItemChanged(it) {
@@ -167,7 +183,7 @@
     const pp = FWB.primaryPeople();
     const lbl = ps ? C.statusOf(ps, it.values[ps.id]) : null;
     const people = pp ? (it.values[pp.id] || []) : [];
-    head.innerHTML = `<div class="fwp-panel__crumb">${g ? `<span class="fwp-dot fwp-dot--sq" style="--c:${safeColor(g.color)}"></span>` : ''}<span>${esc(S.board.title)}${d.group ? ' · ' + esc(d.group) : ''}</span></div>
+    const html = `<div class="fwp-panel__crumb">${g ? `<span class="fwp-dot fwp-dot--sq" style="--c:${safeColor(g.color)}"></span>` : ''}<span>${esc(S.board.title)}${d.group ? ' · ' + esc(d.group) : ''}</span></div>
       <h2 class="fwp-panel__title" id="pTitle" ${canEdit() ? 'contenteditable="true" spellcheck="true" role="textbox" aria-label="Item name"' : ''}>${esc(it.title)}</h2>
       ${d.archived ? `<div class="fwp-banner" style="margin-top:12px">${icon('archive')}<span class="grow">This ${esc(FWB.noun())} is archived.</span>${(d.level || 0) >= 2 ? `<button class="btn btn--sm" type="button" data-p="restore">${icon('undo')}Restore</button>` : ''}</div>` : ''}
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--ink-3)">
@@ -175,6 +191,19 @@
         ${people.length ? `<span class="fwp-faces">${people.slice(0, 4).map((id) => personAvatar(id)).join('')}</span>` : ''}
         <span>${S.guest ? 'Added' : 'Added by ' + esc(personName(it.created_by)) + ' ·'} ${esc(relTime(it.created_at))}</span>
       </div>`;
+    const t = $('#pTitle', host);
+    if (t && document.activeElement === t) {
+      // Being renamed: leave the title (and what is typed in it) alone; refresh what is around it.
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      Array.from(head.children).forEach((x) => { if (x !== t) x.remove(); });
+      const fresh = Array.from(tmp.children);
+      const ti = fresh.findIndex((x) => x.id === 'pTitle');
+      fresh.slice(0, ti).forEach((x) => head.insertBefore(x, t));
+      fresh.slice(ti + 1).forEach((x) => head.appendChild(x));
+      return;
+    }
+    head.innerHTML = html;
   }
   function renderTabs() {
     const d = st.detail;
@@ -664,6 +693,11 @@
   function openActivity() {
     flushDescription();
     if (S.openItem) { const r = FWB.el.view.querySelector(`.fwp-row[data-iid="${S.openItem}"]`); if (r) r.classList.remove('is-open'); S.openItem = 0; }
+    // The address no longer names an item (a reload must not open it again).
+    const u = new URL(location.href);
+    u.searchParams.delete('item');
+    u.searchParams.delete('open');
+    history.replaceState(null, '', u.pathname + u.search);
     st.mode = 'board';
     st.id = 0;
     st.detail = null;
@@ -690,7 +724,7 @@
   }
   function go(dir) {
     const id = neighbour(dir);
-    if (id) { flushDescription(); FWB.openItem(id, st.tab === 'activity' || st.tab === 'updates' ? st.tab : ''); const r = FWB.el.view.querySelector(`.fwp-row[data-iid="${id}"]`); if (r) r.scrollIntoView({ block: 'nearest' }); }
+    if (id) { flushDescription(); const had = host.contains(document.activeElement); FWB.openItem(id, st.tab === 'activity' || st.tab === 'updates' ? st.tab : '', had ? { focus: true } : undefined); const r = FWB.el.view.querySelector(`.fwp-row[data-iid="${id}"]`); if (r) r.scrollIntoView({ block: 'nearest' }); }
   }
   async function moreMenu(anchor) {
     const d = st.detail;
@@ -897,6 +931,12 @@
     if (e.target.closest('#pDrop') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); const fi = $('#fileInput'); if (fi) fi.click(); return; }
     const cell = e.target.closest('[data-pcid], [data-pgroup]');
     if (cell && e.key === 'Enter') { e.preventDefault(); cell.click(); }
+    // A rating from the keyboard: 0–9 stars.
+    if (cell && cell.dataset.pcid && /^[0-9]$/.test(e.key) && canEdit()) {
+      const c = FWB.col(cell.dataset.pcid);
+      const it = FWB.item(st.id);
+      if (c && it && c.type === 'rating') { e.preventDefault(); e.stopPropagation(); FWB.setValue(it, c, Math.min(Number(e.key), (c.config || {}).max || 5) || null); }
+    }
   });
   host.addEventListener('focusout', (e) => { if (e.target.id === 'pTitle') renameFromTitle(e.target); });
   host.addEventListener('submit', (e) => {
@@ -927,9 +967,9 @@
     if (host.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
     if (window.FWP.activePop || document.querySelector('.fwm-modal:not([hidden])')) return;
     if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (FWB.isGridKey(e)) return; // the table's own keys (its Escape leaves the table first)
     if (e.key === 'Escape') { e.preventDefault(); close(); return; }
     if (st.mode !== 'item') return;
-    if (e.target.closest('#view') && S.focus) return;
     if (e.key === 'j') { e.preventDefault(); go(1); }
     if (e.key === 'k') { e.preventDefault(); go(-1); }
   });

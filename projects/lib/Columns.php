@@ -463,7 +463,8 @@ final class Columns
     {
         if (!is_scalar($v)) return null;
         $s = trim(str_replace("\0", '', (string)$v));
-        return $s === '' ? null : mb_substr($s, 0, $max);
+        // Characters, and the 65 535 bytes a TEXT cell holds (20 000 emoji would not fit).
+        return $s === '' ? null : mb_strcut(mb_substr($s, 0, $max), 0, 65535, 'UTF-8');
     }
 
     // ======================================================================= mirrors

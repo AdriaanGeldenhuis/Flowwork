@@ -9,7 +9,8 @@ $b = $PR->requireBoard($boardId, 1);
 pr_rate_limit('pr-export', 30, 600);
 $boards = new BoardRepo($PR);
 $cols = array_values(array_filter($boards->columnRows($boardId), fn($c) => $c['type'] !== 'files'));
-$only = !empty($_GET['ids']) ? array_flip(pr_ids((string)$_GET['ids'], 20000)) : null;
+// ids present but empty: a filter that matches nothing exports nothing (not the whole board).
+$only = isset($_GET['ids']) ? pr_ids((string)$_GET['ids'], 20000) : null;
 
 $groups = [];
 foreach ($boards->groupRows($boardId) as $g) $groups[(int)$g['id']] = $g['name'];
@@ -22,18 +23,14 @@ if (array_filter($cols, fn($c) => $c['type'] === 'supplier')) {
 }
 $ctx = ['userNames' => $names, 'supplierNames' => $suppliers];
 
-$st = $DB->prepare("SELECT i.* FROM board_items i LEFT JOIN board_groups g ON g.id = i.group_id
-                     WHERE i.board_id = ? AND i.company_id = ? AND (i.archived = 0 OR i.archived IS NULL)
+BoardRepo::refreshTimeFormulas($DB, $PR_COMPANY_ID, $boardId, $boards->columnRows($boardId)); // TODAY() formulas as of today
+// Only the fields the file uses (no descriptions); the cells are read 500 items at a time below.
+$filter = $only === null ? '' : ' AND i.id IN (' . ($only ? implode(',', $only) : '0') . ')';
+$st = $DB->prepare("SELECT i.id, i.group_id, i.title, i.created_by, i.created_at, i.updated_at FROM board_items i LEFT JOIN board_groups g ON g.id = i.group_id
+                     WHERE i.board_id = ? AND i.company_id = ? AND (i.archived = 0 OR i.archived IS NULL)$filter
                   ORDER BY g.position, i.position, i.id");
 $st->execute([$boardId, $PR_COMPANY_ID]);
-$items = array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), fn($i) => $only === null || isset($only[(int)$i['id']])));
-$vals = [];
-if ($items) {
-    $in = implode(',', array_map(fn($i) => (int)$i['id'], $items));
-    foreach ($DB->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN ($in)")->fetchAll(PDO::FETCH_ASSOC) as $v) {
-        $vals[(int)$v['item_id']][(int)$v['column_id']] = $v['value'];
-    }
-}
+$items = $st->fetchAll(PDO::FETCH_ASSOC);
 
 $safe = function ($v): string {
     $v = (string)$v;
@@ -56,34 +53,39 @@ foreach ($cols as $c) {
 $head[] = 'Created';
 $head[] = 'Last updated';
 fputcsv($out, array_map($safe, $head));
-foreach ($items as $it) {
-    $row = [$groups[(int)$it['group_id']] ?? '', $it['title']];
-    $raw = $vals[(int)$it['id']] ?? [];
-    foreach ($cols as $c) {
-        $v = $raw[(int)$c['column_id']] ?? null;
-        switch ($c['type']) {
-            case 'timeline':
-                $t = Columns::decode($c, $v);
-                $row[] = $t['start'] ?? '';
-                $row[] = $t['end'] ?? '';
-                break;
-            case 'number': case 'formula': case 'progress': case 'rating':
-                $d = Columns::decode($c, $v);
-                $row[] = $d === null ? '' : (is_float($d) ? rtrim(rtrim(number_format($d, 6, '.', ''), '0'), '.') : $d);
-                break;
-            case 'created':
-                $row[] = substr((string)$it['created_at'], 0, 16) . ' · ' . ($names[(int)$it['created_by']] ?? '');
-                break;
-            case 'updated':
-                $row[] = substr((string)$it['updated_at'], 0, 16);
-                break;
-            default:
-                $row[] = Columns::text($c, $v, $ctx);
+foreach (array_chunk($items, 500) as $chunk) {
+    $vals = [];
+    $vs = $DB->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN (" . implode(',', array_map(fn($i) => (int)$i['id'], $chunk)) . ")");
+    while ($v = $vs->fetch(PDO::FETCH_ASSOC)) $vals[(int)$v['item_id']][(int)$v['column_id']] = $v['value'];
+    foreach ($chunk as $it) {
+        $row = [$groups[(int)$it['group_id']] ?? '', $it['title']];
+        $raw = $vals[(int)$it['id']] ?? [];
+        foreach ($cols as $c) {
+            $v = $raw[(int)$c['column_id']] ?? null;
+            switch ($c['type']) {
+                case 'timeline':
+                    $t = Columns::decode($c, $v);
+                    $row[] = $t['start'] ?? '';
+                    $row[] = $t['end'] ?? '';
+                    break;
+                case 'number': case 'formula': case 'progress': case 'rating':
+                    $d = Columns::decode($c, $v);
+                    $row[] = $d === null ? '' : (is_float($d) ? rtrim(rtrim(number_format($d, 6, '.', ''), '0'), '.') : $d);
+                    break;
+                case 'created':
+                    $row[] = substr((string)$it['created_at'], 0, 16) . ' · ' . ($names[(int)$it['created_by']] ?? '');
+                    break;
+                case 'updated':
+                    $row[] = substr((string)$it['updated_at'], 0, 16);
+                    break;
+                default:
+                    $row[] = Columns::text($c, $v, $ctx);
+            }
         }
+        $row[] = substr((string)$it['created_at'], 0, 16);
+        $row[] = substr((string)$it['updated_at'], 0, 16);
+        fputcsv($out, array_map($safe, $row));
     }
-    $row[] = substr((string)$it['created_at'], 0, 16);
-    $row[] = substr((string)$it['updated_at'], 0, 16);
-    fputcsv($out, array_map($safe, $row));
 }
 fclose($out);
 Activity::log($DB, $PR_COMPANY_ID, $PR_USER_ID, $boardId, null, 'board_exported', ['items' => count($items)]);

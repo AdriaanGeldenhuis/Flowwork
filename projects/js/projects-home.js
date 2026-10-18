@@ -96,7 +96,7 @@
     let list = S.projects.slice();
     const f = S.filter;
     if (f === 'open') list = list.filter((p) => OPEN.includes(p.status));
-    else if (f === 'mine') list = list.filter((p) => OPEN.includes(p.status) && (p.members.includes(P.me.id) || p.manager_id === P.me.id || p.owner_id === P.me.id));
+    else if (f === 'mine') list = list.filter((p) => OPEN.includes(p.status) && p.is_mine); // members is only the faces preview
     else if (f !== 'all') list = list.filter((p) => p.status === f);
     const { key, asc } = S.sort;
     const val = (p) => ({ name: p.name.toLowerCase(), due: p.end || '9999', progress: p.progress, overdue: p.stats.overdue, budget: p.budget, status: p.status,
@@ -218,14 +218,16 @@
   }
 
   function projectMenu(anchor, p) {
-    const canEdit = true;
+    // Only what the server allows this person: details and archive for managers, delete for owners.
+    const lv = p.level || 0;
+    const canEdit = lv >= 3;
+    const end = `${canEdit ? (p.archived ? `<button class="fwm-pop__item" data-v="restore">${icon('undo')}Restore</button>` : `<button class="fwm-pop__item" data-v="archive">${icon('archive')}Archive</button>`) : ''}
+      ${lv >= 4 ? `<button class="fwm-pop__item is-danger" data-v="delete">${icon('trash')}Delete…</button>` : ''}`;
     popover(anchor, `<a class="fwm-pop__item" data-v="open" href="${esc(p.url)}">${icon('external')}Open</a>
       ${canEdit ? `<button class="fwm-pop__item" data-v="edit">${icon('pen')}Details…</button>` : ''}
       <button class="fwm-pop__item" data-v="star">${icon('star')}${p.starred ? 'Unstar' : 'Star'}</button>
-      <button class="fwm-pop__item" data-v="dup">${icon('copy')}Duplicate</button>
-      <div class="fwm-pop__sep"></div>
-      ${p.archived ? `<button class="fwm-pop__item" data-v="restore">${icon('undo')}Restore</button>` : `<button class="fwm-pop__item" data-v="archive">${icon('archive')}Archive</button>`}
-      <button class="fwm-pop__item is-danger" data-v="delete">${icon('trash')}Delete…</button>`, {
+      ${lv >= 2 && P.canCreate ? `<button class="fwm-pop__item" data-v="dup">${icon('copy')}Duplicate</button>` : ''}
+      ${end.trim() ? `<div class="fwm-pop__sep"></div>${end}` : ''}`, {
       align: 'end',
       onClick: (it) => { projectAction(it.dataset.v, p); },
     });
@@ -478,7 +480,7 @@
     el.search.addEventListener('input', () => {
       S.q = el.search.value.trim();
       el.searchClear.hidden = !S.q;
-      if (S.q && S.route !== 'search') history.replaceState(null, '', '#search?q=' + encodeURIComponent(S.q));
+      if (S.q) history.replaceState(null, '', '#search?q=' + encodeURIComponent(S.q)); // every keystroke: a reload or a link finds the whole query
       if (S.q) { S.route = 'search'; renderSide(); renderSearch(); runSearch(); }
       else go('#portfolio');
     });

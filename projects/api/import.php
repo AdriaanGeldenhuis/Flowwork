@@ -68,17 +68,30 @@ $toDate = function (string $v): ?string {
 
 $added = 0;
 $skipped = [];
+$noName = 0;   // rows without a name: only the first few are listed, the rest counted
+$read = 0;
+$groupsFull = false;
 $line = 1;
 while (($row = fgetcsv($fh, 0, $delim, '"', '')) !== false) {
     $line++;
     if ($added >= 2000) { $skipped[] = 'Stopped after 2 000 rows.'; break; }
     if (!array_filter($row, fn($v) => trim((string)$v) !== '')) continue;
+    if (++$read > 20000) { $skipped[] = 'Stopped after reading 20 000 rows.'; break; }
     $title = trim((string)($row[$titleIdx] ?? ''));
-    if ($title === '') { $skipped[] = "Row $line: no name"; continue; }
+    if ($title === '') { if (++$noName <= 10 && count($skipped) < 50) $skipped[] = "Row $line: no name"; continue; }
     $gid = $defaultGroup;
     if ($groupIdx !== null && ($gname = trim((string)($row[$groupIdx] ?? ''))) !== '') {
         $gk = Formula::nameKey($gname);
-        if (!isset($groups[$gk])) $groups[$gk] = $boards->createGroup($boardId, $gname, null, 'bottom')['id'];
+        if (!isset($groups[$gk])) {
+            // At the group limit, rows naming a new group go to the default group (0: the board's first).
+            try {
+                $groups[$gk] = $groupsFull ? ($defaultGroup ?? 0) : $boards->createGroup($boardId, $gname, null, 'bottom')['id'];
+            } catch (ProjectUserError $e) {
+                $groups[$gk] = $defaultGroup ?? 0;
+                $groupsFull = true;
+                $skipped[] = "Row $line: " . $e->getMessage() . ' Rows with new group names from here on went to the default group.';
+            }
+        }
         $gid = $groups[$gk];
     }
     $values = [];
@@ -116,9 +129,16 @@ while (($row = fgetcsv($fh, 0, $delim, '"', '')) !== false) {
             if (count($skipped) < 50) $skipped[] = "Row $line, " . $c['name'] . ': ' . $e->getMessage();
         }
     }
-    $items->create($boardId, $gid, $title, $values, 'bottom', ['quiet' => true, 'no_payload' => true]);
+    try {
+        $items->create($boardId, $gid, $title, $values, 'bottom', ['quiet' => true, 'no_payload' => true]);
+    } catch (ProjectUserError $e) {
+        // e.g. the board is full: keep what was added and report where it stopped
+        $skipped[] = "Stopped at row $line: " . $e->getMessage();
+        break;
+    }
     $added++;
 }
 fclose($fh);
+if ($noName > 10 || ($noName && count($skipped) >= 50)) $skipped[] = "$noName rows had no name and were skipped.";
 Activity::log($DB, $PR_COMPANY_ID, $PR_USER_ID, $boardId, null, 'board_imported', ['items' => $added]);
 pr_json(['added' => $added, 'skipped' => $skipped, 'matched' => array_values(array_map(fn($c) => $c['name'], $map))]);

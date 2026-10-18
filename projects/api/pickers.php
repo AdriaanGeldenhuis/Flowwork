@@ -9,7 +9,11 @@ require_once __DIR__ . '/_bootstrap.php';
 
 switch ((string)($_GET['type'] ?? '')) {
     case 'projects':
-        pr_json(['projects' => ProjectLink::pickerProjects($DB, $PR_COMPANY_ID, $PR_USER_ID, $PR_ROLE, pr_ids((string)($_GET['keep'] ?? ''), 50))]);
+        // keep only brings back closed projects the user can see (server-side callers pass their document's own project directly).
+        $keep = pr_ids((string)($_GET['keep'] ?? ''), 50);
+        $visible = $PR->visibleProjectIds(); // null: admins see every project
+        if ($visible !== null) $keep = array_values(array_filter($keep, fn($id) => isset($visible[$id])));
+        pr_json(['projects' => ProjectLink::pickerProjects($DB, $PR_COMPANY_ID, $PR_USER_ID, $PR_ROLE, $keep)]);
     case 'boards':
         pr_json(['boards' => ProjectLink::pickerBoards($DB, $PR_COMPANY_ID, $PR_USER_ID, $PR_ROLE, (int)($_GET['project_id'] ?? 0))]);
     case 'items':

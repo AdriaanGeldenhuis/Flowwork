@@ -35,6 +35,7 @@ switch ($action) {
         pr_json(['subitem' => $sub, 'item' => $parentPayload($itemId)]);
 
     case 'update':
+        pr_rate_limit('pr-write', 600, 600);
         $itemId = $parentOf($id);
         $sub = $items->updateSubitem($id, array_intersect_key($in, array_flip(['title', 'done', 'owner', 'due'])));
         pr_json(['subitem' => $sub, 'item' => $parentPayload($itemId)]);
@@ -49,6 +50,7 @@ switch ($action) {
         pr_json();
 
     case 'promote':
+        pr_rate_limit('pr-write', 600, 600);
         $itemId = $parentOf($id);
         $new = $items->promoteSubitem($id);
         pr_json(['item' => $parentPayload($itemId), 'new_item' => $new]);

@@ -11,11 +11,14 @@
 --    and recently opened projects and boards, per-board preferences).
 -- 2. New columns: project colour and visibility (members / whole company),
 --    who created a board and what its rows are called, column descriptions,
---    the day an item's due reminder went out, replies and edits on updates,
+--    the day an item's due reminder went out, the day a board's clock-based
+--    formulas (TODAY()) were last computed, replies and edits on updates,
 --    files per column, saved-view settings.
 -- 3. Column types: rating, created and updated join the list.
 -- 4. Indexes for the hot paths and one value row per item and column (the
---    newest duplicate is kept).
+--    newest duplicate is kept), plus lookups by project item / board on the
+--    Quotes & Invoices, AP, timesheet and journal lines Projects reads (each
+--    only when the table exists and has no index starting with those columns).
 --
 -- The backfill (status / people / dates copied into the items' own fields,
 -- formulas recomputed, board_item_people filled) runs from PHP, once per
@@ -49,7 +52,8 @@ ALTER TABLE `projects`
 
 ALTER TABLE `project_boards`
   ADD COLUMN IF NOT EXISTS `created_by` int(11) DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `item_noun` varchar(40) DEFAULT NULL;
+  ADD COLUMN IF NOT EXISTS `item_noun` varchar(40) DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `formulas_on` date DEFAULT NULL;
 
 ALTER TABLE `board_columns`
   ADD COLUMN IF NOT EXISTS `description` varchar(255) DEFAULT NULL,
@@ -61,6 +65,7 @@ ALTER TABLE `board_items`
   ADD COLUMN IF NOT EXISTS `reminded_on` date DEFAULT NULL,
   ADD INDEX IF NOT EXISTS `idx_company_assigned` (`company_id`, `assigned_to`),
   ADD INDEX IF NOT EXISTS `idx_company_due` (`company_id`, `due_date`),
+  ADD INDEX IF NOT EXISTS `idx_due` (`due_date`),
   ADD INDEX IF NOT EXISTS `idx_board_company_archived` (`board_id`, `company_id`, `archived`);
 
 ALTER TABLE `board_item_comments`
@@ -92,3 +97,30 @@ SET @fw_sql := IF(@fw_has_uniq = 0, 'ALTER TABLE `board_item_values` ADD UNIQUE 
 PREPARE fw_stmt FROM @fw_sql;
 EXECUTE fw_stmt;
 DEALLOCATE PREPARE fw_stmt;
+
+-- Lookups other modules' lines get from Projects (item panel, Money tab).
+DROP PROCEDURE IF EXISTS fw_projects_add_index;
+DELIMITER //
+CREATE PROCEDURE fw_projects_add_index(IN t VARCHAR(64), IN n VARCHAR(64), IN cols VARCHAR(255))
+BEGIN
+  IF (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = t) > 0
+     AND (SELECT COUNT(*) FROM (
+           SELECT index_name FROM information_schema.statistics
+            WHERE table_schema = DATABASE() AND table_name = t
+         GROUP BY index_name
+           HAVING LEFT(GROUP_CONCAT(column_name ORDER BY seq_in_index), CHAR_LENGTH(cols)) = cols) x) = 0 THEN
+    SET @fw_sql := CONCAT('ALTER TABLE `', t, '` ADD INDEX `', n, '` (`', REPLACE(cols, ',', '`,`'), '`)');
+    PREPARE fw_stmt FROM @fw_sql;
+    EXECUTE fw_stmt;
+    DEALLOCATE PREPARE fw_stmt;
+  END IF;
+END //
+DELIMITER ;
+CALL fw_projects_add_index('quote_lines', 'idx_project_item', 'project_item_id');
+CALL fw_projects_add_index('invoice_lines', 'idx_project_item', 'project_item_id');
+CALL fw_projects_add_index('ap_bill_lines', 'idx_project_item', 'project_item_id');
+CALL fw_projects_add_index('timesheet_entries', 'idx_company_item', 'company_id,item_id');
+CALL fw_projects_add_index('timesheet_entries', 'idx_ts_project', 'project_id');
+CALL fw_projects_add_index('timesheet_entries', 'idx_ts_board', 'board_id');
+CALL fw_projects_add_index('journal_lines', 'idx_jl_board', 'board_id');
+DROP PROCEDURE IF EXISTS fw_projects_add_index;

@@ -26,6 +26,9 @@
   // ===========================================================================
   // State
   // ===========================================================================
+  // Operators that compare with a value: a rule still waiting for its value does not filter yet.
+  const VALUE_OPS = ['is', 'is_not', '=', '!=', '>', '<', '>=', '<=', 'before', 'after', 'contains', 'not_contains'];
+  const ruleReady = (r) => !!(r && r.col != null && r.op) && (!VALUE_OPS.includes(r.op) || [].concat(r.value ?? []).some((x) => x !== '' && x != null));
   const prefs = BOOT.prefs || {};
   const S = {
     board: BOOT.board,
@@ -43,7 +46,7 @@
     view: 'table',
     q: '',
     person: prefs.person || null,
-    rules: Array.isArray(prefs.filters) ? prefs.filters : [],
+    rules: Array.isArray(prefs.filters) ? prefs.filters.filter(ruleReady) : [],
     match: 'all',
     sort: Array.isArray(prefs.sort) ? prefs.sort : [],
     hidden: new Set((prefs.hidden || []).map(Number)),
@@ -60,6 +63,7 @@
   S.groups.forEach((g) => { if (g.collapsed) S.collapsed.add(g.id); });
   if (BOOT.people && BOOT.people.length) P.people = BOOT.people;
   const itemById = new Map();
+  let applySeq = 0; // bumps whenever fresh item payloads land (a poll answer older than that is dropped)
   const el = { head: $('#head'), tools: $('#tools'), view: $('#view'), progress: $('#progress'), panel: $('#panel'), search: $('#searchInput'), searchClear: $('#searchClear') };
   const level = () => (S.guest ? 0 : (S.board.level || 0));
   const canEdit = () => level() >= 2;
@@ -91,11 +95,13 @@
     return it;
   }
   function indexItems() {
+    applySeq++;
     itemById.clear();
     S.items.forEach((it) => { if (!it.values || Array.isArray(it.values)) it.values = Object.assign({}, it.values || {}); decorate(it); itemById.set(it.id, it); });
   }
   /** Replace / add item payloads from the server. */
   function applyItems(list) {
+    applySeq++;
     (list || []).forEach((p) => {
       if (!p || !p.id) return;
       if (!p.values || Array.isArray(p.values)) p.values = Object.assign({}, p.values || {});
@@ -193,28 +199,32 @@
       const pc = colsOf('people');
       if (!pc.some((c) => (C.val(it, c) || []).includes(Number(S.person)))) return false;
     }
-    if (S.rules.length) {
-      const res = S.rules.map((r) => ruleMatch(r, it));
+    const rules = S.rules.filter(ruleReady);
+    if (rules.length) {
+      const res = rules.map((r) => ruleMatch(r, it));
       if (S.match === 'any' ? !res.some(Boolean) : !res.every(Boolean)) return false;
     }
     return true;
   }
   const filtered = () => S.items.filter(matches);
-  const isFiltered = () => !!(S.q || S.person || S.rules.length);
+  const isFiltered = () => !!(S.q || S.person || S.rules.some(ruleReady));
   function itemsIn(gid, list) { return itemsSorted((list || filtered()).filter((it) => it.group_id === gid)); }
 
   // ===========================================================================
   // Writes
   // ===========================================================================
+  let pendingWrites = 0;
   /** Set a cell; optimistic for simple values, server answer replaces the item. */
-  async function setValue(it, c, value, cellEl) {
+  async function setValue(it, c, value) {
     const prev = it.values[c.id];
     if (JSON.stringify(prev ?? null) === JSON.stringify(value ?? null)) return;
     if (value == null || value === '' || (Array.isArray(value) && !value.length)) delete it.values[c.id];
     else it.values[c.id] = c.type === 'number' && value !== '' && !Number.isNaN(Number(value)) ? Number(String(value).replace(/[\s,R%]/g, '')) : value;
     decorate(it);
     refreshItem(it.id, { pop: c.type === 'status' });
-    if (cellEl) cellEl.classList.add('is-saving');
+    pendingWrites++;
+    const live = cellFor(it.id, c.id); // the row was just re-rendered
+    if (live) live.classList.add('is-saving');
     try {
       const d = await api.post('items.php', { action: 'set', id: it.id, column_id: c.id, value });
       applyItems(d.items);
@@ -231,6 +241,7 @@
       refreshItem(it.id);
       toastError(x);
     } finally {
+      pendingWrites--;
       const fresh = cellFor(it.id, c.id);
       if (fresh) fresh.classList.remove('is-saving');
     }
@@ -277,6 +288,7 @@
         } },
       });
       S.board.archived_items = (S.board.archived_items || 0) + ids.length;
+      return true;
     } catch (x) { toastError(x); } finally { busy(false); }
   }
   async function deleteItems(ids) {
@@ -289,6 +301,7 @@
       if (S.openItem && ids.includes(S.openItem) && FWB.panel) FWB.panel.close();
       renderView();
       toast(ids.length === 1 ? 'Deleted' : `${ids.length} ${noun()}s deleted`);
+      return true;
     } catch (x) { toastError(x); }
   }
   async function moveItems(ids, groupId, order) {
@@ -315,7 +328,8 @@
     try { await api.post('boards.php', { action: 'prefs', id: S.board.id, prefs: patch }); } catch (x) { /* preferences are best effort */ }
   }
   const savePrefsSoon = debounce(savePrefs, 600);
-  async function reloadBoard() {
+  /** quiet: a live update (someone else's change) — the item panel keeps what is being typed. */
+  async function reloadBoard(quiet) {
     if (S.guest) { location.reload(); return; }
     busy(true);
     try {
@@ -323,7 +337,7 @@
       Object.assign(S, { board: d.board, columns: d.columns, groups: d.groups, items: d.items, suppliers: d.suppliers, deps: d.deps, views: d.views, cursor: d.cursor, members: d.members });
       indexItems();
       render();
-      if (S.openItem && FWB.panel) FWB.panel.refresh(S.openItem);
+      if (S.openItem && FWB.panel) FWB.panel.refresh(S.openItem, !!quiet);
     } catch (x) { toastError(x); } finally { busy(false); }
   }
 
@@ -351,7 +365,7 @@
       </div>`;
   }
   function renderTools() {
-    const nRules = S.rules.length;
+    const nRules = S.rules.filter(ruleReady).length;
     const hiddenN = S.columns.filter((c) => S.hidden.has(c.id)).length;
     const sortLbl = S.sort.length ? (S.sort[0].col === 'name' ? 'Name' : (col(S.sort[0].col) || {}).name || 'Sort') : 'Sort';
     const person = S.person ? personById(S.person) : null;
@@ -381,7 +395,7 @@
   function headerRow(vc, g) {
     const sortOf = (id) => S.sort.find((s) => String(s.col) === String(id));
     return `<div class="fwp-thead fwp-grid" role="row" style="--cols:${colsTemplate(vc)}">
-      <div class="fwp-th fwp-th--check" style="position:sticky;left:0;z-index:4;background:var(--glass-strong);border-left:0;border-radius:14px 0 0 0"><button class="fwp-check ${groupSelState(g)}" type="button" data-selgroup="${g.id}" aria-label="Select all in ${esc(g.name)}">${icon('check')}</button></div>
+      <div class="fwp-th fwp-th--check" style="position:sticky;left:0;z-index:4;background:var(--glass-strong);border-left:0;border-radius:14px 0 0 0"><button class="fwp-check ${groupSelState(g)}" type="button" data-selgroup="${g.id}" role="checkbox" aria-checked="${{ 'is-on': 'true', 'is-mixed': 'mixed' }[groupSelState(g)] || 'false'}" aria-label="Select all in ${esc(g.name)}">${icon('check')}</button></div>
       <div class="fwp-th fwp-th--name" style="left:${CHECK_W}px;border-radius:0" data-hcol="name"><span>${esc(Noun())}</span>${sortOf('name') ? icon(sortOf('name').dir === 'desc' ? 'arrow-down' : 'arrow-up') : ''}</div>
       ${vc.map((c) => `<div class="fwp-th ${sortOf(c.id) ? 'is-sorted' : ''}" data-hcol="${c.id}" ${canEdit() && finePointer() ? 'draggable="true"' : ''} title="${esc(c.description || c.name)}">
         ${icon(C.TYPE_ICON[c.type] || 'text')}<span>${esc(c.name)}</span>${sortOf(c.id) ? icon(sortOf(c.id).dir === 'desc' ? 'arrow-down' : 'arrow-up') : ''}
@@ -400,13 +414,17 @@
     return `<div class="fwp-cell fwp-cell--${c.type} ${ed || c.type === 'files' ? 'is-editable' : ''}" data-cid="${c.id}" tabindex="-1" role="gridcell">${C.render(c, it, { done: it._done, groupColor: g ? g.color : null, firstFiles: firstFiles && firstFiles.id === c.id })}</div>`;
   }
   function rowHTML(it, vc, g) {
-    const subs = it.subitems ? `<button class="fwp-name__sub" type="button" data-subs="${it.id}" aria-label="Subitems" title="${it.subitems_done}/${it.subitems} subitems done">${icon('chev-right')}${it.subitems_done}/${it.subitems}</button>` : '';
-    return `<div class="fwp-row fwp-grid ${S.selected.has(it.id) ? 'is-selected' : ''} ${S.openItem === it.id ? 'is-open' : ''} ${S.expanded.has(it.id) ? 'is-expanded' : ''}" data-iid="${it.id}" role="row" style="--cols:${colsTemplate(vc)}">
-      <div class="fwp-cell fwp-cell--check" style="position:sticky;left:0;z-index:2;background:inherit"><button class="fwp-check ${S.selected.has(it.id) ? 'is-on' : ''}" type="button" data-sel="${it.id}" aria-label="Select">${icon('check')}</button></div>
+    const n = `${it.subitems_done}/${it.subitems}`;
+    // Guests see the count only: the subitems list comes from the member API.
+    const subs = !it.subitems ? '' : S.guest ? `<span class="fwp-name__sub" title="${n} subitems done">${n}</span>`
+      : `<button class="fwp-name__sub" type="button" data-subs="${it.id}" aria-label="Subitems" aria-expanded="${S.expanded.has(it.id)}" title="${n} subitems done">${icon('chev-right')}${n}</button>`;
+    const sel = S.selected.has(it.id);
+    return `<div class="fwp-row fwp-grid ${sel ? 'is-selected' : ''} ${S.openItem === it.id ? 'is-open' : ''} ${S.expanded.has(it.id) ? 'is-expanded' : ''}" data-iid="${it.id}" role="row" style="--cols:${colsTemplate(vc)}">
+      <div class="fwp-cell fwp-cell--check" style="position:sticky;left:0;z-index:2;background:inherit"><button class="fwp-check ${sel ? 'is-on' : ''}" type="button" data-sel="${it.id}" role="checkbox" aria-checked="${sel}" aria-label="Select ${esc(it.title)}">${icon('check')}</button></div>
       <div class="fwp-cell fwp-cell--name" style="left:${CHECK_W}px" data-cid="name" tabindex="-1">
         ${canEdit() && !S.sort.length && finePointer() ? `<span class="fwp-grip" draggable="true" data-drag="${it.id}" aria-hidden="true">${icon('grip')}</span>` : ''}
         <span class="fwp-name"><span class="fwp-name__text" ${canEdit() ? 'data-rename' : ''}>${esc(it.title)}</span>${subs}</span>
-        <button class="fwp-open ${it.updates && !S.guest ? 'has-updates' : ''}" type="button" data-open="${it.id}" aria-label="Open">${icon(it.updates && !S.guest ? 'message' : 'maximize-2')}${it.updates && !S.guest ? `<span class="fwp-open__n">${it.updates}</span>` : ''}</button></div>
+        <button class="fwp-open ${it.updates && !S.guest ? 'has-updates' : ''}" type="button" data-open="${it.id}" aria-label="Open ${esc(it.title)}">${icon(it.updates && !S.guest ? 'message' : 'maximize-2')}${it.updates && !S.guest ? `<span class="fwp-open__n">${it.updates}</span>` : ''}</button></div>
       ${vc.map((c) => cellHTML(c, it, g)).join('')}
       <div class="fwp-cell fwp-cell--add"></div></div>
       ${S.expanded.has(it.id) ? subitemsHTML(it) : ''}`;
@@ -416,8 +434,8 @@
     const body = !list ? '<div class="hint" style="padding:6px 8px">Loading…</div>' : list.map((s) => `<div class="fwp-sub ${s.done ? 'is-done' : ''}" data-sid="${s.id}" data-parent="${it.id}">
         <button class="fwp-check ${s.done ? 'is-on' : ''}" type="button" data-subdone="${s.id}" ${canEdit() ? '' : 'disabled'} aria-label="Done">${icon('check')}</button>
         <span class="fwp-sub__title" ${canEdit() ? 'data-subrename' : ''}>${esc(s.title)}</span>
-        <button class="fwp-sub__due ${s.due && s.due < today() && !s.done ? 'is-overdue' : ''}" type="button" data-subdue="${s.id}" ${canEdit() ? '' : 'disabled'}>${s.due ? esc(fmtDate(s.due)) : icon('calendar', 'i--xs')}</button>
-        <button class="fwp-open" type="button" data-subowner="${s.id}" ${canEdit() ? '' : 'disabled'} style="opacity:1">${s.owner ? personAvatar(s.owner) : icon('user', 'i--sm')}</button>
+        <button class="fwp-sub__due ${s.due && s.due < today() && !s.done ? 'is-overdue' : ''}" type="button" data-subdue="${s.id}" ${canEdit() ? '' : 'disabled'} aria-label="${s.due ? 'Due ' + esc(fmtDate(s.due)) : 'Due date'}">${s.due ? esc(fmtDate(s.due)) : icon('calendar', 'i--xs')}</button>
+        <button class="fwp-open" type="button" data-subowner="${s.id}" ${canEdit() ? '' : 'disabled'} style="opacity:1" aria-label="${s.owner ? 'Owner: ' + esc(personName(s.owner)) : 'Owner'}">${s.owner ? personAvatar(s.owner) : icon('user', 'i--sm')}</button>
         <span></span></div>`).join('');
     return `<div class="fwp-subs" data-subsof="${it.id}"><div class="fwp-subs__list">${body}</div>
       ${canEdit() ? `<form class="fwp-sub__add" data-subadd="${it.id}"><input placeholder="+ Add a subitem" maxlength="255" aria-label="New subitem"></form>` : ''}</div>`;
@@ -454,13 +472,20 @@
     if (!S.groups.length) { el.view.innerHTML = `<div class="fwp-pad">${emptyState('An empty board', 'Add a group to start.', canEdit() ? `<button class="btn btn--primary" type="button" data-act="addgroup">${icon('plus')}Add group</button>` : '', { art: false })}</div>`; return; }
     const groups = S.groups.map((g, i) => groupHTML(g, i, vc, list)).join('');
     const nothing = isFiltered() && !list.length;
+    // Take the keyboard back only if a cell had it: a re-render from the search box, a filter or a poll must not.
+    const a = document.activeElement;
+    const hadFocus = !!(a && el.view.contains(a) && a.matches('.fwp-cell[data-cid]'));
     el.view.innerHTML = `<div class="fwp-board" id="board">
+      ${S.board.truncated ? `<div class="fwp-banner" role="status" style="margin:0 12px 10px">${icon('alert')}<span class="grow">This board has ${esc(S.board.items_total)} ${esc(noun())}s — the first ${esc(S.items.length)} are shown. Archive or move some to see the rest.</span></div>` : ''}
       ${S.guest ? `<div class="fwp-guestbar">${icon('eye')}<span class="grow">You’re viewing this board as a guest — read only. It stays up to date as the team works.</span><form method="post" action="/projects/guest-logout.php" style="display:contents"><input type="hidden" name="csrf_token" value="${esc((document.querySelector('meta[name="csrf-token"]') || {}).content || '')}"><button class="btn btn--sm btn--ghost" type="submit">Sign out</button></form></div>` : ''}
       ${nothing ? emptyState('No matches', 'Nothing on this board matches the search and filters.', `<button class="btn" type="button" data-act="clearfilters">${icon('x')}Clear filters</button>`, { art: false }) : groups}
       ${!nothing && list.length > 0 && S.groups.length > 1 ? `<div class="fwp-group fwp-boardsum" style="--c:var(--gold)"><div class="fwp-gbody">${sumRowHTML(vc, list).replace('fwp-sumrow', 'fwp-sumrow')}</div></div>` : ''}
       ${canEdit() && !isFiltered() ? `<div class="fwp-addgroup"><button class="btn btn--sm btn--ghost" type="button" data-act="addgroup">${icon('plus')}Add new group</button></div>` : ''}
     </div>`;
-    if (S.focus) focusCell(S.focus.itemId, S.focus.colId, false);
+    if (S.focus) {
+      if (hadFocus) focusCell(S.focus.itemId, S.focus.colId, false);
+      else { const c = cellFor(S.focus.itemId, S.focus.colId); if (c) c.classList.add('is-focus'); }
+    }
   }
   function rowEl(id) { return el.view.querySelector(`.fwp-row[data-iid="${id}"]`); }
   function cellFor(id, cid) { const r = rowEl(id); return r ? r.querySelector(`.fwp-cell[data-cid="${cid}"]`) : null; }
@@ -477,7 +502,12 @@
         const tmp = document.createElement('div');
         tmp.innerHTML = rowHTML(it, vc, g);
         const fresh = tmp.firstElementChild;
-        row.replaceWith(fresh);
+        // The row and, when expanded, its subitems block (a sibling) are replaced together.
+        const old = row.nextElementSibling;
+        if (old && old.matches(`.fwp-subs[data-subsof="${id}"]`)) old.remove();
+        const hadFocus = row.contains(document.activeElement);
+        row.replaceWith(...tmp.children);
+        if (hadFocus && S.focus && S.focus.itemId === Number(id)) focusCell(S.focus.itemId, S.focus.colId, false);
         if (opts.pop) { const st = fresh.querySelector('.fwp-cell--status .fwp-st'); if (st) st.classList.add('is-pop'); }
         if (opts.flash) fresh.classList.add('is-flash');
         refreshSummary(g.id);
@@ -508,22 +538,31 @@
     c.focus({ preventScroll: !scroll });
     if (scroll) c.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
+  /** @return {boolean} whether the focus moved (false at the edges) */
   function moveFocus(dx, dy) {
-    if (!S.focus) return;
+    if (!S.focus) return false;
     const vc = ['name', ...visibleColumns().map((c) => c.id)];
     const rows = $$('.fwp-row', el.view).map((r) => Number(r.dataset.iid));
-    let ri = rows.indexOf(S.focus.itemId);
-    let ci = vc.findIndex((x) => String(x) === String(S.focus.colId));
-    ri = Math.max(0, Math.min(rows.length - 1, ri + dy));
-    ci = Math.max(0, Math.min(vc.length - 1, ci + dx));
+    const r0 = rows.indexOf(S.focus.itemId);
+    const c0 = vc.findIndex((x) => String(x) === String(S.focus.colId));
+    const ri = Math.max(0, Math.min(rows.length - 1, r0 + dy));
+    const ci = Math.max(0, Math.min(vc.length - 1, c0 + dx));
+    if (ri === r0 && ci === c0) return false;
     if (rows[ri] != null) focusCell(rows[ri], vc[ci]);
+    return true;
+  }
+  /** Is this key event the focused table cell's (not a button, a box elsewhere or a stale focus)? */
+  function isGridKey(e) {
+    if (!S.focus || !e.target.closest || e.target.closest('input, textarea, select, button, a, [contenteditable="true"]')) return false;
+    const c = cellFor(S.focus.itemId, S.focus.colId);
+    return !!(c && c.contains(e.target));
   }
   function editCell(it, c, cellEl) {
     if (!it || !c) return;
     if (c.type === 'files') { openItem(it.id, 'files'); return; }
     if (!canEdit() || !C.editable(c)) { if (c.type !== 'formula') openItem(it.id); return; }
     closePop();
-    C.edit(c, it, cellEl, (v) => setValue(it, c, v, cellEl), {
+    C.edit(c, it, cellEl, (v) => setValue(it, c, v), {
       canManage: canManage(),
       onEditLabels: (cc) => FWB.dialogs && FWB.dialogs.columnSettings(cc),
       allTags: (cc) => Array.from(new Set(S.items.flatMap((x) => x.values[cc.id] || []))).sort(),
@@ -540,7 +579,8 @@
     input.focus();
     input.select();
     let done = false;
-    const finish = (save) => { if (done) return; done = true; if (save) renameItem(it, input.value); else refreshItem(it.id); };
+    // Nothing to save: put the name back (the input must not stay, it holds up live updates).
+    const finish = (save) => { if (done) return; done = true; const v = input.value.trim(); if (save && v && v !== it.title) renameItem(it, v); else refreshItem(it.id); };
     input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
     input.addEventListener('blur', () => finish(true));
   }
@@ -600,13 +640,14 @@
       <button type="button" data-bulk="delete" class="is-danger">${icon('trash')}Delete</button>
       <button type="button" data-bulk="clear" class="fwp-bulk__x" aria-label="Clear selection">${icon('x')}</button>`;
   }
-  function clearSelection() { S.selected.clear(); $$('.fwp-row.is-selected', el.view).forEach((r) => { r.classList.remove('is-selected'); const c = r.querySelector('[data-sel]'); if (c) c.classList.remove('is-on'); }); $$('[data-selgroup]', el.view).forEach((b) => b.classList.remove('is-on', 'is-mixed')); renderBulk(); }
+  function clearSelection() { S.selected.clear(); $$('.fwp-row.is-selected', el.view).forEach((r) => { r.classList.remove('is-selected'); const c = r.querySelector('[data-sel]'); if (c) { c.classList.remove('is-on'); c.setAttribute('aria-checked', 'false'); } }); $$('[data-selgroup]', el.view).forEach((b) => { b.classList.remove('is-on', 'is-mixed'); b.setAttribute('aria-checked', 'false'); }); renderBulk(); }
   async function bulkAction(a, btn) {
     const ids = Array.from(S.selected).filter((id) => itemById.has(id));
     if (!ids.length) return;
     if (a === 'clear') return clearSelection();
-    if (a === 'archive') { await archiveItems(ids); clearSelection(); return; }
-    if (a === 'delete') { await deleteItems(ids); clearSelection(); return; }
+    // The selection stays when the dialog is cancelled or the request fails.
+    if (a === 'archive') { if (await archiveItems(ids)) clearSelection(); return; }
+    if (a === 'delete') { if (await deleteItems(ids)) clearSelection(); return; }
     if (a === 'export') { location.href = `/projects/api/export.php?board_id=${S.board.id}&ids=${ids.join(',')}`; return; }
     if (a === 'dup') {
       busy(true);
@@ -651,7 +692,8 @@
   // ===========================================================================
   // Item panel hand-off
   // ===========================================================================
-  function openItem(id, tab) {
+  /** opts.focus: move the keyboard into the panel (opened from the keyboard). */
+  function openItem(id, tab, opts) {
     id = Number(id);
     if (!FWB.panel) return;
     const prev = S.openItem;
@@ -659,7 +701,7 @@
     if (prev) { const r = rowEl(prev); if (r) r.classList.remove('is-open'); }
     const r = rowEl(id);
     if (r) r.classList.add('is-open');
-    FWB.panel.open(id, tab);
+    FWB.panel.open(id, tab, opts);
     document.body.classList.add('is-panel');
     const u = new URL(location.href);
     u.searchParams.set('item', id);
@@ -749,7 +791,7 @@
         if (v === 'rename') { const n = el.view.querySelector(`[data-gname="${g.id}"]`); if (n) startGroupRename(g, n); }
         if (v === 'add') await addGroup('bottom', g.id);
         if (v === 'dup') { busy(true); try { const d = await api.post('groups.php', { action: 'duplicate', id: g.id }); const i = S.groups.findIndex((x) => x.id === g.id); S.groups.splice(i + 1, 0, d.group); applyItems(d.items); renderView(); toast('Group duplicated'); } catch (x) { toastError(x); } finally { busy(false); } }
-        if (v === 'collapseall' || v === 'expandall') { S.groups.forEach((x) => { if (v === 'collapseall') S.collapsed.add(x.id); else S.collapsed.delete(x.id); }); renderView(); api.post('groups.php', { action: 'collapse', board_id: S.board.id, id: 0, all: v === 'collapseall' }).catch(() => {}); }
+        if (v === 'collapseall' || v === 'expandall') { S.groups.forEach((x) => { if (v === 'collapseall') S.collapsed.add(x.id); else S.collapsed.delete(x.id); }); renderView(); if (!S.guest) api.post('groups.php', { action: 'collapse', board_id: S.board.id, id: 0, all: v === 'collapseall' }).catch(() => {}); }
         if (v === 'select') { itemsIn(g.id).forEach((x) => S.selected.add(x.id)); renderView(); }
         if (v === 'delete') {
           const n = S.items.filter((x) => x.group_id === g.id).length;
@@ -839,7 +881,7 @@
       el.searchClear.addEventListener('click', () => { el.search.value = ''; S.q = ''; el.searchClear.hidden = true; renderTools(); renderView(); el.search.focus(); });
     }
     document.addEventListener('keydown', onGlobalKey);
-    window.addEventListener('beforeunload', () => { if ($('.fwp-cell.is-saving')) return 'Changes are still saving.'; return undefined; });
+    window.addEventListener('beforeunload', (e) => { if (pendingWrites > 0) { e.preventDefault(); e.returnValue = ''; } });
   }
 
   async function onViewClick(e) {
@@ -860,8 +902,8 @@
         rows.slice(i1, i2 + 1).forEach((x) => S.selected.add(x));
       } else if (S.selected.has(id)) S.selected.delete(id); else S.selected.add(id);
       S.lastSel = id;
-      $$('.fwp-row', el.view).forEach((r) => { const on = S.selected.has(Number(r.dataset.iid)); r.classList.toggle('is-selected', on); const c = r.querySelector('[data-sel]'); if (c) c.classList.toggle('is-on', on); });
-      $$('[data-selgroup]', el.view).forEach((b) => { const g = group(b.dataset.selgroup); b.classList.remove('is-on', 'is-mixed'); const s = groupSelState(g); if (s) b.classList.add(s); });
+      $$('.fwp-row', el.view).forEach((r) => { const on = S.selected.has(Number(r.dataset.iid)); r.classList.toggle('is-selected', on); const c = r.querySelector('[data-sel]'); if (c) { c.classList.toggle('is-on', on); c.setAttribute('aria-checked', on); } });
+      $$('[data-selgroup]', el.view).forEach((b) => { const g = group(b.dataset.selgroup); b.classList.remove('is-on', 'is-mixed'); const s = groupSelState(g); if (s) b.classList.add(s); b.setAttribute('aria-checked', s === 'is-on' ? 'true' : s === 'is-mixed' ? 'mixed' : 'false'); });
       renderBulk();
       return;
     }
@@ -959,19 +1001,29 @@
   }
 
   function onViewKey(e) {
-    if (e.target.closest('input, textarea, [contenteditable="true"]')) return;
-    if (!S.focus || window.FWP.activePop) return;
+    if (window.FWP.activePop || !isGridKey(e)) return;
     const it = item(S.focus.itemId);
     if (!it) return;
     const keys = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (keys[e.key]) { e.preventDefault(); moveFocus(...keys[e.key]); return; }
-    if (e.key === 'Tab') { e.preventDefault(); moveFocus(e.shiftKey ? -1 : 1, 0); return; }
+    // At either end of a row Tab leaves the table.
+    if (e.key === 'Tab') { if (moveFocus(e.shiftKey ? -1 : 1, 0)) e.preventDefault(); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (e.shiftKey || S.focus.colId === 'name') { openItem(it.id); return; }
+      if (e.shiftKey || S.focus.colId === 'name') {
+        // Into the panel: the grid lets go of the keyboard.
+        $$('.fwp-cell.is-focus', el.view).forEach((x) => x.classList.remove('is-focus'));
+        S.focus = null;
+        openItem(it.id, '', { focus: true });
+        return;
+      }
       const c = col(S.focus.colId);
       editCell(it, c, cellFor(it.id, c.id));
       return;
+    }
+    if (/^[0-9]$/.test(e.key) && canEdit() && S.focus.colId !== 'name') {
+      const c = col(S.focus.colId);
+      if (c && c.type === 'rating') { e.preventDefault(); setValue(it, c, Math.min(Number(e.key), (c.config || {}).max || 5) || null); return; }
     }
     if (e.key === 'x') { e.preventDefault(); const b = rowEl(it.id).querySelector('[data-sel]'); if (b) b.click(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus.colId !== 'name' && canEdit()) {
@@ -982,14 +1034,15 @@
       setValue(it, c, null);
       toast(`${c.name} cleared`, { action: { label: 'Undo', run: () => setValue(it, c, prev) } });
     }
-    if (e.key === 'Escape') { $$('.fwp-cell.is-focus', el.view).forEach((x) => x.classList.remove('is-focus')); S.focus = null; }
+    // This Escape only leaves the table (the next one closes the panel).
+    if (e.key === 'Escape') { e.stopPropagation(); $$('.fwp-cell.is-focus', el.view).forEach((x) => x.classList.remove('is-focus')); S.focus = null; }
   }
 
   function onGlobalKey(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest('input, textarea, select, [contenteditable="true"]') || window.FWP.activePop) return;
     if (document.querySelector('.fwm-modal:not([hidden])')) return;
-    if (e.target.closest('#view') && S.focus) return; // the table handles its own keys
+    if (isGridKey(e)) return; // the table handles its own keys
     if (/^[1-6]$/.test(e.key)) { const v = VIEW_DEFS[+e.key - 1]; if (v && (views.has(v[0]) || v[0] === 'table')) { e.preventDefault(); setView(v[0]); } return; }
     if (e.key === 'n' && canEdit()) { e.preventDefault(); newItemTop(); return; }
     if (e.key === 'f' && FWB.dialogs) { e.preventDefault(); FWB.dialogs.filters($('#filterBtn')); return; }
@@ -1004,15 +1057,21 @@
       span.contentEditable = 'true';
       span.focus();
       const r = document.createRange(); r.selectNodeContents(span); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      // Once per edit: Enter blurs the title too, and both listeners go when the edit ends.
+      let done = false;
+      const ac = new AbortController();
       const finish = async (save) => {
+        if (done) return;
+        done = true;
+        ac.abort();
         span.contentEditable = 'false';
         const title = span.textContent.trim();
         if (!save || !title || title === S.board.title) { span.textContent = S.board.title; return; }
         try { await api.post('boards.php', { action: 'update', id: S.board.id, title }); S.board.title = title; document.title = title + document.title.slice(document.title.indexOf(' ·')); const b = S.boards.find((x) => x.id === S.board.id); if (b) b.title = title; renderSide(); toast('Board renamed'); }
         catch (x) { span.textContent = S.board.title; toastError(x); }
       };
-      span.addEventListener('keydown', function k(ev) { if (ev.key === 'Enter') { ev.preventDefault(); span.removeEventListener('keydown', k); finish(true); } if (ev.key === 'Escape') { span.removeEventListener('keydown', k); finish(false); } });
-      span.addEventListener('blur', () => finish(true), { once: true });
+      span.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); finish(true); } if (ev.key === 'Escape') finish(false); }, { signal: ac.signal });
+      span.addEventListener('blur', () => finish(true), { signal: ac.signal });
       return;
     }
     if (t.closest('#starBtn')) {
@@ -1044,7 +1103,11 @@
         const D = FWB.dialogs;
         if (v === 'settings' && D) D.boardSettings();
         if (v === 'addgroup') addGroup('top');
-        if (v === 'export') location.href = `/projects/api/export.php?board_id=${S.board.id}${isFiltered() ? '&ids=' + filtered().map((x) => x.id).join(',') : ''}`;
+        if (v === 'export') {
+          const ids = isFiltered() ? filtered().map((x) => x.id) : null;
+          if (ids && !ids.length) { toast('Nothing matches the filters, so there is nothing to export.'); return; }
+          location.href = `/projects/api/export.php?board_id=${S.board.id}${ids ? '&ids=' + ids.join(',') : ''}`;
+        }
         if (v === 'import' && D) D.importCsv();
         if (v === 'archived' && D) D.archived();
         if (v === 'print') window.print();
@@ -1067,8 +1130,15 @@
     S.q = ''; S.person = null; S.rules = []; S.activeView = 0;
     if (el.search) { el.search.value = ''; el.searchClear.hidden = true; }
     savePrefsSoon({ person: null, filters: [] });
+    syncViewId();
     renderTools();
     renderView();
+  }
+  /** ?view_id= follows the saved view in use (a reload or a copied link must not bring back one that was left). */
+  function syncViewId() {
+    const u = new URL(location.href);
+    if (S.activeView) u.searchParams.set('view_id', S.activeView); else u.searchParams.delete('view_id');
+    history.replaceState(null, '', u.pathname + u.search);
   }
   function onToolsClick(e) {
     const t = e.target;
@@ -1101,6 +1171,7 @@
 
   // ---------------------------------------------------------------- subitems (table)
   async function toggleSubs(id) {
+    if (S.guest) return; // the list comes from the member API
     if (S.expanded.has(id)) { S.expanded.delete(id); refreshItem(id); return; }
     S.expanded.add(id);
     refreshItem(id);
@@ -1284,21 +1355,33 @@
   // Live updates
   // ===========================================================================
   let pollTimer = null, quiet = 0;
+  /** Someone is typing, renaming or dragging in the view: live updates wait (the cursor stays, so nothing is missed). */
+  function editingInView() {
+    if (window.FWP.activePop || (FWB.ganttDragging && FWB.ganttDragging())) return true;
+    if (document.querySelector('.fwp-cell input.fwp-inline, .fwp-name__input, [data-gname][contenteditable="true"], #boardTitle[contenteditable="true"]')) return true;
+    const a = document.activeElement;
+    if (a && el.view.contains(a) && a.matches('input, textarea, select, [contenteditable="true"]')) return true;
+    return $$('[data-addto] input, [data-subadd] input, .fwp-kb__add-input input', el.view).some((i) => i.value.trim() !== '');
+  }
   async function poll() {
     clearTimeout(pollTimer);
-    if (S.guest || document.visibilityState !== 'visible' || document.querySelector('.fwp-cell input.fwp-inline, .fwp-name__input')) { schedule(); return; }
+    if (S.guest || document.visibilityState !== 'visible' || editingInView()) { schedule(); return; }
     try {
+      const seq = applySeq;
       const d = await api.get('changes.php', { board_id: S.board.id, since: S.cursor });
+      // A write of ours landed while this answer was on its way: it may be older. Ask again from the same cursor.
+      if (seq !== applySeq) { schedule(); return; }
       if (d.cursor) S.cursor = d.cursor;
       const others = (d.events || []).filter((ev) => ev.user_id !== P.me.id);
-      if (d.structural && others.length) { await reloadBoard(); quiet = 0; schedule(); return; }
+      if (d.structural && others.length) { await reloadBoard(true); quiet = 0; schedule(); return; }
       if ((d.items && d.items.length) || (d.removed && d.removed.length)) {
         applyItems(d.items);
         if (d.removed && d.removed.length) removeItems(d.removed);
         const otherIds = new Set(others.map((ev) => ev.item_id));
         if (S.view === 'table' && !(d.removed || []).length && d.items.every((x) => rowEl(x.id))) d.items.forEach((x) => refreshItem(x.id, { flash: otherIds.has(x.id) }));
         else renderView();
-        if (S.openItem && FWB.panel && (otherIds.has(S.openItem))) FWB.panel.refresh(S.openItem, true);
+        // The open item changed elsewhere, or left the board (deleted, archived, moved): the panel catches up.
+        if (S.openItem && FWB.panel && (otherIds.has(S.openItem) || (d.removed || []).includes(S.openItem))) FWB.panel.refresh(S.openItem, true);
         quiet = 0;
       } else quiet++;
     } catch (x) { quiet++; }
@@ -1336,6 +1419,6 @@
     canEdit, canManage, level, noun, Noun, busy, applyItems, removeItems, indexItems, decorate, setValue, bulkSet, renameItem, createItem, archiveItems, deleteItems,
     moveItems, reorderGroup, savePrefs, savePrefsSoon, reloadBoard, registerView, renderView, setView, render, renderTools, renderHead, renderSide, refreshItem,
     openItem, panelClosed, editCell, replaceColumn, insertColumn, addGroup, newItemTop, clearFilters, columnMenu, groupMenu, loadSubs, addSubitem, updateSub,
-    VIEW_DEFS, start, panel: null, dialogs: null, guestFileUrl: null,
+    VIEW_DEFS, start, ruleReady, syncViewId, isGridKey, cellFor, panel: null, dialogs: null, guestFileUrl: null, ganttDragging: null,
   };
 })();

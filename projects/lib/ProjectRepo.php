@@ -27,6 +27,9 @@ final class ProjectRepo
 
     private array $projectCache = [];
     private array $boardCache = [];
+    /** Computed access levels (cleared when a project, a board or a membership changes). */
+    private array $projectLevels = [];
+    private array $boardLevels = [];
     private ?array $names = null;
 
     public function __construct(public readonly PDO $db, public readonly int $companyId, public readonly int $userId, public readonly string $role)
@@ -70,7 +73,11 @@ final class ProjectRepo
         return $this->projectCache[$projectId];
     }
 
-    public function forgetProject(int $projectId): void { unset($this->projectCache[$projectId]); }
+    public function forgetProject(int $projectId): void
+    {
+        unset($this->projectCache[$projectId], $this->projectLevels[$projectId]);
+        $this->boardLevels = [];
+    }
 
     /** Access level on a project (0 = none). */
     public function projectLevel(int $projectId): int
@@ -78,6 +85,7 @@ final class ProjectRepo
         $p = $this->projectRow($projectId);
         if (!$p) return 0;
         if ($this->isAdmin()) return 5;
+        if (isset($this->projectLevels[$projectId])) return $this->projectLevels[$projectId];
         $level = 0;
         if (in_array($this->userId, [(int)$p['owner_id'], (int)$p['created_by']], true)) $level = 4;
         elseif ((int)$p['project_manager_id'] === $this->userId) $level = 3;
@@ -89,7 +97,7 @@ final class ProjectRepo
             $level = max($level, $l);
         }
         if ($level === 0 && ($p['visibility'] ?? 'members') === 'company') $level = 1;
-        return min($level, $this->capLevel());
+        return $this->projectLevels[$projectId] = min($level, $this->capLevel());
     }
 
     /** The board row (with project_id, project name) or null. */
@@ -106,13 +114,14 @@ final class ProjectRepo
         return $this->boardCache[$boardId];
     }
 
-    public function forgetBoard(int $boardId): void { unset($this->boardCache[$boardId]); }
+    public function forgetBoard(int $boardId): void { unset($this->boardCache[$boardId], $this->boardLevels[$boardId]); }
 
     /** Access level on a board: the project level, raised by a board_members row. */
     public function boardLevel(int $boardId): int
     {
         $b = $this->boardRow($boardId);
         if (!$b) return 0;
+        if (isset($this->boardLevels[$boardId])) return $this->boardLevels[$boardId];
         $level = $this->projectLevel((int)$b['project_id']);
         if ($level < 5) {
             try {
@@ -121,7 +130,7 @@ final class ProjectRepo
                 if ($r = $st->fetchColumn()) $level = max($level, min(self::LEVELS[$r] ?? 1, 3));
             } catch (Throwable $e) { /* board_members missing: project access only */ }
         }
-        return min($level, $this->capLevel());
+        return $this->boardLevels[$boardId] = min($level, $this->capLevel());
     }
 
     /** @return array the project row; throws when the user lacks $min */
@@ -266,8 +275,10 @@ final class ProjectRepo
         $st->execute(array_merge([$this->userId], $args));
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) return [];
+        foreach ($rows as $r) $this->projectCache[(int)$r['project_id']] ??= $r;
         $stats = $this->projectStats(array_map(fn($r) => (int)$r['project_id'], $rows));
-        return array_map(fn($r) => $this->projectSummary($r, $stats[(int)$r['project_id']] ?? []), $rows);
+        // The caller's level, so the portfolio only offers what the server allows.
+        return array_map(fn($r) => $this->projectSummary($r, $stats[(int)$r['project_id']] ?? []) + ['level' => $this->projectLevel((int)$r['project_id'])], $rows);
     }
 
     /** Item counts per project: total, done, overdue, due this week, mine open; boards; members. */
@@ -280,9 +291,18 @@ final class ProjectRepo
         $week = date('Y-m-d', strtotime($today . ' +7 days'));
         $out = [];
         foreach ($ids as $id) $out[$id] = ['boards' => 0, 'items' => 0, 'done' => 0, 'overdue' => 0, 'week' => 0, 'mine' => 0, 'members' => []];
+        // Board-only members (no level on the project) count just the boards they can open.
+        $hidden = [];
+        foreach ($ids as $id) {
+            if ($this->projectLevel($id) >= 1) continue;
+            $st = $this->db->prepare("SELECT board_id FROM project_boards WHERE project_id = ? AND company_id = ?");
+            $st->execute([$id, $this->companyId]);
+            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $bid) if ($this->boardLevel((int)$bid) < 1) $hidden[] = (int)$bid;
+        }
+        $skip = $hidden ? ' AND b.board_id NOT IN (' . implode(',', $hidden) . ')' : '';
         $st = $this->db->prepare("SELECT b.project_id, COUNT(DISTINCT b.board_id) AS boards
                                     FROM project_boards b
-                                   WHERE b.company_id = ? AND b.project_id IN ($in) AND (b.archived = 0 OR b.archived IS NULL)
+                                   WHERE b.company_id = ? AND b.project_id IN ($in) AND (b.archived = 0 OR b.archived IS NULL)$skip
                                 GROUP BY b.project_id");
         $st->execute([$this->companyId]);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[(int)$r['project_id']]['boards'] = (int)$r['boards'];
@@ -293,7 +313,7 @@ final class ProjectRepo
                                          SUM(i.progress < 100 AND EXISTS (SELECT 1 FROM board_item_people ip WHERE ip.item_id = i.id AND ip.user_id = ?)) AS mine
                                     FROM board_items i JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
                                    WHERE i.company_id = ? AND b.project_id IN ($in) AND (i.archived = 0 OR i.archived IS NULL)
-                                     AND (b.archived = 0 OR b.archived IS NULL)
+                                     AND (b.archived = 0 OR b.archived IS NULL)$skip
                                 GROUP BY b.project_id");
         $st->execute([$today, $today, $week, $this->userId, $this->companyId]);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -314,6 +334,8 @@ final class ProjectRepo
         $progress = $items ? (int)round(($s['done'] ?? 0) * 100 / $items) : (int)($p['progress_percent'] ?? 0);
         $members = $s['members'] ?? [];
         foreach ([(int)$p['project_manager_id'], (int)$p['owner_id']] as $u) if ($u && !in_array($u, $members, true)) array_unshift($members, $u);
+        // From the whole list (members below is only a preview), with the same rule as mine=1.
+        $mine = in_array($this->userId, $members, true) || (int)$p['created_by'] === $this->userId;
         return [
             'id' => $id,
             'number' => (string)($p['project_number'] ?? ''),
@@ -331,6 +353,7 @@ final class ProjectRepo
             'manager_id' => $p['project_manager_id'] ? (int)$p['project_manager_id'] : null,
             'owner_id' => $p['owner_id'] ? (int)$p['owner_id'] : ((int)$p['created_by'] ?: null),
             'members' => array_slice(array_values(array_unique($members)), 0, 12),
+            'is_mine' => $mine,
             'archived' => (bool)($p['archived'] ?? false) || $p['status'] === 'archived',
             'starred' => !empty($p['starred']),
             'last_opened' => $p['last_opened_at'] ?? null,
@@ -385,7 +408,7 @@ final class ProjectRepo
     {
         $st = $this->db->prepare("SELECT b.board_id FROM project_boards b WHERE b.project_id = ? AND b.company_id = ? AND (b.archived = 0 OR b.archived IS NULL)");
         $st->execute([$projectId, $this->companyId]);
-        $boards = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+        $boards = array_values(array_filter(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)), fn($b) => $this->boardLevel($b) >= 1));
         if (!$boards) return [];
         $in = implode(',', $boards);
         $first = [];
@@ -651,6 +674,12 @@ final class ProjectRepo
                 $this->db->prepare("DELETE l FROM calendar_event_links l JOIN calendar_events e ON e.id = l.event_id
                                      WHERE l.linked_type = 'project' AND l.linked_id = ? AND e.company_id = ?")->execute([$projectId, $this->companyId]);
             } catch (Throwable $e) { /* calendar not installed */ }
+            try {
+                $this->db->prepare("DELETE FROM email_links WHERE linked_type = 'project' AND linked_id = ? AND (company_id = ? OR company_id IS NULL)")->execute([$projectId, $this->companyId]);
+            } catch (Throwable $e) {
+                // Installs where Mail has not added company_id yet (or no mail at all).
+                try { $this->db->prepare("DELETE FROM email_links WHERE linked_type = 'project' AND linked_id = ?")->execute([$projectId]); } catch (Throwable $e2) { /* mail not installed */ }
+            }
             $this->db->prepare("DELETE FROM projects WHERE project_id = ? AND company_id = ?")->execute([$projectId, $this->companyId]);
             Activity::log($this->db, $this->companyId, $this->userId, null, null, 'project_deleted', ['project_id' => $projectId, 'name' => $p['name']]);
             $this->db->commit();
@@ -705,6 +734,7 @@ final class ProjectRepo
             if ($cur !== false) {
                 if ((self::LEVELS[$cur] ?? 0) < self::LEVELS[$role]) {
                     $this->db->prepare("UPDATE project_members SET role = ?, can_edit = 1 WHERE project_id = ? AND user_id = ?")->execute([$role, $projectId, $userId]);
+                    $this->forgetProject($projectId);
                 }
                 return;
             }
@@ -712,6 +742,7 @@ final class ProjectRepo
         $this->db->prepare("INSERT INTO project_members (company_id, project_id, user_id, role, can_edit, added_at) VALUES (?, ?, ?, ?, ?, NOW())
                             ON DUPLICATE KEY UPDATE role = VALUES(role), can_edit = VALUES(can_edit)")
             ->execute([$this->companyId, $projectId, $userId, $role, $role === 'viewer' ? 0 : 1]);
+        $this->forgetProject($projectId);
     }
 
     public function setMember(int $projectId, int $userId, string $role): void
@@ -723,6 +754,7 @@ final class ProjectRepo
         $st = $this->db->prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND company_id = ?");
         $st->execute([$projectId, $userId, $this->companyId]);
         $was = $st->fetchColumn();
+        if ($was === 'owner' && $role !== 'owner' && $userId !== $this->userId && $this->projectLevel($projectId) < 4) throw new ProjectForbidden('Only an owner can change another owner’s role.');
         if ($was === 'owner' && $role !== 'owner') $this->guardLastOwner($projectId, $userId);
         $this->addMemberRow($projectId, $userId, $role);
         Activity::log($this->db, $this->companyId, $this->userId, null, null, $was === false ? 'member_added' : 'member_role', ['project_id' => $projectId, 'user_id' => $userId, 'role' => $role]);
@@ -735,6 +767,7 @@ final class ProjectRepo
         $st = $this->db->prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND company_id = ?");
         $st->execute([$projectId, $userId, $this->companyId]);
         $was = $st->fetchColumn();
+        if ($was === 'owner' && $userId !== $this->userId && $this->projectLevel($projectId) < 4) throw new ProjectForbidden('Only an owner can remove an owner.');
         if ($was === 'owner') $this->guardLastOwner($projectId, $userId);
         $this->db->prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ? AND company_id = ?")->execute([$projectId, $userId, $this->companyId]);
         if ((int)$p['project_manager_id'] === $userId) {

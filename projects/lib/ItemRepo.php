@@ -10,6 +10,8 @@
 final class ItemRepo
 {
     public const MAX_FILE = 25 * 1024 * 1024;
+    /** Live items a board holds — as many as the board page loads (BoardRepo::itemsPayload). */
+    public const MAX_ITEMS = 5000;
     public const FILE_TYPES = ['pdf', 'txt', 'csv', 'rtf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
                                'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'dwg', 'dxf', 'zip', 'msg', 'eml'];
 
@@ -49,10 +51,26 @@ final class ItemRepo
         return $g;
     }
 
+    /** Refuse when $adding more live items would not fit on the board. */
+    public function requireRoom(int $boardId, int $adding = 1): void
+    {
+        $st = $this->db->prepare("SELECT COUNT(*) FROM board_items WHERE board_id = ? AND company_id = ? AND (archived = 0 OR archived IS NULL)");
+        $st->execute([$boardId, $this->repo->companyId]);
+        if ((int)$st->fetchColumn() + $adding > self::MAX_ITEMS) throw new ProjectUserError('This board is full (' . number_format(self::MAX_ITEMS, 0, '.', ' ') . ' items). Archive or move some first.');
+    }
+
+    /** Text for a TEXT column: at most $max characters and 65 535 bytes. */
+    public static function textCap(string $s, int $max = 20000): string
+    {
+        return mb_strcut(mb_substr($s, 0, $max), 0, 65535, 'UTF-8');
+    }
+
     // ================================================================= create
 
     /**
      * Add an item. $values: column_id => input (validated like a cell edit).
+     * $opts: description, source, quiet (no notifications / automations), no_payload,
+     * after (a position in the group: the item goes right below it).
      * @return array the item payload
      */
     public function create(int $boardId, ?int $groupId, string $title, array $values = [], string $where = 'bottom', array $opts = []): array
@@ -61,9 +79,7 @@ final class ItemRepo
         $title = mb_substr(trim(preg_replace('/\s+/u', ' ', $title)), 0, 500);
         if ($title === '') throw new ProjectUserError('Give it a name.');
         if (!$groupId || !$this->groupOnBoard($groupId, $boardId)) $groupId = $this->firstGroup($boardId);
-        $st = $this->db->prepare("SELECT COUNT(*) FROM board_items WHERE board_id = ? AND company_id = ?");
-        $st->execute([$boardId, $this->repo->companyId]);
-        if ((int)$st->fetchColumn() >= 20000) throw new ProjectUserError('This board is full (20 000 items). Archive or move some first.');
+        $this->requireRoom($boardId);
         $cols = [];
         foreach ($this->boards->columnRows($boardId) as $c) $cols[(int)$c['column_id']] = $c;
         $ctx = $this->valueContext($cols);
@@ -74,11 +90,15 @@ final class ItemRepo
             $raw = Columns::encodeValue($cols[$cid], $v, $ctx);
             if ($raw !== null && $raw !== '') $encoded[$cid] = $raw;
         }
-        $this->db->beginTransaction();
+        $own = !$this->db->inTransaction(); // promoteSubitem holds its own
+        if ($own) $this->db->beginTransaction();
         try {
             if ($where === 'top') {
                 $this->db->prepare("UPDATE board_items SET position = position + 1, updated_at = updated_at WHERE group_id = ? AND board_id = ?")->execute([$groupId, $boardId]);
                 $pos = 0;
+            } elseif (isset($opts['after'])) {
+                $pos = (int)$opts['after'] + 1;
+                $this->db->prepare("UPDATE board_items SET position = position + 1, updated_at = updated_at WHERE group_id = ? AND board_id = ? AND position >= ?")->execute([$groupId, $boardId, $pos]);
             } else {
                 $st = $this->db->prepare("SELECT COALESCE(MAX(position), -1) + 1 FROM board_items WHERE group_id = ? AND board_id = ?");
                 $st->execute([$groupId, $boardId]);
@@ -86,23 +106,23 @@ final class ItemRepo
             }
             $this->db->prepare("INSERT INTO board_items (board_id, company_id, group_id, title, description, position, priority, progress, archived, created_by, created_at, updated_at)
                                 VALUES (?, ?, ?, ?, ?, ?, 'medium', 0, 0, ?, NOW(), NOW())")
-                ->execute([$boardId, $this->repo->companyId, $groupId, $title, isset($opts['description']) ? mb_substr((string)$opts['description'], 0, 20000) : null, $pos, $this->repo->userId]);
+                ->execute([$boardId, $this->repo->companyId, $groupId, $title, isset($opts['description']) ? self::textCap((string)$opts['description']) : null, $pos, $this->repo->userId]);
             $id = (int)$this->db->lastInsertId();
             $ins = $this->db->prepare("INSERT INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?)");
             foreach ($encoded as $cid => $raw) $ins->execute([$id, $cid, $raw]);
             BoardRepo::computeFormulas($this->db, $this->repo->companyId, $boardId, [$id]);
             BoardRepo::refreshMirrors($this->db, $this->repo->companyId, $boardId, [$id]);
             Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, $id, 'item_created', ['title' => $title, 'group_id' => $groupId] + (isset($opts['source']) ? ['source' => $opts['source']] : []));
-            $this->db->commit();
+            if ($own) $this->db->commit();
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($own) $this->db->rollBack();
             throw $e;
         }
         if (empty($opts['quiet'])) {
             foreach ($encoded as $cid => $raw) {
                 if ($cols[$cid]['type'] === 'people') ProjectNotify::assigned($this->repo, $id, Columns::decode($cols[$cid], $raw) ?: []);
             }
-            Automations::fire($this->repo, 'item_created', $id, ['group_id' => $groupId]);
+            Automations::fire($this->repo, 'item_created', $id, ['group_id' => $groupId, 'board_id' => $boardId]);
         }
         return empty($opts['no_payload']) ? ($this->payload($boardId, [$id])[0] ?? []) : ['id' => $id];
     }
@@ -131,6 +151,7 @@ final class ItemRepo
         if ($title === '') throw new ProjectUserError('Give it a name.');
         if ($title !== $it['title']) {
             $this->db->prepare("UPDATE board_items SET title = ?, updated_at = NOW() WHERE id = ? AND company_id = ?")->execute([$title, $itemId, $this->repo->companyId]);
+            $this->touched($it);
             Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], $itemId, 'item_renamed', ['from' => $it['title'], 'to' => $title]);
         }
         return $this->payload((int)$it['board_id'], [$itemId])[0] ?? [];
@@ -139,9 +160,16 @@ final class ItemRepo
     public function describe(int $itemId, string $text): void
     {
         $it = $this->repo->requireItem($itemId, 2);
-        $text = mb_substr(trim(str_replace("\0", '', $text)), 0, 20000);
+        $text = self::textCap(trim(str_replace("\0", '', $text)));
         $this->db->prepare("UPDATE board_items SET description = ?, updated_at = NOW() WHERE id = ? AND company_id = ?")->execute([$text === '' ? null : $text, $itemId, $this->repo->companyId]);
+        $this->touched($it);
         Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], $itemId, 'item_described', ['excerpt' => Activity::clip($text, 80)]);
+    }
+
+    /** After updated_at moved without a cell write: formulas that read Last updated follow. */
+    private function touched(array $it): void
+    {
+        BoardRepo::computeFormulas($this->db, $this->repo->companyId, (int)$it['board_id'], [(int)$it['id']]);
     }
 
     /**
@@ -234,25 +262,28 @@ final class ItemRepo
     private function afterChanges(array $changes): array
     {
         $touched = [];
+        $assigned = []; // user id => items they were put on
         foreach ($changes as $ch) {
             $col = $ch['column'];
             if ($col['type'] === 'people') {
                 $before = Columns::decode($col, $ch['old']) ?: [];
                 $after = Columns::decode($col, $ch['new']) ?: [];
-                $added = array_values(array_diff($after, $before));
-                if ($added) ProjectNotify::assigned($this->repo, $ch['item_id'], $added);
+                foreach (array_diff($after, $before) as $uid) $assigned[(int)$uid][] = $ch['item_id'];
             }
             if (self::$depth < 3) {
                 self::$depth++;
                 try {
                     $touched = array_merge($touched, Automations::fire($this->repo, 'value_changed', $ch['item_id'], [
-                        'column_id' => (int)$col['column_id'], 'type' => $col['type'], 'old' => $ch['old'], 'new' => $ch['new'],
+                        'column_id' => (int)$col['column_id'], 'type' => $col['type'], 'old' => $ch['old'], 'new' => $ch['new'], 'board_id' => $ch['board_id'],
                     ]));
                 } finally {
                     self::$depth--;
                 }
             }
         }
+        // One notification per person: about the item, or a summary for a bulk edit.
+        if (count($changes) === 1 && $assigned) ProjectNotify::assigned($this->repo, $changes[0]['item_id'], array_keys($assigned));
+        elseif ($assigned) foreach ($assigned as $uid => $items) ProjectNotify::assignedMany($this->repo, (int)$changes[0]['board_id'], $uid, $items);
         return array_values(array_unique($touched));
     }
 
@@ -303,7 +334,7 @@ final class ItemRepo
         if (self::$depth < 3) {
             self::$depth++;
             try {
-                foreach ($from as $r) if ((int)$r['group_id'] !== $groupId) Automations::fire($this->repo, 'item_moved', (int)$r['id'], ['group_id' => $groupId]);
+                foreach ($from as $r) if ((int)$r['group_id'] !== $groupId) Automations::fire($this->repo, 'item_moved', (int)$r['id'], ['group_id' => $groupId, 'board_id' => $boardId]);
             } finally {
                 self::$depth--;
             }
@@ -331,6 +362,7 @@ final class ItemRepo
         if ($fromBoardId === $toBoardId) return [];
         $itemIds = $this->idsOnBoard($fromBoardId, $itemIds);
         if (!$itemIds) return [];
+        $this->requireRoom($toBoardId, count($itemIds));
         if (!$groupId || !$this->groupOnBoard($groupId, $toBoardId)) $groupId = $this->firstGroup($toBoardId);
         $fromCols = $this->boards->columnRows($fromBoardId);
         $toCols = $this->boards->columnRows($toBoardId);
@@ -355,7 +387,13 @@ final class ItemRepo
             $vals = $this->db->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN ($in)")->fetchAll(PDO::FETCH_ASSOC);
             $this->db->exec("DELETE FROM board_item_values WHERE item_id IN ($in)");
             $ins = $this->db->prepare("INSERT IGNORE INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?)");
-            foreach ($vals as $v) if (isset($map[(int)$v['column_id']])) $ins->execute([(int)$v['item_id'], $map[(int)$v['column_id']], $v['value']]);
+            $fromById = array_column($fromCols, null, 'column_id');
+            $toById = array_column($toCols, null, 'column_id');
+            foreach ($vals as $v) {
+                if (!isset($map[(int)$v['column_id']])) continue;
+                $raw = $this->translateValue($fromById[(int)$v['column_id']], $toById[$map[(int)$v['column_id']]], $v['value']);
+                if ($raw !== null && $raw !== '') $ins->execute([(int)$v['item_id'], $map[(int)$v['column_id']], $raw]);
+            }
             $mv = $this->db->prepare("UPDATE board_items SET board_id = ?, group_id = ?, position = ?, updated_at = NOW() WHERE id = ? AND company_id = ?");
             foreach ($itemIds as $iid) $mv->execute([$toBoardId, $groupId, $pos++, $iid, $this->repo->companyId]);
             $this->db->exec("UPDATE board_subitems SET board_id = " . (int)$toBoardId . " WHERE parent_item_id IN ($in)");
@@ -373,6 +411,26 @@ final class ItemRepo
         BoardRepo::computeFormulas($this->db, $this->repo->companyId, $toBoardId, $itemIds);
         BoardRepo::refreshMirrors($this->db, $this->repo->companyId, $toBoardId, $itemIds);
         return $itemIds;
+    }
+
+    /**
+     * A cell moving to another board's column: status labels and dropdown options
+     * must exist there (by key or text), ratings fit its scale. null: the cell is dropped.
+     */
+    private function translateValue(array $from, array $to, ?string $raw): ?string
+    {
+        if ($raw === null || $raw === '') return null;
+        switch ($to['type']) {
+            case 'status':
+                $tcfg = Columns::config($to);
+                $l = Columns::statusOf(Columns::config($from), $raw);
+                $t = $l ? (Columns::statusOf($tcfg, $l['key']) ?? Columns::statusOf($tcfg, $l['label'])) : Columns::statusOf($tcfg, $raw);
+                return $t ? $t['key'] : null;
+            case 'dropdown':
+            case 'rating':
+                try { return Columns::encodeValue($to, Columns::decode($from, $raw)); } catch (ProjectUserError $e) { return null; }
+        }
+        return $raw;
     }
 
     // ================================================================= copy / archive / delete
@@ -403,10 +461,62 @@ final class ItemRepo
         return $new;
     }
 
+    /**
+     * Copy many item rows (values, subitems) in a few statements, for boards and
+     * groups with thousands of items. $groups maps old group ids to new ones,
+     * $colMap old column ids to new ones (null = same board); items whose group
+     * is not mapped are skipped. Caller holds the transaction.
+     * @return array<int,int> old item id => new item id
+     */
+    public function copyItemRows(array $items, int $boardId, array $groups, ?array $colMap): array
+    {
+        $map = [];
+        if (!$items) return $map;
+        $co = $this->repo->companyId;
+        $in = implode(',', array_map(fn($it) => (int)$it['id'], $items));
+        $subCount = [];
+        foreach ($this->db->query("SELECT parent_item_id, COUNT(*) FROM board_subitems WHERE parent_item_id IN ($in) GROUP BY parent_item_id")->fetchAll(PDO::FETCH_NUM) as [$pid, $n]) $subCount[(int)$pid] = (int)$n;
+        $ins = $this->db->prepare("INSERT INTO board_items (board_id, company_id, group_id, title, description, position, status_label, assigned_to, priority, progress,
+                                                          due_date, start_date, end_date, tags, archived, subitem_count, created_by, created_at, updated_at)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NOW(), NOW())");
+        foreach ($items as $it) {
+            $gid = $groups[(int)$it['group_id']] ?? 0;
+            if (!$gid) continue;
+            $ins->execute([$boardId, $co, $gid, mb_substr($it['title'], 0, 500), $it['description'], (int)$it['position'], $it['status_label'], $it['assigned_to'],
+                           $it['priority'] ?: 'medium', (int)$it['progress'], $it['due_date'], $it['start_date'], $it['end_date'], $it['tags'], $subCount[(int)$it['id']] ?? 0, $this->repo->userId]);
+            $map[(int)$it['id']] = (int)$this->db->lastInsertId();
+        }
+        $rows = [];
+        foreach ($this->db->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN ($in)")->fetchAll(PDO::FETCH_ASSOC) as $v) {
+            $new = $map[(int)$v['item_id']] ?? 0;
+            $cid = $colMap === null ? (int)$v['column_id'] : ($colMap[(int)$v['column_id']] ?? 0);
+            if ($new && $cid) $rows[] = [$new, $cid, $v['value']];
+        }
+        $this->insertRows('board_item_values', ['item_id', 'column_id', 'value'], $rows, true);
+        $rows = [];
+        foreach ($this->db->query("SELECT * FROM board_subitems WHERE parent_item_id IN ($in) ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) as $sub) {
+            $new = $map[(int)$sub['parent_item_id']] ?? 0;
+            if ($new) $rows[] = [$new, $boardId, $co, $sub['title'], $sub['status_label'], $sub['assigned_to'], $sub['due_date'], $sub['priority'], (int)$sub['completed'], (int)$sub['position'], $this->repo->userId];
+        }
+        $this->insertRows('board_subitems', ['parent_item_id', 'board_id', 'company_id', 'title', 'status_label', 'assigned_to', 'due_date', 'priority', 'completed', 'position', 'created_by'], $rows);
+        return $map;
+    }
+
+    /** INSERT many rows, 500 to a statement. */
+    private function insertRows(string $table, array $cols, array $rows, bool $ignore = false): void
+    {
+        $one = '(' . implode(', ', array_fill(0, count($cols), '?')) . ')';
+        foreach (array_chunk($rows, 500) as $chunk) {
+            $this->db->prepare('INSERT ' . ($ignore ? 'IGNORE ' : '') . "INTO `$table` (`" . implode('`, `', $cols) . '`) VALUES ' . implode(', ', array_fill(0, count($chunk), $one)))
+                ->execute(array_merge(...$chunk));
+        }
+    }
+
     public function duplicate(int $itemId): array
     {
         $it = $this->repo->requireItem($itemId, 2);
         $boardId = (int)$it['board_id'];
+        $this->requireRoom($boardId);
         $this->db->beginTransaction();
         try {
             $this->db->prepare("UPDATE board_items SET position = position + 1, updated_at = updated_at WHERE group_id = ? AND board_id = ? AND position > ?")
@@ -418,6 +528,7 @@ final class ItemRepo
             $this->db->rollBack();
             throw $e;
         }
+        BoardRepo::computeFormulas($this->db, $this->repo->companyId, $boardId, [$new]); // Created / Last updated are new
         BoardRepo::refreshMirrors($this->db, $this->repo->companyId, $boardId, [$new]);
         return $this->payload($boardId, [$new])[0] ?? [];
     }
@@ -535,11 +646,12 @@ final class ItemRepo
         return $s;
     }
 
-    /** After a subitem change: count, the parent's progress, the board's fields. */
+    /** After a subitem change: count, the parent's progress (and formulas reading it), the board's fields. */
     private function subitemsChanged(array $it): void
     {
         $this->db->prepare("UPDATE board_items SET subitem_count = (SELECT COUNT(*) FROM board_subitems WHERE parent_item_id = ?), updated_at = NOW() WHERE id = ?")
             ->execute([(int)$it['id'], (int)$it['id']]);
+        BoardRepo::computeFormulas($this->db, $this->repo->companyId, (int)$it['board_id'], [(int)$it['id']]);
         BoardRepo::refreshMirrors($this->db, $this->repo->companyId, (int)$it['board_id'], [(int)$it['id']]);
     }
 
@@ -581,6 +693,10 @@ final class ItemRepo
         if (isset($f['completed']) && (int)$s['completed'] !== $f['completed']) {
             Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], (int)$it['id'], 'subitem_done', ['title' => $s['title'], 'done' => (bool)$f['completed']]);
         }
+        $changed = array_values(array_filter(['title', 'assigned_to', 'due_date'], fn($k) => array_key_exists($k, $f) && (string)$f[$k] !== (string)$s[$k]));
+        if ($changed) {
+            Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], (int)$it['id'], 'subitem_updated', ['title' => $f['title'] ?? $s['title'], 'fields' => $changed]);
+        }
         if (!empty($f['assigned_to']) && (int)$f['assigned_to'] !== (int)$s['assigned_to'] && (int)$f['assigned_to'] !== $this->repo->userId) {
             ProjectNotify::subitemAssigned($this->repo, (int)$it['id'], (int)$f['assigned_to'], $f['title'] ?? $s['title']);
         }
@@ -604,15 +720,45 @@ final class ItemRepo
         foreach (array_values(array_map('intval', $order)) as $i => $id) $st->execute([$i, $id, $itemId]);
     }
 
-    /** Turn a subitem into an item of its own (same group, below its parent). */
+    /**
+     * Turn a subitem into an item of its own (same group, below its parent),
+     * keeping its owner, due date and done state, in one transaction.
+     */
     public function promoteSubitem(int $subId): array
     {
         $s = $this->subitemRow($subId);
         $it = $this->repo->requireItem((int)$s['parent_item_id'], 2);
-        $new = $this->create((int)$it['board_id'], (int)$it['group_id'], (string)$s['title']);
-        $this->db->prepare("DELETE FROM board_subitems WHERE id = ?")->execute([$subId]);
-        $this->subitemsChanged($it);
-        return $new;
+        $boardId = (int)$it['board_id'];
+        $cols = $this->boards->columnRows($boardId);
+        $first = [];
+        foreach ($cols as $c) $first[$c['type']] = $first[$c['type']] ?? $c;
+        $values = [];
+        $owner = (int)$s['assigned_to'];
+        if ($owner && !empty($first['people']) && isset($this->repo->people()[$owner])) $values[(int)$first['people']['column_id']] = [$owner];
+        $date = Columns::primaryDateColumn($cols);
+        if ($date && ($due = Columns::date($s['due_date'] ?? null))) $values[(int)$date['column_id']] = $due;
+        if ((int)$s['completed'] && !empty($first['status'])) {
+            foreach (Columns::config($first['status'])['labels'] as $l) if (!empty($l['done'])) { $values[(int)$first['status']['column_id']] = $l['key']; break; }
+        }
+        $this->db->beginTransaction();
+        try {
+            // A double submit must not make two items.
+            $st = $this->db->prepare("SELECT id FROM board_subitems WHERE id = ? AND company_id = ? FOR UPDATE");
+            $st->execute([$subId, $this->repo->companyId]);
+            if (!$st->fetchColumn()) throw new ProjectUserError('Subitem not found.');
+            $new = $this->create($boardId, (int)$it['group_id'], (string)$s['title'], $values, 'bottom', ['after' => (int)$it['position'], 'quiet' => true, 'no_payload' => true]);
+            $this->db->prepare("DELETE FROM board_subitems WHERE id = ? AND company_id = ?")->execute([$subId, $this->repo->companyId]);
+            $this->subitemsChanged($it);
+            Activity::log($this->db, $this->repo->companyId, $this->repo->userId, $boardId, (int)$it['id'], 'subitem_promoted', ['title' => $s['title'], 'new_item_id' => (int)$new['id']]);
+            $this->db->commit();
+        } catch (Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+        // As for any new item: tell its owner, run the board's recipes.
+        if (isset($values[(int)($first['people']['column_id'] ?? 0)])) ProjectNotify::assigned($this->repo, (int)$new['id'], [$owner]);
+        Automations::fire($this->repo, 'item_created', (int)$new['id'], ['group_id' => (int)$it['group_id'], 'board_id' => $boardId]);
+        return $this->payload($boardId, [(int)$new['id']])[0] ?? [];
     }
 
     // ================================================================= updates (comments)
@@ -670,6 +816,7 @@ final class ItemRepo
         $id = (int)$this->db->lastInsertId();
         $this->db->prepare("INSERT IGNORE INTO board_watchers (item_id, user_id, created_at) VALUES (?, ?, NOW())")->execute([$itemId, $this->repo->userId]);
         $this->db->prepare("UPDATE board_items SET updated_at = NOW() WHERE id = ?")->execute([$itemId]);
+        $this->touched($it);
         Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], $itemId, 'update_added', ['comment_id' => $id, 'excerpt' => Activity::clip(preg_replace('/@\[([^\]]+)\]\(\d+\)/u', '@$1', $body), 100), 'reply' => (bool)$parentId]);
         $mentioned = array_values(array_filter(self::mentions($body), fn($u) => isset($this->repo->people()[$u])));
         ProjectNotify::update($this->repo, $it, $id, $body, $mentioned, $parentId);
@@ -681,12 +828,13 @@ final class ItemRepo
     public function editUpdate(int $commentId, string $body): array
     {
         $c = $this->commentRow($commentId);
-        $this->repo->requireItem((int)$c['item_id'], 1);
+        $it = $this->repo->requireItem((int)$c['item_id'], 1);
         if ((int)$c['user_id'] !== $this->repo->userId) throw new ProjectForbidden('You can only edit your own updates.');
         $body = trim(str_replace("\0", '', $body));
         if ($body === '') throw new ProjectUserError('Write something first.');
         if (mb_strlen($body) > 10000) throw new ProjectUserError('That update is too long (10 000 characters at most).');
         $this->db->prepare("UPDATE board_item_comments SET comment = ?, edited_at = NOW() WHERE id = ?")->execute([$body, $commentId]);
+        Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], (int)$it['id'], 'update_edited', ['comment_id' => $commentId]);
         return $this->updateOut($this->commentRow($commentId));
     }
 
@@ -799,6 +947,7 @@ final class ItemRepo
             ->execute([$this->repo->companyId, $itemId, $columnId, $name, $rel . '/' . $stored, $size, mb_substr($mime, 0, 100), $this->repo->userId]);
         $id = (int)$this->db->lastInsertId();
         $this->db->prepare("UPDATE board_items SET updated_at = NOW() WHERE id = ?")->execute([$itemId]);
+        $this->touched($it);
         Activity::log($this->db, $this->repo->companyId, $this->repo->userId, (int)$it['board_id'], $itemId, 'file_added', ['name' => $name, 'file_id' => $id]);
         return ['id' => $id, 'name' => $name, 'size' => $size, 'mime' => $mime, 'column_id' => $columnId];
     }

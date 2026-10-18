@@ -33,11 +33,14 @@ final class ProjectNotify
         return $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
-    /** Only people who can still open the board hear about it. */
+    /** Only people who can still open the board hear about it (checked once per person and board in a request). */
     private static function canOpen(ProjectRepo $repo, int $userId, int $boardId): bool
     {
+        static $memo = [];
+        $key = $repo->companyId . ':' . $userId . ':' . $boardId;
+        if (isset($memo[$key])) return $memo[$key];
         try {
-            return ProjectRepo::forUser($repo->db, $repo->companyId, $userId)->boardLevel($boardId) > 0;
+            return $memo[$key] = ProjectRepo::forUser($repo->db, $repo->companyId, $userId)->boardLevel($boardId) > 0;
         } catch (Throwable $e) {
             return false;
         }
@@ -59,6 +62,22 @@ final class ProjectNotify
             self::send($repo->db, $repo->companyId, $uid, 'project_assigned', $me . ' assigned you', $it['title'] . ' · ' . $it['board'] . ' · ' . $it['project'],
                        ProjectLink::itemUrl((int)$it['board_id'], $itemId), ['who' => $me, 'sub' => $it['project']]);
         }
+    }
+
+    /** Assigned on several items at once (bulk edit): one notification per person, not one per item. */
+    public static function assignedMany(ProjectRepo $repo, int $boardId, int $userId, array $itemIds): void
+    {
+        $itemIds = array_values(array_unique(array_filter(array_map('intval', $itemIds))));
+        if (count($itemIds) === 1) { self::assigned($repo, $itemIds[0], [$userId]); return; }
+        if (!$itemIds || $userId <= 0 || $userId === $repo->userId || !self::canOpen($repo, $userId, $boardId)) return;
+        $st = $repo->db->prepare("SELECT b.title AS board, p.name AS project FROM project_boards b JOIN projects p ON p.project_id = b.project_id
+                                   WHERE b.board_id = ? AND b.company_id = ?");
+        $st->execute([$boardId, $repo->companyId]);
+        $b = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$b) return;
+        $me = $repo->personName($repo->userId) ?: 'Someone';
+        self::send($repo->db, $repo->companyId, $userId, 'project_assigned', $me . ' assigned you to ' . count($itemIds) . ' items', $b['board'] . ' · ' . $b['project'],
+                   ProjectLink::boardUrl($boardId), ['who' => $me, 'sub' => $b['project']]);
     }
 
     public static function subitemAssigned(ProjectRepo $repo, int $itemId, int $userId, string $subTitle): void

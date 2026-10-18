@@ -327,13 +327,16 @@ final class ProjectLink
         $p = $repo->requireProject($projectId, 1);
         $db = $repo->db;
         $co = $repo->companyId;
+        // Posted GL lines, bills not yet posted and the payroll-based labour cost are Finance's
+        // data: only the company roles Finance lets in see them (and the totals built on them).
+        $fin = in_array($repo->role, ['admin', 'bookkeeper', 'viewer'], true);
         $st = $db->prepare("SELECT board_id FROM project_boards WHERE project_id = ? AND company_id = ?");
         $st->execute([$projectId, $co]);
         $boards = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
         $boardIn = $boards ? implode(',', $boards) : '0';
         $out = ['budget' => (float)$p['budget'], 'quotes' => [], 'invoices' => [], 'quoted' => 0.0, 'accepted' => 0.0,
                 'invoiced' => 0.0, 'paid' => 0.0, 'outstanding' => 0.0, 'gl_cost' => 0.0, 'committed' => 0.0,
-                'manual_cost' => 0.0, 'labour_hours' => 0.0, 'labour_cost' => 0.0, 'cost_items' => [], 'gl_lines' => []];
+                'manual_cost' => 0.0, 'labour_hours' => 0.0, 'labour_cost' => 0.0, 'cost_items' => [], 'gl_lines' => [], 'finance' => $fin];
         try {
             $st = $db->prepare("SELECT q.id, q.quote_number, q.status, q.issue_date, q.subtotal, q.total, a.name AS customer
                                   FROM quotes q LEFT JOIN crm_accounts a ON a.id = q.customer_id AND a.company_id = q.company_id
@@ -363,7 +366,7 @@ final class ProjectLink
                 }
             }
         } catch (Throwable $e) { error_log('[projects] financials qi: ' . $e->getMessage()); }
-        try {
+        if ($fin) try {
             $st = $db->prepare("SELECT je.entry_date, je.reference, COALESCE(jl.description, je.description) AS description, jl.account_code, ga.account_name,
                                        (jl.debit - jl.credit) AS amount
                                   FROM journal_lines jl
@@ -379,7 +382,7 @@ final class ProjectLink
             }
         } catch (Throwable $e) { error_log('[projects] financials gl: ' . $e->getMessage()); }
         try {
-            if ($boards) {
+            if ($boards && $fin) {
                 $st = $db->prepare("SELECT COALESCE(SUM(l.line_total), 0) FROM ap_bill_lines l JOIN ap_bills b ON b.id = l.bill_id
                                      WHERE b.company_id = ? AND l.project_board_id IN ($boardIn) AND b.status IN ('draft','review','approved')");
                 $st->execute([$co]);
@@ -408,19 +411,61 @@ final class ProjectLink
             $st->execute([$co, $projectId]);
             $h = $st->fetch(PDO::FETCH_ASSOC);
             $out['labour_hours'] = round((float)$h['r'] + (float)$h['o'] + (float)$h['s'] + (float)$h['h'], 2);
-            $out['labour_cost'] = round((float)$h['cost'], 2);
+            if ($fin) $out['labour_cost'] = round((float)$h['cost'], 2);
         } catch (Throwable $e) { /* timesheets not installed */ }
-        foreach (['quoted', 'accepted', 'invoiced', 'paid', 'outstanding', 'gl_cost', 'committed', 'manual_cost'] as $k) $out[$k] = round($out[$k], 2);
+        // What the boards themselves track (a Costing board's "Actual cost" or line totals) — shown
+        // beside the totals, not added to them: receipts write their cost both to Finance and to a board.
+        $out['board_costs'] = [];
+        $out['tracked'] = 0.0;
+        try {
+            foreach ($repo->boardsOf($projectId) as $b) {
+                $c = self::boardCostColumn((new BoardRepo($repo))->columnRows((int)$b['id']));
+                if (!$c) continue;
+                $st = $db->prepare("SELECT COALESCE(SUM(CAST(v.value AS DECIMAL(20,4))), 0), COUNT(*) FROM board_item_values v
+                                      JOIN board_items i ON i.id = v.item_id AND i.company_id = ? AND i.board_id = ? AND (i.archived = 0 OR i.archived IS NULL)
+                                     WHERE v.column_id = ? AND v.value REGEXP '^-?[0-9]+([.][0-9]+)?$'");
+                $st->execute([$co, (int)$b['id'], (int)$c['column_id']]);
+                [$sum, $n] = $st->fetch(PDO::FETCH_NUM);
+                if (!(int)$n) continue;
+                $out['board_costs'][] = ['board_id' => (int)$b['id'], 'board' => $b['title'], 'column' => $c['name'], 'total' => round((float)$sum, 2), 'items' => (int)$n,
+                                         'url' => self::boardUrl((int)$b['id'])];
+                $out['tracked'] += (float)$sum;
+            }
+        } catch (Throwable $e) { error_log('[projects] financials boards: ' . $e->getMessage()); }
+        foreach (['quoted', 'accepted', 'invoiced', 'paid', 'outstanding', 'gl_cost', 'committed', 'manual_cost', 'tracked'] as $k) $out[$k] = round($out[$k], 2);
         $out['actual_cost'] = round($out['gl_cost'] + $out['manual_cost'] + $out['labour_cost'], 2);
         $out['margin'] = round($out['invoiced'] - $out['actual_cost'], 2);
         $out['budget_used'] = $out['budget'] > 0 ? round($out['actual_cost'] * 100 / $out['budget'], 1) : null;
-        // Keep projects.actual_cost in step for reports that read the column.
-        try {
+        // Keep projects.actual_cost in step for reports that read the column (from the full figures only).
+        if ($fin) try {
             if (abs((float)$p['actual_cost'] - $out['actual_cost']) >= 0.01) {
                 $db->prepare("UPDATE projects SET actual_cost = ?, updated_at = updated_at WHERE project_id = ? AND company_id = ?")->execute([$out['actual_cost'], $projectId, $co]);
             }
         } catch (Throwable $e) { /* column missing */ }
         return $out;
+    }
+
+    /**
+     * The column a board keeps its cost in, if it has one: a number or formula column
+     * called "Actual cost" / "Cost" / "Spent" / "Amount spent", else a money-formatted
+     * one called "… total" or "… amount" — never a percentage, rate, price, budget or margin.
+     */
+    public static function boardCostColumn(array $cols): ?array
+    {
+        $best = null;
+        $rank = 0;
+        foreach ($cols as $c) {
+            if (!in_array($c['type'], ['number', 'formula'], true)) continue;
+            $cfg = Columns::config($c);
+            $name = mb_strtolower(trim((string)$c['name']));
+            if (($cfg['format'] ?? '') === 'percent' || preg_match('/%|percent|margin|variance|markup|budget|rate|price|qty|quantity|hours/u', $name)) continue;
+            $r = 0;
+            if (preg_match('/^(actual\s*costs?|actual|costs?|spent|amount\s*spent|cost\s*to\s*date)$/u', $name)) $r = 3;
+            elseif (preg_match('/\bactual\b.*\bcost|\bcost\b/u', $name)) $r = 2;
+            elseif (($cfg['format'] ?? '') === 'currency' && preg_match('/total|amount/u', $name)) $r = 1;
+            if ($r > $rank) { $rank = $r; $best = $c; }
+        }
+        return $best;
     }
 
     /** Add / edit / delete a cost recorded in Projects (cost_items). */
@@ -432,7 +477,9 @@ final class ProjectLink
         if ($desc === '') throw new ProjectUserError('Describe the cost.');
         $qty = str_replace([' ', ','], '', (string)($in['qty'] ?? '1'));
         $unit = str_replace([' ', ',', 'R'], '', (string)($in['unit_cost'] ?? '0'));
-        if (!is_numeric($qty) || !is_numeric($unit) || (float)$qty <= 0 || (float)$unit < 0 || (float)$qty * (float)$unit > 1e12) throw new ProjectUserError('Check the quantity and amount.');
+        // Each value must also fit its column: qty DECIMAL(15,3), unit_cost DECIMAL(15,2).
+        if (!is_numeric($qty) || !is_numeric($unit) || (float)$qty <= 0 || (float)$unit < 0 || round((float)$qty, 3) <= 0
+            || (float)$qty > 999999999999.999 || round((float)$unit, 2) > 9999999999999.99 || (float)$qty * (float)$unit > 1e12) throw new ProjectUserError('Check the quantity and amount.');
         $item = (int)($in['item_id'] ?? 0) ?: null;
         if ($item) {
             $st = $repo->db->prepare("SELECT 1 FROM board_items i JOIN project_boards b ON b.board_id = i.board_id WHERE i.id = ? AND b.project_id = ? AND i.company_id = ?");
@@ -446,12 +493,16 @@ final class ProjectLink
             if (!$st->fetchColumn()) $sup = null;
         }
         $id = (int)($in['id'] ?? 0);
-        if ($id) {
+        if ($id && array_key_exists('supplier_id', $in)) {
             $repo->db->prepare("UPDATE cost_items SET type = ?, description = ?, qty = ?, unit_cost = ?, item_id = ?, supplier_id = ? WHERE id = ? AND project_id = ? AND company_id = ?")
-                ->execute([$type, $desc, (float)$qty, round((float)$unit, 2), $item, $sup, $id, $projectId, $repo->companyId]);
+                ->execute([$type, $desc, round((float)$qty, 3), round((float)$unit, 2), $item, $sup, $id, $projectId, $repo->companyId]);
+        } elseif ($id) {
+            // No supplier sent: keep the one the cost has.
+            $repo->db->prepare("UPDATE cost_items SET type = ?, description = ?, qty = ?, unit_cost = ?, item_id = ? WHERE id = ? AND project_id = ? AND company_id = ?")
+                ->execute([$type, $desc, round((float)$qty, 3), round((float)$unit, 2), $item, $id, $projectId, $repo->companyId]);
         } else {
             $repo->db->prepare("INSERT INTO cost_items (company_id, project_id, item_id, type, description, qty, unit_cost, supplier_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
-                ->execute([$repo->companyId, $projectId, $item, $type, $desc, (float)$qty, round((float)$unit, 2), $sup, $repo->userId]);
+                ->execute([$repo->companyId, $projectId, $item, $type, $desc, round((float)$qty, 3), round((float)$unit, 2), $sup, $repo->userId]);
             $id = (int)$repo->db->lastInsertId();
         }
         Activity::log($repo->db, $repo->companyId, $repo->userId, null, null, 'cost_saved', ['project_id' => $projectId, 'description' => Activity::clip($desc, 80), 'amount' => round((float)$qty * (float)$unit, 2)]);
@@ -461,7 +512,12 @@ final class ProjectLink
     public static function deleteCost(ProjectRepo $repo, int $projectId, int $costId): void
     {
         $repo->requireProject($projectId, 2);
+        $st = $repo->db->prepare("SELECT description, qty, unit_cost FROM cost_items WHERE id = ? AND project_id = ? AND company_id = ?");
+        $st->execute([$costId, $projectId, $repo->companyId]);
+        $c = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$c) return;
         $repo->db->prepare("DELETE FROM cost_items WHERE id = ? AND project_id = ? AND company_id = ?")->execute([$costId, $projectId, $repo->companyId]);
+        Activity::log($repo->db, $repo->companyId, $repo->userId, null, null, 'cost_deleted', ['project_id' => $projectId, 'description' => Activity::clip((string)$c['description'], 80), 'amount' => round((float)$c['qty'] * (float)$c['unit_cost'], 2)]);
     }
 
     // ================================================================= search
@@ -480,22 +536,26 @@ final class ProjectLink
         $st->execute([$co, $like, $like, $like, $like]);
         $projects = array_map(fn($p) => ['id' => (int)$p['project_id'], 'name' => $p['name'], 'number' => (string)$p['project_number'], 'status' => $p['status'],
                                         'color' => ProjectRepo::projectColor($p), 'url' => self::projectUrl((int)$p['project_id'])], $st->fetchAll(PDO::FETCH_ASSOC));
+        // A project is visible to its boards' members too: keep only the boards (and their items) the user can open.
+        $limit = max(1, min(100, $limit));
+        $canOpen = fn(array $r) => $repo->boardLevel((int)$r['board_id']) >= 1;
         $st = $repo->db->prepare("SELECT b.board_id, b.title, p.name AS project, p.project_id, p.color FROM project_boards b JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
-                                   WHERE b.company_id = ? AND $vis AND (b.archived = 0 OR b.archived IS NULL) AND b.title LIKE ? ORDER BY b.title LIMIT 10");
+                                   WHERE b.company_id = ? AND $vis AND (b.archived = 0 OR b.archived IS NULL) AND b.title LIKE ? ORDER BY b.title LIMIT 50");
         $st->execute([$co, $like]);
         $boards = array_map(fn($b) => ['id' => (int)$b['board_id'], 'title' => $b['title'], 'project' => $b['project'], 'color' => ProjectRepo::projectColor($b), 'url' => self::boardUrl((int)$b['board_id'])],
-                            $st->fetchAll(PDO::FETCH_ASSOC));
+                            array_slice(array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), $canOpen)), 0, 10));
         $st = $repo->db->prepare("SELECT DISTINCT i.id, i.title, i.board_id, i.due_date, i.status_label, b.title AS board, p.name AS project, p.project_id, p.color
                                     FROM board_items i JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
                                     JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
                                LEFT JOIN board_item_values v ON v.item_id = i.id
                                    WHERE i.company_id = ? AND $vis AND (i.archived = 0 OR i.archived IS NULL) AND (b.archived = 0 OR b.archived IS NULL)
                                      AND (i.title LIKE ? OR i.description LIKE ? OR v.value LIKE ?)
-                                ORDER BY i.updated_at DESC LIMIT " . max(1, min(100, $limit)));
+                                ORDER BY i.updated_at DESC LIMIT " . min(300, $limit * 3));
         $st->execute([$co, $like, $like, $like]);
         $items = array_map(fn($i) => ['id' => (int)$i['id'], 'title' => $i['title'], 'board_id' => (int)$i['board_id'], 'board' => $i['board'], 'project' => $i['project'],
                                       'color' => ProjectRepo::projectColor($i), 'due' => Columns::date($i['due_date']), 'status' => $i['status_label'],
-                                      'url' => self::itemUrl((int)$i['board_id'], (int)$i['id'])], $st->fetchAll(PDO::FETCH_ASSOC));
+                                      'url' => self::itemUrl((int)$i['board_id'], (int)$i['id'])],
+                           array_slice(array_values(array_filter($st->fetchAll(PDO::FETCH_ASSOC), $canOpen)), 0, $limit));
         return ['projects' => $projects, 'boards' => $boards, 'items' => $items];
     }
 }

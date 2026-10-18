@@ -311,11 +311,18 @@
       case 'progress': return progressPopover(cellEl, col, v, commit);
       case 'supplier': return supplierPicker(cellEl, col, v, commit);
       case 'files': return opts.openFiles ? opts.openFiles(item, col) : null;
-      case 'rating': return null; // handled by the star buttons
+      case 'rating': return ratingPicker(cellEl, col, v, commit); // the stars are mouse targets: Enter opens this
       default:
         if (inlineTypes.includes(col.type)) return inlineInput(cellEl, col, v, commit);
     }
     return null;
+  }
+
+  function ratingPicker(anchor, col, v, commit) {
+    const max = (col.config || {}).max || 5;
+    return popover(anchor, `<div class="fwm-pop__title">${esc(col.name)}</div>${Array.from({ length: max + 1 }, (_, n) => `<button class="fwm-pop__item ${(v || 0) === n ? 'is-on' : ''}" data-v="${n}" type="button" aria-label="${n ? n + ' star' + (n > 1 ? 's' : '') : 'No rating'}">${n ? '★'.repeat(n) : 'No rating'}</button>`).join('')}`, {
+      onClick: (b) => { commit(Number(b.dataset.v) || null); },
+    });
   }
 
   function statusPicker(anchor, col, v, commit, opts) {
