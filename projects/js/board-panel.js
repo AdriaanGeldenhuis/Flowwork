@@ -31,6 +31,7 @@
     uploads: [],
     mentions: new Map(),
     seq: 0,
+    desc: { saves: 0, pending: 0, id: 0, text: '' }, // the description saves sent from here
   };
   const canEdit = () => !S.guest && st.detail && (st.detail.level || 0) >= 2 && !st.detail.archived;
   const canManage = () => !S.guest && st.detail && (st.detail.level || 0) >= 3;
@@ -78,9 +79,11 @@
       st.detail = null;
       host.innerHTML = shell(known ? known.title : 'Loading…', true);
     }
+    const since = descSince();
     try {
       const d = await load(id);
       if (seq !== st.seq) return;
+      keepSentDesc(d, since);
       st.detail = d;
       render();
       if (st.tab === 'updates') loadUpdates();
@@ -112,10 +115,12 @@
   }
   async function refresh(id, quiet) {
     if (st.mode !== 'item' || Number(id) !== st.id) return;
+    const since = descSince();
     try {
       const d = await load(st.id);
       if (Number(id) !== st.id) return;
-      if (!S.guest && d.board_id && d.board_id !== S.board.id) { close(); toast(`This ${FWB.noun()} was moved to ${d.board || 'another board'}.`); return; }
+      keepSentDesc(d, since);
+      if (!S.guest && d.board_id && d.board_id !== S.board.id) { gone(`This ${FWB.noun()} was moved to ${d.board || 'another board'}.`); return; }
       const typing = document.activeElement && host.contains(document.activeElement) && document.activeElement.matches('textarea, input, [contenteditable="true"]');
       st.detail = d;
       // Whoever asks (a live update, a colleague's column change), what is being typed stays.
@@ -126,9 +131,21 @@
     } catch (x) {
       if (Number(id) !== st.id) return;
       // Deleted, or moved where this person cannot follow: nothing to show any more.
-      if (x.status === 404 || (S.guest && !FWB.item(st.id))) { close(); toast(`This ${FWB.noun()} was deleted or moved away.`); return; }
+      if (x.status === 404 || (S.guest && !FWB.item(st.id))) { gone(`This ${FWB.noun()} was deleted or moved away.`); return; }
       if (!quiet) toastError(x);
     }
+  }
+  /** A description save was on its way while d loaded: d may predate it, so the text sent stays. */
+  const descSince = () => ({ saves: st.desc.saves, saving: st.desc.pending > 0 });
+  function keepSentDesc(d, since) {
+    if ((since.saving || st.desc.pending || st.desc.saves !== since.saves) && st.desc.id === d.id) d.description = st.desc.text;
+  }
+  /** The open item left this board: close, without saving a name half-typed into it. */
+  function gone(msg) {
+    const t = $('#pTitle', host);
+    if (t && document.activeElement === t && boardItem()) t.textContent = boardItem().title;
+    close();
+    toast(msg);
   }
   /** board.js tells us an item changed (a cell edit, live update…). */
   function onItemChanged(it) {
@@ -267,10 +284,31 @@
     const done = isDone(it);
     const firstFiles = FWB.colsOf('files')[0];
     const editable = canEdit();
-    box.innerHTML = `<div class="fwp-field"><div class="fwp-field__label">${icon('layers')}<span>Group</span></div>
+    const html = `<div class="fwp-field"><div class="fwp-field__label">${icon('layers')}<span>Group</span></div>
         <div class="fwp-cell ${editable && !st.detail.archived ? 'is-editable' : ''}" data-pgroup tabindex="0" role="button">${g ? `<span class="fwp-person"><span class="fwp-dot fwp-dot--sq" style="--c:${safeColor(g.color)}"></span><span>${esc(g.name)}</span></span>` : '<span class="fwp-muted">—</span>'}</div></div>
       ${S.columns.map((c) => `<div class="fwp-field"><div class="fwp-field__label" title="${esc(c.description || c.name)}">${icon(C.TYPE_ICON[c.type] || 'text')}<span>${esc(c.name)}</span></div>
         <div class="fwp-cell fwp-cell--${c.type} ${(editable && C.editable(c)) || c.type === 'files' ? 'is-editable' : ''}" data-pcid="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)}">${C.render(c, it, { done, groupColor: g ? g.color : null, firstFiles: firstFiles && firstFiles.id === c.id })}</div></div>`).join('')}`;
+    // A field being typed in (text, number…) keeps its editor — removing it would save the half-typed value; the others refresh around it.
+    const a = document.activeElement;
+    const keep = a && box.contains(a) && a.matches('input, textarea') ? a.closest('.fwp-field') : null;
+    const cell = keep && $('[data-pcid]', keep);
+    if (cell) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const fresh = Array.from(tmp.children);
+      const i = fresh.findIndex((x) => $(`[data-pcid="${cell.dataset.pcid}"]`, x));
+      if (i >= 0) {
+        Array.from(box.children).forEach((x) => { if (x !== keep) x.remove(); });
+        fresh.slice(0, i).forEach((x) => box.insertBefore(x, keep));
+        fresh.slice(i + 1).forEach((x) => box.appendChild(x));
+        return;
+      }
+    }
+    // The keyboard stays on the field it was on (a value just saved re-renders them all).
+    const on = a && box.contains(a) ? (a.dataset.pcid ? `[data-pcid="${a.dataset.pcid}"]` : a.matches('[data-pgroup]') ? '[data-pgroup]' : '') : '';
+    box.innerHTML = html;
+    const back = on && $(on, box);
+    if (back) back.focus({ preventScroll: true });
   }
   function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(520, Math.max(90, ta.scrollHeight + 2)) + 'px'; }
   function descHint(t) { const h = $('#pDescHint', host); if (h) h.textContent = t; }
@@ -280,6 +318,7 @@
     const text = ta.value;
     const id = st.detail.id;
     st.descDirty = false;
+    Object.assign(st.desc, { saves: st.desc.saves + 1, pending: st.desc.pending + 1, id, text });
     descHint('Saving…');
     try {
       await api.post('items.php', { action: 'describe', id, text });
@@ -288,7 +327,7 @@
       if (it) it.has_description = text.trim() !== '';
       descHint('Saved');
       setTimeout(() => { if (!st.descDirty) descHint(''); }, 1600);
-    } catch (x) { st.descDirty = true; descHint('Not saved'); toastError(x); }
+    } catch (x) { st.descDirty = true; descHint('Not saved'); toastError(x); } finally { st.desc.pending--; }
   }
   const saveDescSoon = debounce(saveDescription, 1200);
   function flushDescription() { if (st.descDirty) saveDescription(); }
@@ -889,7 +928,13 @@
       if (c.type === 'files') { setTab('files'); return; }
       const it = FWB.item(st.id);
       if (!canEdit() || !C.editable(c) || !it) return;
-      C.edit(c, it, cell, (v) => FWB.setValue(it, c, v), {
+      const kb = e.detail === 0; // Enter on the field: after the save the keyboard is back on it
+      C.edit(c, it, cell, (v) => {
+        const r = FWB.setValue(it, c, v);
+        const back = kb && $(`[data-pcid="${c.id}"]`, host);
+        if (back) back.focus({ preventScroll: true });
+        return r;
+      }, {
         canManage: canManage(),
         onEditLabels: (cc) => FWB.dialogs && FWB.dialogs.columnSettings(cc),
         allTags: (cc) => Array.from(new Set(S.items.flatMap((x) => x.values[cc.id] || []))).sort(),

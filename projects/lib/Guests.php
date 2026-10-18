@@ -154,11 +154,11 @@ final class Guests
     {
         $email = mb_strtolower(trim($email));
         // Exactly the stored (lower-case, plain ASCII) address: the column's collation would also match
-        // accented, full-width or padded spellings, each with a sign-in limit of its own.
+        // accented, full-width or padded spellings, each with a sign-in limit of its own. (email = ? lets the index narrow it first.)
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new ProjectUserError('That email and password do not match an active invitation.');
-        $st = $db->prepare("SELECT * FROM board_guests WHERE BINARY LOWER(email) = ? AND status = 'active' AND password_hash IS NOT NULL
+        $st = $db->prepare("SELECT * FROM board_guests WHERE email = ? AND BINARY LOWER(email) = ? AND status = 'active' AND password_hash IS NOT NULL
                                AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY (token = ?) DESC, last_access_at DESC, invited_at DESC");
-        $st->execute([$email, $token]);
+        $st->execute([$email, $email, $token]);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $g) {
             if (password_verify($password, (string)$g['password_hash'])) {
                 self::signIn($db, (int)$g['id']);

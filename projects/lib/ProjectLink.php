@@ -448,7 +448,7 @@ final class ProjectLink
     /**
      * The column a board keeps its cost in, if it has one: a number or formula column
      * called "Actual cost" / "Cost" / "Spent" / "Amount spent", else a money-formatted
-     * one called "… total" or "… amount" — never a percentage, rate, price, budget or margin.
+     * one called "… total" or "… amount" — never a percentage, rate, price, per-unit cost, budget or margin.
      */
     public static function boardCostColumn(array $cols): ?array
     {
@@ -458,7 +458,7 @@ final class ProjectLink
             if (!in_array($c['type'], ['number', 'formula'], true)) continue;
             $cfg = Columns::config($c);
             $name = mb_strtolower(trim((string)$c['name']));
-            if (($cfg['format'] ?? '') === 'percent' || preg_match('/%|percent|margin|variance|markup|budget|rate|price|qty|quantity|hours/u', $name)) continue;
+            if (($cfg['format'] ?? '') === 'percent' || preg_match('/%|percent|margin|variance|markup|budget|rate|price|qty|quantity|hours|\bunits?\b|\bper\b|\beach\b/u', $name)) continue;
             $r = 0;
             if (preg_match('/^(actual\s*costs?|actual|costs?|spent|amount\s*spent|cost\s*to\s*date)$/u', $name)) $r = 3;
             elseif (preg_match('/\bactual\b.*\bcost|\bcost\b/u', $name)) $r = 2;

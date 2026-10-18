@@ -421,7 +421,8 @@ final class ProjectRepo
     {
         $st = $this->db->prepare("SELECT b.board_id FROM project_boards b WHERE b.project_id = ? AND b.company_id = ? AND (b.archived = 0 OR b.archived IS NULL)");
         $st->execute([$projectId, $this->companyId]);
-        $boards = array_values(array_filter(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)), fn($b) => $this->boardLevel($b) >= 1));
+        $open = $this->projectLevel($projectId) >= 1; // a level on the project opens all of its boards; board members see theirs
+        $boards = array_values(array_filter(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)), fn($b) => $open || $this->boardLevel($b) >= 1));
         if (!$boards) return [];
         $in = implode(',', $boards);
         $first = [];

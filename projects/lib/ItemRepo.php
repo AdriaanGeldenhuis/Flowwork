@@ -12,6 +12,8 @@ final class ItemRepo
     public const MAX_FILE = 25 * 1024 * 1024;
     /** Live items a board holds — as many as the board page loads (BoardRepo::itemsPayload). */
     public const MAX_ITEMS = 5000;
+    /** Rows a board holds, archived items included (full-board recomputes read them all). */
+    public const MAX_ROWS = 20000;
     public const FILE_TYPES = ['pdf', 'txt', 'csv', 'rtf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
                                'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'dwg', 'dxf', 'zip', 'msg', 'eml'];
 
@@ -51,12 +53,14 @@ final class ItemRepo
         return $g;
     }
 
-    /** Refuse when $adding more live items would not fit on the board. */
-    public function requireRoom(int $boardId, int $adding = 1): void
+    /** Refuse when $adding more live items would not fit on the board ($new: rows it does not hold yet). */
+    public function requireRoom(int $boardId, int $adding = 1, bool $new = true): void
     {
-        $st = $this->db->prepare("SELECT COUNT(*) FROM board_items WHERE board_id = ? AND company_id = ? AND (archived = 0 OR archived IS NULL)");
+        $st = $this->db->prepare("SELECT COALESCE(SUM(archived = 0 OR archived IS NULL), 0), COUNT(*) FROM board_items WHERE board_id = ? AND company_id = ?");
         $st->execute([$boardId, $this->repo->companyId]);
-        if ((int)$st->fetchColumn() + $adding > self::MAX_ITEMS) throw new ProjectUserError('This board is full (' . number_format(self::MAX_ITEMS, 0, '.', ' ') . ' items). Archive or move some first.');
+        [$live, $all] = array_map('intval', $st->fetch(PDO::FETCH_NUM) ?: [0, 0]);
+        if ($live + $adding > self::MAX_ITEMS) throw new ProjectUserError('This board is full (' . number_format(self::MAX_ITEMS, 0, '.', ' ') . ' items). Archive or move some first.');
+        if ($new && $all + $adding > self::MAX_ROWS) throw new ProjectUserError('This board is full (' . number_format(self::MAX_ROWS, 0, '.', ' ') . ' items with the archived ones). Delete some archived items first.');
     }
 
     /** Text for a TEXT column: at most $max characters and 65 535 bytes. */
@@ -541,6 +545,10 @@ final class ItemRepo
         $itemIds = $this->idsOnBoard($boardId, $itemIds, true);
         if (!$itemIds) return [];
         $in = implode(',', $itemIds);
+        if (!$archived) { // restored items must fit too
+            $back = (int)$this->db->query("SELECT COUNT(*) FROM board_items WHERE id IN ($in) AND archived = 1")->fetchColumn();
+            if ($back) $this->requireRoom($boardId, $back, false);
+        }
         $titles = $this->db->query("SELECT id, title FROM board_items WHERE id IN ($in)")->fetchAll(PDO::FETCH_KEY_PAIR);
         $this->db->prepare("UPDATE board_items SET archived = ?, updated_at = NOW() WHERE id IN ($in) AND board_id = ? AND company_id = ?")->execute([$archived ? 1 : 0, $boardId, $this->repo->companyId]);
         foreach ($itemIds as $iid) {

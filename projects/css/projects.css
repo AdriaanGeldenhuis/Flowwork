@@ -1021,6 +1021,7 @@ a.fwp-conn:hover { border-color: var(--gold-line); text-decoration: none; transf
   .fwp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .fwp-kpi { padding: 12px 14px; }
   .fwp-kpi__value { font-size: 27px; }
+  .fwp-kpi__sub { white-space: normal; } /* two cards a row: the line wraps (e.g. "· boards: 123%") instead of being cut */
   .fwp-hero { grid-template-columns: minmax(0, 1fr); }
   .fwp-cards { grid-template-columns: minmax(0, 1fr); }
   .fwp-mwrow { grid-template-columns: 4px minmax(0, 1fr) auto; gap: 10px; }

@@ -194,8 +194,11 @@
     // (only an old due date, or only a start far ahead).
     const s0 = pr.start ? parseYmd(pr.start) : (pr.end && parseYmd(pr.end) < t ? parseYmd(pr.end) : t);
     const e0 = pr.end ? parseYmd(pr.end) : addDays(s0 > t ? s0 : t, 120);
-    const from = ymd(addDays(s0, -14));
-    const to = ymd(addDays(e0, 30));
+    let a = addDays(s0, -14), b = addDays(e0 < s0 ? s0 : e0, 30);
+    // calendar.php answers about a year at a time: a longer project shows the stretch around today.
+    if (daysBetween(a, b) > 395) { a = new Date(Math.max(a, Math.min(addDays(t, -60), addDays(b, -395)))); b = addDays(a, 395); }
+    const from = ymd(a);
+    const to = ymd(b);
     el.view.innerHTML = `<div class="fwp-pad"><div class="fwp-mw">
       <div class="fwp-sec"><h3>Schedule</h3><a class="fwp-link" href="/calendar/?new=1&link=project:${pr.id}&title=${encodeURIComponent(pr.name + ' — ')}">${icon('calendar-plus')}Add event</a><a class="fwp-link" href="/calendar/?view=month&date=${esc(today())}">${icon('calendar')}Open Calendar</a></div>
       <div id="sched"><div class="fwm-skel"><div class="fwm-skel__a"></div><div><div class="fwm-skel__l" style="width:55%"></div><div class="fwm-skel__l" style="width:30%"></div></div></div></div></div></div>`;
@@ -296,6 +299,8 @@
         d.items.slice(0, 300).forEach((it) => items.push({ id: it.id, label: b.title + ' › ' + it.title }));
       }
     } catch (x) { /* items optional */ }
+    // The cost's own item stays choosable (archived, or past the list's limits): saving must not unlink it.
+    if (c && c.item_id && !items.some((it) => it.id === c.item_id)) items.unshift({ id: c.item_id, label: c.item || 'Item #' + c.item_id });
     const m = tempModal(`<div class="fwm-dialog__head"><h2>${c ? 'Edit cost' : 'Add a cost'}</h2><button class="icon-btn" data-close aria-label="Close">${icon('x')}</button></div>
       <form class="fwm-dialog__body" id="costForm" autocomplete="off"><div class="fwp-form-grid">
         <div class="field is-wide"><label class="label" for="cDesc">Description</label><input class="input" id="cDesc" maxlength="2000" value="${esc(c ? c.description : '')}" placeholder="e.g. 50 bags of cement" autofocus></div>

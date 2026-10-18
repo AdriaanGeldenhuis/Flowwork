@@ -14,7 +14,7 @@ if (!empty($_GET['board_id'])) {
     pr_json(['activity' => Activity::feed($PR, ['board_id' => (int)$_GET['board_id']], $limit, $before)]);
 }
 if (!empty($_GET['project_id'])) {
-    $PR->requireProject((int)$_GET['project_id'], 1);
+    $PR->requireProject((int)$_GET['project_id'], 0); // as projects.php?id: board members page through the rows of their boards only
     pr_json(['activity' => Activity::feed($PR, ['project_id' => (int)$_GET['project_id']], $limit, $before)]);
 }
 pr_error('Choose a board, item or project.');

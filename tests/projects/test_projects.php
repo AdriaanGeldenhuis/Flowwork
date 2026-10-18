@@ -39,6 +39,7 @@ register_shutdown_function(function () use ($DB, $mark) {
     $DB->exec("DELETE FROM notifications WHERE id > {$mark['notifications']}");
     $DB->exec("DELETE FROM board_audit_log WHERE id > {$mark['audit']}");
     $DB->exec("DELETE FROM board_guests WHERE id > {$mark['guests']}");
+    try { $DB->exec("DELETE FROM email_links WHERE email_id = 999999001"); } catch (Throwable $e) { /* mail not installed */ }
     $DB->exec("DELETE FROM project_user_state WHERE company_id = " . C . " AND ((kind = 'project' AND ref_id > {$mark['projects']}) OR (kind = 'board' AND ref_id > {$mark['boards']}))");
 });
 
@@ -375,6 +376,59 @@ $ir->setValue($rn, $rin['id'], '2026-10-30');
 $br->updateColumn($rpc['Due date']['id'], ['name' => 'Ordered']);
 $br->updateColumn($rin['id'], ['name' => 'Inspection deadline']);
 assert_eq('2026-10-30', $DB->query("SELECT due_date FROM board_items WHERE id = $rn")->fetchColumn(), 'renaming date columns moves the items’ due date');
+
+// ------------------------------------------------------------------ group copies, history, board size, a deleted board's links
+$rdg = $br->createGroup($rpb, 'To copy', null, 'bottom');
+$rdi = $ir->create($rpb, $rdg['id'], 'Copied 1', [$rpc['Status']['id'] => 'Done'])['id'];
+$ir->create($rpb, $rdg['id'], 'Copied 2');
+$ir->addSubitem($rdi, 'sub a'); $ir->addSubitem($rdi, 'sub b');
+$rdup = $br->duplicateGroup($rdg['id']);
+$rdupItems = $DB->query("SELECT id, title, subitem_count FROM board_items WHERE group_id = {$rdup['group']['id']} ORDER BY position, id")->fetchAll(PDO::FETCH_ASSOC);
+assert_eq(['Copied 1', 'Copied 2'], array_column($rdupItems, 'title'), 'a copied group keeps its items in order');
+assert_eq([2, 2, 'done'], [(int)$rdupItems[0]['subitem_count'], (int)$DB->query("SELECT COUNT(*) FROM board_subitems WHERE parent_item_id = {$rdupItems[0]['id']}")->fetchColumn(),
+          $cell((int)$rdupItems[0]['id'], $rpc['Status']['id'])], '… with their subitems and values');
+$ra0 = (int)$DB->query("SELECT COALESCE(MAX(id), 0) FROM board_audit_log")->fetchColumn();
+$br->reorderColumns($rpb, array_reverse(array_column($br->load($rpb)['columns'], 'id')));
+$br->updateColumn($rpc['Owner']['id'], ['width' => 220]);
+$ir->updateSubitem($ir->addSubitem($rp, 'To rename')['id'], ['title' => 'Renamed']);
+$ir->editUpdate($ir->addUpdate($rp, 'First words')['id'], 'Better words');
+$rat = Automations::save($member, $rpb, ['name' => 'Short-lived', 'trigger' => 'item_created', 'trigger_config' => [], 'action' => 'notify', 'action_config' => ['to' => 'creator']]);
+Automations::toggle($member, $rpb, $rat, false);
+Automations::delete($member, $rpb, $rat);
+$racts = $DB->query("SELECT action FROM board_audit_log WHERE id > $ra0 AND board_id = $rpb")->fetchAll(PDO::FETCH_COLUMN);
+foreach (['subitem_updated', 'update_edited', 'automation_toggled', 'automation_deleted'] as $ract) assert_true(in_array($ract, $racts, true), "history records $ract");
+assert_eq(2, count(array_keys($racts, 'column_updated')), '… and a column reorder and a width change, so other open boards reload');
+$ir->describe($rp, str_repeat("\u{1F600}", 20000));
+$rdesc = (string)$DB->query("SELECT description FROM board_items WHERE id = $rp")->fetchColumn();
+assert_true(strlen($rdesc) <= 65535 && mb_check_encoding($rdesc, 'UTF-8'), 'a long description is cut to what a TEXT field holds');
+$rix = $DB->query("SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'board_items' GROUP BY index_name")->fetchAll(PDO::FETCH_COLUMN);
+assert_true((bool)array_filter($rix, fn($c) => str_starts_with($c . ',', 'due_date,')), 'the due-date reminders across companies have an index');
+$rop = $member->createProject(['name' => 'PrTest Private', 'template' => 'empty']);
+$rob1 = $br->createBoard($rop, ['template' => 'blank', 'title' => 'PrTest Shared board']);
+$rob2 = $br->createBoard($rop, ['template' => 'blank', 'title' => 'PrTest Hidden board']);
+$ir->create($rob2, null, 'Not for board-only members');
+$DB->prepare("INSERT INTO board_members (board_id, user_id, role) VALUES (?, ?, 'editor')")->execute([$rob1, ADMIN2]);
+$rfeed = Activity::feed(repo(ADMIN2, 'member'), ['project_id' => $rop], 200);
+assert_eq([$rob1], array_values(array_unique(array_map('intval', array_column($rfeed, 'board_id')))), 'someone added to one board sees only that board in the project’s history');
+$DB->prepare("DELETE FROM board_members WHERE board_id = ?")->execute([$rob1]);
+$DB->prepare("INSERT INTO email_links (email_id, linked_type, linked_id, created_by, company_id) VALUES (999999001, 'board', ?, ?, ?)")->execute([$rob2, MEMBER, C]);
+$br->deleteBoard($rob2);
+assert_eq(0, (int)$DB->query("SELECT COUNT(*) FROM email_links WHERE linked_type = 'board' AND linked_id = $rob2")->fetchColumn(), 'deleting a board removes the emails linked to it');
+$rfb = $br->createBoard($rop, ['template' => 'blank', 'title' => 'PrTest Full']);
+$rfg = $br->load($rfb)['groups'][0]['id'];
+$DB->exec("INSERT INTO board_items (board_id, company_id, group_id, title, position, created_by) SELECT $rfb, " . C . ", $rfg, CONCAT('Row ', seq), seq, " . MEMBER . " FROM seq_1_to_" . (ItemRepo::MAX_ITEMS - 1));
+$rlast = $ir->create($rfb, $rfg, 'The last one fits')['id'];
+throws(fn() => $ir->create($rfb, $rfg, 'One too many'), 'a full board takes no more items');
+throws(fn() => $ir->moveToBoard($rpb, [$rn], $rfb, null), '… nor items moved in');
+$ir->archive($rfb, [$rlast], true);
+$ir->create($rfb, $rfg, 'Took its place');
+throws(fn() => $ir->archive($rfb, [$rlast], false), '… nor restored ones');
+$DB->exec("UPDATE board_items SET archived = 0 WHERE id = $rlast"); // as on a board filled before the limit
+$rfl = $br->load($rfb)['board'];
+assert_eq([true, ItemRepo::MAX_ITEMS + 1], [$rfl['truncated'], $rfl['items_total']], 'a board with more items than the page loads says so');
+$DB->exec("UPDATE board_items SET archived = 1 WHERE board_id = $rfb AND title IN ('Row 1', 'Row 2')");
+$DB->exec("INSERT INTO board_items (board_id, company_id, group_id, title, position, archived, created_by) SELECT $rfb, " . C . ", $rfg, CONCAT('Old ', seq), seq, 1, " . MEMBER . " FROM seq_1_to_" . (ItemRepo::MAX_ROWS - ItemRepo::MAX_ITEMS - 1));
+throws(fn() => $ir->create($rfb, $rfg, 'Over the rows'), 'archived items still count toward what a board holds');
 
 // ------------------------------------------------------------------ views, prefs, stars
 $v = $br->saveView($bid, ['name' => 'Mine', 'view' => 'kanban', 'config' => ['person' => MEMBER], 'shared' => true]);
