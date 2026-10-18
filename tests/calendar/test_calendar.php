@@ -4,6 +4,9 @@
  * rules, who sees what, edit/delete scopes on repeating events, invitations,
  * reminders (company time zone), live Flowwork sources, retired-sync copies,
  * CRM follow-ups, project timelines, iCalendar import/export and settings.
+ * Project and task dates, project links and project calendars follow the
+ * Projects engine's rules (ProjectLink: who may open a project or board, the
+ * people on an item, the items' mirrored dates).
  *
  *   php tests/calendar/test_calendar.php
  *
@@ -27,6 +30,8 @@ const ADMIN2 = 4;
 // ------------------------------------------------------------------ clean-up
 
 CalendarSchema::ensure($DB); // so the tables exist before we take the high-water marks
+CalendarRepo::projectsAvailable(); // loads the Projects engine (ProjectLink) …
+ProjectSchema::ensure($DB);        // … provisioned before the fixtures, so its one-off backfill never rewrites them
 fw_notify_install($DB);
 
 $maxId = fn(string $t, string $col = 'id') => (int)$DB->query("SELECT COALESCE(MAX(`$col`), 0) FROM `$t`")->fetchColumn();
@@ -51,6 +56,8 @@ register_shutdown_function(function () use ($DB, $mark, $settingsBackup, $compan
     $DB->exec("DELETE FROM invoice_lines WHERE invoice_id > {$mark['invoices']}");
     $DB->exec("DELETE FROM invoices WHERE id > {$mark['invoices']}");
     $DB->exec("DELETE FROM crm_accounts WHERE id > {$mark['crm_accounts']}");
+    $DB->exec("DELETE FROM board_item_people WHERE item_id IN (SELECT id FROM board_items WHERE title LIKE 'CalTest %')");
+    $DB->exec("DELETE FROM board_members WHERE board_id IN (SELECT board_id FROM project_boards WHERE title LIKE 'CalTest %')");
     $DB->exec("DELETE FROM board_items WHERE title LIKE 'CalTest %'");
     $DB->exec("DELETE FROM project_boards WHERE title LIKE 'CalTest %'");
     $DB->exec("DELETE FROM project_members WHERE project_id > {$mark['projects']}");
@@ -438,28 +445,90 @@ assert_true(!CalendarSettings::availableSources($DB, C, 'member')['payroll'], 'b
 company_setting($DB, 'calendar_sync_payroll_dates', null);
 assert_true(!CalendarSettings::availableSources($DB, C, 'admin')['payroll'], 'pay days are off by default');
 
-$DB->prepare("INSERT INTO projects (company_id, name, status, start_date, end_date, owner_id, created_by, created_at)
-              VALUES (?, 'CalTest Project', 'active', ?, ?, ?, ?, NOW())")
-   ->execute([C, $soonDue, date('Y-m-d', strtotime("$soonDue +5 days")), ADMIN, ADMIN]);
-$project = (int)$DB->lastInsertId();
+// Projects and tasks: everything is set up before anyone looks, because the
+// engine remembers for the rest of the request which projects a user can open.
 $pTo = date('Y-m-d', strtotime("$soonDue +5 days"));
-$k = $keys($admin, $soonDue, $pTo);
-assert_true(isset($k["project-start:$project"], $k["project-due:$project"]), 'project start and due dates show');
-$k = $keys(repo(MEMBER, 'member'), $soonDue, $pTo);
-assert_true(!isset($k["project-due:$project"]), 'only to people on the project');
+$past = date('Y-m-d', strtotime($nowLocal . ' -2 days'));
+$newProject = function (string $name, array $f = []) use ($DB, $soonDue, $pTo): int {
+    $DB->prepare("INSERT INTO projects (company_id, name, status, visibility, start_date, end_date, owner_id, created_by, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())")
+       ->execute([C, $name, $f['status'] ?? 'active', $f['visibility'] ?? 'members', $soonDue, $pTo, ADMIN, ADMIN]);
+    return (int)$DB->lastInsertId();
+};
+$newBoard = function (int $projectId, string $title, int $archived = 0) use ($DB): int {
+    $DB->prepare("INSERT INTO project_boards (company_id, project_id, title, archived, created_at) VALUES (?, ?, ?, ?, NOW())")
+       ->execute([C, $projectId, $title, $archived]);
+    return (int)$DB->lastInsertId();
+};
+// An item as the engine leaves it: assigned_to is the first person, board_item_people lists everyone.
+$newItem = function (int $boardId, string $title, array $people, array $f = []) use ($DB): int {
+    $DB->prepare("INSERT INTO board_items (board_id, company_id, group_id, title, assigned_to, due_date, start_date, end_date, progress, archived, created_by, created_at)
+                  VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
+       ->execute([$boardId, C, $title, $people[0] ?? null, $f['due'] ?? null, $f['start'] ?? null, $f['end'] ?? null, $f['progress'] ?? 0, $f['archived'] ?? 0, ADMIN]);
+    $id = (int)$DB->lastInsertId();
+    foreach ($people as $uid) {
+        $DB->prepare("INSERT INTO board_item_people (item_id, user_id, company_id, board_id) VALUES (?, ?, ?, ?)")->execute([$id, $uid, C, $boardId]);
+    }
+    return $id;
+};
+$project = $newProject('CalTest Project');
 $DB->prepare("INSERT INTO project_members (company_id, project_id, user_id, role, can_edit, added_at) VALUES (?, ?, ?, 'member', 0, NOW())")
    ->execute([C, $project, MEMBER]);
-assert_true(isset($keys(repo(MEMBER, 'member'), $soonDue, $pTo)["project-due:$project"]), 'project members see them');
+$shared = $newProject('CalTest Shared', ['visibility' => 'company']);
+$closed = $newProject('CalTest Closed', ['status' => 'completed']);
+$DB->prepare("INSERT INTO project_members (company_id, project_id, user_id, role, can_edit, added_at) VALUES (?, ?, ?, 'member', 1, NOW())")
+   ->execute([C, $closed, MEMBER]);
+$crewProject = $newProject('CalTest Crew project');
+$board = $newBoard($project, 'CalTest Board');
+$oldBoard = $newBoard($project, 'CalTest Old board', 1);
+$closedBoard = $newBoard($closed, 'CalTest Closed board');
+$crewBoard = $newBoard($crewProject, 'CalTest Crew board');
+$officeBoard = $newBoard($crewProject, 'CalTest Office board');
+$DB->prepare("INSERT INTO board_members (board_id, user_id, role) VALUES (?, ?, 'editor')")->execute([$crewBoard, ADMIN2]);
+$task = $newItem($board, 'CalTest Pour slab', [MEMBER], ['due' => $soonDue]);
+$pair = $newItem($board, 'CalTest Order steel', [ADMIN, MEMBER], ['due' => $soonDue]);
+$span = $newItem($board, 'CalTest Formwork', [MEMBER], ['start' => $soonDue, 'end' => $pTo, 'due' => $pTo]);
+$doneTask = $newItem($board, 'CalTest Strip site', [MEMBER], ['due' => $soonDue, 'progress' => 100]);
+$lateTask = $newItem($board, 'CalTest Late delivery', [MEMBER], ['due' => $past]);
+$unassigned = $newItem($board, 'CalTest Unassigned', [], ['due' => $soonDue]);
+$gone = $newItem($board, 'CalTest Archived task', [MEMBER], ['due' => $soonDue, 'archived' => 1]);
+$oldTask = $newItem($oldBoard, 'CalTest Old board task', [MEMBER], ['due' => $soonDue]);
+$closedTask = $newItem($closedBoard, 'CalTest Closed task', [MEMBER], ['due' => $soonDue]);
+$crewTask = $newItem($crewBoard, 'CalTest Crew task', [ADMIN2], ['due' => $soonDue]);
+$officeTask = $newItem($officeBoard, 'CalTest Office task', [MEMBER], ['due' => $soonDue]);
+$member = repo(MEMBER, 'member');
+$crew = repo(ADMIN2, 'member'); // a member of one board of the crew project, nothing else
 
-$DB->prepare("INSERT INTO project_boards (company_id, project_id, title, created_at) VALUES (?, ?, 'CalTest Board', NOW())")
-   ->execute([C, $project]);
-$board = (int)$DB->lastInsertId();
-$DB->prepare("INSERT INTO board_items (board_id, company_id, group_id, title, assigned_to, due_date, progress, created_by, created_at)
-              VALUES (?, ?, 0, 'CalTest Pour slab', ?, ?, 0, ?, NOW())")->execute([$board, C, MEMBER, $soonDue, ADMIN]);
-$task = (int)$DB->lastInsertId();
-$k = $keys(repo(MEMBER, 'member'), $soonDue, $soonDue);
-assert_true(isset($k["item:$task"]), 'tasks assigned to me show on their due date');
-assert_true(!isset($keys($admin, $soonDue, $soonDue)["item:$task"]), 'tasks assigned to others do not');
+$k = $keys($admin, $soonDue, $pTo);
+assert_true(isset($k["project-start:$project"], $k["project-due:$project"]), 'project start and due dates show');
+assert_eq("/projects/view.php?project_id=$project", $k["project-due:$project"]['url'] ?? null, 'linking to the project');
+assert_true(!isset($k["project-due:$closed"]), 'completed projects do not');
+$k = $keys($member, $soonDue, $pTo);
+assert_true(isset($k["project-due:$project"]), 'project members see them');
+assert_true(isset($k["project-due:$shared"]), 'and everyone sees a project shared with the company');
+assert_true(!isset($k["project-due:$crewProject"]), 'but not projects they cannot open');
+$k = $keys($crew, $soonDue, $pTo);
+assert_true(isset($k["project-due:$crewProject"]), 'a board member sees the project of their board');
+assert_true(!isset($k["project-due:$project"]), 'only people who can open a project see its dates');
+
+$k = $keys($member, $soonDue, $soonDue);
+assert_true(isset($k["item:$task"]), 'tasks I am on show on their due date');
+assert_eq("/projects/board.php?board_id=$board&item=$task", $k["item:$task"]['url'] ?? null, 'opening the item on its board');
+assert_true(isset($k["item:$pair"]), 'also when I am not the first person on the item');
+assert_eq('done', $k["item:$doneTask"]['status'] ?? null, 'finished tasks show as done');
+assert_true(!isset($k["item:$unassigned"]), 'tasks I am not on do not show');
+assert_true(!isset($k["item:$gone"]) && !isset($k["item:$oldTask"]), 'nor archived tasks or tasks on archived boards');
+assert_true(!isset($k["item:$closedTask"]), 'nor tasks of completed projects');
+assert_true(!isset($k["item:$officeTask"]), 'nor tasks on projects I cannot open');
+$k = $keys($admin, $soonDue, $soonDue);
+assert_true(isset($k["item:$pair"]) && !isset($k["item:$task"]), 'everyone sees the tasks they are on');
+$k = $keys($crew, $soonDue, $soonDue);
+assert_true(isset($k["item:$crewTask"]), 'board members see the tasks they are on');
+$mid = date('Y-m-d', strtotime("$soonDue +2 days"));
+$k = $keys($member, $mid, $mid);
+assert_eq([$soonDue, $pTo], [$k["item:$span"]['start'] ?? null, $k["item:$span"]['end'] ?? null], 'a task with a timeline spans it, ending on its due date');
+$k = $keys($member, $past, $past);
+assert_eq('overdue', $k["item:$lateTask"]['status'] ?? null, 'open tasks past their due date are overdue');
 
 // ============================================== copies written by the old syncs
 
@@ -507,13 +576,55 @@ $meet = $admin->create(['calendar_id' => $team, 'title' => 'CalTest site handove
                         'links' => [['type' => 'project', 'id' => $project]]], false);
 $taskMeet = $admin->create(['calendar_id' => $mine, 'title' => 'CalTest pour inspection', 'start' => "$soonDue 13:00", 'end' => "$soonDue 13:30",
                             'links' => [['type' => 'item', 'id' => $task]]], false);
+$boardMeet = $admin->create(['calendar_id' => $team, 'title' => 'CalTest board review', 'start' => "$soonDue 15:00", 'end' => "$soonDue 15:30",
+                             'links' => [['type' => 'board', 'id' => $board]]], false);
 $tl = CalendarLink::projectTimeline($DB, C, ADMIN, 'admin', $project, $soonDue, $pTo);
-assert_eq([$meet, $taskMeet], feed_ids($tl['events']), 'the project calendar has events linked to it and to its tasks');
+assert_eq([$meet, $taskMeet, $boardMeet], feed_ids($tl['events']), 'the project calendar has events linked to it, its boards and its tasks');
 $itemKeys = array_column($tl['items'], 'key');
 sort($itemKeys);
-assert_eq(["item:$task", "project-due:$project", "project-start:$project"], $itemKeys, 'plus its start, due and task dates');
+$want = ["item:$task", "item:$pair", "item:$span", "item:$doneTask", "item:$unassigned", "project-due:$project", "project-start:$project"];
+sort($want);
+assert_eq($want, $itemKeys, 'plus its start, due and task dates (live tasks on live boards only)');
+$byKey = array_column($tl['items'], null, 'key');
+assert_eq("/projects/view.php?project_id=$project", $byKey["project-due:$project"]['url'] ?? null, 'project dates open the project');
+assert_eq("/projects/board.php?board_id=$board&item=$span", $byKey["item:$span"]['url'] ?? null, 'task dates open the item');
+assert_eq([$pTo, 'tasks', 'CalTest Board'], [$byKey["item:$span"]['start'] ?? null, $byKey["item:$span"]['source'] ?? null, $byKey["item:$span"]['sub'] ?? null], 'on its due date, with its board');
 $tl = CalendarLink::projectTimeline($DB, C, MEMBER, 'member', $project, $soonDue, $pTo);
-assert_eq([$meet], feed_ids($tl['events']), 'but only the events each person may see');
+assert_eq([$meet, $boardMeet], feed_ids($tl['events']), 'but only the events each person may see');
+$tl = CalendarLink::projectTimeline($DB, C, ADMIN2, 'member', $crewProject, $soonDue, $pTo);
+assert_eq(["item:$crewTask"], array_values(array_filter(array_column($tl['items'], 'key'), fn($k) => str_starts_with($k, 'item:'))),
+          'a board member sees the tasks of their own boards only');
+assert_eq(['events' => [], 'items' => []], CalendarLink::projectTimeline($DB, C, MEMBER, 'member', $crewProject, $soonDue, $pTo),
+          'and nothing of a project they cannot open');
+
+// ===================================================== links to projects
+
+$links = fn(CalendarRepo $r) => new CalendarLinks($DB, $r);
+$d = $links($admin)->describe('board', $board);
+assert_eq(['CalTest Board', 'CalTest Project', "/projects/board.php?board_id=$board", 'Board'], [$d['label'] ?? null, $d['sub'] ?? null, $d['url'] ?? null, $d['kind'] ?? null],
+          'an event can be linked to a board, opening the board');
+assert_eq("/projects/board.php?board_id=$board&item=$task", $links($admin)->describe('item', $task)['url'] ?? null, 'a task link opens the item on its board');
+assert_eq("/projects/view.php?project_id=$project", $links($admin)->describe('project', $project)['url'] ?? null, 'a project link opens the project');
+assert_eq([['type' => 'board', 'id' => $board]], array_map(fn($l) => ['type' => $l['type'], 'id' => $l['id']], $links($admin)->forEvent($boardMeet)),
+          'the board link is kept on the event');
+assert_true($links($crew)->canLink('board', $crewBoard) && !$links($crew)->canLink('board', $officeBoard), 'board members can link their board, not the others');
+assert_true($links($crew)->canLink('item', $crewTask) && !$links($crew)->canLink('item', $officeTask), 'and the tasks on it');
+assert_true($links($member)->canLink('project', $shared) && !$links($member)->canLink('project', $crewProject), 'projects follow who may open them');
+$found = fn(CalendarRepo $r, string $q) => array_map(fn($l) => $l['type'] . ':' . $l['id'], $links($r)->search($q));
+assert_eq(["item:$unassigned"], $found($member, 'CalTest Unassigned'), 'search finds any task the user can see, not only their own');
+assert_eq(["project:$shared"], $found($member, 'CalTest Shared'), 'and projects shared with the company');
+assert_eq([], $found($member, 'CalTest Crew'), 'but nothing on projects the user cannot open');
+assert_eq([], $found($admin, 'CalTest Archived task'), 'nor archived tasks');
+assert_eq([], $found($admin, 'CalTest Old board'), 'nor archived boards or their tasks');
+$crewFound = $found($crew, 'CalTest Crew');
+sort($crewFound);
+assert_eq(["board:$crewBoard", "item:$crewTask", "project:$crewProject"], $crewFound, 'boards are searchable too');
+
+// ====================================================== project calendars
+
+$pcal = $admin->insertCalendar('project', 'CalTest project calendar', '#7a5ab8', null, $project);
+assert_true(repo(MEMBER, 'member')->calendar($pcal) !== null, 'a project calendar is seen by the people who can open the project');
+assert_true(repo(ADMIN2, 'member')->calendar($pcal) === null, 'and by nobody else');
 
 // ================================================================ iCalendar
 

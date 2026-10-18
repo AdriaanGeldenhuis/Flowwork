@@ -3,6 +3,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -51,7 +52,32 @@ if (!$__sc->fetchColumn()) {
     echo json_encode(['ok' => false, 'error' => 'Invalid supplier']);
     exit;
 }
-$projectBoardId = isset($header['project_board_id']) ? (int)$header['project_board_id'] : null;
+$projectBoardId = !empty($header['project_board_id']) ? ((int)$header['project_board_id'] ?: null) : null;
+// The project board must be this company's and one the user can open (as in
+// the review picker), and every line's item must be on it.
+if ($projectBoardId && (!ProjectLink::boardBelongs($DB, $companyId, $projectBoardId)
+        || !ProjectLink::canSeeBoard($DB, $companyId, $userId, (string)$userRole, $projectBoardId))) {
+    echo json_encode(['ok' => false, 'error' => 'Project board not found']);
+    exit;
+}
+foreach (is_array($lines) ? $lines : [] as $line) {
+    $lineItemId = is_array($line) && !empty($line['project_item_id']) ? (int)$line['project_item_id'] : null;
+    if ($lineItemId && (!$projectBoardId || !ProjectLink::boardBelongs($DB, $companyId, $projectBoardId, $lineItemId))) {
+        echo json_encode(['ok' => false, 'error' => 'A line\'s task item is not on the selected project board']);
+        exit;
+    }
+}
+// Carry the board's project on the lines when ap_bill_lines has a project_id column.
+$lineProjectId = null;
+$hasLineProjectId = false;
+try {
+    $hasLineProjectId = (bool)$DB->query("SHOW COLUMNS FROM ap_bill_lines LIKE 'project_id'")->fetch();
+} catch (Exception $e) {
+    $hasLineProjectId = false;
+}
+if ($hasLineProjectId && $projectBoardId) {
+    $lineProjectId = ProjectLink::projectOfBoard($DB, $companyId, $projectBoardId) ?: null;
+}
 $invoiceNumber = trim($header['invoice_number']);
 $invoiceDate = $header['invoice_date'];
 $currency = $header['currency'] ?? 'ZAR';
@@ -139,10 +165,10 @@ try {
         $stmt2 = $DB->prepare(
             "INSERT INTO ap_bill_lines (
                 bill_id, item_description, quantity, unit, unit_price, discount, tax_rate,
-                line_total, sort_order, gl_account_id, project_board_id, project_item_id
-            ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)"
+                line_total, sort_order, gl_account_id, project_board_id, project_item_id" . ($hasLineProjectId ? ", project_id" : "") . "
+            ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?" . ($hasLineProjectId ? ", ?" : "") . ")"
         );
-        $stmt2->execute([
+        $lineParams = [
             $billId,
             $desc,
             $qty,
@@ -154,7 +180,11 @@ try {
             $glAccountId,
             $projBoardId,
             $projItemId
-        ]);
+        ];
+        if ($hasLineProjectId) {
+            $lineParams[] = $lineProjectId;
+        }
+        $stmt2->execute($lineParams);
         $sort++;
     }
     // Update receipt_file with bill_id

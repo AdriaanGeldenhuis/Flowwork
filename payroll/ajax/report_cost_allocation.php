@@ -24,13 +24,13 @@ try {
 
     $stmt = $DB->prepare("
         SELECT 
-            p.project_id,
+            prl.project_id,
             p.name as project_name,
             SUM(prl.amount_cents) as wage_cost_cents,
             SUM(pre.uif_employer_cents + pre.sdl_cents) as employer_cost_cents
         FROM pay_run_lines prl
         JOIN pay_runs pr ON pr.id = prl.run_id
-        LEFT JOIN projects p ON p.project_id = prl.project_id
+        LEFT JOIN projects p ON p.project_id = prl.project_id AND p.company_id = pr.company_id
         LEFT JOIN pay_run_employees pre ON pre.run_id = pr.id AND pre.employee_id = prl.employee_id
         WHERE pr.company_id = ?
         AND pr.pay_date >= ? AND pr.pay_date <= ?

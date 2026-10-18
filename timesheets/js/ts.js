@@ -39,9 +39,10 @@
    */
   async function apiCall(endpoint, data = {}) {
     try {
+      const csrf = document.querySelector('meta[name="csrf-token"]');
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf ? csrf.content : '' },
         body: JSON.stringify(data)
       });
       return await response.json();
@@ -69,11 +70,19 @@
           if (projectId) {
             const result = await apiCall('/timesheets/ajax/board_items.php', { project_id: projectId });
             if (result.ok) {
+              // One group per board
+              const groups = {};
               result.items.forEach(function(item) {
+                let group = groups[item.board_id];
+                if (!group) {
+                  group = groups[item.board_id] = document.createElement('optgroup');
+                  group.label = item.board;
+                  boardSelect.appendChild(group);
+                }
                 const opt = document.createElement('option');
                 opt.value = item.id;
-                opt.textContent = item.name;
-                boardSelect.appendChild(opt);
+                opt.textContent = item.title;
+                group.appendChild(opt);
               });
               boardSelect.disabled = false;
             } else {

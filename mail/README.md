@@ -1,8 +1,9 @@
 # Flowwork Mail
 
 Unified mail client inside Flowwork: IMAP/SMTP accounts, threaded inbox, rich
-composer, labels, rules, templates, signatures, snooze, scheduled send and CRM
-linking.
+composer, labels, rules, templates, signatures, snooze, scheduled send, CRM
+linking and "Add to project" (a new item from an email, or a link to an item
+or project, through the Projects API and `api/project_link.php`).
 
 ## Layout
 

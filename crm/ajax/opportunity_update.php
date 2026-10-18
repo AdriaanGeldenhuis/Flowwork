@@ -21,7 +21,7 @@ if ($oppId <= 0) {
     exit;
 }
 
-const CRM_OPP_STAGES = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost', 'converted'];
+const CRM_OPP_STAGES = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'];
 
 try {
     // Fetch opportunity and check ownership

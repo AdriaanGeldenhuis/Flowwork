@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../lib/Currencies.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -20,6 +21,12 @@ $lines = $_POST['lines'] ?? [];
 
 if (!$customerId || empty($lines)) {
     echo json_encode(['ok' => false, 'error' => 'Invalid input - customer and lines required']);
+    exit;
+}
+
+// Project is optional, but must be one of this company's projects
+if (!ProjectLink::belongs($DB, (int)$companyId, $projectId)) {
+    echo json_encode(['ok' => false, 'error' => 'Project not found']);
     exit;
 }
 

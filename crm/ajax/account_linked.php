@@ -127,13 +127,33 @@ try {
     }
 
     // Projects linked to this account. projects.client_id carries the CRM
-    // account id (opportunity_convert.php writes it); probe like the others.
+    // account id (the Projects engine sets it, opportunity conversion
+    // included). Every status is listed; non-admins only see the projects
+    // they can open.
     $projects = [];
     try {
-        $pStmt = $DB->prepare("SELECT project_id AS id, name, status, created_at FROM projects WHERE company_id = ? AND client_id = ? ORDER BY created_at DESC LIMIT 50");
+        require_once __DIR__ . '/../../projects/lib/autoload.php';
+        $repo = ProjectLink::repo($DB, (int)$companyId, (int)$_SESSION['user_id'], (string)($_SESSION['role'] ?? 'viewer'));
+        [$visibleSql] = $repo->visibleSql('p');
+        $pStmt = $DB->prepare("SELECT p.project_id, p.project_number, p.name, p.status, p.archived, p.created_at
+                               FROM projects p
+                               WHERE p.company_id = ? AND p.client_id = ? AND $visibleSql
+                               ORDER BY p.created_at DESC LIMIT 50");
         $pStmt->execute([$companyId, $accountId]);
-        $projects = $pStmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
+        foreach ($pStmt->fetchAll(PDO::FETCH_ASSOC) as $p) {
+            $status = !empty($p['archived']) ? 'archived' : (string)$p['status'];
+            $projects[] = [
+                'id' => (int)$p['project_id'],
+                'number' => $p['project_number'],
+                'name' => $p['name'],
+                'status' => $status,
+                'status_label' => ProjectRepo::STATUSES[$status] ?? ucfirst(str_replace('_', ' ', $status)),
+                'url' => ProjectLink::projectUrl((int)$p['project_id']),
+                'created_at' => $p['created_at']
+            ];
+        }
+    } catch (Throwable $e) {
+        error_log('CRM account_linked projects error: ' . $e->getMessage());
         $projects = [];
     }
 

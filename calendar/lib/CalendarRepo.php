@@ -185,18 +185,32 @@ final class CalendarRepo
         return (int)$this->db->lastInsertId();
     }
 
-    /** Projects this user can open (null = all, for admins). @return array<int,true>|null */
+    /** Loads the Projects library (ProjectLink); false when the module is not installed. */
+    public static function projectsAvailable(): bool
+    {
+        if (class_exists('ProjectLink', false)) return true;
+        $lib = CalendarPaths::root() . '/projects/lib/autoload.php';
+        if (!is_file($lib)) return false;
+        require_once $lib;
+        return class_exists('ProjectLink', false);
+    }
+
+    /**
+     * Projects this user can open (null = all, for admins) — the Projects
+     * engine's rule: members, owner / creator / manager, projects shared with
+     * the company, and projects with a board the user is a member of.
+     * @return array<int,true>|null
+     */
     public function projectIds(): ?array
     {
         if ($this->isAdmin()) return null;
         if ($this->projectIds !== null) return $this->projectIds;
         $ids = [];
         try {
-            $st = $this->db->prepare("SELECT project_id FROM project_members WHERE user_id = ? AND company_id = ?
-                                      UNION SELECT project_id FROM projects WHERE company_id = ?
-                                         AND (owner_id = ? OR created_by = ? OR project_manager_id = ?)");
-            $st->execute([$this->userId, $this->companyId, $this->companyId, $this->userId, $this->userId, $this->userId]);
-            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) $ids[(int)$id] = true;
+            if (self::projectsAvailable()) {
+                $ids = ProjectLink::visibleProjectIds($this->db, $this->companyId, $this->userId, $this->role);
+                if ($ids === null) return null;
+            }
         } catch (Throwable $e) {
             error_log('[calendar] project access: ' . $e->getMessage());
         }
@@ -207,6 +221,15 @@ final class CalendarRepo
     {
         $ids = $this->projectIds();
         return $ids === null || isset($ids[$projectId]);
+    }
+
+    /** SQL limiting $column to the projects this user can open: '' = all (admins), null = none. */
+    public function projectSql(string $column): ?string
+    {
+        $ids = $this->projectIds();
+        if ($ids === null) return '';
+        if (!$ids) return null;
+        return ' AND ' . $column . ' IN (' . implode(',', array_map('intval', array_keys($ids))) . ')';
     }
 
     // ================================================================= events

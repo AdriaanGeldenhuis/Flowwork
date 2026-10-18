@@ -10,6 +10,16 @@ Covers MIME parsing (charsets, RFC 2047/2231, nested multipart, flowed text),
 the HTML sanitizer, message building (header injection, Bcc), rule matching,
 search parsing and the IMAP response tokenizer.
 
+## Projects links (test database, no mail server)
+
+```
+php tests/mail/test_mail_projects.php
+```
+
+Link chips for emails filed with a project, board or item (labels, URLs,
+deleted and other-company links skipped) and the mailbox-owner check on
+linking. Removes every row it creates.
+
 ## End-to-end test (real IMAP + SMTP)
 
 Exercises sync, threading, rules, server-side moves/flags/deletes, undo send,

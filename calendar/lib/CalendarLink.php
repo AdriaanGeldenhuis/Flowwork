@@ -86,22 +86,26 @@ final class CalendarLink
     }
 
     /**
-     * A project's calendar: events linked to the project or to tasks on its
-     * boards (only those the user may see, repeats expanded), plus the
-     * project's start and due dates and its tasks' due dates.
+     * A project's calendar: events linked to the project, its boards or the
+     * tasks on them (only those the user may see, repeats expanded), plus the
+     * project's start and due dates and the due dates of the tasks on the live
+     * boards the user can open. Empty when the user cannot open the project.
      * @return array{events: array, items: array}
      */
     public static function projectTimeline(PDO $db, int $companyId, int $userId, string $role, int $projectId, string $fromDate, string $toDate): array
     {
         CalendarSchema::ensure($db);
         $repo = new CalendarRepo($db, $companyId, $userId, $role);
+        if (!CalendarRepo::projectsAvailable() || !$repo->canSeeProject($projectId)) return ['events' => [], 'items' => []];
         $st = $db->prepare("SELECT DISTINCT l.event_id FROM calendar_event_links l
                               JOIN calendar_events e ON e.id = l.event_id AND e.company_id = ?
                              WHERE (l.linked_type = 'project' AND l.linked_id = ?)
+                                OR (l.linked_type = 'board' AND l.linked_id IN (
+                                       SELECT b.board_id FROM project_boards b WHERE b.project_id = ? AND b.company_id = ?))
                                 OR (l.linked_type = 'item' AND l.linked_id IN (
-                                       SELECT i.id FROM board_items i JOIN project_boards b ON b.board_id = i.board_id
+                                       SELECT i.id FROM board_items i JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
                                         WHERE b.project_id = ? AND i.company_id = ?))");
-        $st->execute([$companyId, $projectId, $projectId, $companyId]);
+        $st->execute([$companyId, $projectId, $projectId, $companyId, $projectId, $companyId]);
         $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
         $events = $ids ? $repo->feed($fromDate . ' 00:00:00', $toDate . ' 23:59:59', null, $ids) : [];
 
@@ -109,7 +113,7 @@ final class CalendarLink
         $st = $db->prepare("SELECT project_id, name, start_date, end_date FROM projects WHERE project_id = ? AND company_id = ?");
         $st->execute([$projectId, $companyId]);
         if ($p = $st->fetch(PDO::FETCH_ASSOC)) {
-            $url = '/projects/view.php?project_id=' . $projectId;
+            $url = ProjectLink::projectUrl($projectId);
             foreach (['start_date' => [' starts', 'project-start'], 'end_date' => [' due', 'project-due']] as $col => [$suffix, $key]) {
                 $d = substr((string)$p[$col], 0, 10);
                 if ($d && $d !== '0000-00-00' && $d >= $fromDate && $d <= $toDate) {
@@ -117,16 +121,22 @@ final class CalendarLink
                 }
             }
         }
+        // Tasks: the item's due date (the engine's mirror of the board's date or
+        // timeline column), on boards the user can open (board members see only theirs).
         $st = $db->prepare("SELECT i.id, i.title, i.due_date, i.board_id, b.title AS board_title FROM board_items i
                               JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
                              WHERE b.project_id = ? AND i.company_id = ? AND (i.archived = 0 OR i.archived IS NULL)
                                AND (b.archived = 0 OR b.archived IS NULL) AND i.due_date BETWEEN ? AND ?
                           ORDER BY i.due_date LIMIT 1000");
         $st->execute([$projectId, $companyId, $fromDate, $toDate]);
+        $pr = ProjectLink::repo($db, $companyId, $userId, $role);
+        $boards = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $t) {
+            $bid = (int)$t['board_id'];
+            if (!($boards[$bid] ??= $pr->boardLevel($bid) > 0)) continue;
             $d = substr((string)$t['due_date'], 0, 10);
             $items[] = ['key' => 'item:' . $t['id'], 'source' => 'tasks', 'title' => $t['title'], 'sub' => $t['board_title'],
-                        'start' => $d, 'end' => $d, 'url' => '/projects/board.php?board_id=' . (int)$t['board_id'] . '&item=' . (int)$t['id']];
+                        'start' => $d, 'end' => $d, 'url' => ProjectLink::itemUrl($bid, (int)$t['id'])];
         }
         return ['events' => $events, 'items' => $items];
     }

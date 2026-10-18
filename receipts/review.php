@@ -3,7 +3,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../finances/lib/Csrf.php';
 
-define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
+define('ASSET_VERSION', '2026-10-18-receipts-projects');
 
 $companyId = $_SESSION['company_id'];
 $userId = $_SESSION['user_id'];
@@ -101,13 +101,42 @@ $stmt = $DB->prepare("\n    SELECT code, message, severity \n    FROM receipt_po
 $stmt->execute([$companyId, $fileId]);
 $policyIssues = $stmt->fetchAll();
 
-// Attempt to fetch costing boards for project selection
+// Project boards for the "Project Workspace" picker, through the Projects API:
+// live boards of the open projects this user can see, labelled
+// "Project · Board". The board this receipt's bill already uses stays in the
+// list (and selected) even if it has since been archived or its project closed,
+// as long as the user can still open it.
+require_once __DIR__ . '/../projects/lib/autoload.php';
+$projectBoards = []; // board_id => label
+$currentBoardId = 0;
 try {
-    $stmt = $DB->prepare("\n        SELECT pb.board_id, pb.title\n        FROM project_boards pb\n        WHERE pb.company_id = ? AND (pb.board_type = 'cost' OR pb.board_type = 'costing' OR pb.title LIKE '%Cost%')\n        ORDER BY pb.title ASC\n    ");
-    $stmt->execute([$companyId]);
-    $costBoards = $stmt->fetchAll();
-} catch (Exception $e) {
-    $costBoards = [];
+    $projectRole = (string)($_SESSION['role'] ?? 'viewer');
+    if (!empty($file['bill_id'])) {
+        $stmt = $DB->prepare("SELECT l.project_board_id FROM ap_bill_lines l JOIN ap_bills b ON b.id = l.bill_id
+                               WHERE b.id = ? AND b.company_id = ? AND l.project_board_id IS NOT NULL ORDER BY l.sort_order, l.id LIMIT 1");
+        $stmt->execute([(int)$file['bill_id'], (int)$companyId]);
+        $currentBoardId = (int)$stmt->fetchColumn();
+    }
+    $keepProject = $currentBoardId ? ProjectLink::projectOfBoard($DB, (int)$companyId, $currentBoardId) : 0;
+    foreach (ProjectLink::pickerProjects($DB, (int)$companyId, (int)$userId, $projectRole, $keepProject ? [$keepProject] : []) as $p) {
+        foreach (ProjectLink::pickerBoards($DB, (int)$companyId, (int)$userId, $projectRole, $p['id']) as $b) {
+            $projectBoards[$b['id']] = $p['label'] . ' · ' . $b['title'];
+        }
+    }
+    if ($currentBoardId && !isset($projectBoards[$currentBoardId])
+        && ProjectLink::canSeeBoard($DB, (int)$companyId, (int)$userId, $projectRole, $currentBoardId)) {
+        $stmt = $DB->prepare("SELECT b.title, b.archived, p.name, p.project_number FROM project_boards b
+                                JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
+                               WHERE b.board_id = ? AND b.company_id = ?");
+        $stmt->execute([$currentBoardId, (int)$companyId]);
+        if ($cb = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $projectBoards[$currentBoardId] = ((string)$cb['project_number'] !== '' ? $cb['project_number'] . ' · ' : '') . $cb['name'] . ' · ' . $cb['title'] . ($cb['archived'] ? ' (archived)' : '');
+        } else {
+            $currentBoardId = 0;
+        }
+    }
+} catch (Throwable $e) {
+    error_log('receipts review project boards: ' . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -250,12 +279,12 @@ try {
                             <div id="supplierComplianceMsg" style="margin-top:8px;"></div>
                             </div>
                             <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Project Workspace <span class="fw-receipts__required">*</span></label>
-                                <select id="projectSelect" class="fw-receipts__input" required>
-                                    <option value="">— Select Project/Cost Board —</option>
-                                    <?php foreach ($costBoards as $cb): ?>
-                                        <option value="<?= $cb['board_id'] ?>">
-                                            <?= htmlspecialchars($cb['title']) ?>
+                                <label class="fw-receipts__label">Project Workspace<?php if ($projectBoards): ?> <span class="fw-receipts__required">*</span><?php endif; ?></label>
+                                <select id="projectSelect" class="fw-receipts__input"<?= $projectBoards ? ' required' : '' ?>>
+                                    <option value=""><?= $projectBoards ? '— Select Project · Board —' : '— No project boards you can open —' ?></option>
+                                    <?php foreach ($projectBoards as $boardId => $boardLabel): ?>
+                                        <option value="<?= (int)$boardId ?>"<?= $boardId === $currentBoardId ? ' selected' : '' ?>>
+                                            <?= htmlspecialchars($boardLabel) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>

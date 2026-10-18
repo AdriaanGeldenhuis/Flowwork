@@ -7,10 +7,14 @@
 // concurrent posts created two journals), hardcoded fallback account codes,
 // line discounts ignored, and the journal was inserted without a status so
 // it defaulted to 'draft' and never appeared in any posted-only report.
+//
+// Board write-back goes through the Projects engine (ItemRepo::setValue) so
+// formulas, mirrored item fields, automations and the activity log stay right.
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/lib/PostingService.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -43,6 +47,36 @@ Csrf::validate();
 
 $input = json_decode(file_get_contents('php://input'), true);
 $billId = isset($input['bill_id']) ? (int)$input['bill_id'] : 0;
+
+/**
+ * The board column receipt costs add up in: a plain 'number' column (never a
+ * formula) named like "Actual cost" / "Cost" / "Amount" / "Spent", else one
+ * formatted as currency. Rate, price, quantity, budget, estimate and
+ * percentage columns are never used. null = the board has no such column
+ * (nothing is written).
+ */
+function receipts_cost_column(PDO $DB, int $companyId, int $boardId): ?array
+{
+    $stmt = $DB->prepare("SELECT column_id, name, type, config FROM board_columns WHERE board_id = ? AND company_id = ? AND type = 'number' ORDER BY position, column_id");
+    $stmt->execute([$boardId, $companyId]);
+    $best = null;
+    $bestScore = 0;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $col) {
+        $name = (string)$col['name'];
+        $format = Columns::config($col)['format'];
+        if ($format === 'percent' || preg_match('/\b(unit|rate|price|qty|quantit|budget|estimat|forecast|quot|planned|margin|markup|varian|percent)|%/i', $name)) continue;
+        if (preg_match('/actual\s*cost/i', $name)) $score = 4;
+        elseif (preg_match('/cost/i', $name)) $score = 3;
+        elseif (preg_match('/amount|spent/i', $name)) $score = 2;
+        elseif ($format === 'currency') $score = 1;
+        else continue;
+        if ($score > $bestScore) {
+            $best = $col;
+            $bestScore = $score;
+        }
+    }
+    return $best;
+}
 
 if (!$billId) {
     echo json_encode(['ok' => false, 'error' => 'Missing bill_id']);
@@ -77,10 +111,8 @@ try {
     $journalId = (int)$stmt->fetchColumn();
 
     /*
-     * Project costing write-back
-     * For each board/item pair that received expenses, add the NET line cost
-     * (qty × price − discount) to a number column. Tries to use an existing
-     * number column if present; otherwise creates a "Cost to date" column.
+     * Project costing: the NET line cost (qty × price − discount) per
+     * board/item pair, written back after the GL commit (below).
      */
     $stmt = $DB->prepare(
         "SELECT quantity, unit_price, discount, project_board_id, project_item_id
@@ -99,46 +131,64 @@ try {
         }
     }
 
-    // Helper to fetch or create a number column on a board
-    $numberColumnCache = [];
-    $getNumberColumnId = function (int $boardId) use ($DB, $companyId, &$numberColumnCache) {
-        if (isset($numberColumnCache[$boardId])) {
-            return $numberColumnCache[$boardId];
-        }
-        $stmt = $DB->prepare("SELECT column_id FROM board_columns WHERE board_id = ? AND company_id = ? AND type = 'number' ORDER BY sort_order LIMIT 1");
-        $stmt->execute([$boardId, $companyId]);
-        $col = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($col) {
-            $numberColumnCache[$boardId] = (int)$col['column_id'];
-            return $numberColumnCache[$boardId];
-        }
-        $stmt = $DB->prepare("SELECT IFNULL(MAX(sort_order), 0) AS max_sort FROM board_columns WHERE board_id = ? AND company_id = ?");
-        $stmt->execute([$boardId, $companyId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $sortOrder = ($row && $row['max_sort'] !== null) ? ((int)$row['max_sort'] + 1) : 1;
-        $stmt = $DB->prepare("INSERT INTO board_columns (board_id, company_id, name, type, position, sort_order, visible, width, created_at) VALUES (?, ?, 'Cost to date', 'number', ?, ?, 1, 150, NOW())");
-        $stmt->execute([$boardId, $companyId, $sortOrder, $sortOrder]);
-        $numberColumnCache[$boardId] = (int)$DB->lastInsertId();
-        return $numberColumnCache[$boardId];
-    };
-    foreach ($costAllocations as $bId => $items) {
-        $columnId = $getNumberColumnId($bId);
-        foreach ($items as $iId => $amount) {
-            $stmt = $DB->prepare("SELECT value FROM board_item_values WHERE item_id = ? AND column_id = ? LIMIT 1");
-            $stmt->execute([$iId, $columnId]);
-            $valRow = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($valRow && isset($valRow['value'])) {
-                $newVal = (float)$valRow['value'] + $amount;
-                $stmt2 = $DB->prepare("UPDATE board_item_values SET value = ? WHERE item_id = ? AND column_id = ?");
-                $stmt2->execute([number_format($newVal, 2, '.', ''), $iId, $columnId]);
-            } else {
-                $stmt2 = $DB->prepare("INSERT INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?)");
-                $stmt2->execute([$iId, $columnId, number_format($amount, 2, '.', '')]);
+    $DB->commit();
+
+    /*
+     * Project costing write-back. Runs after the GL commit (the engine opens
+     * its own transaction) and never undoes the posting. For each verified
+     * board/item pair the cost is added to the board's cost column as the
+     * poster; when the board has no cost column, or the poster may not edit
+     * it, the cost is noted in the item's activity instead.
+     */
+    $projectCosts = [];
+    try {
+        if ($costAllocations) {
+            $stmt = $DB->prepare("SELECT b.vendor_invoice_number, a.name AS supplier FROM ap_bills b
+                                  LEFT JOIN crm_accounts a ON a.id = b.supplier_id AND a.company_id = b.company_id
+                                  WHERE b.id = ? AND b.company_id = ?");
+            $stmt->execute([$billId, $companyId]);
+            $billRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $billLabel = 'Bill ' . ((string)($billRow['vendor_invoice_number'] ?? '') !== '' ? $billRow['vendor_invoice_number'] : '#' . $billId)
+                . (!empty($billRow['supplier']) ? ' · ' . $billRow['supplier'] : '');
+            $itemRepo = new ItemRepo(ProjectLink::repo($DB, $companyId, $userId, (string)$userRole));
+            foreach ($costAllocations as $bId => $items) {
+                $col = ProjectLink::boardBelongs($DB, $companyId, (int)$bId) ? receipts_cost_column($DB, $companyId, (int)$bId) : null;
+                foreach ($items as $iId => $amount) {
+                    $amount = round($amount, 2);
+                    $entry = ['board_id' => (int)$bId, 'item_id' => (int)$iId, 'amount' => $amount, 'column' => null];
+                    if (!ProjectLink::boardBelongs($DB, $companyId, (int)$bId, (int)$iId)) {
+                        $projectCosts[] = $entry + ['status' => 'invalid'];
+                        continue;
+                    }
+                    $reason = 'no_cost_column';
+                    if ($col) {
+                        try {
+                            $stmt = $DB->prepare("SELECT value FROM board_item_values WHERE item_id = ? AND column_id = ?");
+                            $stmt->execute([(int)$iId, (int)$col['column_id']]);
+                            $was = $stmt->fetchColumn();
+                            $newVal = (is_numeric($was) ? (float)$was : 0.0) + $amount;
+                            $itemRepo->setValue((int)$iId, (int)$col['column_id'], number_format($newVal, 2, '.', ''));
+                            $projectCosts[] = ['column' => $col['name'], 'status' => 'written'] + $entry;
+                            continue;
+                        } catch (ProjectUserError $e) {
+                            // ProjectForbidden or not visible: the poster may not edit this board.
+                            $reason = 'no_access';
+                        } catch (Throwable $e) {
+                            error_log('Post to GL board write-back (item ' . (int)$iId . '): ' . $e->getMessage());
+                            $reason = 'error';
+                        }
+                    }
+                    Activity::log($DB, $companyId, $userId, (int)$bId, (int)$iId, 'cost_saved', [
+                        'description' => Activity::clip($billLabel, 80), 'amount' => $amount,
+                        'source' => 'receipts', 'bill_id' => $billId, 'reason' => $reason,
+                    ]);
+                    $projectCosts[] = $entry + ['status' => 'noted', 'reason' => $reason];
+                }
             }
         }
+    } catch (Throwable $e) {
+        error_log('Post to GL board write-back: ' . $e->getMessage());
     }
-
-    $DB->commit();
 
     // Audit logging: record that the bill was posted (best effort)
     try {
@@ -153,7 +203,7 @@ try {
     } catch (Exception $e) {
         error_log('Audit log error (post_to_gl): ' . $e->getMessage());
     }
-    echo json_encode(['ok' => true, 'journal_id' => $journalId]);
+    echo json_encode(['ok' => true, 'journal_id' => $journalId, 'project_costs' => $projectCosts]);
 } catch (Exception $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();

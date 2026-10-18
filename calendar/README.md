@@ -65,8 +65,11 @@ calendar/
 - **Who sees what.** Personal calendars: the owner, plus people it is shared
   with (view, or edit = may add events). Team calendars: everyone in the
   company; members add events, owners and admins manage the calendar. Project
-  calendars: people on the project. The organiser and invitees always see an
-  event; others see it in full, as **Busy**, or not at all (**Private**).
+  calendars: people who can open the project (the Projects engine's rule,
+  `ProjectLink::visibleProjectIds`); the API creates them with
+  `{action:'create', type:'project', project_id}` — the page does not offer it
+  yet. The organiser and invitees always see an event; others see it in full,
+  as **Busy**, or not at all (**Private**).
 - **Repeating events** can be changed or deleted for *this event*, *this and
   following* (the series is split) or *all events*.
 - **Invitations** notify invitees (bell + phone); replies notify the
@@ -74,8 +77,10 @@ calendar/
   removes that person's reminders.
 - **Flowwork dates** (project start/due, my tasks, unpaid invoices, sent
   quotes, my open deals, pay days for admins/bookkeepers) are read live and
-  never copied. Copies written by the retired syncs are hidden and removed as
-  documents are saved.
+  never copied. Projects and tasks follow the Projects engine: projects the
+  user can open, and board items they are on (`board_item_people`) from their
+  timeline start to their due date (the items' mirrored dates). Copies
+  written by the retired syncs are hidden and removed as documents are saved.
 - **Subscriptions:** each calendar has a private `.ics` link (Settings →
   Calendars) that can be reset; private events are never published.
 
@@ -99,7 +104,7 @@ CalendarLink::followUp($DB, $companyId, $userId, $role, 'crm_account', 12, 'Call
 // Upcoming events linked to a record that this user may see
 CalendarLink::upcomingFor($DB, $companyId, $userId, $role, 'project', 5);
 
-// A project's events + start/due/task dates
+// A project's events (linked to it, its boards or tasks) + start/due/task dates
 CalendarLink::projectTimeline($DB, $companyId, $userId, $role, 5, '2026-10-01', '2026-12-31');
 
 // Link into the calendar
@@ -108,7 +113,7 @@ CalendarLink::url('2026-10-21', 'invoice:44');
 
 Used by: Home (today tile), CRM (follow-ups on accounts and deals), Quotes &
 Invoices ("View in Calendar", "Schedule in Calendar…", old-copy clean-up),
-Projects (project calendar, add event, .ics), Mail ("Add to calendar" on a
+Projects (the project's Schedule tab, "Add event"), Mail ("Add to calendar" on a
 message), Admin (company defaults) and the notification bell.
 
 ## Security

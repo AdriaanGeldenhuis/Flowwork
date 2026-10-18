@@ -5,7 +5,11 @@
 // push (Flowwork Android app) in one go.
 //
 //   fw_notify($DB, $companyId, $userId, 'mention', 'Anna mentioned you', '"Site visit": can you…',
-//             '/projects/board.php?board_id=3&item=9', ['ch' => 'projects', 'who' => 'Anna Smith']);
+//             '/projects/board.php?board_id=3&item=9&open=updates', ['ch' => 'projects', 'who' => 'Anna Smith']);
+//
+// Project links come from ProjectLink::itemUrl($boardId, $itemId, $open): `&open=`
+// picks the item panel's tab (details | updates | subitems | files | activity).
+// The Projects notifications themselves are sent by projects/lib/ProjectNotify.php.
 //
 // The `notifications` table was never part of a migration, so it is created
 // here on first use (and older copies of it get the columns they miss).

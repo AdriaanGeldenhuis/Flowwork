@@ -4,6 +4,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -28,7 +29,8 @@ try {
     $stmt = $DB->prepare("SELECT pb.project_id, p.name AS project_name FROM project_boards pb JOIN projects p ON pb.project_id = p.project_id WHERE pb.board_id = ? AND pb.company_id = ? AND p.company_id = ? LIMIT 1");
     $stmt->execute([$boardId, $companyId, $companyId]);
     $boardInfo = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$boardInfo) {
+    // ...and that the user may open it (project or board member, or admin)
+    if (!$boardInfo || !ProjectLink::canSeeBoard($DB, (int)$companyId, (int)$_SESSION['user_id'], (string)($_SESSION['role'] ?? 'viewer'), $boardId)) {
         echo json_encode(['ok' => false, 'error' => 'Board not found']);
         exit;
     }

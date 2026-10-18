@@ -41,6 +41,28 @@ function crm_public_error(Throwable $e): string
     return 'Server error';
 }
 
+/**
+ * The project an opportunity was converted into: [project_id, project_number,
+ * name], or null (never converted, or the project has since been deleted).
+ * crm_opportunities has no project column, so opportunity_convert.php keeps
+ * the link in audit_log (action 'convert', details {"project_id": N}).
+ */
+function crm_opp_project(PDO $DB, int $companyId, int $oppId): ?array
+{
+    $stmt = $DB->prepare("SELECT details FROM audit_log
+                          WHERE company_id = ? AND action = 'convert' AND entity_type = 'crm_opportunity' AND entity_id = ?
+                          ORDER BY id DESC LIMIT 10");
+    $stmt->execute([$companyId, $oppId]);
+    $find = $DB->prepare("SELECT project_id, project_number, name FROM projects WHERE project_id = ? AND company_id = ?");
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $details) {
+        $projectId = (int)(json_decode((string)$details, true)['project_id'] ?? 0);
+        if ($projectId <= 0) continue;
+        $find->execute([$projectId, $companyId]);
+        if ($row = $find->fetch(PDO::FETCH_ASSOC)) return $row;
+    }
+    return null;
+}
+
 function crm_role_rank(?string $role): int
 {
     $ranks = ['viewer' => 0, 'member' => 1, 'admin' => 2, 'owner' => 3];

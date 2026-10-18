@@ -1376,7 +1376,7 @@
         <div class="fwc-ed__line">${icon('bell')}<div><div id="edReminders"></div><button class="btn btn--sm btn--ghost" type="button" data-ed="addrem">${icon('plus', 'i--sm')}Add reminder</button></div></div>
         <div class="fwc-ed__line">${icon('text')}<div><textarea class="textarea" name="description" rows="3" placeholder="Notes, agenda, dial-in details…" maxlength="20000">${esc(src.description || '')}</textarea></div></div>
         <div class="fwc-ed__line">${icon('link')}<div class="fwc-linkpick"><div class="fwc-chips" id="edLinks"></div>
-          <input class="input" id="edLinkInput" placeholder="Link a project, customer, deal, invoice or quote" style="margin-top:6px"></div></div>
+          <input class="input" id="edLinkInput" placeholder="Link a project, board, task, customer, deal, invoice or quote" style="margin-top:6px"></div></div>
         ${isEdit ? '' : `<div class="fwc-ed__line">${icon('clip')}<div><div class="fwc-chips" id="edFiles"></div><button class="btn btn--sm btn--ghost" type="button" data-ed="addfile">${icon('plus', 'i--sm')}Attach files</button><input type="file" id="edFileInput" multiple hidden></div></div>`}
       </form>
       <div class="fwm-dialog__foot"><span class="fwc-ed__err" id="edErr"></span><button class="btn" data-close>Cancel</button><button class="btn btn--primary" id="edSave">${icon('check')}Save</button></div>`, 'fwm-dialog--wide');

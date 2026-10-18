@@ -16,7 +16,7 @@ $stmt = $DB->prepare("
     SELECT u.id, u.first_name, u.last_name, u.email, u.status, u.is_seat,
            u.last_login_at, u.created_at,
            uc.role,
-           (SELECT COUNT(*) FROM project_members pm WHERE pm.user_id = u.id) as project_count
+           (SELECT COUNT(*) FROM project_members pm WHERE pm.user_id = u.id AND pm.company_id = uc.company_id) as project_count
     FROM user_companies uc
     JOIN users u ON u.id = uc.user_id
     WHERE uc.company_id = ?

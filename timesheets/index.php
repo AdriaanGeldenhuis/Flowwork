@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 
-define('ASSET_VERSION', '2025-10-07-TS-INDEX');
+define('ASSET_VERSION', '2026-10-18-TS-INDEX');
 
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 $userId    = (int)($_SESSION['user_id'] ?? 0);
@@ -28,11 +28,11 @@ $userName = $user ? $user['first_name'] : 'User';
 
 // Fetch pending timesheet entries
 $stmt = $DB->prepare(
-    "SELECT e.*, emp.first_name, emp.last_name, p.name AS project_name, bi.name AS item_name
+    "SELECT e.*, emp.first_name, emp.last_name, p.name AS project_name, bi.title AS item_name
      FROM timesheet_entries e
      JOIN employees emp ON e.employee_id = emp.id
-     LEFT JOIN projects p ON e.project_id = p.project_id
-     LEFT JOIN board_items bi ON e.item_id = bi.id
+     LEFT JOIN projects p ON e.project_id = p.project_id AND p.company_id = e.company_id
+     LEFT JOIN board_items bi ON e.item_id = bi.id AND bi.company_id = e.company_id
      WHERE e.company_id = ? AND e.status = 'submitted'
      ORDER BY e.ts_date, emp.last_name, emp.first_name"
 );
@@ -44,6 +44,7 @@ $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?php echo htmlspecialchars(Csrf::token()); ?>">
     <title>Timesheet Approvals – <?php echo htmlspecialchars($companyName); ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?php echo ASSET_VERSION; ?>">
     <style>

@@ -26,6 +26,7 @@ register_shutdown_function(fn() => @unlink($saFile));
 require FLOWWORK_ROOT . '/includes/auth_sessions.php';
 require FLOWWORK_ROOT . '/includes/notify.php';
 require FLOWWORK_ROOT . '/mail/lib/autoload.php';
+require FLOWWORK_ROOT . '/projects/lib/autoload.php';
 
 foreach (['push_outbox', 'push_devices', 'notifications'] as $t) $DB->exec("DROP TABLE IF EXISTS `$t`");
 $DB->exec("DELETE FROM user_sessions");
@@ -58,10 +59,13 @@ function jwt_part(string $jwt, int $i): array
 
 // ---------------------------------------------------------------- in-app table
 
-$nid = fw_notify($DB, 1, 1, 'mention', 'Anna mentioned you', '"Task": hello', '/projects/board.php?board_id=1&item=2', false);
+// A mention opens the item's Updates tab (the item panel's tabs: details|updates|subitems|files|activity).
+$mentionUrl = '/projects/board.php?board_id=1&item=2&open=updates';
+assert_eq($mentionUrl, ProjectLink::itemUrl(1, 2, 'updates'), 'project item link shape');
+$nid = fw_notify($DB, 1, 1, 'mention', 'Anna mentioned you', '"Task": hello', $mentionUrl, false);
 assert_true($nid > 0, 'fw_notify creates the missing notifications table and stores the row');
 $row = $DB->query("SELECT * FROM notifications WHERE id = $nid")->fetch();
-assert_eq('/projects/board.php?board_id=1&item=2', $row['url'], 'url stored');
+assert_eq($mentionUrl, $row['url'], 'url stored');
 assert_eq($row['url'], $row['link'], 'link mirrors url (the bell reads link)');
 assert_eq(0, (int)$row['is_read'], 'new row is unread');
 
@@ -83,6 +87,9 @@ assert_eq('/home.php?fw_co=5', fw_notify_push_url('//evil.example', 5), 'push ur
 assert_eq('/calendar/?fw_co=2', fw_notify_push_url('/calendar/', 2), 'push url adds the company');
 assert_eq('mail_reminders', fw_notify_channel('mail_sla'), 'sla channel');
 assert_eq('projects', fw_notify_channel('mention'), 'mention channel');
+foreach (['project_assigned', 'project_update', 'project_added', 'project_due', 'project_auto'] as $t) {
+    assert_eq('projects', fw_notify_channel($t), "$t channel");
+}
 assert_eq('calendar', fw_notify_channel('calendar_reminder'), 'calendar channel');
 
 // ---------------------------------------------------------------- devices
@@ -335,7 +342,7 @@ assert_true(outbox($DB, $oid)['sent_at'] !== null, 'a stale claim is taken over 
 
 // fw_notify: bell row + push with nid, company and tag.
 $calls = [];
-$nid = fw_notify($DB, 1, 1, 'mention', 'Anna mentioned you', '"Task": see this', '/projects/board.php?board_id=1&item=2',
+$nid = fw_notify($DB, 1, 1, 'mention', 'Anna mentioned you', '"Task": see this', $mentionUrl,
                  ['ch' => 'projects', 'who' => 'Anna Smith']);
 fw_push_flush($DB, 10, 5.0, $fcm);
 $data = json_decode($calls[0]['body'], true)['message']['data'];
@@ -343,7 +350,7 @@ assert_eq((string)$nid, $data['nid'], 'push carries the bell id');
 assert_eq('n:' . $nid, $data['tag'], 'default tag');
 assert_eq('projects', $data['ch'], 'channel');
 assert_eq('Anna Smith', $data['who'], 'avatar name');
-assert_eq('/projects/board.php?board_id=1&item=2&fw_co=1', $data['url'], 'url with company');
+assert_eq('/projects/board.php?board_id=1&item=2&open=updates&fw_co=1', $data['url'], 'url with company');
 
 // ---------------------------------------------------------------- action tokens
 

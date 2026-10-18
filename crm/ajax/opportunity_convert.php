@@ -1,18 +1,25 @@
 <?php
 // /crm/ajax/opportunity_convert.php
-// Converts a "won" opportunity into an active project. Creates a project
-// record using details from the opportunity, adds the owner as a project
-// member, and optionally the current user if different. Sets the
-// opportunity stage to "converted" to indicate it has been actioned.
+// Converts a "won" opportunity into a project through the Projects engine
+// (ProjectRepo::createProject): the project gets its PRJ- number, the boards
+// of the chosen template (POST template = blank | construction_standard |
+// service | empty; default construction_standard), the opportunity's account
+// as its client and the amount as its budget. The converting user owns and
+// manages it; the opportunity owner is added as a project owner.
+// The stage enum has no 'converted', so the opportunity stays 'won'; the
+// link to the project is kept in audit_log (see crm_opp_project()) and a
+// second convert returns the project already made.
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
-$companyId = $_SESSION['company_id'];
-$userId    = $_SESSION['user_id'];
+$companyId = (int)$_SESSION['company_id'];
+$userId    = (int)$_SESSION['user_id'];
+$role      = (string)($_SESSION['role'] ?? 'viewer');
 
 // Members and up can convert opportunities
 crm_require_min_role('member');
@@ -22,91 +29,110 @@ if ($oppId <= 0) {
     echo json_encode(['ok' => false, 'error' => 'Invalid opportunity ID']);
     exit;
 }
+$template = isset($_POST['template']) ? (is_string($_POST['template']) ? trim($_POST['template']) : '') : 'construction_standard';
+if (!isset(Templates::projects()[$template])) {
+    echo json_encode(['ok' => false, 'error' => 'Unknown project template']);
+    exit;
+}
 
+// One conversion per opportunity at a time (the engine runs its own
+// transaction, so a row lock cannot span the whole conversion).
+$lock = 'fwcrm:opp-convert:' . $companyId . ':' . $oppId;
+$gotLock = false;
+$repo = null;
+$projectId = 0;
 try {
-    $DB->beginTransaction();
+    $gotLock = (bool)$DB->query("SELECT GET_LOCK(" . $DB->quote($lock) . ", 5)")->fetchColumn();
+    if (!$gotLock) {
+        throw new Exception('This opportunity is already being converted. Try again in a moment.');
+    }
+
     // Fetch opportunity details
-    $stmt = $DB->prepare("SELECT * FROM crm_opportunities WHERE id = ? AND company_id = ? FOR UPDATE");
+    $stmt = $DB->prepare("SELECT * FROM crm_opportunities WHERE id = ? AND company_id = ?");
     $stmt->execute([$oppId, $companyId]);
     $opp = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$opp) {
         throw new Exception('Opportunity not found');
     }
-    if ($opp['stage'] !== 'won') {
-        throw new Exception('Only won opportunities can be converted');
+
+    $existing = crm_opp_project($DB, $companyId, $oppId);
+    if ($existing) {
+        // Already converted: hand back that project
+        $response = ['ok' => true, 'project_id' => (int)$existing['project_id'],
+                     'url' => ProjectLink::projectUrl((int)$existing['project_id']), 'existing' => true];
+    } else {
+        if ($opp['stage'] !== 'won') {
+            throw new Exception('Only won opportunities can be converted');
+        }
+
+        // Create the project (the engine validates client, dates and budget)
+        $repo = ProjectLink::repo($DB, $companyId, $userId, $role);
+        $fields = [
+            'name'       => $opp['title'],
+            'client_id'  => (int)$opp['account_id'],
+            'budget'     => max(0, (float)$opp['amount']),
+            'start_date' => isset($_POST['start_date']) ? (is_string($_POST['start_date']) ? $_POST['start_date'] : 'invalid') : date('Y-m-d'),
+            'template'   => $template,
+        ];
+        if (isset($_POST['end_date'])) {
+            $fields['end_date'] = is_string($_POST['end_date']) ? $_POST['end_date'] : 'invalid';
+        }
+        if (isset($repo->people()[$userId])) {
+            $fields['manager_id'] = $userId;
+        }
+        $projectId = $repo->createProject($fields);
+
+        // Opportunity owner joins as a project owner (the engine notifies them)
+        $ownerId = (int)$opp['owner_id'];
+        if ($ownerId > 0 && $ownerId !== $userId && isset($repo->people()[$ownerId])) {
+            $repo->setMember($projectId, $ownerId, 'owner');
+        }
+
+        $DB->beginTransaction();
+        // Audit logs
+        // Opportunity conversion log (also the opportunity → project link)
+        $stmt = $DB->prepare("INSERT INTO audit_log (
+                company_id, user_id, action, entity_type, entity_id, details, created_at
+            ) VALUES (?, ?, 'convert', 'crm_opportunity', ?, ?, NOW())");
+        $stmt->execute([
+            $companyId,
+            $userId,
+            $oppId,
+            json_encode(['project_id' => $projectId, 'template' => $template])
+        ]);
+        // Project creation log
+        $stmt = $DB->prepare("INSERT INTO audit_log (
+                company_id, user_id, action, entity_type, entity_id, details, created_at
+            ) VALUES (?, ?, 'create', 'project', ?, ?, NOW())");
+        $stmt->execute([
+            $companyId,
+            $userId,
+            $projectId,
+            json_encode(['from_opportunity' => $oppId])
+        ]);
+        $DB->commit();
+
+        $response = ['ok' => true, 'project_id' => $projectId, 'url' => ProjectLink::projectUrl($projectId)];
     }
-
-    // Fetch CRM account details for client name
-    $stmt = $DB->prepare("SELECT name FROM crm_accounts WHERE id = ? AND company_id = ?");
-    $stmt->execute([$opp['account_id'], $companyId]);
-    $clientRow = $stmt->fetch(PDO::FETCH_ASSOC);
-    $clientName = $clientRow ? $clientRow['name'] : null;
-
-    // Insert project
-    $stmt = $DB->prepare("INSERT INTO projects (
-            company_id, project_number, name, description, client, client_id,
-            status, start_date, end_date, budget, actual_cost, progress_percent,
-            project_manager_id, owner_id, created_by, created_at
-        ) VALUES (?, NULL, ?, NULL, ?, ?, 'active', CURDATE(), NULL, ?, 0.00, 0, ?, ?, ?, NOW())");
-    $stmt->execute([
-        $companyId,
-        $opp['title'],
-        $clientName,
-        $opp['account_id'],
-        $opp['amount'],
-        $opp['owner_id'],
-        $opp['owner_id'],
-        $userId
-    ]);
-    $projectId = $DB->lastInsertId();
-
-    // Add owner as project member (owner role)
-    $stmt = $DB->prepare("INSERT INTO project_members (
-            company_id, project_id, user_id, role, can_edit, added_at
-        ) VALUES (?, ?, ?, 'owner', 1, NOW())");
-    $stmt->execute([$companyId, $projectId, $opp['owner_id']]);
-
-    // Add current user as manager if different and not owner
-    if ($userId != $opp['owner_id']) {
-        $stmt = $DB->prepare("INSERT INTO project_members (
-                company_id, project_id, user_id, role, can_edit, added_at
-            ) VALUES (?, ?, ?, 'manager', 1, NOW())");
-        $stmt->execute([$companyId, $projectId, $userId]);
-    }
-
-    // Update opportunity stage to converted
-    $stmt = $DB->prepare("UPDATE crm_opportunities SET stage = 'converted', updated_at = NOW() WHERE id = ?");
-    $stmt->execute([$oppId]);
-
-    // Audit logs
-    // Opportunity conversion log
-    $stmt = $DB->prepare("INSERT INTO audit_log (
-            company_id, user_id, action, entity_type, entity_id, details, created_at
-        ) VALUES (?, ?, 'convert', 'crm_opportunity', ?, ?, NOW())");
-    $stmt->execute([
-        $companyId,
-        $userId,
-        $oppId,
-        json_encode(['project_id' => $projectId])
-    ]);
-    // Project creation log
-    $stmt = $DB->prepare("INSERT INTO audit_log (
-            company_id, user_id, action, entity_type, entity_id, details, created_at
-        ) VALUES (?, ?, 'create', 'project', ?, ?, NOW())");
-    $stmt->execute([
-        $companyId,
-        $userId,
-        $projectId,
-        json_encode(['from_opportunity' => $oppId])
-    ]);
-
-    $DB->commit();
-    echo json_encode(['ok' => true, 'project_id' => $projectId]);
 
 } catch (Throwable $e) {
     if ($DB->inTransaction()) {
         $DB->rollBack();
     }
+    // Remove a project whose conversion did not complete
+    if ($projectId > 0 && $repo) {
+        try {
+            $repo->deleteProject($projectId);
+        } catch (Throwable $e2) {
+            error_log('Opportunity convert cleanup error: ' . $e2->getMessage());
+        }
+    }
     error_log('Opportunity convert error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => crm_public_error($e)]);
+    $response = ['ok' => false, 'error' => $e instanceof ProjectUserError ? $e->getMessage() : crm_public_error($e)];
+} finally {
+    if ($gotLock) {
+        try { $DB->query("SELECT RELEASE_LOCK(" . $DB->quote($lock) . ")"); } catch (Throwable $e) {}
+    }
 }
+
+echo json_encode($response);

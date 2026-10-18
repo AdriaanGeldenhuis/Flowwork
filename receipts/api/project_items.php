@@ -3,6 +3,7 @@
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -28,24 +29,12 @@ if ($boardId <= 0) {
 }
 
 try {
-    // Fetch non-archived items for the given board
-    $stmt = $DB->prepare(
-        "SELECT id, title
-         FROM board_items
-         WHERE company_id = ? AND board_id = ? AND archived = 0
-         ORDER BY position"
-    );
-    $stmt->execute([$companyId, $boardId]);
-    $items = [];
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $items[] = [
-            'id'    => (int)$row['id'],
-            'title' => $row['title']
-        ];
-    }
+    // Live items of a board this user can open (company-scoped by the Projects API),
+    // in board order: [{id, title, group}]
+    $items = ProjectLink::pickerItems($DB, $companyId, (int)($_SESSION['user_id'] ?? 0), (string)($_SESSION['role'] ?? 'viewer'), $boardId);
     echo json_encode(['ok' => true, 'items' => $items]);
     exit;
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log('project_items API error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => 'Database error']);
     exit;

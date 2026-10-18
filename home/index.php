@@ -13,7 +13,7 @@ require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/../includes/companies.php';
 
 // Asset version for cache busting
-define('ASSET_VERSION', '2026-10-17-1');
+define('ASSET_VERSION', '2026-10-18-1');
 
 // Fetch user data from session
 $firstName = $_SESSION['user_first_name'] ?? 'Welcome';
@@ -33,41 +33,48 @@ $userCompanies = fw_user_companies($userId);
 $csrfToken     = Csrf::token();
 
 // --------- Project & Task Metrics ---------
+// Only projects the user may open (admins: all), and only live work: archived
+// projects, boards and items, closed projects and done items do not count.
+$activeProjects = $upcomingTasks = $overdueTasks = $pendingTimesheets = 0;
 try {
-    // Active projects: not completed/archived/cancelled and not archived flag
-    $stmt = $DB->prepare(
-        "SELECT COUNT(*) FROM projects WHERE company_id = ? AND status NOT IN ('completed','archived','cancelled') AND archived = 0"
-    );
-    $stmt->execute([$companyId]);
-    $activeProjects = (int)$stmt->fetchColumn();
-
-    // Upcoming tasks (due within next 7 days)
-    $stmt = $DB->prepare(
-        "SELECT COUNT(*) FROM board_items WHERE company_id = ? AND archived = 0 AND due_date IS NOT NULL AND due_date >= CURDATE() AND due_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)"
-    );
-    $stmt->execute([$companyId]);
-    $upcomingTasks = (int)$stmt->fetchColumn();
-
-    // Overdue tasks (due date in the past)
-    $stmt = $DB->prepare(
-        "SELECT COUNT(*) FROM board_items WHERE company_id = ? AND archived = 0 AND due_date IS NOT NULL AND due_date < CURDATE()"
-    );
-    $stmt->execute([$companyId]);
-    $overdueTasks = (int)$stmt->fetchColumn();
-
-    // Pending timesheets (not yet allocated to a pay run)
+    // Pending timesheets (not yet allocated to a pay run); counted first, so a
+    // problem in Projects does not hide it
     $stmt = $DB->prepare(
         "SELECT COUNT(*) FROM pay_timesheets WHERE company_id = ? AND (run_id IS NULL OR run_id = 0)"
     );
     $stmt->execute([$companyId]);
     $pendingTimesheets = (int)$stmt->fetchColumn();
-} catch (Exception $e) {
-    // In case of an error, default metrics to zero and log
+
+    require_once __DIR__ . '/../projects/lib/autoload.php';
+    // SQL limit to ProjectLink::visibleProjectIds() (integer ids only, no parameters)
+    [$visibleSql] = ProjectLink::repo($DB, $companyId, $userId, (string)($_SESSION['role'] ?? 'viewer'))->visibleSql('p');
+    $today = ProjectRepo::today();
+
+    // Active projects: draft, active or on hold, and not archived
+    $stmt = $DB->prepare(
+        "SELECT COUNT(*) FROM projects p
+          WHERE p.company_id = ? AND p.status IN ('draft','active','on_hold') AND (p.archived = 0 OR p.archived IS NULL) AND $visibleSql"
+    );
+    $stmt->execute([$companyId]);
+    $activeProjects = (int)$stmt->fetchColumn();
+
+    // Upcoming tasks (due today or within the next 7 days) and overdue tasks (due date in the past)
+    $stmt = $DB->prepare(
+        "SELECT SUM(i.due_date >= ? AND i.due_date <= ?) AS upcoming, SUM(i.due_date < ?) AS overdue
+           FROM board_items i
+           JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
+           JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
+          WHERE i.company_id = ? AND i.due_date IS NOT NULL AND COALESCE(i.progress, 0) < 100 AND (i.archived = 0 OR i.archived IS NULL)
+            AND (b.archived = 0 OR b.archived IS NULL) AND (p.archived = 0 OR p.archived IS NULL)
+            AND p.status NOT IN ('completed','cancelled','archived') AND $visibleSql"
+    );
+    $stmt->execute([$today, date('Y-m-d', strtotime($today . ' +7 days')), $today, $companyId]);
+    $tasks = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $upcomingTasks = (int)($tasks['upcoming'] ?? 0);
+    $overdueTasks  = (int)($tasks['overdue'] ?? 0);
+} catch (Throwable $e) {
+    // In case of an error, the metrics not counted yet stay zero; log it
     error_log('Dashboard metric error: ' . $e->getMessage());
-    $activeProjects    = 0;
-    $upcomingTasks     = 0;
-    $overdueTasks      = 0;
-    $pendingTimesheets = 0;
 }
 
 ?><!DOCTYPE html>

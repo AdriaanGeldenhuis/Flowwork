@@ -2,7 +2,7 @@
 // calendar/lib/CalendarLinks.php
 //
 // Events can be linked to Flowwork records (calendar_event_links): a project,
-// a board task, an invoice or quote, a CRM customer/supplier or deal, an email,
+// a board, a board task, an invoice or quote, a CRM customer/supplier or deal, an email,
 // a pay run. This class turns a link into a label + URL — only when the viewer
 // may open that record — and finds records for the "Link to…" picker.
 
@@ -10,6 +10,7 @@ final class CalendarLinks
 {
     public const TYPES = [
         'project'         => ['label' => 'Project',  'icon' => 'briefcase'],
+        'board'           => ['label' => 'Board',    'icon' => 'grid'],
         'item'            => ['label' => 'Task',     'icon' => 'check-square'],
         'invoice'         => ['label' => 'Invoice',  'icon' => 'receipt'],
         'quote'           => ['label' => 'Quote',    'icon' => 'file-text'],
@@ -54,15 +55,24 @@ final class CalendarLinks
         try {
             switch ($type) {
                 case 'project':
+                    if (!CalendarRepo::projectsAvailable()) return null;
                     $r = $this->one("SELECT project_id AS id, name AS label, project_number AS sub FROM projects WHERE project_id = ? AND company_id = ?", [$id, $c]);
                     if (!$r || !$this->repo->canSeeProject($id)) return null;
-                    return $this->shape($type, $r, '/projects/view.php?project_id=' . $id);
+                    return $this->shape($type, $r, ProjectLink::projectUrl($id));
+                case 'board':
+                    if (!CalendarRepo::projectsAvailable()) return null;
+                    $r = $this->one("SELECT b.board_id AS id, b.title AS label, p.name AS sub FROM project_boards b
+                                       JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
+                                      WHERE b.board_id = ? AND b.company_id = ?", [$id, $c]);
+                    if (!$r || !$this->canSeeBoard($id)) return null;
+                    return $this->shape($type, $r, ProjectLink::boardUrl($id));
                 case 'item':
-                    $r = $this->one("SELECT i.id, i.title AS label, b.title AS sub, i.board_id, b.project_id FROM board_items i
+                    if (!CalendarRepo::projectsAvailable()) return null;
+                    $r = $this->one("SELECT i.id, i.title AS label, b.title AS sub, i.board_id FROM board_items i
                                        JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
                                       WHERE i.id = ? AND i.company_id = ?", [$id, $c]);
-                    if (!$r || !$this->canSeeBoard((int)$r['board_id'], (int)$r['project_id'])) return null;
-                    return $this->shape($type, $r, '/projects/board.php?board_id=' . (int)$r['board_id'] . '&item=' . $id);
+                    if (!$r || !$this->canSeeBoard((int)$r['board_id'])) return null;
+                    return $this->shape($type, $r, ProjectLink::itemUrl((int)$r['board_id'], $id));
                 case 'invoice':
                     $r = $this->one("SELECT i.id, i.invoice_number AS label, a.name AS sub FROM invoices i
                                   LEFT JOIN crm_accounts a ON a.id = i.customer_id WHERE i.id = ? AND i.company_id = ?", [$id, $c]);
@@ -123,25 +133,34 @@ final class CalendarLinks
                 error_log('[calendar] link search ' . $type . ': ' . $e->getMessage());
             }
         };
-        $add('project', "SELECT project_id FROM projects WHERE company_id = ? AND (archived = 0 OR archived IS NULL)
-                           AND (name LIKE ? OR project_number LIKE ?) ORDER BY updated_at DESC", [$c, $like, $like]);
+        $projects = CalendarRepo::projectsAvailable() ? $this->repo->projectSql('p.project_id') : null;
+        if ($projects !== null) {
+            $add('project', "SELECT p.project_id FROM projects p WHERE p.company_id = ? AND (p.archived = 0 OR p.archived IS NULL)$projects
+                               AND (p.name LIKE ? OR p.project_number LIKE ?) ORDER BY p.updated_at DESC", [$c, $like, $like]);
+            $add('board', "SELECT b.board_id FROM project_boards b JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
+                            WHERE b.company_id = ? AND (b.archived = 0 OR b.archived IS NULL) AND (p.archived = 0 OR p.archived IS NULL)$projects
+                              AND b.title LIKE ? ORDER BY b.title", [$c, $like]);
+        }
         $add('crm_account', "SELECT id FROM crm_accounts WHERE company_id = ? AND deleted_at IS NULL AND name LIKE ? ORDER BY name", [$c, $like]);
         $add('crm_opportunity', "SELECT id FROM crm_opportunities WHERE company_id = ? AND title LIKE ? ORDER BY updated_at DESC", [$c, $like]);
         $add('invoice', "SELECT i.id FROM invoices i LEFT JOIN crm_accounts a ON a.id = i.customer_id
                           WHERE i.company_id = ? AND (i.invoice_number LIKE ? OR a.name LIKE ?) ORDER BY i.id DESC", [$c, $like, $like]);
         $add('quote', "SELECT q.id FROM quotes q LEFT JOIN crm_accounts a ON a.id = q.customer_id
                         WHERE q.company_id = ? AND (q.quote_number LIKE ? OR a.name LIKE ?) ORDER BY q.id DESC", [$c, $like, $like]);
-        $add('item', "SELECT id FROM board_items WHERE company_id = ? AND (archived = 0 OR archived IS NULL) AND title LIKE ?
-                        AND (assigned_to = ? OR created_by = ?) ORDER BY updated_at DESC", [$c, $like, $this->repo->userId, $this->repo->userId]);
+        if ($projects !== null) {
+            $add('item', "SELECT i.id FROM board_items i
+                            JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
+                            JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
+                           WHERE i.company_id = ? AND (i.archived = 0 OR i.archived IS NULL) AND (b.archived = 0 OR b.archived IS NULL)
+                             AND (p.archived = 0 OR p.archived IS NULL)$projects AND i.title LIKE ? ORDER BY i.updated_at DESC", [$c, $like]);
+        }
         return $out;
     }
 
-    private function canSeeBoard(int $boardId, int $projectId): bool
+    /** The Projects engine's board rule: project access, or a board_members row. */
+    private function canSeeBoard(int $boardId): bool
     {
-        if ($this->repo->isAdmin() || $this->repo->canSeeProject($projectId)) return true;
-        $st = $this->db->prepare("SELECT 1 FROM board_members WHERE board_id = ? AND user_id = ? LIMIT 1");
-        $st->execute([$boardId, $this->repo->userId]);
-        return (bool)$st->fetchColumn();
+        return ProjectLink::canSeeBoard($this->db, $this->repo->companyId, $this->repo->userId, $this->repo->role, $boardId);
     }
 
     private function one(string $sql, array $params): ?array

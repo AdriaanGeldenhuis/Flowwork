@@ -111,23 +111,35 @@ if ($method === 'GET') {
             $data['this_month_spend'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (Exception $e) { $data['this_month_spend'] = []; }
 
-        // 5) Cost by project (this month)
+        // 5) Cost by project (this month): posted bill lines on a project's
+        // boards (ap_bill_lines has no company_id — scope through ap_bills),
+        // limited to the projects this user can open.
         try {
+            require_once __DIR__ . '/../../projects/lib/autoload.php';
+            [$vis] = ProjectLink::repo($DB, $companyId, (int)($_SESSION['user_id'] ?? 0), (string)($_SESSION['role'] ?? 'viewer'))->visibleSql('p');
             $start = date('Y-m-01'); $end = date('Y-m-t');
             $stmt = $DB->prepare("
-                SELECT p.name, SUM(bl.line_total) AS total
+                SELECT p.project_id, p.project_number, p.name, SUM(bl.line_total) AS total
                 FROM ap_bill_lines bl
-                JOIN ap_bills b ON b.id = bl.bill_id AND b.company_id = bl.company_id
-                LEFT JOIN boards p ON p.id = bl.project_board_id AND p.company_id = bl.company_id
-                WHERE bl.company_id = ? AND b.status IN ('posted','paid')
-                  AND b.issue_date BETWEEN ? AND ?
-                GROUP BY p.name
+                JOIN ap_bills b ON b.id = bl.bill_id
+                JOIN project_boards pb ON pb.board_id = bl.project_board_id AND pb.company_id = b.company_id
+                JOIN projects p ON p.project_id = pb.project_id AND p.company_id = b.company_id
+                WHERE b.company_id = ? AND b.status IN ('posted','paid')
+                  AND b.issue_date BETWEEN ? AND ? AND $vis
+                GROUP BY p.project_id, p.project_number, p.name
                 ORDER BY total DESC
                 LIMIT 5
             ");
             $stmt->execute([$companyId, $start, $end]);
-            $data['cost_by_project'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        } catch (Exception $e) { $data['cost_by_project'] = []; }
+            $data['cost_by_project'] = array_map(fn($r) => [
+                'project_id' => (int)$r['project_id'],
+                'name'       => ((string)$r['project_number'] !== '' ? $r['project_number'] . ' · ' : '') . $r['name'],
+                'total'      => (float)$r['total'],
+            ], $stmt->fetchAll(PDO::FETCH_ASSOC));
+        } catch (Throwable $e) {
+            error_log('widgets cost_by_project: ' . $e->getMessage());
+            $data['cost_by_project'] = [];
+        }
 
         // 6) Recent receipts
         try {

@@ -1,9 +1,10 @@
 <?php
 // /qi/ajax/get_project_boards.php
-// Returns a list of boards for a given project belonging to the current company
+// Returns the live boards of a project (current company) that the user can open
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -19,10 +20,9 @@ try {
         exit;
     }
 
-    // Fetch boards for this project and company
-    $stmt = $DB->prepare("SELECT board_id, title AS name FROM project_boards WHERE project_id = ? AND company_id = ? ORDER BY title");
-    $stmt->execute([$projectId, $companyId]);
-    $boards = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Boards in board order; archived boards and boards the user cannot open are left out
+    $boards = array_map(fn($b) => ['board_id' => (int)$b['id'], 'name' => $b['title']],
+        ProjectLink::pickerBoards($DB, (int)$companyId, (int)$_SESSION['user_id'], (string)($_SESSION['role'] ?? 'viewer'), $projectId));
 
     echo json_encode(['ok' => true, 'boards' => $boards]);
 

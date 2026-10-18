@@ -226,6 +226,48 @@ try {
                 throw new Exception('User is not a member of this company');
             }
 
+            // Take them off this company's projects first (safe to repeat if
+            // a later step fails): memberships, board access and the people
+            // cells they are on. The items' assignee and people lists are
+            // recomputed from the cells by the Projects engine.
+            require_once __DIR__ . '/../projects/lib/autoload.php';
+            ProjectSchema::ensure($DB);
+            $stmt = $DB->prepare("DELETE FROM project_members WHERE user_id = ? AND company_id = ?");
+            $stmt->execute([$targetUserId, $companyId]);
+            $stmt = $DB->prepare("
+                DELETE bm FROM board_members bm
+                JOIN project_boards pb ON pb.board_id = bm.board_id
+                WHERE bm.user_id = ? AND pb.company_id = ?
+            ");
+            $stmt->execute([$targetUserId, $companyId]);
+            $stmt = $DB->prepare("
+                SELECT v.item_id, v.column_id, v.value, bi.board_id
+                FROM board_item_values v
+                JOIN board_columns bc ON bc.column_id = v.column_id AND bc.type = 'people' AND bc.company_id = ?
+                JOIN board_items bi ON bi.id = v.item_id AND bi.company_id = bc.company_id
+                WHERE v.value LIKE ?
+            ");
+            $stmt->execute([$companyId, '%' . $targetUserId . '%']);
+            $setCell = $DB->prepare("UPDATE board_item_values SET value = ? WHERE item_id = ? AND column_id = ?");
+            $clearCell = $DB->prepare("DELETE FROM board_item_values WHERE item_id = ? AND column_id = ?");
+            $touched = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $cell) {
+                $people = Columns::decode(['type' => 'people'], $cell['value']) ?: [];
+                if (!in_array($targetUserId, $people, true)) continue;
+                $people = array_values(array_diff($people, [$targetUserId]));
+                if ($people) $setCell->execute([implode(',', $people), $cell['item_id'], $cell['column_id']]);
+                else $clearCell->execute([$cell['item_id'], $cell['column_id']]);
+                $touched[(int)$cell['board_id']][] = (int)$cell['item_id'];
+            }
+            foreach ($touched as $touchedBoard => $touchedItems) {
+                BoardRepo::computeFormulas($DB, $companyId, $touchedBoard, $touchedItems);
+                BoardRepo::refreshMirrors($DB, $companyId, $touchedBoard, $touchedItems);
+            }
+            $stmt = $DB->prepare("DELETE FROM board_item_people WHERE user_id = ? AND company_id = ?");
+            $stmt->execute([$targetUserId, $companyId]);
+            $stmt = $DB->prepare("UPDATE board_items SET assigned_to = NULL, updated_at = updated_at WHERE assigned_to = ? AND company_id = ?");
+            $stmt->execute([$targetUserId, $companyId]);
+
             // Always revoke their access to this company.
             $stmt = $DB->prepare("DELETE FROM user_companies WHERE user_id = ? AND company_id = ?");
             $stmt->execute([$targetUserId, $companyId]);
@@ -479,6 +521,10 @@ try {
                 throw new Exception('Board ID and User ID required');
             }
 
+            if (!in_array($role, ['owner', 'editor', 'viewer'], true)) {
+                throw new Exception('Invalid board role');
+            }
+
             // Verify board belongs to this company
             $stmt = $DB->prepare("SELECT board_id FROM project_boards WHERE board_id = ? AND company_id = ?");
             $stmt->execute([$boardId, $companyId]);
@@ -509,6 +555,10 @@ try {
 
             if (!$boardId || !$memberId) {
                 throw new Exception('Board ID and User ID required');
+            }
+
+            if (!in_array($role, ['owner', 'editor', 'viewer'], true)) {
+                throw new Exception('Invalid board role');
             }
 
             // Verify board belongs to this company

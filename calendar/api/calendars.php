@@ -1,7 +1,7 @@
 <?php
 // /calendar/api/calendars.php
 //   GET                                         calendars the user can see, with permissions
-//   POST {action:'create', name, color, type:'personal'|'team', description}
+//   POST {action:'create', name, color, type:'personal'|'team'|'project', description, project_id (project calendars)}
 //   POST {action:'update', id, name, color, description}
 //   POST {action:'delete', id}                  deletes the calendar and its events
 //   POST {action:'share', id, share:[{user_id, role:'view'|'edit'}]}   personal calendars
@@ -36,11 +36,20 @@ $managed = function () use ($in, $CAL): array {
 
 switch ($action) {
     case 'create':
-        $type = ($in['type'] ?? 'personal') === 'team' ? 'team' : 'personal';
-        if ($type === 'team' && $CAL_ROLE === 'viewer') throw new CalendarUserError('Viewers cannot create shared calendars.');
+        $type = in_array($in['type'] ?? '', ['team', 'project'], true) ? $in['type'] : 'personal';
+        if ($type !== 'personal' && $CAL_ROLE === 'viewer') throw new CalendarUserError('Viewers cannot create shared calendars.');
+        $projectId = null;
+        if ($type === 'project') {
+            // Seen by the people who can open the project (CalendarRepo::calendarPerms).
+            $projectId = (int)($in['project_id'] ?? 0);
+            if ($projectId <= 0 || !CalendarRepo::projectsAvailable() || !ProjectLink::belongs($DB, $CAL_COMPANY_ID, $projectId)
+                || !ProjectLink::canSeeProject($DB, $CAL_COMPANY_ID, $CAL_USER_ID, $CAL_ROLE, $projectId)) {
+                throw new CalendarUserError('Project not found.');
+            }
+        }
         $desc = cal_str($in, 'description', 2000);
-        $id = $CAL->insertCalendar($type, $name(), $color(), $desc !== '' ? $desc : null);
-        $CAL->audit('calendar_created', ['calendar_id' => $id, 'type' => $type]);
+        $id = $CAL->insertCalendar($type, $name(), $color(), $desc !== '' ? $desc : null, $projectId);
+        $CAL->audit('calendar_created', ['calendar_id' => $id, 'type' => $type] + ($projectId ? ['project_id' => $projectId] : []));
         $CAL->allCalendars(true);
         cal_json(['id' => $id, 'calendars' => cal_calendars_payload($CAL)]);
 
@@ -83,6 +92,7 @@ switch ($action) {
 
     case 'share':
         $c = $managed();
+        if ($c['calendar_type'] === 'project') throw new CalendarUserError('Project calendars are already visible to the people on the project.');
         if ($c['calendar_type'] !== 'personal') throw new CalendarUserError('Shared calendars are already visible to everyone.');
         $want = [];
         foreach (is_array($in['share'] ?? null) ? $in['share'] : [] as $s) {
