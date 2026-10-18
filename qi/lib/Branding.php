@@ -217,8 +217,11 @@ final class Branding
 
     public static function sanitizeCustomCss(string $css): string
     {
-        // Strip anything that could close the <style> tag and inject markup.
-        return preg_replace('#</\s*style\s*>?#i', '', $css) ?? '';
+        // Same rule as QiTheme::sanitizeCss: without any "<" the style
+        // element can never be closed (nesting cannot rebuild a tag), and
+        // imports / remote urls cannot load code or leak page content.
+        require_once __DIR__ . '/QiTheme.php';
+        return QiTheme::sanitizeCss($css);
     }
 
     // ===== colour utilities =====

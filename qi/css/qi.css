@@ -281,6 +281,9 @@
   .fwq { --designer-w: 340px; }
 }
 @media (max-width: 820px) {
+  .fwq .fwm-search { min-width: 0; }
+  .fwq .fwm-search input { width: 0; }
+  .fwq-head__actions .btn--primary { display: none; }
   .fwq-table-wrap { display: none; }
   .fwq-cards { display: flex; }
   .fwq-head { padding: 14px 12px 10px 16px; min-height: 0; }
@@ -299,6 +302,12 @@
   .fwq-paper-wrap { padding: 14px 10px 30px; }
 }
 @media (max-width: 520px) {
-  .fwq-kpis { grid-template-columns: minmax(0, 1fr); }
+  .fwq-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .fwq-kpi { min-height: 112px; padding: 13px 13px 12px; border-radius: 16px; }
+  .fwq-kpi::before { left: 12px; right: 12px; }
+  .fwq-kpi__label { font-size: 9px; letter-spacing: 0.14em; }
+  .fwq-kpi__value { font-size: 23px; }
+  .fwq-kpi__note { font-size: 11px; }
+  .fwq-kpi svg.fwq-spark { height: 36px; }
   .fwq-presets, .fwq-colors, .fwq-labels, .fwq-toggles { grid-template-columns: minmax(0, 1fr); }
 }

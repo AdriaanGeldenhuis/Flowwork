@@ -85,3 +85,8 @@ storage/calendar/
 # Projects runtime data (item files, schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/projects/
+
+# ---------------------------------------------------------------------------
+# Quotes & Invoices runtime data (generated PDFs, schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/qi/
