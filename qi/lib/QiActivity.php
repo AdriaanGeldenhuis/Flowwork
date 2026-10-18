@@ -33,6 +33,7 @@ final class QiActivity
         'deleted'       => 'Deleted',
         'duplicated'    => 'Duplicated',
         'generated'     => 'Invoice generated',
+        'generate_failed' => 'Could not generate the invoice',
         'paused'        => 'Paused',
         'resumed'       => 'Resumed',
         'pay_link'      => 'Payment link created',

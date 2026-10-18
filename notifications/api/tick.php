@@ -125,6 +125,14 @@ if ($now - (int)($state['sla_at'] ?? 0) >= 900) {
     $state['sla_at'] = $now;
     $run('reply_reminders', fn() => MailWorker::slaTick($DB));
 }
+if ($now - (int)($state['qi_recurring_at'] ?? 0) >= 900) {
+    $state['qi_recurring_at'] = $now;
+    $run('qi_recurring', function () use ($DB, $deadline) {
+        // recurring invoices that are due (Quotes & Invoices); bounded so mail keeps its time
+        require_once __DIR__ . '/../../qi/lib/QiRecurring.php';
+        return QiRecurring::runDue($DB, 20, $deadline - 8);
+    });
+}
 $run('push_after', $pushed);
 if ($now - (int)($state['cleanup_at'] ?? 0) >= 3600) {
     $state['cleanup_at'] = $now;

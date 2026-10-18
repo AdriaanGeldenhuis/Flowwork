@@ -1,202 +1,105 @@
 <?php
-// /qi/webhooks/yoco.php
-// Public endpoint to handle Yoco webhook notifications for successful payments.
-// Validates the signature using the company's webhook secret, then records the payment.
+// /webhooks/yoco.php
+// Public endpoint for Yoco webhook deliveries (Checkout payments). Every
+// delivery must carry a valid signature made with the company's webhook
+// secret; only a succeeded payment records money, exactly once per Yoco
+// payment, through the same path as a payment captured by hand
+// (QiActions::recordPayment: payment schedule, ledger posting, timeline).
 
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../includes/yoco_signature.php';
+require_once __DIR__ . '/../qi/lib/QiYoco.php';
+require_once __DIR__ . '/../qi/lib/QiActions.php';
 
-// Webhook does not require authentication but we need direct DB access
+header('Content-Type: application/json');
 
-// Capture headers
-$headers = getallheaders();
-$webhookId       = $headers['webhook-id']       ?? null;
-$webhookTimestamp= $headers['webhook-timestamp']?? null;
-$signatureHeader = $headers['webhook-signature']?? null;
-
-// Read raw body
-$rawBody = file_get_contents('php://input');
-
-// Attempt to decode JSON payload early to identify invoice reference
-$payload = json_decode($rawBody, true);
-
-// Extract Yoco reference from payload (try multiple paths)
-$yocoRef = null;
-if (is_array($payload)) {
-    // Top level id
-    if (!empty($payload['id'])) {
-        $yocoRef = $payload['id'];
-    } elseif (isset($payload['data']['id'])) {
-        $yocoRef = $payload['data']['id'];
-    } elseif (isset($payload['data']['order']['id'])) {
-        $yocoRef = $payload['data']['order']['id'];
-    }
-}
-
-if (!$yocoRef) {
-    // Nothing to do if we cannot identify reference
-    http_response_code(200);
-    echo json_encode(['ignored' => true]);
+function yoco_reply(int $code, array $body): void
+{
+    http_response_code($code);
+    echo json_encode($body);
     exit;
 }
 
+$h = yoco_get_webhook_headers();
+$rawBody = (string)file_get_contents('php://input');
+if (strlen($rawBody) > 256 * 1024) yoco_reply(413, ['ok' => false]);
+$payload = json_decode($rawBody, true);
+if (!is_array($payload)) yoco_reply(200, ['ignored' => true]);
+$ev = QiYoco::parseEvent($payload);
+
+// Which invoice: our metadata first, then the checkout we stored on the invoice
+$invoice = null;
+if ($ev['invoice_id'] && $ev['company_id']) {
+    $st = $DB->prepare("SELECT * FROM invoices WHERE id = ? AND company_id = ?");
+    $st->execute([$ev['invoice_id'], $ev['company_id']]);
+    $invoice = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+if (!$invoice && $ev['checkout_id']) {
+    $st = $DB->prepare("SELECT * FROM invoices WHERE yoco_checkout_id = ? OR yoco_reference = ? LIMIT 1");
+    $st->execute([$ev['checkout_id'], $ev['checkout_id']]);
+    $invoice = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+if (!$invoice) yoco_reply(200, ['ignored' => true]);
+$companyId = (int)$invoice['company_id'];
+
+// Signature — mandatory, verified with that company's secret
+$st = $DB->prepare("SELECT yoco_webhook_secret FROM companies WHERE id = ?");
+$st->execute([$companyId]);
+$secret = trim((string)$st->fetchColumn());
+if ($secret === '' || !yoco_verify_signature($secret, $h['id'], $h['timestamp'], $h['signature'], $rawBody)) {
+    error_log('[yoco] rejected delivery for invoice #' . (int)$invoice['id'] . ($secret === '' ? ' (no webhook secret configured)' : ' (bad signature)'));
+    yoco_reply(403, ['ok' => false, 'error' => 'Invalid signature']);
+}
+
 try {
-    // Find the invoice by yoco_reference
-    $stmt = $DB->prepare("SELECT * FROM invoices WHERE yoco_reference = ?");
-    $stmt->execute([$yocoRef]);
-    $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$invoice) {
-        http_response_code(200);
-        echo json_encode(['ignored' => true]);
-        exit;
-    }
-    $companyId = $invoice['company_id'];
-    // Fetch company to get webhook secret
-    $stmt = $DB->prepare("SELECT yoco_webhook_secret FROM companies WHERE id = ?");
-    $stmt->execute([$companyId]);
-    $company = $stmt->fetch(PDO::FETCH_ASSOC);
-    $secret  = $company['yoco_webhook_secret'] ?? '';
-    if (empty($secret)) {
-        throw new Exception('Webhook secret not configured');
-    }
-    // Verify signature — MANDATORY. A request without valid signature headers
-    // (or with a stale timestamp) is rejected; we never fall through to
-    // recording a payment on an unsigned request.
-    if (!yoco_verify_signature($secret, $webhookId, $webhookTimestamp, $signatureHeader, $rawBody)) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Invalid signature']);
-        exit;
-    }
-    // Only a SUCCESSFUL payment event settles the invoice. Previously ANY signed
-    // event matching the reference marked it fully paid — a payment.failed,
-    // refund or cancellation would have settled it. Reject any typed non-success
-    // event (empty type is treated as legacy-success for older deliveries).
-    $eventType = strtolower(is_array($payload) ? (string)($payload['type'] ?? '') : '');
-    if ($eventType !== '' && strpos($eventType, 'succeeded') === false) {
-        http_response_code(200);
-        echo json_encode(['ignored' => true, 'reason' => 'non-success event: ' . $eventType]);
-        exit;
-    }
-    // If invoice already paid, ignore
-    if ($invoice['status'] === 'paid' || (float)$invoice['balance_due'] <= 0) {
-        http_response_code(200);
-        echo json_encode(['ignored' => true]);
-        exit;
-    }
-    // Idempotency: Yoco retries deliveries (and a prior bug made every
-    // delivery return 500 after committing, so retries were guaranteed).
-    // The same checkout reference must never create a second payment.
-    if (!empty($yocoRef)) {
-        $stmt = $DB->prepare("SELECT id FROM payments WHERE company_id = ? AND method = 'yoco' AND reference = ? LIMIT 1");
-        $stmt->execute([$companyId, $yocoRef]);
-        if ($stmt->fetchColumn()) {
-            http_response_code(200);
-            echo json_encode(['ignored' => true, 'reason' => 'duplicate delivery']);
-            exit;
+    $DB->prepare("INSERT INTO yoco_payment_events (company_id, event_type, event_id, payload_json) VALUES (?, ?, ?, ?)")
+       ->execute([$companyId, substr($ev['type'] ?: 'unknown', 0, 100), substr((string)($h['id'] ?? ''), 0, 128) ?: null, substr($rawBody, 0, 60000)]);
+} catch (Throwable $e) {
+    // the audit table is optional
+}
+
+// Only a successful payment settles anything
+if ($ev['type'] !== 'payment.succeeded' && !($ev['type'] === '' && $ev['status'] === 'succeeded')) {
+    yoco_reply(200, ['ignored' => true, 'reason' => 'event ' . ($ev['type'] ?: 'without a type')]);
+}
+if ($ev['currency'] !== 'ZAR' || !$ev['amount'] || $ev['amount'] <= 0) yoco_reply(200, ['ignored' => true, 'reason' => 'no ZAR amount']);
+$paymentRef = $ev['payment_id'] ?: ($ev['checkout_id'] ?: (string)($h['id'] ?? ''));
+
+$balance = (float)$invoice['balance_due'];
+if ($balance <= 0.004) {
+    error_log('[yoco] payment ' . $paymentRef . ' arrived for invoice ' . $invoice['invoice_number'] . ' which has nothing owing — record it as a refund/credit by hand');
+    yoco_reply(200, ['ignored' => true, 'reason' => 'nothing owing']);
+}
+
+try {
+    // the payment is recorded once: the idempotency key is the Yoco payment id
+    $r = QiActions::recordPayment($DB, $companyId, null, (int)$invoice['id'], [
+        'amount' => round(min($ev['amount'], $balance), 2), 'date' => date('Y-m-d'), 'method' => 'yoco',
+        'reference' => $paymentRef, 'notes' => 'Card payment through Yoco' . ($ev['amount'] > $balance + 0.004 ? ' (paid ' . number_format($ev['amount'], 2) . ', more than the balance)' : ''),
+        'idempotency_key' => 'yoco:' . $paymentRef,
+    ], 'Customer · card');
+    if (empty($r['duplicate'])) {
+        try {
+            $owner = (int)($invoice['created_by'] ?? 0);
+            if ($owner > 0 && function_exists('fw_notify')) {
+                fw_notify($DB, $companyId, $owner, 'qi_invoice_paid', 'Invoice ' . $invoice['invoice_number'] . ' paid by card',
+                    'R ' . number_format(min($ev['amount'], $balance), 2) . ' received through Yoco' . ($r['status'] === 'paid' ? ' — paid in full.' : '.'),
+                    '/qi/view.php?type=invoice&id=' . (int)$invoice['id']);
+            }
+        } catch (Throwable $e) {
+            error_log('[yoco] notify: ' . $e->getMessage());
         }
     }
-    // Begin payment transaction
-    $DB->beginTransaction();
-    $invoiceId = $invoice['id'];
-    $balance   = (float)$invoice['balance_due'];
-    // Record the amount ACTUALLY paid (Yoco amounts are in cents), capped at the
-    // outstanding balance — never assume the full balance was settled. Fall back
-    // to the balance only when the payload carries no amount (the "Pay Now" link
-    // is created for the full balance).
-    $paidAmount = null;
-    foreach ([$payload['amount'] ?? null, $payload['data']['amount'] ?? null,
-              $payload['payload']['amount'] ?? null, $payload['data']['order']['amount'] ?? null] as $cand) {
-        if (is_numeric($cand)) { $paidAmount = (float)$cand / 100.0; break; }
-    }
-    $amountToRecord = ($paidAmount !== null && $paidAmount > 0) ? min($paidAmount, $balance) : $balance;
-    if ($balance <= 0) {
-        // Nothing to allocate
-        $DB->commit();
-        http_response_code(200);
-        echo json_encode(['ignored' => true]);
-        exit;
-    }
-    // Determine payment date as now
-    $paymentDate = date('Y-m-d');
-    // Determine a user to assign the payment (first user in company)
-    $stmt = $DB->prepare("SELECT id FROM users WHERE company_id = ? ORDER BY id ASC LIMIT 1");
-    $stmt->execute([$companyId]);
-    $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
-    $receivedBy = $userRow['id'] ?? 1;
-    // Insert payment. The idempotency_key makes uq_payments_idem
-    // (company_id, idempotency_key) the DB-level backstop for CONCURRENT
-    // duplicate deliveries — the SELECT-based dedupe above only catches
-    // sequential retries.
-    $stmt = $DB->prepare(
-        "INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key) " .
-        "VALUES (?, ?, ?, 'yoco', ?, ?, ?, ?)"
-    );
-    try {
-        $stmt->execute([$companyId, $paymentDate, $amountToRecord, $yocoRef, json_encode($payload), $receivedBy,
-            substr('yoco:' . $yocoRef, 0, 64)]);
-    } catch (PDOException $e) {
-        if (($e->errorInfo[1] ?? 0) == 1062 || $e->getCode() == '23000') {
-            $DB->rollBack();
-            http_response_code(200);
-            echo json_encode(['ignored' => true, 'reason' => 'duplicate delivery']);
-            exit;
-        }
-        throw $e;
-    }
-    $paymentId = $DB->lastInsertId();
-    // Allocate payment to invoice
-    $stmt = $DB->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)");
-    $stmt->execute([$paymentId, $invoiceId, $amountToRecord]);
-    // Update invoice: fully paid only when the amount clears the balance,
-    // otherwise part-paid (a partial Yoco payment must not mark it 'paid').
-    $newBalance = round($balance - $amountToRecord, 2);
-    if ($newBalance <= 0.005) {
-        $stmt = $DB->prepare("UPDATE invoices SET balance_due = 0, status = 'paid', paid_at = NOW(), updated_at = NOW() WHERE id = ?");
-        $stmt->execute([$invoiceId]);
-    } else {
-        $stmt = $DB->prepare("UPDATE invoices SET balance_due = ?, status = 'part-paid', updated_at = NOW() WHERE id = ?");
-        $stmt->execute([$newBalance, $invoiceId]);
-    }
-    // Audit log
-    $stmt = $DB->prepare(
-        "INSERT INTO audit_log (company_id, user_id, action, entity_type, entity_id, details, ip, timestamp) " .
-        "VALUES (?, ?, 'yoco_payment_received', 'invoice', ?, ?, ?, NOW())"
-    );
-    $stmt->execute([$companyId, $receivedBy, $invoiceId, json_encode(['payment_id' => $paymentId, 'yoco_ref' => $yocoRef]), $_SERVER['REMOTE_ADDR'] ?? null]);
-
-    // Post to the GL inside the same transaction. (The previous code
-    // required a non-existent path — ../services/JournalPoster.php resolves
-    // outside qi/ — so every webhook fatalled AFTER committing the payment:
-    // no journal, HTTP 500, and a Yoco retry that could duplicate it.)
-    require_once __DIR__ . '/../finances/lib/PostingService.php';
-    require_once __DIR__ . '/../qi/lib/InvoiceLifecycle.php';
-    if ($invoice['status'] === 'draft') {
-        InvoiceLifecycle::issueInvoice($DB, $companyId, $receivedBy, (int)$invoiceId);
-    }
-    $posting = new PostingService($DB, $companyId, $receivedBy);
-    $posting->postCustomerPayment((int)$paymentId);
-
-    $DB->commit();
-
-    // Online payment applied — refresh the invoice PDF and its FlowWork Drive
-    // copy so the payment history / balance shown there stays current.
-    try {
-        require_once __DIR__ . '/../qi/services/DocumentPdfService.php';
-        DocumentPdfService::generateAndFile($DB, (int)$companyId, 'invoice', (int)$invoiceId);
-    } catch (Throwable $pdfEx) {
-        error_log('Yoco webhook PDF publish failed: ' . $pdfEx->getMessage());
-    }
-
-    http_response_code(200);
-    echo json_encode(['ok' => true, 'invoice_id' => $invoiceId, 'payment_id' => $paymentId]);
-} catch (Exception $e) {
-    if ($DB->inTransaction()) {
-        $DB->rollBack();
-    }
-    error_log('Yoco webhook error: ' . $e->getMessage());
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'Internal error']);
+    yoco_reply(200, ['ok' => true, 'invoice_id' => (int)$invoice['id'], 'payment_id' => $r['payment_id'], 'duplicate' => !empty($r['duplicate'])]);
+} catch (QiInvalid $e) {
+    // not payable any more (voided, already settled): acknowledge, the money needs a person
+    error_log('[yoco] payment ' . $paymentRef . ' for ' . $invoice['invoice_number'] . ' not recorded: ' . $e->getMessage());
+    yoco_reply(200, ['ignored' => true, 'reason' => $e->getMessage()]);
+} catch (Throwable $e) {
+    // ledger or database trouble: 500 so Yoco retries the delivery
+    error_log('[yoco] webhook error: ' . $e->getMessage());
+    yoco_reply(500, ['ok' => false, 'error' => 'Internal error']);
 }

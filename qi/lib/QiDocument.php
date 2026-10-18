@@ -60,7 +60,10 @@ final class QiDocument
             $m['payments'] = self::payments($db, $companyId, $id);
             $m['credits'] = self::credits($db, $companyId, $id);
             $m['links']['public'] = !empty($doc['public_token']) ? self::url('/qi/p/invoice.php?token=' . rawurlencode($doc['public_token'])) : null;
-            $m['links']['pay'] = !empty($doc['yoco_checkout_id']) && !empty($doc['yoco_payment_link']) ? (string)$doc['yoco_payment_link'] : null;
+            // "Pay now" opens the customer page, which starts a card checkout for the balance at that moment
+            require_once __DIR__ . '/QiYoco.php';
+            $m['links']['pay'] = !empty($doc['public_token']) && QiYoco::payable($doc) && QiYoco::configured($db, $companyId)
+                ? self::url('/qi/p/invoice.php?token=' . rawurlencode($doc['public_token']) . '&pay=1') : null;
             if (!empty($doc['quote_id'])) {
                 $st = $db->prepare("SELECT id, quote_number FROM quotes WHERE id = ? AND company_id = ?");
                 $st->execute([(int)$doc['quote_id'], $companyId]);
@@ -201,7 +204,7 @@ final class QiDocument
         } elseif ($type === 'invoice') {
             $m['due_date'] = $doc['due_date'];
             $m['links']['public'] = !empty($row['public_token']) ? self::url('/qi/p/invoice.php?token=' . rawurlencode($row['public_token'])) : null;
-            $m['links']['pay'] = !empty($row['yoco_checkout_id']) && !empty($row['yoco_payment_link']) ? (string)$row['yoco_payment_link'] : null;
+            $m['links']['pay'] = null;
         } else {
             $m['reason'] = (string)($d['reason'] ?? '');
             if (!empty($d['invoice'])) {
