@@ -28,9 +28,11 @@ header('Content-Disposition: attachment; filename="project_pl.csv"');
 
 $out = fopen('php://output', 'w');
 fputcsv($out, ['Project', 'Income', 'Expenses', 'Net Profit']);
+// A project name starting with = + - @ (or a tab / CR) would run as a formula in Excel.
+$cell = fn($v) => preg_match('/^[=+\-@\t\r]/', (string)$v) ? "'" . $v : (string)$v;
 foreach ($rows as $row) {
     fputcsv($out, [
-        $row['name'],
+        $cell($row['name']),
         number_format($row['income'], 2, '.', ''),
         number_format($row['expenses'], 2, '.', ''),
         number_format($row['net'], 2, '.', '')

@@ -114,11 +114,10 @@ final class ProjectLink
         return $out;
     }
 
-    /** Boards of a project for a dropdown (live boards the user can open). */
+    /** Boards of a project for a dropdown (live boards the user can open — all of them, or just theirs for board members). */
     public static function pickerBoards(PDO $db, int $companyId, int $userId, string $role, int $projectId): array
     {
         $repo = self::repo($db, $companyId, $userId, $role);
-        if ($repo->projectLevel($projectId) < 1) return [];
         return array_map(fn($b) => ['id' => $b['id'], 'title' => $b['title'], 'type' => $b['type']], $repo->boardsOf($projectId));
     }
 
@@ -254,8 +253,14 @@ final class ProjectLink
         $st = $repo->db->prepare("SELECT 1 FROM email_links WHERE email_id = ? AND linked_type = ? AND linked_id = ?");
         $st->execute([$emailId, $type, $id]);
         if ($st->fetchColumn()) return;
-        $repo->db->prepare("INSERT INTO email_links (email_id, linked_type, linked_id, created_by, created_at) VALUES (?, ?, ?, ?, NOW())")
-            ->execute([$emailId, $type, $id, $repo->userId]);
+        try {
+            $repo->db->prepare("INSERT INTO email_links (email_id, linked_type, linked_id, created_by, created_at, company_id) VALUES (?, ?, ?, ?, NOW(), ?)")
+                ->execute([$emailId, $type, $id, $repo->userId, $repo->companyId]);
+        } catch (PDOException $e) {
+            if ($e->getCode() !== '42S22') throw $e; // installs where Mail has not added company_id yet
+            $repo->db->prepare("INSERT INTO email_links (email_id, linked_type, linked_id, created_by, created_at) VALUES (?, ?, ?, ?, NOW())")
+                ->execute([$emailId, $type, $id, $repo->userId]);
+        }
         if ($type === 'item') {
             $st = $repo->db->prepare("SELECT board_id FROM board_items WHERE id = ?");
             $st->execute([$id]);

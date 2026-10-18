@@ -202,7 +202,7 @@
       if (S.tab !== 'schedule') return;
     }
     const rows = [];
-    (S.schedule.items || []).forEach((it) => rows.push({ date: it.start, title: it.title, sub: it.sub || (it.source === 'projects' ? 'Project date' : ''), url: it.url, kind: it.source === 'projects' ? 'flag' : 'check-square' }));
+    (S.schedule.items || []).forEach((it) => rows.push({ date: it.start, title: it.title, sub: (it.sub || (it.source === 'projects' ? 'Project date' : '')) + (it.done ? ' · done' : ''), url: it.url, kind: it.source === 'projects' ? 'flag' : 'check-square', done: !!it.done }));
     (S.schedule.events || []).forEach((ev) => rows.push({ date: String(ev.start).slice(0, 10), title: ev.title, sub: ev.all_day ? 'All day' : String(ev.start).slice(11, 16) + ' · ' + (ev.calendar_name || 'Event'), url: '/calendar/?event=' + ev.id + '&date=' + String(ev.start).slice(0, 10), kind: 'calendar' }));
     rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const box = $('#sched');
@@ -213,7 +213,7 @@
       const m = MONTHS[d.getMonth()] + ' ' + d.getFullYear();
       const hdr = m !== lastMonth ? `<div class="fwp-act-day" style="padding-top:20px">${esc(m)}</div>` : '';
       lastMonth = m;
-      const late = r.kind === 'check-square' && r.date < today();
+      const late = r.kind === 'check-square' && !r.done && r.date < today();
       return `${hdr}<a class="fwp-due ${late ? 'is-overdue' : ''}" href="${esc(r.url)}" style="background:var(--glass-strong);margin-bottom:4px;box-shadow:var(--shadow-card)"><span class="fwp-due__date"><b>${d.getDate()}</b><small>${DOW[d.getDay()].slice(0, 3)}</small></span>
         <span class="fwp-due__main"><b>${esc(r.title)}</b><small>${esc(r.sub)}</small></span>${icon(r.kind)}</a>`;
     }).join('');

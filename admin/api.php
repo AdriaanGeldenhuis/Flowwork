@@ -267,6 +267,12 @@ try {
             $stmt->execute([$targetUserId, $companyId]);
             $stmt = $DB->prepare("UPDATE board_items SET assigned_to = NULL, updated_at = updated_at WHERE assigned_to = ? AND company_id = ?");
             $stmt->execute([$targetUserId, $companyId]);
+            // Subitems they owned, and the items they followed, in this company.
+            $stmt = $DB->prepare("UPDATE board_subitems SET assigned_to = NULL WHERE assigned_to = ? AND company_id = ?");
+            $stmt->execute([$targetUserId, $companyId]);
+            $stmt = $DB->prepare("DELETE w FROM board_watchers w JOIN board_items i ON i.id = w.item_id
+                                   WHERE w.user_id = ? AND i.company_id = ?");
+            $stmt->execute([$targetUserId, $companyId]);
 
             // Always revoke their access to this company.
             $stmt = $DB->prepare("DELETE FROM user_companies WHERE user_id = ? AND company_id = ?");

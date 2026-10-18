@@ -139,8 +139,13 @@ final class ProjectNotify
      * whose due-date column has reminders switched off.
      * @return int notifications sent
      */
-    public static function sendDueReminders(PDO $db, int $limit = 400): int
+    /**
+     * Daily due-date reminders. @return int notifications sent; $processed is
+     * set to how many items the call looked at (a full batch means more may wait).
+     */
+    public static function sendDueReminders(PDO $db, int $limit = 400, ?int &$processed = null): int
     {
+        $processed = 0;
         if ((int)date('G') < 7) return 0;
         ProjectSchema::ensure($db);
         $today = date('Y-m-d');
@@ -158,7 +163,9 @@ final class ProjectNotify
         $boardCols = [];
         $mark = $db->prepare("UPDATE board_items SET reminded_on = ?, updated_at = updated_at WHERE id = ?");
         $people = $db->prepare("SELECT user_id FROM board_item_people WHERE item_id = ?");
+        $canOpen = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $it) {
+            $processed++;
             $mark->execute([$today, (int)$it['id']]);
             $bid = (int)$it['board_id'];
             if (!isset($boardCols[$bid])) {
@@ -170,8 +177,16 @@ final class ProjectNotify
             if (!$boardCols[$bid]) continue;
             $people->execute([(int)$it['id']]);
             $due = $it['due_date'] === $today;
+            $co = (int)$it['company_id'];
             foreach (array_map('intval', $people->fetchAll(PDO::FETCH_COLUMN)) as $uid) {
-                self::send($db, (int)$it['company_id'], $uid, 'project_due', ($due ? 'Due today: ' : 'Overdue: ') . $it['title'],
+                // Only people who can still open the board (left the project, deactivated …).
+                $key = $co . ':' . $uid . ':' . $bid;
+                if (!isset($canOpen[$key])) {
+                    try { $canOpen[$key] = ProjectRepo::forUser($db, $co, $uid)->boardLevel($bid) > 0; }
+                    catch (Throwable $e) { $canOpen[$key] = false; }
+                }
+                if (!$canOpen[$key]) continue;
+                self::send($db, $co, $uid, 'project_due', ($due ? 'Due today: ' : 'Overdue: ') . $it['title'],
                            $it['board'] . ' · ' . $it['project'], ProjectLink::itemUrl($bid, (int)$it['id']), ['sub' => $it['project']]);
                 $sent++;
             }

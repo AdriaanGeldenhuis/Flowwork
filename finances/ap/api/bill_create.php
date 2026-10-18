@@ -125,6 +125,8 @@ foreach ($lines as $i => $line) {
     $boardId = isset($line['project_board_id']) && $line['project_board_id'] ? (int)$line['project_board_id'] : null;
     $itemId  = isset($line['project_item_id']) && $line['project_item_id'] ? (int)$line['project_item_id'] : null;
     if (!$boardId && !$itemId) {
+        $lines[$i]['project_board_id'] = null; // e.g. a non-numeric id: store no tag, not 0
+        $lines[$i]['project_item_id']  = null;
         continue;
     }
     if (!ProjectLink::boardBelongs($DB, $companyId, $boardId, $itemId)) {

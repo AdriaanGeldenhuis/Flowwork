@@ -54,6 +54,10 @@ try {
     if (!$opp) {
         throw new Exception('Opportunity not found');
     }
+    // Same rule as editing it (opportunity_update.php): an admin, or the opportunity's owner
+    if (crm_role_rank($role) < crm_role_rank('admin') && (int)$opp['owner_id'] !== $userId) {
+        throw new Exception('Only an admin or the opportunity owner can convert it');
+    }
 
     $existing = crm_opp_project($DB, $companyId, $oppId);
     if ($existing) {

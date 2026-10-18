@@ -25,6 +25,11 @@
     };
   }
 
+  // Escape text from the database before it goes into innerHTML.
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
   function formatCurrency(cents) {
     return 'R' + (cents / 100).toFixed(2);
   }
@@ -203,9 +208,9 @@
       preview.innerHTML = '<h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--fw-text-muted);">Parsed Items:</h4>' +
         items.map(item => `
           <div class="fw-shopping__preview-item">
-            <div class="fw-shopping__preview-item-qty">${item.qty}x</div>
-            <div class="fw-shopping__preview-item-name">${item.name}</div>
-            <div class="fw-shopping__preview-item-unit">${item.unit}</div>
+            <div class="fw-shopping__preview-item-qty">${esc(item.qty)}x</div>
+            <div class="fw-shopping__preview-item-name">${esc(item.name)}</div>
+            <div class="fw-shopping__preview-item-unit">${esc(item.unit)}</div>
           </div>
         `).join('');
     }
@@ -237,23 +242,23 @@
       }
 
       container.innerHTML = lists.map(list => {
-        const statusClass = 'fw-shopping__list-card-badge--' + list.status;
+        const statusClass = 'fw-shopping__list-card-badge--' + esc(list.status);
         return `
-          <a href="/shopping/list.php?id=${list.id}" class="fw-shopping__list-card">
+          <a href="/shopping/list.php?id=${encodeURIComponent(list.id)}" class="fw-shopping__list-card">
             <div class="fw-shopping__list-card-header">
-              <h3 class="fw-shopping__list-card-title">${list.name}</h3>
-              <span class="fw-shopping__list-card-badge ${statusClass}">${list.status}</span>
+              <h3 class="fw-shopping__list-card-title">${esc(list.name)}</h3>
+              <span class="fw-shopping__list-card-badge ${statusClass}">${esc(list.status)}</span>
             </div>
             <div class="fw-shopping__list-card-meta">
-              ${list.purpose} • Created ${list.created_at}
+              ${esc(list.purpose)} • Created ${esc(list.created_at)}
             </div>
             <div class="fw-shopping__list-card-stats">
               <div class="fw-shopping__list-stat">
-                <div class="fw-shopping__list-stat-value">${list.item_count}</div>
+                <div class="fw-shopping__list-stat-value">${esc(list.item_count)}</div>
                 <div class="fw-shopping__list-stat-label">Items</div>
               </div>
               <div class="fw-shopping__list-stat">
-                <div class="fw-shopping__list-stat-value">${list.bought_count}</div>
+                <div class="fw-shopping__list-stat-value">${esc(list.bought_count)}</div>
                 <div class="fw-shopping__list-stat-label">Bought</div>
               </div>
               <div class="fw-shopping__list-stat">
@@ -280,13 +285,14 @@ window.ShoppingListPage = {
   },
 
   loadItems: async function() {
-    const result = await apiCall('/shopping/ajax/list_get.php', { 
+    const result = await apiCall('/shopping/ajax/list_get.php', {
+      mode: 'single',
       list_id: this.listId,
-      include_items: true 
+      include_items: true
     });
 
     if (result.ok) {
-      this.renderItems(result.items);
+      this.renderItems(result.items || []);
     } else {
       showToast(result.error || 'Failed to load items', 'error');
     }
@@ -304,33 +310,34 @@ window.ShoppingListPage = {
     tbody.innerHTML = items.map(item => {
       const rowClass = item.status === 'bought' ? 'fw-shopping__item-row--bought' : '';
       const checked = item.status === 'bought' ? 'checked' : '';
-      const priorityClass = 'fw-shopping__item-priority--' + item.priority;
+      const priorityClass = 'fw-shopping__item-priority--' + esc(item.priority);
+      const id = Number(item.id);
       
       return `
-        <tr class="${rowClass}" data-item-id="${item.id}">
+        <tr class="${rowClass}" data-item-id="${id}">
           <td>
             <input type="checkbox" 
                    class="fw-shopping__item-checkbox" 
                    ${checked} 
-                   onchange="ShoppingListPage.toggleCheck(${item.id}, this.checked)">
+                   onchange="ShoppingListPage.toggleCheck(${id}, this.checked)">
           </td>
           <td>
-            <div class="fw-shopping__item-name">${item.name_raw}</div>
-            ${item.notes ? '<div class="fw-shopping__item-notes">' + item.notes + '</div>' : ''}
+            <div class="fw-shopping__item-name">${esc(item.name_raw)}</div>
+            ${item.notes ? '<div class="fw-shopping__item-notes">' + esc(item.notes) + '</div>' : ''}
           </td>
-          <td class="fw-shopping__item-qty">${item.qty} ${item.unit}</td>
+          <td class="fw-shopping__item-qty">${esc(item.qty)} ${esc(item.unit)}</td>
           <td><span class="fw-shopping__item-priority ${priorityClass}"></span></td>
-          <td>${item.needed_by || '-'}</td>
-          <td>${item.project_name || '-'}</td>
+          <td>${esc(item.needed_by || '-')}</td>
+          <td>${esc(item.project_name || '-')}</td>
           <td>
             <div class="fw-shopping__item-actions">
-              <button class="fw-shopping__item-btn" onclick="ShoppingListPage.findStores(${item.id})" title="Find stores">
+              <button class="fw-shopping__item-btn" onclick="ShoppingListPage.findStores(${id})" title="Find stores">
                 🔍
               </button>
-              <button class="fw-shopping__item-btn" onclick="ShoppingListPage.editItem(${item.id})" title="Edit">
+              <button class="fw-shopping__item-btn" onclick="ShoppingListPage.editItem(${id})" title="Edit">
                 ✏️
               </button>
-              <button class="fw-shopping__item-btn" onclick="ShoppingListPage.deleteItem(${item.id})" title="Delete">
+              <button class="fw-shopping__item-btn" onclick="ShoppingListPage.deleteItem(${id})" title="Delete">
                 🗑️
               </button>
             </div>
@@ -401,10 +408,10 @@ window.ShoppingListPage = {
       <div class="fw-shopping__store-card">
         <div class="fw-shopping__store-card-header">
           <div>
-            <h4 class="fw-shopping__store-name">${c.store_name}</h4>
+            <h4 class="fw-shopping__store-name">${esc(c.store_name)}</h4>
             <div class="fw-shopping__store-details">
-              ${c.distance_km ? c.distance_km + ' km away' : ''} 
-              ${c.address ? (c.distance_km ? ' • ' : '') + c.address : ''}
+              ${c.distance_km ? esc(c.distance_km) + ' km away' : ''}
+              ${c.address ? (c.distance_km ? ' • ' : '') + esc(c.address) : ''}
             </div>
           </div>
           <div class="fw-shopping__store-score">${c.score.toFixed(1)}</div>

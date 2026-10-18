@@ -19,15 +19,14 @@ if ($lock && !flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0); // the previous run is still busy
 }
 
-// Each call handles up to 400 items and marks them; repeat while a call still
-// sends something (items left over then go out on the next run).
+// Each call handles up to 400 items and marks them; repeat while a call had a
+// full batch (more may be waiting) and there is time left.
 $deadline = microtime(true) + 50;
 $sent = 0;
 try {
     do {
-        $n = ProjectNotify::sendDueReminders($DB);
-        $sent += $n;
-    } while ($n > 0 && microtime(true) < $deadline);
+        $sent += ProjectNotify::sendDueReminders($DB, 400, $processed);
+    } while ($processed >= 400 && microtime(true) < $deadline);
 } catch (Throwable $e) {
     error_log('[project reminders] ' . $e->getMessage());
     echo date('c') . ' project reminders failed: ' . $e->getMessage() . "\n";

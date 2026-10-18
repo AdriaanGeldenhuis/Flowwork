@@ -123,7 +123,7 @@ final class CalendarLink
         }
         // Tasks: the item's due date (the engine's mirror of the board's date or
         // timeline column), on boards the user can open (board members see only theirs).
-        $st = $db->prepare("SELECT i.id, i.title, i.due_date, i.board_id, b.title AS board_title FROM board_items i
+        $st = $db->prepare("SELECT i.id, i.title, i.due_date, i.board_id, i.progress, b.title AS board_title FROM board_items i
                               JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
                              WHERE b.project_id = ? AND i.company_id = ? AND (i.archived = 0 OR i.archived IS NULL)
                                AND (b.archived = 0 OR b.archived IS NULL) AND i.due_date BETWEEN ? AND ?
@@ -136,7 +136,7 @@ final class CalendarLink
             if (!($boards[$bid] ??= $pr->boardLevel($bid) > 0)) continue;
             $d = substr((string)$t['due_date'], 0, 10);
             $items[] = ['key' => 'item:' . $t['id'], 'source' => 'tasks', 'title' => $t['title'], 'sub' => $t['board_title'],
-                        'start' => $d, 'end' => $d, 'url' => ProjectLink::itemUrl($bid, (int)$t['id'])];
+                        'start' => $d, 'end' => $d, 'url' => ProjectLink::itemUrl($bid, (int)$t['id']), 'done' => (int)$t['progress'] >= 100];
         }
         return ['events' => $events, 'items' => $items];
     }
