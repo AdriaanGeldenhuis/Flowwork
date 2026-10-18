@@ -7,11 +7,14 @@
  * Two entry points:
  *  - runForCompany(): the full sweep, used by qi/cron/backfill_flowdrive.php
  *    (CLI for all companies, browser for the admin's own company).
- *  - autoRunOnce(): self-healing hook called from the QI dashboard endpoints —
- *    runs the sweep the FIRST time the dashboard is opened after deployment
- *    (guarded by a company_settings flag + GET_LOCK) and is a single cheap
- *    SELECT afterwards. This removes the "someone must remember to run the
- *    backfill" operational step: the drive populates itself.
+ *  - autoRunOnce(): self-healing hook called from page loads (home, Quotes &
+ *    Invoices). The first time, it publishes the company's documents in
+ *    slices of a few seconds per page load — each load resumes where the
+ *    previous one stopped (guarded by a company_settings cursor + GET_LOCK) —
+ *    until everything is in; after that it is a cheap SELECT, plus a daily
+ *    sweep of changed documents that is bounded the same way. This removes the
+ *    "someone must remember to run the backfill" operational step without
+ *    ever holding a page up for long.
  *
  * Everything is best-effort and never throws.
  */
@@ -22,8 +25,10 @@ require_once __DIR__ . '/../../qi/services/DocumentPdfService.php';
 
 class FlowDriveBackfill
 {
-    const DONE_FLAG  = 'flowdrive_backfill_done';
-    const SWEEP_FLAG = 'flowdrive_last_sweep';
+    const DONE_FLAG    = 'flowdrive_backfill_done';
+    const CURSOR_FLAG  = 'flowdrive_backfill_cursor';
+    const SWEEP_FLAG   = 'flowdrive_last_sweep';
+    const SWEEP_CURSOR = 'flowdrive_sweep_cursor';
 
     /** How often the self-healing sweep may run per company. */
     const SWEEP_INTERVAL_SECONDS = 86400; // 24h
@@ -31,14 +36,42 @@ class FlowDriveBackfill
     /** Upper bound of documents a single sweep will re-publish. */
     const SWEEP_LIMIT = 100;
 
+    /** Seconds one page load may spend publishing (first backfill or daily sweep). */
+    const PAGE_BUDGET_SECONDS = 2.5;
+
+    /** Rows read per query while backfilling (keeps memory flat on large companies). */
+    const BATCH = 500;
+
     /**
      * Publish everything the company already has. Returns
-     * ['ok' => n, 'fail' => n]. $out receives human-readable progress lines.
+     * ['ok' => n, 'fail' => n, 'complete' => bool, 'since' => ?string].
+     * $out receives human-readable progress lines.
+     *
+     * Without a deadline (CLI / browser backfill) everything is done in one
+     * go. With one (page loads) it stops once the deadline has passed — after
+     * at least one document — remembers per source the last id it published,
+     * and the next call carries on from there. Only reaching the end marks the
+     * backfill done; 'since' is when the backfill began (the daily sweep's
+     * starting point).
      */
-    public static function runForCompany(PDO $db, int $companyId, ?callable $out = null): array
+    public static function runForCompany(PDO $db, int $companyId, ?callable $out = null, ?float $deadline = null): array
     {
         $out = $out ?: function (string $line) {};
-        $counts = ['ok' => 0, 'fail' => 0];
+        $counts = ['ok' => 0, 'fail' => 0, 'complete' => false, 'since' => null];
+
+        $cursor = $deadline !== null ? self::loadCursor($db, $companyId) : [];
+        if (empty($cursor['since'])) {
+            $cursor['since'] = self::dbNow($db);
+        }
+        $published = 0;
+        $outOfTime = function () use (&$published, $deadline): bool {
+            return $deadline !== null && $published > 0 && microtime(true) >= $deadline;
+        };
+        $pause = function () use ($db, $companyId, &$cursor, &$counts): array {
+            self::setSetting($db, $companyId, self::CURSOR_FLAG, (string)json_encode($cursor));
+            $counts['since'] = $cursor['since'];
+            return $counts;
+        };
 
         $docSets = [
             ['type' => 'invoice',     'table' => 'invoices',     'number' => 'invoice_number'],
@@ -47,98 +80,118 @@ class FlowDriveBackfill
         ];
 
         foreach ($docSets as $set) {
-            $where = "company_id = ?";
+            $where = "company_id = ? AND id > ?";
             if (self::hasColumn($db, $set['table'], 'deleted_at')) {
                 $where .= " AND deleted_at IS NULL";
             }
-            try {
-                $stmt = $db->prepare("SELECT id, {$set['number']} AS number FROM {$set['table']} WHERE $where ORDER BY id");
-                $stmt->execute([$companyId]);
-                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            } catch (Throwable $e) {
-                $out("  {$set['table']}: skipped (" . $e->getMessage() . ")");
-                continue;
-            }
-
-            foreach ($rows as $row) {
-                $r = DocumentPdfService::generateAndFile($db, $companyId, $set['type'], (int)$row['id']);
-                if ($r !== null) {
-                    $counts['ok']++;
-                    $out("  {$set['type']} {$row['number']}: OK");
-                } else {
-                    $counts['fail']++;
-                    $out("  {$set['type']} {$row['number']}: FAILED (see error log)");
+            do {
+                try {
+                    $stmt = $db->prepare("SELECT id, {$set['number']} AS number FROM {$set['table']} WHERE $where ORDER BY id LIMIT " . self::BATCH);
+                    $stmt->execute([$companyId, (int)($cursor[$set['type']] ?? 0)]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } catch (Throwable $e) {
+                    $out("  {$set['table']}: skipped (" . $e->getMessage() . ")");
+                    break;
                 }
-            }
+
+                foreach ($rows as $row) {
+                    if ($outOfTime()) {
+                        return $pause();
+                    }
+                    $r = DocumentPdfService::generateAndFile($db, $companyId, $set['type'], (int)$row['id']);
+                    if ($r !== null) {
+                        $counts['ok']++;
+                        $out("  {$set['type']} {$row['number']}: OK");
+                    } else {
+                        $counts['fail']++;
+                        $out("  {$set['type']} {$row['number']}: FAILED (see error log)");
+                    }
+                    $cursor[$set['type']] = (int)$row['id'];
+                    $published++;
+                }
+            } while (count($rows) === self::BATCH);
         }
 
         // Existing compliance uploads → {Account}/Documents
-        try {
-            $stmt = $db->prepare(
-                "SELECT id, account_id, type_id, reference_no, file_path
-                   FROM crm_compliance_docs
-                  WHERE company_id = ? AND file_path IS NOT NULL AND file_path <> ''"
-            );
-            $stmt->execute([$companyId]);
-            $docs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (Throwable $e) {
-            $docs = [];
-            $out("  compliance docs: skipped (" . $e->getMessage() . ")");
-        }
-
         $appRoot = dirname(__DIR__, 2);
-        foreach ($docs as $doc) {
-            $rel = ltrim((string)$doc['file_path'], '/');
-            $abs = $appRoot . '/' . $rel;
-            if (!is_file($abs)) {
-                // Rescue: the supplier-portal uploader used to climb one
-                // directory too high (see portal/supplier/upload_compliance.php),
-                // stranding files one level ABOVE the app root. If the file is
-                // there, re-home it to the recorded path.
-                $stranded = dirname($appRoot) . '/' . $rel;
-                if (is_file($stranded)) {
-                    $dir = dirname($abs);
-                    if (!is_dir($dir)) {
-                        @mkdir($dir, 0775, true);
-                    }
-                    if (@copy($stranded, $abs)) {
-                        $out("  compliance doc #{$doc['id']}: rescued stranded file into /$rel");
+        do {
+            try {
+                $stmt = $db->prepare(
+                    "SELECT id, account_id, type_id, reference_no, file_path
+                       FROM crm_compliance_docs
+                      WHERE company_id = ? AND id > ? AND file_path IS NOT NULL AND file_path <> ''
+                      ORDER BY id LIMIT " . self::BATCH
+                );
+                $stmt->execute([$companyId, (int)($cursor['compliance'] ?? 0)]);
+                $docs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $docs = [];
+                $out("  compliance docs: skipped (" . $e->getMessage() . ")");
+            }
+
+            foreach ($docs as $doc) {
+                if ($outOfTime()) {
+                    return $pause();
+                }
+                $rel = ltrim((string)$doc['file_path'], '/');
+                $abs = $appRoot . '/' . $rel;
+                if (!is_file($abs)) {
+                    // Rescue: the supplier-portal uploader used to climb one
+                    // directory too high (see portal/supplier/upload_compliance.php),
+                    // stranding files one level ABOVE the app root. If the file is
+                    // there, re-home it to the recorded path.
+                    $stranded = dirname($appRoot) . '/' . $rel;
+                    if (is_file($stranded)) {
+                        $dir = dirname($abs);
+                        if (!is_dir($dir)) {
+                            @mkdir($dir, 0775, true);
+                        }
+                        if (@copy($stranded, $abs)) {
+                            $out("  compliance doc #{$doc['id']}: rescued stranded file into /$rel");
+                        }
                     }
                 }
+                $nodeId = FlowDriveSync::fileComplianceDoc(
+                    $db,
+                    $companyId,
+                    (int)$doc['account_id'],
+                    (int)$doc['type_id'],
+                    (string)($doc['reference_no'] ?? ''),
+                    $abs,
+                    null,
+                    (int)$doc['id']
+                );
+                if ($nodeId !== null) {
+                    $counts['ok']++;
+                    $out("  compliance doc #{$doc['id']}: OK");
+                } else {
+                    $counts['fail']++;
+                    $out("  compliance doc #{$doc['id']}: FAILED (file missing or drive unavailable)");
+                }
+                $cursor['compliance'] = (int)$doc['id'];
+                $published++;
             }
-            $nodeId = FlowDriveSync::fileComplianceDoc(
-                $db,
-                $companyId,
-                (int)$doc['account_id'],
-                (int)$doc['type_id'],
-                (string)($doc['reference_no'] ?? ''),
-                $abs,
-                null,
-                (int)$doc['id']
-            );
-            if ($nodeId !== null) {
-                $counts['ok']++;
-                $out("  compliance doc #{$doc['id']}: OK");
-            } else {
-                $counts['fail']++;
-                $out("  compliance doc #{$doc['id']}: FAILED (file missing or drive unavailable)");
-            }
-        }
+        } while (count($docs) === self::BATCH);
 
         self::hideLegacySkeleton($db, $companyId, $out);
         self::markDone($db, $companyId);
+        self::setSetting($db, $companyId, self::CURSOR_FLAG, '');
 
+        $counts['complete'] = true;
+        $counts['since'] = $cursor['since'];
         return $counts;
     }
 
     /**
-     * Self-heal entry point called on dashboard page loads:
-     *  - first call ever for a company → full backfill;
+     * Self-heal entry point called on page loads:
+     *  - until the first backfill is complete → the next slice of it
+     *    (at most PAGE_BUDGET_SECONDS of publishing per load);
      *  - thereafter, at most once a day → light sweep that re-publishes
      *    documents whose rows changed since the last sweep (catches anything
-     *    a lifecycle hook missed, e.g. a failure mid-webhook).
+     *    a lifecycle hook missed, e.g. a failure mid-webhook), equally bounded.
      * Cheap on every other load (two flag SELECTs). Never throws.
-     * Returns 'ran' | 'swept' | 'skipped' | 'unavailable' (for tests/logging).
+     * Returns 'ran' | 'partial' | 'swept' | 'skipped' | 'unavailable'
+     * (for tests/logging).
      */
     public static function autoRunOnce(PDO $db, int $companyId): string
     {
@@ -161,8 +214,14 @@ class FlowDriveBackfill
                 if (self::isDone($db, $companyId)) {
                     return 'skipped';
                 }
-                self::runForCompany($db, $companyId);
-                self::setSetting($db, $companyId, self::SWEEP_FLAG, self::dbNow($db));
+                $res = self::runForCompany($db, $companyId, null, microtime(true) + self::PAGE_BUDGET_SECONDS);
+                if (empty($res['complete'])) {
+                    return 'partial';
+                }
+                // The first sweep looks back to when the backfill began, so a
+                // document changed while it ran over several page loads is
+                // still caught.
+                self::setSetting($db, $companyId, self::SWEEP_FLAG, (string)($res['since'] ?: self::dbNow($db)));
                 return 'ran';
             } finally {
                 try {
@@ -200,6 +259,13 @@ class FlowDriveBackfill
             if ($last !== null && (time() - strtotime($last)) < self::SWEEP_INTERVAL_SECONDS) {
                 return 'skipped';
             }
+            // Where an unfinished sweep stopped inside the second it was
+            // stamped with ("<stamp>|<source>:<id>"); it only applies to that stamp.
+            $after = '';
+            $saved = (string)self::getSetting($db, $companyId, self::SWEEP_CURSOR);
+            if ($last !== null && $saved !== '' && strpos($saved, $last . '|') === 0) {
+                $after = substr($saved, strlen($last) + 1);
+            }
             // Stamp first so a failing sweep cannot retry-storm on every load.
             // The stamp uses the DATABASE clock: it is compared against
             // updated_at values MySQL wrote with NOW(), so both sides of the
@@ -207,15 +273,20 @@ class FlowDriveBackfill
             $now = self::dbNow($db);
             self::setSetting($db, $companyId, self::SWEEP_FLAG, $now);
             $since = $last ?: date('Y-m-d H:i:s', strtotime($now) - 7 * 86400);
-            $res = self::sweepForCompany($db, $companyId, $since);
+            $res = self::sweepForCompany($db, $companyId, $since, microtime(true) + self::PAGE_BUDGET_SECONDS, $after);
             // If the budget ran out, roll the stamp back to the newest
-            // updated_at actually processed: the overflow stays inside the
-            // window (>= is inclusive) and the aged stamp lets the very next
-            // page load continue draining instead of waiting a day — without
-            // this, documents beyond the budget would fall out of the window
-            // forever, since publishing preserves updated_at.
+            // updated_at actually processed and remember the last document
+            // published at that exact time: the overflow stays inside the
+            // window, the aged stamp lets a later page load continue draining,
+            // and documents sharing one updated_at (a bulk update) are worked
+            // through instead of the same first ones being redone forever.
+            // Without this, documents beyond the budget would fall out of the
+            // window for good, since publishing preserves updated_at.
             if (!empty($res['exhausted']) && !empty($res['max_updated'])) {
                 self::setSetting($db, $companyId, self::SWEEP_FLAG, $res['max_updated']);
+                self::setSetting($db, $companyId, self::SWEEP_CURSOR, $res['max_updated'] . '|' . $res['cursor']);
+            } else {
+                self::setSetting($db, $companyId, self::SWEEP_CURSOR, '');
             }
             return 'swept';
         } finally {
@@ -230,17 +301,39 @@ class FlowDriveBackfill
 
     /**
      * Re-publish every document whose row changed since $since. Candidates
-     * from all sources are gathered and processed OLDEST-FIRST across one
-     * shared budget (no source can starve another), and the caller learns
-     * whether the budget ran out and how far the sweep actually got
-     * ('max_updated'), so the window is only advanced past work really done.
+     * from all sources are gathered and processed OLDEST-FIRST — ordered by
+     * (updated_at, source, id) — across one shared budget (no source can
+     * starve another), and the caller learns whether the budget (count or
+     * $deadline) ran out and how far the sweep actually got ('max_updated' and
+     * 'cursor' = "<source>:<id>" of the last document), so the window is only
+     * advanced past work really done. $after is such a cursor from a previous
+     * unfinished sweep whose stamp equals $since: the documents up to it are
+     * not redone.
      *
-     * @return array{ok:int, fail:int, exhausted:bool, max_updated:?string}
+     * @return array{ok:int, fail:int, exhausted:bool, max_updated:?string, cursor:?string}
      */
-    public static function sweepForCompany(PDO $db, int $companyId, string $since): array
+    public static function sweepForCompany(PDO $db, int $companyId, string $since, ?float $deadline = null, string $after = ''): array
     {
-        $counts = ['ok' => 0, 'fail' => 0, 'exhausted' => false, 'max_updated' => null];
+        $counts = ['ok' => 0, 'fail' => 0, 'exhausted' => false, 'max_updated' => null, 'cursor' => null];
         $fetch = self::SWEEP_LIMIT + 1; // +1 per source so overflow is detectable
+
+        $afterPos = -1;
+        $afterId = 0;
+        if (preg_match('/^(\d):(\d+)$/', $after, $m)) {
+            $afterPos = (int)$m[1];
+            $afterId = (int)$m[2];
+        }
+        // Sources before the cursor's are done for the second $since; the
+        // cursor's own source continues after its id; later ones start at $since.
+        $window = static function (int $pos) use ($since, $afterPos, $afterId): array {
+            if ($afterPos < 0 || $pos > $afterPos) {
+                return ['updated_at >= ?', [$since]];
+            }
+            if ($pos < $afterPos) {
+                return ['updated_at > ?', [$since]];
+            }
+            return ['(updated_at > ? OR (updated_at = ? AND id > ?))', [$since, $since, $afterId]];
+        };
 
         $candidates = [];
         $docSets = [
@@ -248,43 +341,52 @@ class FlowDriveBackfill
             ['type' => 'quote',       'table' => 'quotes'],
             ['type' => 'credit_note', 'table' => 'credit_notes'],
         ];
-        foreach ($docSets as $set) {
-            $where = "company_id = ? AND updated_at >= ?";
+        foreach ($docSets as $pos => $set) {
+            [$cond, $params] = $window($pos);
+            $where = "company_id = ? AND $cond";
             if (self::hasColumn($db, $set['table'], 'deleted_at')) {
                 $where .= " AND deleted_at IS NULL";
             }
             try {
-                $stmt = $db->prepare("SELECT id, updated_at FROM {$set['table']} WHERE $where ORDER BY updated_at ASC LIMIT $fetch");
-                $stmt->execute([$companyId, $since]);
+                $stmt = $db->prepare("SELECT id, updated_at FROM {$set['table']} WHERE $where ORDER BY updated_at ASC, id ASC LIMIT $fetch");
+                $stmt->execute(array_merge([$companyId], $params));
                 foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                    $candidates[] = ['kind' => $set['type'], 'row' => $row, 'u' => (string)$row['updated_at']];
+                    $candidates[] = ['kind' => $set['type'], 'pos' => $pos, 'row' => $row, 'u' => (string)$row['updated_at']];
                 }
             } catch (Throwable $e) {
                 error_log('FlowDriveBackfill::sweep ' . $set['table'] . ': ' . $e->getMessage());
             }
         }
         try {
+            $pos = count($docSets);
+            [$cond, $params] = $window($pos);
             $stmt = $db->prepare(
                 "SELECT id, account_id, type_id, reference_no, file_path, updated_at
                    FROM crm_compliance_docs
-                  WHERE company_id = ? AND updated_at >= ?
+                  WHERE company_id = ? AND $cond
                     AND file_path IS NOT NULL AND file_path <> ''
-                  ORDER BY updated_at ASC LIMIT $fetch"
+                  ORDER BY updated_at ASC, id ASC LIMIT $fetch"
             );
-            $stmt->execute([$companyId, $since]);
+            $stmt->execute(array_merge([$companyId], $params));
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $candidates[] = ['kind' => 'compliance', 'row' => $row, 'u' => (string)$row['updated_at']];
+                $candidates[] = ['kind' => 'compliance', 'pos' => $pos, 'row' => $row, 'u' => (string)$row['updated_at']];
             }
         } catch (Throwable $e) {
             error_log('FlowDriveBackfill::sweep compliance: ' . $e->getMessage());
         }
 
-        usort($candidates, static function (array $a, array $b) { return strcmp($a['u'], $b['u']); });
-        $counts['exhausted'] = count($candidates) > self::SWEEP_LIMIT;
-        $candidates = array_slice($candidates, 0, self::SWEEP_LIMIT);
+        usort($candidates, static function (array $a, array $b) {
+            $c = strcmp($a['u'], $b['u']);
+            return $c !== 0 ? $c : ([$a['pos'], (int)$a['row']['id']] <=> [$b['pos'], (int)$b['row']['id']]);
+        });
 
         $appRoot = dirname(__DIR__, 2);
+        $processed = 0;
         foreach ($candidates as $c) {
+            if ($processed >= self::SWEEP_LIMIT
+                || ($deadline !== null && $processed > 0 && microtime(true) >= $deadline)) {
+                break;
+            }
             if ($c['kind'] === 'compliance') {
                 $doc = $c['row'];
                 $abs = $appRoot . '/' . ltrim((string)$doc['file_path'], '/');
@@ -297,8 +399,11 @@ class FlowDriveBackfill
                 $r = DocumentPdfService::generateAndFile($db, $companyId, $c['kind'], (int)$c['row']['id']);
                 $counts[$r !== null ? 'ok' : 'fail']++;
             }
+            $processed++;
             $counts['max_updated'] = $c['u'];
+            $counts['cursor'] = $c['pos'] . ':' . (int)$c['row']['id'];
         }
+        $counts['exhausted'] = $processed < count($candidates);
 
         return $counts;
     }
@@ -313,6 +418,13 @@ class FlowDriveBackfill
     private static function markDone(PDO $db, int $companyId): void
     {
         self::setSetting($db, $companyId, self::DONE_FLAG, '1');
+    }
+
+    /** Where an unfinished page-load backfill stopped: ['since' => …, '<source>' => last id]. */
+    private static function loadCursor(PDO $db, int $companyId): array
+    {
+        $v = json_decode((string)self::getSetting($db, $companyId, self::CURSOR_FLAG), true);
+        return is_array($v) ? $v : [];
     }
 
     /** The database server's clock — the same source that writes updated_at. */

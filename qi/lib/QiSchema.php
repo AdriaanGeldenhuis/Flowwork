@@ -8,7 +8,8 @@
 //   - adds the new document columns (reference, notes to the customer, public
 //     invoice link, sent /
 //     viewed times, recurring link, Yoco checkout), credit-note line accounts,
-//     recurring currency / anchor day / auto-send, and the numbering + default
+//     recurring currency / anchor day / auto-send / last scheduled attempt, and
+//     the numbering + default
 //     settings on qi_settings,
 //   - gives quotes that never had one a public link token.
 // It never drops or retypes an existing column. Mirrors
@@ -17,7 +18,7 @@
 
 final class QiSchema
 {
-    public const SCHEMA_VERSION = '2026-10-18-1';
+    public const SCHEMA_VERSION = '2026-10-18-2';
 
     private static bool $done = false;
 
@@ -127,6 +128,7 @@ final class QiSchema
                 'anchor_day'         => "tinyint(3) unsigned DEFAULT NULL",
                 'auto_send'          => "tinyint(1) NOT NULL DEFAULT 0",
                 'payment_terms_days' => "int(11) DEFAULT NULL",
+                'last_attempt_at'    => "datetime DEFAULT NULL",
             ],
             'qi_settings' => [
                 'quote_prefix'        => "varchar(20) NOT NULL DEFAULT 'Q'",
@@ -170,13 +172,15 @@ final class QiSchema
 
     private static function backfill(PDO $db): void
     {
-        // Every quote gets a public link token (older code paths created quotes without one)
+        // Every quote gets a public link token (older code paths created quotes without one).
+        // updated_at is kept as it was: this is not a change to the document, and a
+        // bulk bump would make every old quote look edited today (lists, Drive sweep).
         $ids = $db->query("SELECT id FROM quotes WHERE public_token IS NULL OR public_token = '' LIMIT 5000")->fetchAll(PDO::FETCH_COLUMN);
-        $st = $db->prepare("UPDATE quotes SET public_token = ? WHERE id = ? AND (public_token IS NULL OR public_token = '')");
+        $st = $db->prepare("UPDATE quotes SET public_token = ?, updated_at = updated_at WHERE id = ? AND (public_token IS NULL OR public_token = '')");
         foreach ($ids as $id) $st->execute([bin2hex(random_bytes(16)), (int)$id]);
 
         // Recurring templates remember the day of the month they bill on
-        $db->exec("UPDATE recurring_invoices SET anchor_day = DAY(next_run_date)
+        $db->exec("UPDATE recurring_invoices SET anchor_day = DAY(next_run_date), updated_at = updated_at
                     WHERE anchor_day IS NULL AND next_run_date IS NOT NULL AND next_run_date > '1000-01-01'");
     }
 

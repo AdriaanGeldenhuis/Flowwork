@@ -20,7 +20,8 @@ $tables = [
     'fa_depreciation_lines', 'fa_depreciation_runs', 'gl_fixed_assets', 'fa_disposals',
     'gl_bank_transactions',
     'doc_sequences', 'qi_sequences',
-    // rows that hang off the documents above (Quotes & Invoices)
+    // Quotes & Invoices documents and the rows that hang off them
+    'quote_lines', 'quotes', 'recurring_invoice_lines', 'recurring_invoices', 'yoco_payment_events',
     'qi_line_headings', 'qi_activity', 'qi_email_log', 'payment_milestones', 'milestone_payments',
     'audit_log',
     'gl_budgets',

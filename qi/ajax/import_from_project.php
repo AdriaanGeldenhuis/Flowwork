@@ -44,27 +44,35 @@ try {
     $totalCol = null;
     $taxCol = null;
     $firstCol = null;
+    // Recognise columns by name. VAT is checked first ("VAT rate" is not a price),
+    // then price ("Unit price" is not a quantity), quantity, total, and the
+    // looser price words last.
+    $has = static function (string $name, array $words): bool {
+        foreach ($words as $w) {
+            if (strpos($name, $w) !== false) return true;
+        }
+        return false;
+    };
     foreach ($cols as $col) {
         $colId = (int)$col['column_id'];
         $colName = strtolower($col['name'] ?? '');
-        if ($firstCol === null) {
-            $firstCol = $colId;
-        }
-        if ($quantityCol === null && (strpos($colName, 'qty') !== false || strpos($colName, 'quantity') !== false)) {
-            $quantityCol = $colId;
-            continue;
-        }
-        if ($priceCol === null && (strpos($colName, 'price') !== false || strpos($colName, 'rate') !== false || strpos($colName, 'unit') !== false || strpos($colName, 'cost') !== false)) {
-            $priceCol = $colId;
-            continue;
-        }
-        if ($totalCol === null && (strpos($colName, 'total') !== false || strpos($colName, 'amount') !== false || strpos($colName, 'amt') !== false)) {
-            $totalCol = $colId;
-            continue;
-        }
-        if ($taxCol === null && (strpos($colName, 'tax') !== false || strpos($colName, 'vat') !== false)) {
+        if ($taxCol === null && $has($colName, ['tax', 'vat'])) {
             $taxCol = $colId;
-            continue;
+        } elseif ($priceCol === null && $has($colName, ['price'])) {
+            $priceCol = $colId;
+        } elseif ($quantityCol === null && $has($colName, ['qty', 'quantity', 'units', 'hours', 'hrs'])) {
+            $quantityCol = $colId;
+        } elseif ($totalCol === null && $has($colName, ['total', 'amount', 'amt'])) {
+            $totalCol = $colId;
+        } elseif ($priceCol === null && $has($colName, ['rate', 'cost', 'each', 'unit'])) {
+            $priceCol = $colId;
+        }
+    }
+    // no price or total column by name: the first other number column is the price
+    foreach ($cols as $col) {
+        if (!in_array((int)$col['column_id'], [$taxCol, $quantityCol, $priceCol, $totalCol], true)) {
+            $firstCol = (int)$col['column_id'];
+            break;
         }
     }
 
@@ -93,7 +101,7 @@ try {
     }
 
     // Fetch board items in board order (group position, then item position)
-    $stmtItems = $DB->prepare("SELECT id, group_id, title FROM board_items WHERE board_id = ? AND archived = 0 ORDER BY position ASC, id ASC");
+    $stmtItems = $DB->prepare("SELECT id, group_id, title FROM board_items WHERE board_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY position ASC, id ASC");
     $stmtItems->execute([$boardId]);
     $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
@@ -126,22 +134,9 @@ try {
         $values = $stmtVals->fetchAll(PDO::FETCH_ASSOC);
         $valMap = [];
         foreach ($values as $v) {
-            $colId = (int)$v['column_id'];
-            // Attempt to parse numeric value; some values may contain non-numeric characters
-            $num = null;
-            if (isset($v['value'])) {
-                // Remove any non-digit except dot and comma
-                $raw = $v['value'];
-                // replace comma decimal with dot
-                $raw = str_replace(',', '.', $raw);
-                // remove spaces and currency symbols
-                $raw = preg_replace('/[^0-9.\-]+/', '', $raw);
-                if (is_numeric($raw)) {
-                    $num = floatval($raw);
-                }
-            }
+            $num = isset($v['value']) ? qi_import_number((string)$v['value']) : null;
             if ($num !== null) {
-                $valMap[$colId] = $num;
+                $valMap[(int)$v['column_id']] = $num;
             }
         }
         // Determine quantity
@@ -157,9 +152,17 @@ try {
         if ($priceCol && isset($valMap[$priceCol])) {
             $unitPrice = $valMap[$priceCol];
         } elseif ($totalCol && isset($valMap[$totalCol])) {
-            // derive unit price from total / qty
-            $totalVal = $valMap[$totalCol];
-            $unitPrice = $qty > 0 ? ($totalVal / $qty) : $totalVal;
+            // derive the unit price from total / qty — unless that does not come
+            // out in whole cents: then one line for the total, so the document
+            // adds up to exactly what the board says
+            $totalC = (int)round($valMap[$totalCol] * 100);
+            $unitC = $qty > 0 ? (int)round($totalC / $qty) : $totalC;
+            if ($qty > 0 && (int)round($unitC * $qty) === $totalC) {
+                $unitPrice = $unitC / 100;
+            } else {
+                $unitPrice = $totalC / 100;
+                $qty = 1.0;
+            }
         } elseif ($firstCol && isset($valMap[$firstCol])) {
             $unitPrice = $valMap[$firstCol];
         }
@@ -203,4 +206,31 @@ try {
 } catch (Exception $e) {
     error_log('Import from project error: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'error' => 'Failed to import items']);
+}
+
+/**
+ * A number typed on a board: "1 250,50", "R1,250.50", "1.250.000", "15%".
+ * The last of "," / "." is the decimal mark when both appear; a single ","
+ * before exactly three digits groups thousands ("1,250" = 1250), otherwise it
+ * is the decimal comma ("12,5"); several of the same mark group thousands.
+ */
+function qi_import_number(string $raw): ?float
+{
+    $s = preg_replace('/[^0-9.,\-]+/', '', $raw) ?? '';
+    if ($s === '' || !preg_match('/\d/', $s)) return null;
+    $neg = str_starts_with($s, '-');
+    $s = str_replace('-', '', $s);
+    $lastDot = strrpos($s, '.');
+    $lastComma = strrpos($s, ',');
+    if ($lastDot !== false && $lastComma !== false) {
+        $dec = $lastDot > $lastComma ? '.' : ',';
+        $s = str_replace($dec === '.' ? ',' : '.', '', $s);
+        $s = str_replace(',', '.', $s);
+    } elseif ($lastComma !== false) {
+        $s = (substr_count($s, ',') > 1 || preg_match('/^\d{1,3},\d{3}$/', $s)) ? str_replace(',', '', $s) : str_replace(',', '.', $s);
+    } elseif ($lastDot !== false && substr_count($s, '.') > 1) {
+        $s = str_replace('.', '', $s);
+    }
+    if (!is_numeric($s)) return null;
+    return $neg ? -(float)$s : (float)$s;
 }

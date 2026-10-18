@@ -71,7 +71,9 @@ final class QiRecurring
                 // cron: re-check under the lock — a concurrent run may have generated it already
                 if ((string)$rec['next_run_date'] > $today) throw new RuntimeException('Not due yet');
             }
-            if ($end !== null && $end < $today) {
+            // the end date is the last day an invoice may fall due: a period that was due
+            // before it is still billed (even when the run comes late), nothing after it
+            if ($end !== null && (string)$rec['next_run_date'] > $end) {
                 $db->prepare("UPDATE recurring_invoices SET active = 0, updated_at = NOW() WHERE id = ?")->execute([$recurringId]);
                 $db->commit();
                 throw new RuntimeException('This recurring invoice ended on ' . $end . '.');
@@ -139,7 +141,8 @@ final class QiRecurring
             $headings = is_array($tpl['headings'] ?? null) ? $tpl['headings'] : [];
             LineHeadings::replace($db, $companyId, LineHeadings::TYPE_INVOICE, $invoiceId, $headings);
 
-            // the schedule moves on from the date that was due (or from today when run by hand ahead of time)
+            // the schedule moves on from the date that was due; a run by hand ahead of time
+            // is that date's invoice, sent early (the next one is a full period later)
             $anchor = $rec['anchor_day'] !== null ? (int)$rec['anchor_day'] : (int)date('j', strtotime((string)$rec['next_run_date']));
             $base = (string)$rec['next_run_date'];
             $next = self::catchUp(self::nextDate($base, (string)$rec['frequency'], (int)$rec['interval_count'], $anchor),
@@ -189,20 +192,33 @@ final class QiRecurring
     /**
      * Generate every template that is due (cron and the background tick), oldest
      * first, across companies. One template failing (no exchange rate, an invalid
-     * tax invoice) never stops the others; the failure is put on the template's
-     * timeline once a day so someone sees it.
-     * @return array{generated:int, failed:int}
+     * tax invoice) never stops the others: it is tried again at most once an
+     * hour (sooner when someone edits it or presses "Generate now"), so a pile
+     * of failing templates cannot hold up the ones behind them, and the failure
+     * is put on the template's timeline once a day so someone sees it.
+     * 'more' says that due templates were left for the next run.
+     * @return array{generated:int, failed:int, more:bool}
      */
     public static function runDue(PDO $db, int $limit = 50, ?float $deadline = null): array
     {
+        $limit = max(1, min(500, $limit));
         $today = date('Y-m-d');
         $st = $db->prepare("SELECT id, company_id FROM recurring_invoices
                              WHERE active = 1 AND next_run_date <= ? AND (end_date IS NULL OR end_date < '1000-01-02' OR end_date >= next_run_date)
-                             ORDER BY next_run_date, id LIMIT " . max(1, min(500, $limit)));
+                               AND (last_attempt_at IS NULL OR last_attempt_at < DATE_SUB(NOW(), INTERVAL 1 HOUR))
+                             ORDER BY next_run_date, id LIMIT " . $limit);
         $st->execute([$today]);
-        $done = ['generated' => 0, 'failed' => 0];
-        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            if ($deadline !== null && microtime(true) > $deadline) break;
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        $done = ['generated' => 0, 'failed' => 0, 'more' => count($rows) === $limit];
+        $attempt = $db->prepare("UPDATE recurring_invoices SET last_attempt_at = NOW(), updated_at = updated_at WHERE id = ?");
+        foreach ($rows as $i => $r) {
+            if ($deadline !== null && $i > 0 && microtime(true) > $deadline) {   // at least one per run
+                $done['more'] = true;
+                break;
+            }
+            // stamped first, outside the generation's transaction: a run that dies
+            // half-way does not retry the same template on every tick
+            $attempt->execute([(int)$r['id']]);
             try {
                 self::generate($db, (int)$r['company_id'], (int)$r['id'], null, false);
                 $done['generated']++;

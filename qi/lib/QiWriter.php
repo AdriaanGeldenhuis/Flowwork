@@ -508,7 +508,7 @@ final class QiWriter
 
         // A double-click (or a retried request) on "create" returns the first document
         $idem = $id === 0 ? self::claimKey($userId, (string)($in['client_key'] ?? '')) : null;
-        if ($idem && $idem['done']) {
+        if ($idem && $idem['done'] && self::replayable($db, $companyId, $type, $idem['done'])) {
             self::releaseKey($idem);
             return ['id' => (int)$idem['done']['id'], 'number' => (string)$idem['done']['number'], 'created' => false, 'replayed' => true,
                     'version' => '', 'lock' => ['level' => 'none', 'reason' => '', 'repost' => false], 'reposted' => false];
@@ -551,7 +551,7 @@ final class QiWriter
             if ($idem) self::releaseKey($idem);
             throw $e;
         }
-        if ($idem) self::releaseKey($idem, ['id' => $result['id'], 'number' => $result['number']]);
+        if ($idem) self::releaseKey($idem, ['id' => $result['id'], 'number' => $result['number'], 'company' => $companyId, 'type' => $type]);
 
         self::afterSave($db, $companyId, $userId, $type, $result['id']);
         return $result;
@@ -748,7 +748,7 @@ final class QiWriter
             $id = (int)$existing['id'];
             $db->prepare("UPDATE recurring_invoices SET customer_id = ?, frequency = ?, interval_count = ?, next_run_date = ?, end_date = ?, template_data = ?,
                                                         template_name = ?, terms = ?, notes = ?, currency = ?, anchor_day = ?, auto_send = ?,
-                                                        payment_terms_days = ?, updated_at = NOW()
+                                                        payment_terms_days = ?, last_attempt_at = NULL, updated_at = NOW()
                            WHERE id = ? AND company_id = ?")
                ->execute(array_merge($vals, [$id, $companyId]));
             $db->prepare("DELETE FROM recurring_invoice_lines WHERE recurring_invoice_id = ?")->execute([$id]);
@@ -943,6 +943,16 @@ final class QiWriter
         if (!flock($fh, LOCK_EX)) { fclose($fh); return null; }
         $done = json_decode((string)stream_get_contents($fh), true);
         return ['fh' => $fh, 'done' => is_array($done) && !empty($done['id']) ? $done : null];
+    }
+
+    /** A remembered create only counts while that document still exists, in this company, as this type. */
+    private static function replayable(PDO $db, int $companyId, string $type, array $done): bool
+    {
+        if ((int)($done['company'] ?? 0) !== $companyId || (string)($done['type'] ?? '') !== $type) return false;
+        $table = self::table($type);
+        $st = $db->prepare("SELECT 1 FROM `$table` WHERE id = ? AND company_id = ?");
+        $st->execute([(int)$done['id'], $companyId]);
+        return (bool)$st->fetchColumn();
     }
 
     private static function releaseKey(array $idem, ?array $done = null): void

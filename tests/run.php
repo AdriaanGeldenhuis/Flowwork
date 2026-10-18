@@ -1,7 +1,8 @@
 <?php
 /**
- * Finance test runner. Each tests/finance/test_*.php runs in its own PHP
- * subprocess against the flowwork_test database (see tests/db/setup.sh).
+ * Finance and Quotes & Invoices test runner. Each tests/finance/test_*.php and
+ * tests/qi/test_*.php runs in its own PHP subprocess against the
+ * flowwork_test database (see tests/db/setup.sh).
  * Transactional tables are reset before every test via tests/db/reset.php.
  *
  * Usage:  php tests/run.php [substring-filter]
@@ -9,7 +10,7 @@
 
 $root = __DIR__;
 $filter = $argv[1] ?? '';
-$files = glob($root . '/finance/test_*.php');
+$files = array_merge(glob($root . '/finance/test_*.php') ?: [], glob($root . '/qi/test_*.php') ?: []);
 sort($files);
 if ($filter !== '') {
     $files = array_values(array_filter($files, fn($f) => str_contains(basename($f), $filter)));
