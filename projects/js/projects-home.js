@@ -167,14 +167,14 @@
         <button class="icon-btn icon-btn--sm fwp-pcard__menu" type="button" data-menu="${p.id}" aria-label="Project actions">${icon('more-h', 'i--sm')}</button>
       </div>
       <div class="fwp-pcard__meta">${projectStatusPill(p.status)}${datesLine(p)}${p.site ? `<span title="${esc(p.site)}">${icon('pin')}${esc(p.site.split(',')[0])}</span>` : ''}</div>
-      <div class="fwp-pcard__prog"><span class="fwp-bar ${pct >= 100 ? 'is-done' : ''}" style="--p:${pct}%"><i></i></span><b>${pct}%</b></div>
+      <div class="fwp-pcard__prog"><span class="fwp-bar ${pct >= 100 ? 'is-done' : ''}" style="--p:${pct}%"><i></i></span><b>${pct}%</b><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></div>
       <div class="fwp-pcard__foot">${faces(p.members, 4, 'fwp-faces--sm')}<span class="grow"></span>
         <span class="fwp-pcard__stats"><span title="Boards"><b>${p.stats.boards}</b> boards</span><span title="Items"><b>${p.stats.items}</b> items</span>${p.stats.overdue ? `<span class="is-danger" title="Overdue items"><b>${p.stats.overdue}</b> late</span>` : ''}</span>
       </div></a>`;
   }
   function tableHTML(list) {
     const th = (k, l, num) => `<th data-sort="${k}" class="${num ? 'is-num' : ''} ${S.sort.key === k ? 'is-sorted' + (S.sort.asc ? ' is-asc' : '') : ''}">${l}</th>`;
-    return `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr>${th('name', 'Project')}${th('status', 'Status')}${th('client', 'Client')}<th>Manager</th>${th('progress', 'Progress')}${th('due', 'Due')}${th('overdue', 'Late', true)}${th('budget', 'Budget', true)}<th></th></tr></thead><tbody>
+    return `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr>${th('name', 'Project')}${th('status', 'Status')}${th('client', 'Client')}<th>Manager</th>${th('progress', 'Progress')}${th('due', 'Due')}${th('overdue', 'Late', true)}${th('budget', 'Budget', true)}<th></th><th></th></tr></thead><tbody>
       ${list.map((p) => `<tr data-href="${esc(p.url)}" data-pid="${p.id}">
         <td><div class="fwp-tbl__name">${monogram(p.name, p.color, 'fwp-mono--sm')}<div><b>${esc(p.name)}</b><small>${esc(p.number || '')}</small></div></div></td>
         <td>${projectStatusPill(p.status)}</td><td>${esc(p.client || '—')}</td>
@@ -183,7 +183,8 @@
         <td>${p.end ? `<span class="fwp-date ${OPEN.includes(p.status) && p.end < today() ? 'is-overdue' : ''}">${esc(fmtDate(p.end))}</span>` : '—'}</td>
         <td class="is-num">${p.stats.overdue ? `<b style="color:var(--danger)">${p.stats.overdue}</b>` : '<span class="fwp-muted">0</span>'}</td>
         <td class="is-num">${p.budget ? esc(fmtMoney(p.budget, { short: true })) : '—'}</td>
-        <td><button class="icon-btn icon-btn--sm" type="button" data-menu="${p.id}" aria-label="Project actions">${icon('more-h', 'i--sm')}</button></td></tr>`).join('')}
+        <td><button class="icon-btn icon-btn--sm" type="button" data-menu="${p.id}" aria-label="Project actions">${icon('more-h', 'i--sm')}</button></td>
+        <td class="fwp-tbl__go"><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></td></tr>`).join('')}
       </tbody></table></div>`;
   }
   function timelineHTML(list) {
@@ -205,7 +206,7 @@
         ${dated.map((p) => {
           const s = parseYmd(p.start || p.end), e = parseYmd(p.end || p.start);
           const left = pos(s), width = Math.max(1.2, pos(addDays(e, 1)) - left);
-          return `<div class="fwp-ptl__row" data-href="${esc(p.url)}"><div class="fwp-ptl__label">${monogram(p.name, p.color, 'fwp-mono--sm')}<b>${esc(p.name)}</b></div>
+          return `<div class="fwp-ptl__row" data-href="${esc(p.url)}"><div class="fwp-ptl__label">${monogram(p.name, p.color, 'fwp-mono--sm')}<b>${esc(p.name)}</b><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></div>
             <div class="fwp-ptl__track"><span class="fwp-ptl__bar" style="--c:${safeColor(p.color)};left:${left}%;width:${width}%;--p:${p.progress}%" title="${esc(fmtRange(p.start || p.end, p.end || p.start))} · ${p.progress}%"><i></i><span>${p.progress}%</span></span>
             ${t >= min && t <= end ? `<span class="fwp-ptl__today" style="left:${pos(t)}%"></span>` : ''}</div></div>`;
         }).join('')}
@@ -348,7 +349,7 @@
       <div class="fwp-mwrow__status">${it.status_column ? `<button class="fwp-cell is-editable fwp-cell--status" style="border:0;background:none;width:100%;height:44px;padding:5px 0" data-st="${it.id}" type="button" aria-label="Change status">${stBlock(it.status)}</button>` : stBlock(it.status)}</div>
       <div class="fwp-mwrow__main"><b>${esc(it.title)}</b><small><span class="fwp-dot" style="--c:${safeColor(it.color)};width:7px;height:7px"></span>${esc(it.project)}<i>›</i>${esc(it.board)}${it.group ? `<i>›</i>${esc(it.group)}` : ''}</small></div>
       <span class="fwp-date ${overdue ? 'is-overdue' : it.due === today() ? 'is-today' : ''}">${it.due ? icon('calendar') + esc(relDay(it.due)) : '<span class="fwp-muted">No date</span>'}</span>
-      <a class="icon-btn icon-btn--sm" href="${esc(it.url)}" aria-label="Open the item">${icon('chev-right', 'i--sm')}</a></div>`;
+      <a class="fwp-go" href="${esc(it.url)}" aria-label="Open ${esc(it.title)}">Open ${icon('chev-right')}</a></div>`;
   }
   function statusMenu(anchor, it) {
     popover(anchor, `<div class="fwp-pick fwp-pick--status"><div class="fwm-pop__title">${esc(it.board)}</div><div class="fwp-statuses">
