@@ -33,7 +33,8 @@ try {
     $boot = pr_boot_base($DB, $PR) + $data + [
         'project' => $PR->projectSummary($project, $stats[$projectId] ?? []) + ['level' => $PR->projectLevel($projectId)],
         'boards' => $PR->boardsOf($projectId),
-        'open' => ['item' => (int)($_GET['item'] ?? 0), 'tab' => (string)($_GET['open'] ?? ''), 'view' => (string)($_GET['view'] ?? ''), 'view_id' => (int)($_GET['view_id'] ?? 0)],
+        // Older notification links say open=comments; the panel calls them updates.
+        'open' => ['item' => (int)($_GET['item'] ?? 0), 'tab' => ($_GET['open'] ?? '') === 'comments' ? 'updates' : (string)($_GET['open'] ?? ''), 'view' => (string)($_GET['view'] ?? ''), 'view_id' => (int)($_GET['view_id'] ?? 0)],
         'automation' => ['triggers' => Automations::TRIGGERS, 'actions' => Automations::ACTIONS],
         'types' => Columns::TYPES,
     ];
