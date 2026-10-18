@@ -102,7 +102,7 @@
     const m = S.money;
     if (!m) return `<div class="fwp-hero__card" id="budgetCard"><span class="fwp-kpi__label">${icon('coins')}Budget</span><span class="fwp-kpi__value">${pr.budget ? esc(fmtMoney(pr.budget, { short: true })) : '—'}</span><span class="fwp-kpi__sub">Working out costs…</span></div>`;
     const used = m.budget_used;
-    return `<div class="fwp-hero__card" id="budgetCard" style="cursor:pointer" data-tab-go="money"><span class="fwp-kpi__label">${icon('coins')}Budget</span>
+    return `<div class="fwp-hero__card is-link" id="budgetCard" role="link" tabindex="0" aria-label="Open the Money tab" data-tab-go="money"><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span><span class="fwp-kpi__label">${icon('coins')}Budget</span>
       <span class="fwp-kpi__value">${m.budget ? esc(fmtMoney(m.actual_cost, { short: true })) : esc(fmtMoney(m.actual_cost, { short: true }))}<small>${m.budget ? 'of ' + esc(fmtMoney(m.budget, { short: true })) : 'spent'}</small></span>
       ${m.budget ? `<span class="fwp-bar ${used > 100 ? 'is-over' : ''}" style="--p:${Math.min(100, used || 0)}%"><i></i></span>` : ''}
       <span class="fwp-kpi__sub">${m.budget ? `${used}% used · ` : ''}${esc(fmtMoney(m.invoiced, { short: true }))} invoiced</span></div>`;
@@ -116,21 +116,22 @@
   function boardTile(b) {
     const bd = S.breakdown[b.id];
     const pct = b.items ? Math.round(b.done * 100 / b.items) : 0;
-    return `<a class="fwp-btile" href="${esc(b.url)}">
+    return `<a class="fwp-btile" href="${esc(b.url)}" aria-label="Open the board ${esc(b.title)}">
       <div class="fwp-btile__top"><span class="fwp-btile__icon">${icon(window.FWP.boardIcon(b))}</span>
-        <div style="min-width:0;flex:1"><b>${esc(b.title)}</b><small>${b.items} ${esc(b.item_noun)}${b.items === 1 ? '' : 's'} · ${pct}% done${bd && bd.overdue ? ` · <span style="color:var(--danger)">${bd.overdue} late</span>` : ''}</small></div></div>
+        <div style="min-width:0;flex:1"><b>${esc(b.title)}</b><small>${b.items} ${esc(b.item_noun)}${b.items === 1 ? '' : 's'} · ${pct}% done${bd && bd.overdue ? ` · <span style="color:var(--danger)">${bd.overdue} late</span>` : ''}</small></div>
+        <span class="fwp-go" aria-hidden="true">Open ${icon('chev-right')}</span></div>
       ${battery(bd, b.items)}</a>`;
   }
   function dueRow(d) {
     const dd = parseYmd(d.due);
     const late = d.due < today();
     return `<a class="fwp-due ${late ? 'is-overdue' : ''}" href="${esc(d.url)}"><span class="fwp-due__date"><b>${dd.getDate()}</b><small>${mon3(dd)}</small></span>
-      <span class="fwp-due__main"><b>${esc(d.title)}</b><small>${esc(d.board)} · ${late ? 'overdue' : esc(relDay(d.due))}</small></span>${faces(d.people, 2, 'fwp-faces--sm')}</a>`;
+      <span class="fwp-due__main"><b>${esc(d.title)}</b><small>${esc(d.board)} · ${late ? 'overdue' : esc(relDay(d.due))}</small></span><span class="fwp-due__end">${faces(d.people, 2, 'fwp-faces--sm')}<span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></span></a>`;
   }
   function eventRow(ev) {
     const d = parseDT(ev.start_datetime);
     return `<a class="fwp-due" href="${esc(ev.url)}"><span class="fwp-due__date"><b>${d.getDate()}</b><small>${mon3(d)}</small></span>
-      <span class="fwp-due__main"><b>${esc(ev.title)}</b><small>${ev.all_day ? 'All day' : window.FWP.pad(d.getHours()) + ':' + window.FWP.pad(d.getMinutes())} · ${esc(relDay(ymd(d)))}</small></span>${icon('chev-right')}</a>`;
+      <span class="fwp-due__main"><b>${esc(ev.title)}</b><small>${ev.all_day ? 'All day' : window.FWP.pad(d.getHours()) + ':' + window.FWP.pad(d.getMinutes())} · ${esc(relDay(ymd(d)))}</small></span><span class="fwp-due__end"><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></span></a>`;
   }
   function renderOverview() {
     const pr = p();
@@ -142,7 +143,7 @@
           <div class="fwp-hero__row">${ring(pr.progress, 64)}<div><span class="fwp-kpi__value" style="font-size:24px">${st.done}<small>of ${st.items} done</small></span><span class="fwp-kpi__sub">${st.overdue ? `<b style="color:var(--danger)">${st.overdue} overdue</b> · ` : ''}${st.week} due this week</span></div></div></div>
         ${timelineCard()}
         ${budgetCard()}
-        <div class="fwp-hero__card" style="cursor:pointer" data-tab-go="team"><span class="fwp-kpi__label">${icon('team')}Team</span>
+        <div class="fwp-hero__card is-link" role="link" tabindex="0" aria-label="Open the Team tab" data-tab-go="team"><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span><span class="fwp-kpi__label">${icon('team')}Team</span>
           <div class="fwp-hero__row">${faces(S.members.filter((m) => m.active !== false).map((m) => m.id), 5)}</div>
           <span class="fwp-kpi__sub">${S.members.length} member${S.members.length === 1 ? '' : 's'}${pr.manager_id ? ' · ' + esc(personName(pr.manager_id)) + ' manages' : ''}${pr.visibility === 'company' ? ' · open to the company' : ''}</span></div>
       </div>
@@ -222,7 +223,7 @@
       lastMonth = m;
       const late = r.kind === 'check-square' && !r.done && r.date < today();
       return `${hdr}<a class="fwp-due ${late ? 'is-overdue' : ''}" href="${esc(r.url)}" style="background:var(--glass-strong);margin-bottom:4px;box-shadow:var(--shadow-card)"><span class="fwp-due__date"><b>${d.getDate()}</b><small>${DOW[d.getDay()].slice(0, 3)}</small></span>
-        <span class="fwp-due__main"><b>${esc(r.title)}</b><small>${esc(r.sub)}</small></span>${icon(r.kind)}</a>`;
+        <span class="fwp-due__main"><b>${esc(r.title)}</b><small>${esc(r.sub)}</small></span><span class="fwp-due__end">${icon(r.kind)}<span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></span></a>`;
     }).join('');
   }
 
@@ -269,13 +270,13 @@
         <p class="hint" style="margin:8px 0 0">As entered on the boards. Shown beside the actual cost, not added to it — a receipt posted to a board is in both.</p></div>` : ''}
 
       <div class="fwp-sec"><h3>Invoices<small>${m.invoices.length}</small></h3><a class="btn btn--sm" href="${esc(qiNew('invoice'))}">${icon('plus')}New invoice</a></div>
-      ${m.invoices.length ? `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Status</th><th class="is-num">Excl. VAT</th><th class="is-num">Balance</th></tr></thead><tbody>
-        ${m.invoices.map((v) => `<tr data-href="${esc(v.url)}"><td><b>${esc(v.number)}</b></td><td>${esc(v.customer)}</td><td>${esc(fmtDate(v.date))}</td><td>${docStatus(v.status)}</td><td class="is-num">${esc(fmtMoney(v.subtotal))}</td><td class="is-num">${v.status === 'paid' ? '<span class="fwp-muted">Paid</span>' : esc(fmtMoney(v.balance || v.total))}</td></tr>`).join('')}</tbody></table></div>`
+      ${m.invoices.length ? `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Status</th><th class="is-num">Excl. VAT</th><th class="is-num">Balance</th><th></th></tr></thead><tbody>
+        ${m.invoices.map((v) => `<tr data-href="${esc(v.url)}"><td><b>${esc(v.number)}</b></td><td>${esc(v.customer)}</td><td>${esc(fmtDate(v.date))}</td><td>${docStatus(v.status)}</td><td class="is-num">${esc(fmtMoney(v.subtotal))}</td><td class="is-num">${v.status === 'paid' ? '<span class="fwp-muted">Paid</span>' : esc(fmtMoney(v.balance || v.total))}</td><td class="fwp-tbl__go"><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></td></tr>`).join('')}</tbody></table></div>`
         : `<div class="fwp-panelcard"><div class="fwp-panelcard__empty">No invoices on this project yet.</div></div>`}
 
       <div class="fwp-sec"><h3>Quotes<small>${m.quotes.length}</small></h3><a class="btn btn--sm" href="${esc(qiNew('quote'))}">${icon('plus')}New quote</a></div>
-      ${m.quotes.length ? `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Status</th><th class="is-num">Excl. VAT</th></tr></thead><tbody>
-        ${m.quotes.map((q) => `<tr data-href="${esc(q.url)}"><td><b>${esc(q.number)}</b></td><td>${esc(q.customer)}</td><td>${esc(fmtDate(q.date))}</td><td>${docStatus(q.status)}</td><td class="is-num">${esc(fmtMoney(q.subtotal))}</td></tr>`).join('')}</tbody></table></div>`
+      ${m.quotes.length ? `<div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Status</th><th class="is-num">Excl. VAT</th><th></th></tr></thead><tbody>
+        ${m.quotes.map((q) => `<tr data-href="${esc(q.url)}"><td><b>${esc(q.number)}</b></td><td>${esc(q.customer)}</td><td>${esc(fmtDate(q.date))}</td><td>${docStatus(q.status)}</td><td class="is-num">${esc(fmtMoney(q.subtotal))}</td><td class="fwp-tbl__go"><span class="fwp-go fwp-go--round" aria-hidden="true">${icon('chev-right')}</span></td></tr>`).join('')}</tbody></table></div>`
         : `<div class="fwp-panelcard"><div class="fwp-panelcard__empty">No quotes on this project yet.</div></div>`}
 
       <div class="fwp-sec"><h3>Costs recorded here<small>${esc(fmtMoney(m.manual_cost))}</small></h3>${canEdit() ? `<button class="btn btn--sm" type="button" data-act="cost">${icon('plus')}Add cost</button>` : ''}</div>
@@ -518,6 +519,11 @@
     }
     const href = t.closest('tr[data-href]');
     if (href && !t.closest('a, button')) location.href = href.dataset.href;
+  });
+  // The overview cards that open a tab are links for the keyboard too.
+  document.addEventListener('keydown', (e) => {
+    const tg = e.target.closest && e.target.closest('[data-tab-go][role="link"]');
+    if (tg && e.target === tg && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setTab(tg.dataset.tabGo); }
   });
   document.addEventListener('change', async (e) => {
     const r = e.target.closest('[data-role]');

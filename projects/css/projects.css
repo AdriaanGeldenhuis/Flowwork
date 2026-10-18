@@ -1058,6 +1058,42 @@ a.fwp-conn:hover { border-color: var(--gold-line); text-decoration: none; transf
 }
 @media (min-width: 821px) { .fwp-fab { display: none; } }
 
+/* ---------- Clickable things look clickable -------------------------------- */
+/* Whatever opens something carries the same sign: a gold "Open ›" pill (or a round › chip in tight
+   places) that fills in when its card, row or tile is hovered or focused. */
+.fwp-go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex: 0 0 auto; height: 26px; padding: 0 7px 0 12px; border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; color: var(--accent-ink); background: var(--gold-soft); text-decoration: none;
+  box-shadow: inset 0 0 0 1px var(--gold-line); transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.fwp-go svg.i { width: 14px; height: 14px; color: currentColor; transition: transform var(--t-fast); }
+.fwp-go--round { width: 28px; height: 28px; padding: 0; gap: 0; }
+.fwp-go--round svg.i { width: 15px; height: 15px; }
+.fwp-btile:not(.is-new):hover .fwp-go, .fwp-btile:focus-visible .fwp-go, .fwp-pcard:not(.is-new):hover .fwp-go, .fwp-pcard:focus-visible .fwp-go,
+.fwp-hero__card.is-link:hover .fwp-go, .fwp-hero__card.is-link:focus-visible .fwp-go, .fwp-due:hover .fwp-go, .fwp-due:focus-visible .fwp-go,
+.fwp-tbl tbody tr:hover .fwp-go, .fwp-mwrow:hover .fwp-go, .fwp-ptl__row:hover .fwp-go, a.fwp-go:hover, a.fwp-go:focus-visible {
+  background: var(--accent-grad); color: var(--on-accent); box-shadow: inset 0 0 0 1px rgba(216, 189, 138, 0.45), 0 6px 14px -8px var(--accent);
+}
+.fwp-btile:not(.is-new):hover .fwp-go svg.i, .fwp-btile:focus-visible .fwp-go svg.i, .fwp-pcard:not(.is-new):hover .fwp-go svg.i, .fwp-hero__card.is-link:hover .fwp-go svg.i,
+.fwp-due:hover .fwp-go svg.i, .fwp-tbl tbody tr:hover .fwp-go svg.i, .fwp-mwrow:hover .fwp-go svg.i, .fwp-ptl__row:hover .fwp-go svg.i, a.fwp-go:hover svg.i { transform: translateX(2px); }
+/* board tiles read as buttons: a firm edge at rest, gold on hover, a focus ring */
+.fwp-btile:not(.is-new) { box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-card); }
+.fwp-btile:not(.is-new):hover, .fwp-btile:not(.is-new):focus-visible { box-shadow: inset 0 0 0 1px var(--gold), var(--shadow-card), 0 20px 40px -30px rgba(70, 35, 25, 0.6); }
+.fwp-btile:focus-visible, .fwp-pcard:focus-visible, .fwp-hero__card.is-link:focus-visible, .fwp-due:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* the overview cards that open a tab */
+.fwp-hero__card.is-link { cursor: pointer; transition: transform var(--t), box-shadow var(--t); box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-card); }
+.fwp-hero__card.is-link:hover { transform: translateY(-2px); box-shadow: inset 0 0 0 1px var(--gold), var(--shadow-card), 0 20px 40px -30px rgba(70, 35, 25, 0.6); }
+.fwp-hero__card.is-link > .fwp-go { position: absolute; top: 12px; right: 12px; }
+/* rows: the chip sits at the end */
+.fwp-due__end { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-3); }
+.fwp-due__end > svg.i { width: 15px; height: 15px; color: var(--gold); }
+.fwp-tbl .fwp-tbl__go { width: 44px; padding-left: 0; text-align: right; }
+.fwp-pcard__prog .fwp-go { margin-left: 2px; }
+.fwp-ptl__label .fwp-go { margin-left: auto; width: 24px; height: 24px; }
+.fwp-mwrow > a.fwp-go { padding: 0 8px 0 12px; }
+.fwp-legend a { text-decoration: underline dotted var(--gold-line); text-underline-offset: 3px; }
+@media (hover: none) { .fwp-go { background: var(--gold-soft); } }
+
 @media print {
   .fwp-side, .fwp-tools, .fwp-head__actions, .fwp-panel, .fwm-fab, .fwp-bulk, .fwp-addrow, .fwp-addgroup, .fwp-th--add, .fwp-cell--add { display: none !important; }
   .fwp-view { overflow: visible !important; }
