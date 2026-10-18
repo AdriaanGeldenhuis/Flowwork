@@ -58,6 +58,29 @@ try {
     error_log('home calendar tile: ' . $e->getMessage());
 }
 
+// Projects tile: the user's open items ("2 overdue · 1 due today · 3 this week",
+// else "6 open items"), opening My work. Best-effort — the tile falls back to
+// its plain subtitle.
+$projectsSummary = '';
+$projectsHref = '/projects/';
+try {
+    require_once __DIR__ . '/projects/lib/autoload.php';
+    $work = ProjectLink::myWorkSummary($DB, $activeCompanyId, $userId, (string)($_SESSION['role'] ?? 'viewer'));
+    $parts = [];
+    if ($work['overdue']) $parts[] = $work['overdue'] . ' overdue';
+    if ($work['today']) $parts[] = $work['today'] . ' due today';
+    if ($work['week']) $parts[] = $work['week'] . ' this week';
+    if ($work['open']) {
+        if (!$parts) $parts[] = $work['open'] . ($work['open'] === 1 ? ' open item' : ' open items');
+        $projectsHref = '/projects/#mywork';
+    } elseif ($work['projects']) {
+        $parts[] = $work['projects'] . ($work['projects'] === 1 ? ' project' : ' projects') . ' · nothing assigned to you';
+    }
+    $projectsSummary = implode(' · ', $parts);
+} catch (Throwable $e) {
+    error_log('home projects tile: ' . $e->getMessage());
+}
+
 // Time-based greeting for the hero
 $hour = (int)date('G');
 $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'Good evening');
@@ -166,7 +189,7 @@ $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'G
             </div>
             <div class="fw-home__grid">
                 <!-- Projects -->
-                <a href="/projects/" class="fw-home__tile" data-accent="projects">
+                <a href="<?= htmlspecialchars($projectsHref) ?>" class="fw-home__tile" data-accent="projects">
                     <div class="fw-home__tile-inner">
                         <div class="fw-home__tile-icon">
                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -177,7 +200,7 @@ $dayGreeting = $hour < 12 ? 'Good morning' : ($hour < 17 ? 'Good afternoon' : 'G
                             </svg>
                         </div>
                         <h2 class="fw-home__tile-title">Projects & Boards (WORK OS)</h2>
-                        <p class="fw-home__tile-subtitle">Manage and track all projects</p>
+                        <p class="fw-home__tile-subtitle"><?= htmlspecialchars($projectsSummary !== '' ? $projectsSummary : 'Manage and track all projects') ?></p>
                     </div>
                 </a>
 

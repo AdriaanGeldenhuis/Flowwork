@@ -1,6 +1,6 @@
 <?php
 // GET /calendar/api/links.php?q=acme — records an event can be linked to
-// (projects, customers/suppliers, deals, invoices, quotes, tasks), filtered to
+// (projects, boards, tasks, customers/suppliers, deals, invoices, quotes), filtered to
 // what the user may open. GET ?type=crm_account&id=12 describes one record.
 require_once __DIR__ . '/_bootstrap.php';
 

@@ -80,3 +80,8 @@ storage/cron/
 # Calendar runtime data (event attachments, schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/calendar/
+
+# ---------------------------------------------------------------------------
+# Projects runtime data (item files, schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/projects/

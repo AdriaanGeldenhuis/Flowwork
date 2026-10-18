@@ -9,6 +9,7 @@ require_once __DIR__ . '/../lib/require_writer.php';
 require_once __DIR__ . '/../lib/SequenceAllocator.php';
 require_once __DIR__ . '/../lib/Currencies.php';
 require_once __DIR__ . '/../lib/LineHeadings.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -25,6 +26,13 @@ if (!$input || !is_array($input)) {
 // Basic validation
 if (empty($input['customer_id'])) {
     echo json_encode(['ok' => false, 'error' => 'Customer is required']);
+    exit;
+}
+
+// Project is optional, but must be one of this company's projects
+$input['project_id'] = (int)($input['project_id'] ?? 0) ?: null;
+if (!ProjectLink::belongs($DB, (int)$companyId, $input['project_id'])) {
+    echo json_encode(['ok' => false, 'error' => 'Project not found']);
     exit;
 }
 

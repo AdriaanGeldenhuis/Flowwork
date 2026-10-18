@@ -361,7 +361,7 @@
               <tbody>
                 ${allocation.projects.map(proj => `
                   <tr>
-                    <td>${proj.name}</td>
+                    <td>${this.escapeHtml(proj.name)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(proj.wage_cost)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(proj.employer_cost)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(proj.total_cost)}</td>
@@ -403,6 +403,12 @@
       }
 
       window.location.href = '/payroll/payslips.php?run_id=' + runId;
+    },
+
+    escapeHtml: function(text) {
+      const div = document.createElement('div');
+      div.textContent = text == null ? '' : String(text);
+      return div.innerHTML;
     },
 
     formatMoney: function(cents) {

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Currencies.php';
 require_once __DIR__ . '/lib/LineHeadings.php';
+require_once __DIR__ . '/lib/QiProjects.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -77,6 +78,17 @@ $stmt = $DB->prepare("SELECT * FROM companies WHERE id = ?");
 $stmt->execute([$companyId]);
 $company = $stmt->fetch();
 
+// New quote opened from Projects (?project_id=N[&customer_id=M]): preselect
+// the project (if the user can see it) and the customer (else its client)
+$prefill = $editMode ? ['project_id' => 0, 'customer_id' => 0, 'currency' => null]
+    : QiProjects::prefill($DB, (int)$companyId, (int)$userId, $_GET['project_id'] ?? 0, $_GET['customer_id'] ?? 0);
+$selectedCustomerId = $editMode ? (int)$quoteData['customer_id'] : $prefill['customer_id'];
+$selectedProjectId = $editMode ? (int)($quoteData['project_id'] ?? 0) : $prefill['project_id'];
+
+// Project dropdown: open projects the user can see, plus this quote's own
+// project (kept even if it has since been completed or archived)
+$projects = QiProjects::options($DB, (int)$companyId, (int)$userId, $selectedProjectId);
+
 // Load QI settings for defaults
 $stmt = $DB->prepare("SELECT * FROM qi_settings WHERE company_id = ? LIMIT 1");
 $stmt->execute([$companyId]);
@@ -120,7 +132,7 @@ if (!function_exists('qi_drag_handle')) {
 
 // Document currency: existing quote keeps its currency, new quotes use the company default
 $defaultCurrency = Currencies::isValid($qiSettings['default_currency'] ?? null) ? strtoupper($qiSettings['default_currency']) : Currencies::BASE;
-$docCurrency = $editMode ? (Currencies::isValid($quoteData['currency'] ?? null) ? strtoupper($quoteData['currency']) : Currencies::BASE) : $defaultCurrency;
+$docCurrency = $editMode ? (Currencies::isValid($quoteData['currency'] ?? null) ? strtoupper($quoteData['currency']) : Currencies::BASE) : ($prefill['currency'] ?? $defaultCurrency);
 $docRate = $editMode ? (float)($quoteData['exchange_rate'] ?? 1) : ($docCurrency === Currencies::BASE ? 1.0 : 0.0);
 $docSymbol = Currencies::symbol($docCurrency);
 ?>
@@ -185,7 +197,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                             $stmt = $DB->prepare("SELECT id, name, currency FROM crm_accounts WHERE company_id = ? ORDER BY name");
                             $stmt->execute([$companyId]);
                             while ($customer = $stmt->fetch()) {
-                                $selected = ($editMode && $quoteData['customer_id'] == $customer['id']) ? 'selected' : '';
+                                $selected = ((int)$customer['id'] === $selectedCustomerId) ? 'selected' : '';
                                 $custCur = Currencies::isValid($customer['currency'] ?? null) ? strtoupper($customer['currency']) : '';
                                 echo '<option value="' . $customer['id'] . '" data-currency="' . $custCur . '" ' . $selected . '>' . htmlspecialchars($customer['name']) . '</option>';
                             }
@@ -220,11 +232,9 @@ $docSymbol = Currencies::symbol($docCurrency);
                         <select name="project_id" class="fw-qi__input">
                             <option value="">No project</option>
                             <?php
-                            $stmt = $DB->prepare("SELECT project_id, name FROM projects WHERE company_id = ? ORDER BY name");
-                            $stmt->execute([$companyId]);
-                            while ($project = $stmt->fetch()) {
-                                $selected = ($editMode && $quoteData['project_id'] == $project['project_id']) ? 'selected' : '';
-                                echo '<option value="' . $project['project_id'] . '" ' . $selected . '>' . htmlspecialchars($project['name']) . '</option>';
+                            foreach ($projects as $project) {
+                                $selected = ($project['id'] === $selectedProjectId) ? 'selected' : '';
+                                echo '<option value="' . $project['id'] . '" ' . $selected . '>' . htmlspecialchars($project['label']) . '</option>';
                             }
                             ?>
                         </select>
@@ -630,10 +640,10 @@ $docSymbol = Currencies::symbol($docCurrency);
             projectSelect.addEventListener('change', function() {
                 loadBoards(this.value);
             });
-            // If editing and a project is pre-selected, load boards initially
-            <?php if ($editMode && $quoteData['project_id']): ?>
-            loadBoards(<?= (int)$quoteData['project_id'] ?>);
-            <?php endif; ?>
+            // A preselected project (editing, or opened from Projects): load its boards now
+            if (projectSelect.value) {
+                loadBoards(projectSelect.value);
+            }
         }
 
         if (importBtn) {

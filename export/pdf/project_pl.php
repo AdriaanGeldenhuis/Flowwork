@@ -2,13 +2,16 @@
 // PDF Project Profit & Loss Report
 //
 // Produces a simple PDF summarising income, expenses and net profit for each
-// project. Income and expenses are derived from invoice and AP bill lines
-// associated with the project's boards. Only active projects are listed.
+// project (ZAR, excl. VAT). Income comes from the project's invoices (less
+// credit notes); expenses from posted expense lines tagged with the project or
+// its boards — see export/lib/project_pl.php. Only active projects are listed;
+// ?project_id=N limits it to one project.
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/permissions.php';
 requireRoles(['admin', 'bookkeeper', 'viewer']); // gate this finance export
+require_once __DIR__ . '/../lib/project_pl.php';
 
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) {
@@ -17,49 +20,26 @@ if (!$companyId) {
     exit;
 }
 
-// Fetch projects
-$stmt = $DB->prepare("SELECT id, name FROM projects WHERE company_id = ? AND status NOT IN ('archived','cancelled')");
-$stmt->execute([$companyId]);
-$projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Prepare statements
-$stmtBoards = $DB->prepare("SELECT board_id FROM project_boards WHERE project_id = ?");
-$stmtIncome = $DB->prepare("SELECT COALESCE(SUM(il.line_total),0) FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id WHERE i.company_id = ? AND il.project_board_id = ?");
-$stmtExpense = $DB->prepare("SELECT COALESCE(SUM(bl.line_total),0) FROM ap_bill_lines bl JOIN ap_bills b ON b.id = bl.ap_bill_id WHERE b.company_id = ? AND bl.project_board_id = ?");
+$rows = project_pl_rows($DB, (int)$companyId, (int)($_GET['project_id'] ?? 0));
 
 $lines = [];
 $lines[] = 'Project Profit & Loss Summary';
-$lines[] = 'As of ' . (new DateTimeImmutable('today'))->format('Y-m-d');
+$lines[] = 'As of ' . (new DateTimeImmutable('today'))->format('Y-m-d') . ' (ZAR, excl. VAT)';
 $lines[] = '';
 $lines[] = sprintf("%-40s %15s %15s %15s", 'Project', 'Income', 'Expenses', 'Net Profit');
 
 $grandIncome  = 0.0;
 $grandExpense = 0.0;
 
-foreach ($projects as $proj) {
-    $projId   = (int)$proj['id'];
-    $projName = $proj['name'];
-    $stmtBoards->execute([$projId]);
-    $boards = $stmtBoards->fetchAll(PDO::FETCH_COLUMN, 0);
-    $income  = 0.0;
-    $expense = 0.0;
-    if ($boards) {
-        foreach ($boards as $boardId) {
-            $stmtIncome->execute([$companyId, $boardId]);
-            $income += (float)$stmtIncome->fetchColumn();
-            $stmtExpense->execute([$companyId, $boardId]);
-            $expense += (float)$stmtExpense->fetchColumn();
-        }
-    }
-    $net = $income - $expense;
-    $grandIncome  += $income;
-    $grandExpense += $expense;
+foreach ($rows as $row) {
+    $grandIncome  += $row['income'];
+    $grandExpense += $row['expenses'];
     $lines[] = sprintf(
         "%-40s %15s %15s %15s",
-        mb_strimwidth($projName, 0, 40, '…'),
-        number_format($income, 2, '.', ''),
-        number_format($expense, 2, '.', ''),
-        number_format($net, 2, '.', '')
+        pdf_text(mb_strimwidth($row['name'], 0, 40, '…')),
+        number_format($row['income'], 2, '.', ''),
+        number_format($row['expenses'], 2, '.', ''),
+        number_format($row['net'], 2, '.', '')
     );
 }
 
@@ -78,40 +58,51 @@ function pdf_escape($str)
     return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $str);
 }
 
+// The font uses WinAnsiEncoding: convert before padding so columns line up.
+function pdf_text(string $str): string
+{
+    $out = @iconv('UTF-8', 'Windows-1252//TRANSLIT//IGNORE', $str);
+    return $out === false ? preg_replace('/[^\x20-\x7E]/', '?', $str) : $out;
+}
+
 function generate_simple_pdf_content(array $lines): string
 {
+    // 10pt Courier keeps the 88-character rows inside an A4 page; 54 rows per page.
+    $pages = array_chunk($lines, 54) ?: [[]];
+    $objects = [];
+    $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+    $kids = [];
+    foreach (array_keys($pages) as $i) {
+        $kids[] = (4 + 2 * $i) . ' 0 R';
+    }
+    $objects[2] = "<< /Type /Pages /Kids [" . implode(' ', $kids) . "] /Count " . count($pages) . " >>";
+    $objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>";
+    foreach ($pages as $i => $pageLines) {
+        $yPos = 806;
+        $content = "BT\n/F1 10 Tf\n";
+        foreach ($pageLines as $line) {
+            // Tm places each row absolutely (Td is relative to the previous row).
+            $content .= sprintf("1 0 0 1 36 %.2f Tm (%s) Tj\n", $yPos, pdf_escape($line));
+            $yPos -= 14;
+        }
+        $content .= "ET";
+        $objects[4 + 2 * $i] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents " . (5 + 2 * $i) . " 0 R /Resources << /Font << /F1 3 0 R >> >> >>";
+        $objects[5 + 2 * $i] = "<< /Length " . strlen($content) . " >>\nstream\n" . $content . "\nendstream";
+    }
     $pdf = "%PDF-1.4\n";
     $offsets = [];
-    // Catalog
-    $offsets[] = strlen($pdf);
-    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-    // Pages
-    $offsets[] = strlen($pdf);
-    $pdf .= "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
-    // Page
-    $offsets[] = strlen($pdf);
-    $pdf .= "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>\nendobj\n";
-    // Font
-    $offsets[] = strlen($pdf);
-    $pdf .= "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n";
-    // Content stream
-    $yPos = 812;
-    $content = "BT\n/F1 12 Tf\n";
-    foreach ($lines as $line) {
-        $content .= sprintf("36 %.2f Td (%s) Tj\n", $yPos, pdf_escape($line));
-        $yPos -= 14;
+    foreach ($objects as $num => $body) {
+        $offsets[$num] = strlen($pdf);
+        $pdf .= $num . " 0 obj\n" . $body . "\nendobj\n";
     }
-    $content .= "ET";
-    $offsets[] = strlen($pdf);
-    $pdf .= "5 0 obj\n<< /Length " . strlen($content) . " >>\nstream\n";
-    $pdf .= $content . "\nendstream\nendobj\n";
     // Xref
     $xrefOffset = strlen($pdf);
-    $pdf .= "xref\n0 6\n0000000000 65535 f \n";
+    $size = count($objects) + 1;
+    $pdf .= "xref\n0 " . $size . "\n0000000000 65535 f \n";
     foreach ($offsets as $off) {
         $pdf .= sprintf("%010d 00000 n \n", $off);
     }
-    $pdf .= "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" . $xrefOffset . "\n%%EOF";
+    $pdf .= "trailer\n<< /Size " . $size . " /Root 1 0 R >>\nstartxref\n" . $xrefOffset . "\n%%EOF";
     return $pdf;
 }
 

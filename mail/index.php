@@ -23,6 +23,12 @@ $withSearch = true;
 $withSync = true;
 include __DIR__ . '/partials/head.php';
 ?>
+<!-- Projects symbols for "Add to project" and link chips (Calendar / Projects pages get these from the calendar sprite) -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-briefcase" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
+  <symbol id="i-check-square" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+</svg>
 <div class="fwm-app" id="mailApp">
     <?php include __DIR__ . '/partials/topbar.php'; ?>
 
@@ -116,6 +122,34 @@ include __DIR__ . '/partials/head.php';
             <input class="input" id="crmSearch" type="search" placeholder="Search customers and suppliers" autocomplete="off">
             <div id="crmResults"></div>
         </div>
+    </div>
+</div>
+
+<!-- Add to project -->
+<div class="fwm-modal" id="projectModal" hidden>
+    <div class="fwm-dialog" role="dialog" aria-modal="true" aria-labelledby="projectTitle">
+        <div class="fwm-dialog__head"><h2 id="projectTitle">Add to project</h2>
+            <button class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <form id="projectForm" style="display:contents" novalidate>
+            <div class="fwm-dialog__body">
+                <p class="fwm-dialog__lead">Linked emails show on the item or project in Projects.</p>
+                <div class="seg fwm-proj-mode" id="projMode" role="group" aria-label="Add as">
+                    <button type="button" data-mode="new" aria-pressed="true" class="is-on">New item</button>
+                    <button type="button" data-mode="item" aria-pressed="false">Existing item</button>
+                    <button type="button" data-mode="project" aria-pressed="false">Project</button>
+                </div>
+                <div class="field"><label class="label" for="projProject">Project</label><select class="select" id="projProject"></select></div>
+                <div class="row" id="projBoardRow">
+                    <div class="field"><label class="label" for="projBoard">Board</label><select class="select" id="projBoard"></select></div>
+                    <div class="field" id="projGroupField"><label class="label" for="projGroup">Group</label><select class="select" id="projGroup"></select></div>
+                </div>
+                <div class="field" id="projItemField"><label class="label" for="projItem">Item</label><select class="select" id="projItem"></select></div>
+                <div class="field" id="projTitleField"><label class="label" for="projItemTitle">Item name</label><input class="input" id="projItemTitle" maxlength="500" autocomplete="off"></div>
+                <p class="hint fwm-proj-hint" id="projHint" role="status" aria-live="polite"></p>
+                <div class="fwm-proj-linked" id="projLinked"></div>
+            </div>
+            <div class="fwm-dialog__foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn--primary" type="submit" id="projSubmit">Create item</button></div>
+        </form>
     </div>
 </div>
 

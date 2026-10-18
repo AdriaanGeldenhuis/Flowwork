@@ -116,6 +116,35 @@ $subtotal = $computedSubtotal;
 $tax      = $computedTax;
 $total    = $computedTotal;
 
+// Project tags: a line's board (and item) must belong to THIS company, and an
+// item on another board is refused. An item sent without its board gets the
+// board, because postApBill derives the line's project from the board — that
+// is what puts the cost under the GL project filter and the project P&L.
+require_once __DIR__ . '/../../../projects/lib/autoload.php';
+foreach ($lines as $i => $line) {
+    $boardId = isset($line['project_board_id']) && $line['project_board_id'] ? (int)$line['project_board_id'] : null;
+    $itemId  = isset($line['project_item_id']) && $line['project_item_id'] ? (int)$line['project_item_id'] : null;
+    if (!$boardId && !$itemId) {
+        $lines[$i]['project_board_id'] = null; // e.g. a non-numeric id: store no tag, not 0
+        $lines[$i]['project_item_id']  = null;
+        continue;
+    }
+    if (!ProjectLink::boardBelongs($DB, $companyId, $boardId, $itemId)) {
+        json_error('Line ' . ((int)$i + 1) . ': unknown project board or item');
+    }
+    if (!$boardId) {
+        $__ib = $DB->prepare("SELECT board_id FROM board_items WHERE id = ? AND company_id = ?");
+        $__ib->execute([$itemId, $companyId]);
+        $boardId = (int)$__ib->fetchColumn() ?: null;
+    }
+    $projectId = $boardId ? ProjectLink::projectOfBoard($DB, $companyId, $boardId) : 0;
+    if (!$projectId || !ProjectLink::belongs($DB, $companyId, $projectId)) {
+        json_error('Line ' . ((int)$i + 1) . ': that board is not on a project');
+    }
+    $lines[$i]['project_board_id'] = $boardId;
+    $lines[$i]['project_item_id']  = $itemId;
+}
+
 // SARS: Capture and validate supplier VAT number
 $vendorVat   = isset($header['vendor_vat']) ? trim($header['vendor_vat']) : null;
 if ($vendorVat !== null && $vendorVat !== '') {

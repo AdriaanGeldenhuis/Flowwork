@@ -60,7 +60,7 @@ try {
             project_id, board_id, item_id, imported_at
         ) VALUES (
             ?, ?, ?,
-            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
             ?, ?, ?, NOW()
         )"
     );

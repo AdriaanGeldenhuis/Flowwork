@@ -12,11 +12,13 @@ includes/notify.php                 fw_notify(): bell row + phone push in one ca
 includes/push.php                   devices, outbox, FCM HTTP v1 client, signed
                                     action tokens (Mark as read / Archive)
 notifications/worker/send_push.php  cron: sends the queue and retries
+notifications/worker/project_reminders.php
+                                    cron: Projects due-date reminders
 notifications/api/tick.php          the same jobs over HTTP, for an outside
                                     scheduler (host cron limited to 2-hourly)
 mail/api/push_action.php            the notification buttons (token-authorised)
 Migrations/2026-10-16-push-notifications.sql   optional, same schema
-tests/notifications/                test_push.php, test_push_http.php
+tests/notifications/                test_push.php, test_push_http.php, test_tick_http.php
 ```
 
 ## What sends a notification
@@ -26,8 +28,21 @@ tests/notifications/                test_push.php, test_push_http.php
 | New email (per conversation, newest message) | one line per sync | FlowMail › New email | FlowMail, the conversation |
 | Reply overdue (Mail settings › Reply reminders) | yes | FlowMail › Reply reminders | the conversation |
 | Calendar reminder | yes | FlowWork › Event reminders | the event |
-| @mention on a project board | yes | FlowWork › Mentions | the item's comments |
+| @mention in an item update (Projects) | yes | FlowWork › Mentions | the item, Updates tab |
+| Update or reply on an item you are on or watch | yes | FlowWork › Mentions | the item, Updates tab |
+| You were assigned to an item or given a subitem | yes | FlowWork › Mentions | the item |
+| You were added to a project | yes | FlowWork › Mentions | the project |
+| Board automation with a "notify" action | yes | FlowWork › Mentions | the item |
+| An item you are on is due today / overdue (daily, from 07:00) | yes | FlowWork › Mentions | the item |
 | "Send a test notification" (Signed-in devices) | no | FlowWork › Updates | Signed-in devices |
+
+The Projects notifications are sent by `projects/lib/ProjectNotify.php` (types
+`mention`, `project_update`, `project_assigned`, `project_added`, `project_auto`,
+`project_due`); nobody is told about their own actions. They all use the
+app's `projects` channel, which the Android app labels *Mentions*. Item links are
+`ProjectLink::itemUrl()`: `/projects/board.php?board_id=B&item=I[&open=TAB]`,
+where `open` picks the item panel's tab (`details`, `updates`, `subitems`,
+`files`, `activity`); `open=comments` in older notifications still opens Updates.
 
 New-mail notifications respect Mail settings › "Flowwork notifications for new
 mail". The first import of a newly connected mailbox does not notify. Reading,
@@ -82,7 +97,8 @@ notifications. `config.example.php` uses 30 days, which suits the app.
       schedule *every minute*, request method GET.
 
    Each call sends queued phone notifications (and retries), sends due
-   calendar reminders, sends due scheduled mail and syncs mailboxes not synced
+   calendar reminders and project due-date reminders (once per item per day,
+   from 07:00), sends due scheduled mail and syncs mailboxes not synced
    in the last 90 seconds, runs reply-overdue reminders every 15 minutes and
    housekeeping hourly. It answers at once with the previous run's figures
    (shown in cron-job.org's history) and works up to ~45 s after that. Runs
@@ -98,7 +114,8 @@ notifications. `config.example.php` uses 30 days, which suits the app.
    On a host whose cron allows every minute, the CLI jobs do the same work:
    `notifications/worker/send_push.php` (every minute),
    `calendar/cron/send_reminders.php` and `mail/worker/sync_imap.php` (every
-   5 minutes), `mail/worker/sla_tick.php` (every 15 minutes).
+   5 minutes), `mail/worker/sla_tick.php` and
+   `notifications/worker/project_reminders.php` (every 15 minutes).
 
 3. **Schema.** Created automatically on first use. Running
    `Migrations/2026-10-16-push-notifications.sql` does the same up front.
@@ -119,6 +136,7 @@ is closed); keys are documented in
 ```
 php tests/notifications/test_push.php        # queue, sending, retries, tokens (fake FCM)
 php tests/notifications/test_push_http.php   # app sign-in → binding → buttons → sign-out
+php tests/notifications/test_tick_http.php   # the web tick: key, quick answer, reminders
 ```
 
-Both need the test database (`tests/db/setup.sh`).
+All need the test database (`tests/db/setup.sh`).

@@ -266,14 +266,16 @@
   step1Next.addEventListener('click', () => {
     // Gather header fields
     const supplierId = document.getElementById('supplierSelect').value;
-    const projectId = document.getElementById('projectSelect').value;
+    const projectSelect = document.getElementById('projectSelect');
+    const projectId = projectSelect.value;
     const invNumber = document.getElementById('invoiceNumber').value.trim();
     const invDate = document.getElementById('invoiceDate').value;
     const currency = document.getElementById('currency').value;
     const subtotal = parseFloat(document.getElementById('subtotal').value) || 0;
     const tax = parseFloat(document.getElementById('tax').value) || 0;
     const total = parseFloat(document.getElementById('total').value) || 0;
-    if (!supplierId || !projectId || !invNumber || !invDate || !total) {
+    // The board is required only when the user can open at least one (review.php).
+    if (!supplierId || (projectSelect.required && !projectId) || !invNumber || !invDate || !total) {
       showMessage('error', 'Please fill all required fields');
       return;
     }
@@ -572,7 +574,11 @@
     .then(res => res.json())
     .then(data => {
       if (data.ok) {
-        showMessage('success', 'Posted to GL');
+        // Costs that could not go into a board cost column are noted in the item's activity instead.
+        const notWritten = (data.project_costs || []).filter(c => c.status === 'noted').length;
+        showMessage('success', notWritten
+          ? 'Posted to GL. ' + notWritten + ' project cost(s) were noted in the item activity instead of a board cost column (the board has no cost column, or you cannot edit it).'
+          : 'Posted to GL');
       } else {
         showMessage('error', data.error || 'Failed to post');
       }

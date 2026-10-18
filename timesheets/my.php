@@ -2,14 +2,20 @@
 // /timesheets/my.php – Employee timesheet entry page
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
+require_once __DIR__ . '/../projects/lib/autoload.php';
 
-define('ASSET_VERSION', '2025-10-07-TS');
+define('ASSET_VERSION', '2026-10-18-TS');
 
 $companyId = (int)($_SESSION['company_id'] ?? 0);
 $userId    = (int)($_SESSION['user_id'] ?? 0);
+$role      = (string)($_SESSION['role'] ?? 'viewer');
 
-// Fetch employee record for this user
-$stmt = $DB->prepare("SELECT id FROM employees WHERE user_id = ? AND company_id = ? AND termination_date IS NULL");
+// Fetch employee record for this user (employees has no user_id: match on the user's email)
+$stmt = $DB->prepare(
+    "SELECT e.id FROM employees e JOIN users u ON u.id = ?
+     WHERE e.email = u.email AND e.email <> '' AND e.company_id = ? AND e.termination_date IS NULL
+     ORDER BY e.id LIMIT 1"
+);
 $stmt->execute([$userId, $companyId]);
 $employee = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -31,17 +37,15 @@ $stmt->execute([$companyId]);
 $companyData = $stmt->fetch(PDO::FETCH_ASSOC);
 $companyName = $companyData ? $companyData['name'] : 'Company';
 
-// Fetch projects list
-$stmt = $DB->prepare("SELECT project_id, name FROM projects WHERE company_id = ? AND status NOT IN ('archived', 'cancelled') ORDER BY name");
-$stmt->execute([$companyId]);
-$projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Fetch projects list: open, unarchived projects this user can see
+$projects = ProjectLink::pickerProjects($DB, $companyId, $userId, $role);
 
 // Fetch existing timesheet entries for this employee
 $stmt = $DB->prepare(
-    "SELECT e.*, p.name AS project_name, bi.name AS item_name
+    "SELECT e.*, p.name AS project_name, bi.title AS item_name
      FROM timesheet_entries e
-     LEFT JOIN projects p ON e.project_id = p.project_id
-     LEFT JOIN board_items bi ON e.item_id = bi.id
+     LEFT JOIN projects p ON e.project_id = p.project_id AND p.company_id = e.company_id
+     LEFT JOIN board_items bi ON e.item_id = bi.id AND bi.company_id = e.company_id
      WHERE e.company_id = ? AND e.employee_id = ?
      ORDER BY e.ts_date DESC, e.created_at DESC
      LIMIT 50"
@@ -54,6 +58,7 @@ $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?php echo htmlspecialchars(Csrf::token()); ?>">
     <title>My Timesheets – <?php echo htmlspecialchars($companyName); ?></title>
     <link rel="stylesheet" href="/finances/assets/finance.css?v=<?php echo ASSET_VERSION; ?>">
     <style>
@@ -132,7 +137,7 @@ $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <select id="projectId">
                             <option value="">None</option>
                             <?php foreach ($projects as $p): ?>
-                                <option value="<?php echo (int)$p['project_id']; ?>"><?php echo htmlspecialchars($p['name']); ?></option>
+                                <option value="<?php echo (int)$p['id']; ?>"><?php echo htmlspecialchars($p['label']); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </label>

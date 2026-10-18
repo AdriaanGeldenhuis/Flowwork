@@ -1222,6 +1222,31 @@ class PostingService
     // AP bills
     // ------------------------------------------------------------------
 
+    /** @var array<int,?int> board_id => project_id cache for projectOfBoard() */
+    private array $boardProjects = [];
+
+    /**
+     * The project a board belongs to (this company only), so AP and receipt
+     * cost lines tagged with a board also carry project_id — the GL project
+     * filter and the project P&L key on it. Null when unknown.
+     */
+    private function projectOfBoard(?int $boardId): ?int
+    {
+        if (!$boardId) {
+            return null;
+        }
+        if (!array_key_exists($boardId, $this->boardProjects)) {
+            try {
+                $stmt = $this->db->prepare("SELECT project_id FROM project_boards WHERE board_id = ? AND company_id = ?");
+                $stmt->execute([$boardId, $this->companyId]);
+                $this->boardProjects[$boardId] = ((int)$stmt->fetchColumn()) ?: null;
+            } catch (PDOException $e) {
+                $this->boardProjects[$boardId] = null; // projects module not installed
+            }
+        }
+        return $this->boardProjects[$boardId];
+    }
+
     /**
      * Post an AP bill. Paid bills cannot be re-posted; posted bills require
      * an explicit $allowRepost (guards against accidental double-posting,
@@ -1314,12 +1339,14 @@ class PostingService
                 $isCapital = ($stmtChk->fetchColumn() === 'fixed_asset');
 
                 $lineTaxCodeId = $this->resolveInputTaxCodeId($taxRate);
+                $lineBoardId = !empty($li['project_board_id']) ? (int)$li['project_board_id'] : null;
                 $journalLines[] = [
                     'account_code' => $acctCode,
                     'description'  => $li['item_description'] ?: ($invItemId ? 'Inventory purchase' : 'AP expense'),
                     'debit'        => $netC / 100,
                     'credit'       => 0,
-                    'board_id'     => !empty($li['project_board_id']) ? (int)$li['project_board_id'] : null,
+                    'project_id'   => $this->projectOfBoard($lineBoardId),
+                    'board_id'     => $lineBoardId,
                     'item_id'      => !empty($li['project_item_id']) ? (int)$li['project_item_id'] : null,
                     'supplier_id'  => $supplierId,
                     'tax_code_id'  => $lineTaxCodeId,

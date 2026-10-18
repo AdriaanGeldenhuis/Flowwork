@@ -12,6 +12,8 @@ class MailRepo
 {
     public const VIEWS = ['inbox', 'starred', 'snoozed', 'drafts', 'outbox', 'sent', 'archive', 'spam', 'trash', 'all'];
     public const LOCAL_FOLDERS = ['INBOX', 'Sent', 'Drafts', 'Outbox', 'Archive', 'Spam', 'Trash'];
+    /** email_links.linked_type values owned by the Projects module. */
+    public const PROJECT_LINK_TYPES = ['project', 'board', 'item'];
 
     public const PREF_DEFAULTS = [
         'undo_send_seconds' => 10,
@@ -478,6 +480,15 @@ class MailRepo
             $sig = $type . ':' . $id;
             if (isset($seen[$sig])) continue;
             $seen[$sig] = true;
+            if (in_array($type, self::PROJECT_LINK_TYPES, true)) {
+                // Label + URL from the Projects module; deleted / other company → skipped.
+                $d = null;
+                try {
+                    if (self::projectsAvailable()) $d = ProjectLink::describe($db, $companyId, $type, $id);
+                } catch (Throwable $e) { /* projects tables missing */ }
+                if ($d) $out[] = ['type' => $type, 'id' => $id, 'label' => (string)$d['label'], 'url' => (string)$d['url']];
+                continue;
+            }
             $isCrm = in_array($type, ['customer', 'supplier'], true);
             if ($isCrm && !isset($names['crm' . $id])) continue; // other company / deleted
             $url = match ($type) {
@@ -495,6 +506,16 @@ class MailRepo
             ];
         }
         return $out;
+    }
+
+    /** Loads the Projects library (ProjectLink); false when the module is not installed. */
+    public static function projectsAvailable(): bool
+    {
+        if (class_exists('ProjectLink', false)) return true;
+        $lib = MailPaths::root() . '/projects/lib/autoload.php';
+        if (!is_file($lib)) return false;
+        require_once $lib;
+        return class_exists('ProjectLink', false);
     }
 
     // ------------------------------------------------------------------ counts

@@ -129,10 +129,13 @@ window.CRM = window.CRM || {};
             <td>${escapeHtml((inv.created_at || '').substring(0, 10))}</td>
           </tr>`);
 
+        // Project status → existing badge colours
+        const projectBadge = { draft: 'prospect', active: 'active', on_hold: 'pending', completed: 'primary',
+          cancelled: 'inactive', archived: 'inactive' };
         table('Projects', data.projects, ['Name', 'Status', 'Created'], p => `
           <tr>
-            <td><a href="/projects/view.php?project_id=${parseInt(p.id, 10)}">${escapeHtml(p.name || ('#' + p.id))}</a></td>
-            <td>${escapeHtml(p.status || '')}</td>
+            <td><a href="/projects/view.php?project_id=${parseInt(p.id, 10)}">${escapeHtml((p.number ? p.number + ' · ' : '') + (p.name || ('#' + p.id)))}</a></td>
+            <td><span class="fw-crm__badge fw-crm__badge--${projectBadge[p.status] || 'inactive'}">${escapeHtml(p.status_label || p.status || '')}</span></td>
             <td>${escapeHtml((p.created_at || '').substring(0, 10))}</td>
           </tr>`);
 

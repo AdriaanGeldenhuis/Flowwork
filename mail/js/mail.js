@@ -1395,13 +1395,14 @@
       left += b('move', 'folder', 'Move to');
       left += b('label', 'tag', 'Label (l)');
     }
-    left += '<span class="sep hide-narrow"></span>' + b('crm', 'building', 'Link to CRM') + b('event', 'calendar-plus', 'Add to calendar') + b('print', 'print', 'Print');
+    left += '<span class="sep hide-narrow"></span>' + b('crm', 'building', 'Link to CRM') + b('project', 'briefcase', 'Add to project') + b('event', 'calendar-plus', 'Add to calendar') + b('print', 'print', 'Print');
     const idx = S.threads.findIndex((t) => t.key === S.openKey);
     const nav = idx >= 0 ? `<span class="fwm-reader__pos hide-narrow">${idx + 1} of ${S.total || S.threads.length}</span>
       ${b('prev', 'chev-up', 'Newer (k)', idx <= 0 ? 'disabled' : '')}${b('next', 'chev-down', 'Older (j)', idx >= S.threads.length - 1 ? 'disabled' : '')}` : '';
     return `${left}<span class="grow"></span>${nav}`;
   }
 
+  const LINK_ICONS = { customer: 'building', supplier: 'building', project: 'briefcase', board: 'grid', item: 'check-square' };
   function renderReader(opts = {}) {
     const th = S.thread;
     if (!th) return readerEmpty();
@@ -1413,7 +1414,7 @@
     const lastIdx = msgs.length - 1;
 
     const chips = th.labels.map((l) => `<span class="fwm-tag" style="--c:${esc(l.color)}">${esc(l.name)}<button data-unlabel="${l.tag_id}" aria-label="Remove label">${icon('x', 'i--xs')}</button></span>`)
-      .concat(th.links.map((k) => k.url ? `<a class="fwm-tag fwm-tag--link" href="${esc(k.url)}">${icon(k.type === 'customer' || k.type === 'supplier' ? 'building' : 'link', 'i--xs')}${esc(k.label)}</a>` : `<span class="fwm-tag fwm-tag--link">${icon('link', 'i--xs')}${esc(k.label)}</span>`)).join('');
+      .concat(th.links.map((k) => k.url ? `<a class="fwm-tag fwm-tag--link" href="${esc(k.url)}" title="${esc(k.label)}">${icon(LINK_ICONS[k.type] || 'link', 'i--xs')}<span class="fwm-tag__text">${esc(k.label)}</span></a>` : `<span class="fwm-tag fwm-tag--link">${icon('link', 'i--xs')}${esc(k.label)}</span>`)).join('');
 
     const banners = [];
     if (th.remote_images && !th.images_shown) {
@@ -1580,6 +1581,7 @@
       case 'label': labelMenu(anchor, [key]); break;
       case 'move': moveMenu(anchor, [key]); break;
       case 'crm': openCrm(key); break;
+      case 'project': openProject(); break;
       case 'event': addToCalendar(); break;
       case 'print': window.open('/mail/api/print.php?key=' + encodeURIComponent(key) + (S.thread.images_shown ? '&images=1' : ''), '_blank', 'noopener'); break;
       case 'images': openThread(key, { images: true, fromRoute: true }); break;
@@ -1642,6 +1644,7 @@
         <button class="fwm-pop__item" data-v="reply_all">${icon('reply-all')}Reply all</button>
         <button class="fwm-pop__item" data-v="forward">${icon('forward')}Forward</button>
         <div class="fwm-pop__sep"></div>
+        <button class="fwm-pop__item" data-v="project">${icon('briefcase')}Add to project</button>
         <button class="fwm-pop__item" data-v="unread">${icon('mail')}Mark unread from here</button>
         <button class="fwm-pop__item" data-v="print">${icon('print')}Print conversation</button>`, {
         align: 'end',
@@ -1649,6 +1652,7 @@
           const v = it.dataset.v;
           if (['reply', 'reply_all', 'forward'].includes(v)) Composer.openFrom({ mode: v, email_id: id });
           if (v === 'unread') act(['e' + id], 'unread', { silent: true }).then(() => { toast('Marked as unread'); closeReader(); });
+          if (v === 'project') openProject(Number(id));
           if (v === 'print') readerAction('print');
         },
       });
@@ -1754,6 +1758,192 @@
         toast(b.dataset.on === '1' ? 'Linked to CRM' : 'Link removed');
       } catch (err) { toastError(err); }
     };
+  }
+
+  // ---------------------------------------------------------------- Add to project
+  // A new item on a board (created from the email and linked to it), or a link
+  // to an existing item or a whole project. Pickers, new items and item links go
+  // to the Projects API; project links, unlinking and the chips go through
+  // mail/api/project_link.php. One message is linked: the one picked from its
+  // menu, or the latest in the conversation.
+  const PROJECT_TYPES = ['project', 'board', 'item'];
+  const projectsApi = {
+    get: (type, params) => request('GET', '/projects/api/pickers.php?' + new URLSearchParams({ type, ...cleanParams(params) }).toString()),
+    post: (body) => request('POST', '/projects/api/items.php', body),
+  };
+  const optionText = (sel) => (sel.options[sel.selectedIndex] || {}).text || '';
+  const projOptions = (empty, rows, val, labelOf) => (empty ? `<option value="">${esc(empty)}</option>` : '')
+    + rows.map((r) => `<option value="${r.id}" ${String(r.id) === String(val) ? 'selected' : ''}>${esc(labelOf(r))}</option>`).join('');
+
+  function openProject(emailId) {
+    const th = S.thread;
+    if (!th) return;
+    const key = th.key;
+    const msg = (emailId && th.messages.find((m) => m.email_id === emailId))
+      || th.messages.filter((m) => !m.is_draft && m.folder !== 'Outbox').pop() || th.messages[th.messages.length - 1];
+    if (!msg) return;
+    const P = {
+      modal: $('#projectModal'), form: $('#projectForm'), mode: $('#projMode'), project: $('#projProject'), board: $('#projBoard'), group: $('#projGroup'),
+      item: $('#projItem'), title: $('#projItemTitle'), boardRow: $('#projBoardRow'), groupField: $('#projGroupField'), itemField: $('#projItemField'),
+      titleField: $('#projTitleField'), hint: $('#projHint'), linked: $('#projLinked'), submit: $('#projSubmit'),
+    };
+    const last = store.get('project', {}) || {};
+    const pick = { project: last.project || '', board: last.board || '', group: '', item: '' };
+    let mode = ['new', 'item', 'project'].includes(last.mode) ? last.mode : 'new';
+    let seq = 0;
+    const cache = new Map();
+    const load = (type, params) => {
+      const k = type + ':' + JSON.stringify(params);
+      if (!cache.has(k)) cache.set(k, projectsApi.get(type, params).catch((e) => { cache.delete(k); throw e; }));
+      return cache.get(k);
+    };
+    const hint = (text, error) => { P.hint.textContent = text || ''; P.hint.classList.toggle('is-error', !!error); };
+    const waiting = (sel, text) => { sel.innerHTML = `<option value="">${esc(text)}</option>`; sel.disabled = true; };
+    const applyLinks = (links) => { if (S.thread && S.thread.key === key) { S.thread.links = links; renderReader({ keepScroll: true }); } };
+
+    const showMode = (m) => {
+      mode = m;
+      $$('[data-mode]', P.mode).forEach((b) => { const on = b.dataset.mode === m; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on)); });
+      P.boardRow.hidden = m === 'project';
+      P.groupField.hidden = m !== 'new';
+      P.itemField.hidden = m !== 'item';
+      P.titleField.hidden = m !== 'new';
+      P.submit.textContent = m === 'new' ? 'Create item' : (m === 'item' ? 'Link to item' : 'Link to project');
+    };
+    async function fillProjects() {
+      waiting(P.project, 'Loading projects…');
+      try {
+        const list = (await load('projects', {})).projects || [];
+        if (!list.some((p) => String(p.id) === String(pick.project))) pick.project = list.length === 1 ? list[0].id : '';
+        P.project.innerHTML = projOptions(list.length ? 'Choose a project…' : 'No open projects', list, pick.project, (p) => p.label);
+        P.project.disabled = !list.length;
+      } catch (e) { waiting(P.project, 'Projects could not load'); hint(e.message, true); return; }
+      await fillBoards();
+    }
+    async function fillBoards() {
+      const my = ++seq;
+      if (mode === 'project') return;
+      if (!pick.project) { waiting(P.board, 'Pick a project'); fillParts(my); return; }
+      waiting(P.board, 'Loading boards…');
+      try {
+        const list = (await load('boards', { project_id: pick.project })).boards || [];
+        if (my !== seq) return;
+        if (!list.some((b) => String(b.id) === String(pick.board))) pick.board = list.length === 1 ? list[0].id : '';
+        P.board.innerHTML = projOptions(list.length ? 'Choose a board…' : 'No boards in this project', list, pick.board, (b) => b.title);
+        P.board.disabled = !list.length;
+      } catch (e) { if (my === seq) { waiting(P.board, 'Boards could not load'); hint(e.message, true); } return; }
+      await fillParts(my);
+    }
+    // The group list (new item) or the item list (existing item) of the chosen board.
+    async function fillParts(my) {
+      if (mode === 'new') {
+        if (!pick.board) { waiting(P.group, 'Pick a board'); return; }
+        waiting(P.group, 'Loading groups…');
+        try {
+          const list = (await load('groups', { board_id: pick.board })).groups || [];
+          if (my !== seq) return;
+          if (!list.some((g) => String(g.id) === String(pick.group))) pick.group = list.length ? list[0].id : '';
+          P.group.innerHTML = list.length ? projOptions('', list, pick.group, (g) => g.name) : '<option value="">New group</option>';
+          P.group.disabled = !list.length;
+        } catch (e) { if (my === seq) { waiting(P.group, 'Groups could not load'); hint(e.message, true); } }
+      } else if (mode === 'item') {
+        if (!pick.board) { waiting(P.item, 'Pick a board'); return; }
+        waiting(P.item, 'Loading items…');
+        try {
+          const list = (await load('items', { board_id: pick.board })).items || [];
+          if (my !== seq) return;
+          const groups = [];
+          list.forEach((it) => {
+            let g = groups.find((x) => x.name === it.group);
+            if (!g) groups.push(g = { name: it.group, items: [] });
+            g.items.push(it);
+          });
+          P.item.innerHTML = `<option value="">${list.length ? 'Choose an item…' : 'No items on this board'}</option>`
+            + groups.map((g) => `<optgroup label="${esc(g.name || 'Items')}">${projOptions('', g.items, pick.item, (it) => it.title)}</optgroup>`).join('');
+          P.item.disabled = !list.length;
+        } catch (e) { if (my === seq) { waiting(P.item, 'Items could not load'); hint(e.message, true); } }
+      }
+    }
+    const paintLinked = () => {
+      const links = ((S.thread && S.thread.key === key && S.thread.links) || []).filter((l) => PROJECT_TYPES.includes(l.type));
+      P.linked.innerHTML = links.length ? '<div class="fwm-section-title">Linked</div><div class="fwm-results">' + links.map((l) => `<div class="fwm-result is-linked">${icon(LINK_ICONS[l.type])}
+        <span class="fwm-result__text"><b><a href="${esc(l.url)}">${esc(l.label)}</a></b><small>${l.type === 'item' ? 'Item' : (l.type === 'board' ? 'Board' : 'Project')}</small></span>
+        <button class="btn btn--sm btn--ghost" type="button" data-unlink="${l.type}:${l.id}" aria-label="Unlink ${esc(l.label)}">Unlink</button></div>`).join('') + '</div>' : '';
+    };
+
+    hint('');
+    P.title.value = String(msg.subject || th.subject || '').replace(/^\s*((re|fw|fwd|aw)\s*:\s*)+/i, '').slice(0, 500);
+    P.mode.onclick = (e) => { const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== mode) { showMode(b.dataset.mode); hint(''); fillBoards(); } };
+    P.project.onchange = () => { pick.project = P.project.value; pick.board = ''; pick.item = ''; hint(''); fillBoards(); };
+    P.board.onchange = () => { pick.board = P.board.value; pick.group = ''; pick.item = ''; hint(''); fillParts(++seq); };
+    P.group.onchange = () => { pick.group = P.group.value; };
+    P.item.onchange = () => { pick.item = P.item.value; };
+    P.linked.onclick = async (e) => {
+      const b = e.target.closest('[data-unlink]');
+      if (!b) return;
+      const [type, id] = b.dataset.unlink.split(':');
+      b.classList.add('is-busy'); b.disabled = true;
+      try {
+        const r = await api.post('project_link.php', { op: 'unlink', key, view: S.view, type, id: Number(id) });
+        applyLinks(r.links);
+        paintLinked();
+        ($('[data-unlink]', P.linked) || P.project).focus(); // the pressed button is gone
+        toast('Link removed');
+      } catch (err) { b.classList.remove('is-busy'); b.disabled = false; toastError(err); }
+    };
+    P.form.onsubmit = async (e) => {
+      e.preventDefault();
+      const pid = Number(P.project.value);
+      const bid = Number(P.board.value);
+      const itemId = Number(P.item.value);
+      const title = P.title.value.trim();
+      if (!pid) { hint('Choose a project.', true); P.project.focus(); return; }
+      if (mode !== 'project' && !bid) { hint('Choose a board.', true); P.board.focus(); return; }
+      if (mode === 'new' && !title) { hint('Give the item a name.', true); P.title.focus(); return; }
+      if (mode === 'item' && !itemId) { hint('Choose an item.', true); P.item.focus(); return; }
+      hint('');
+      P.submit.classList.add('is-busy'); P.submit.disabled = true;
+      try {
+        let target, message, links = null;
+        if (mode === 'project') {
+          const r = await api.post('project_link.php', { op: 'link', key, view: S.view, email_id: msg.email_id, project_id: pid });
+          links = r.links;
+          target = { type: 'project', id: pid, url: r.link && r.link.url };
+          message = 'Email linked to ' + optionText(P.project);
+        } else {
+          if (mode === 'new') {
+            const r = await projectsApi.post({ action: 'create', board_id: bid, group_id: Number(P.group.value) || undefined, title, email_id: msg.email_id });
+            target = { type: 'item', id: Number(r.item && r.item.id) };
+            message = 'Item created on ' + optionText(P.board);
+          } else {
+            await projectsApi.post({ action: 'link_email', id: itemId, email_id: msg.email_id });
+            target = { type: 'item', id: itemId };
+            message = 'Email linked to ' + optionText(P.item);
+          }
+          try { links = (await api.get('project_link.php', { key, view: S.view })).links; } catch (err) { /* chips refresh on the next open */ }
+        }
+        const chip = (links || []).find((l) => l.type === target.type && l.id === target.id);
+        const url = (chip && chip.url) || target.url || (target.type === 'item' ? `/projects/board.php?board_id=${bid}&item=${target.id}` : `/projects/view.php?project_id=${pid}`);
+        store.set('project', { mode, project: pid, board: bid || pick.board });
+        closeModal(P.modal);
+        if (links) applyLinks(links);
+        const rb = $('[data-rb="project"]', el.reader);
+        if (rb) rb.focus();
+        toast(message, { action: { label: 'Open', run: () => { location.href = url; } } });
+      } catch (err) {
+        hint(err.message, true);
+      } finally {
+        P.submit.classList.remove('is-busy'); P.submit.disabled = false;
+      }
+    };
+
+    showMode(mode);
+    paintLinked();
+    openModal(P.modal);
+    fillProjects().then(() => {
+      // The project list was still loading (disabled) when the dialog took focus.
+      if (!P.modal.hidden && !P.modal.contains(document.activeElement)) (P.project.disabled ? $('.is-on', P.mode) : P.project).focus();
+    });
   }
 
   // ===========================================================================

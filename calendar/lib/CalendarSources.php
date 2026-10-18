@@ -4,7 +4,7 @@
 // Dates that live in other modules, shown on the calendar as they are right
 // now (nothing is copied, so nothing goes stale or duplicates):
 //   projects  project start and due dates (projects the user can open)
-//   tasks     board items assigned to the user, on their due date
+//   tasks     board items the user is on, from their timeline start to their due date
 //   invoices  unpaid invoices on their due date (overdue ones flagged)
 //   quotes    sent quotes on their expiry date
 //   deals     the user's open CRM opportunities on their expected close date
@@ -63,16 +63,18 @@ final class CalendarSources
 
     private function projects(string $from, string $to, string $today): array
     {
+        if (!CalendarRepo::projectsAvailable()) return [];
+        $vis = $this->repo->projectSql('project_id');
+        if ($vis === null) return [];
         $c = $this->repo->companyId;
         $st = $this->db->prepare("SELECT project_id, name, project_number, start_date, end_date, status FROM projects
-                                   WHERE company_id = ? AND (archived = 0 OR archived IS NULL) AND status IN ('draft','active','on_hold')
+                                   WHERE company_id = ? AND (archived = 0 OR archived IS NULL) AND status IN ('draft','active','on_hold')$vis
                                      AND ((start_date BETWEEN ? AND ?) OR (end_date BETWEEN ? AND ?))
                                    LIMIT 500");
         $st->execute([$c, $from, $to, $from, $to]);
         $out = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $p) {
-            if (!$this->repo->canSeeProject((int)$p['project_id'])) continue;
-            $url = '/projects/view.php?project_id=' . (int)$p['project_id'];
+            $url = ProjectLink::projectUrl((int)$p['project_id']);
             $sub = trim(($p['project_number'] ? $p['project_number'] . ' · ' : '') . ucfirst(str_replace('_', ' ', $p['status'])));
             if ($p['start_date'] && $p['start_date'] >= $from && $p['start_date'] <= $to && $p['start_date'] !== $p['end_date']) {
                 $out[] = ['key' => 'project-start:' . $p['project_id'], 'title' => $p['name'] . ' starts', 'sub' => $sub,
@@ -87,25 +89,40 @@ final class CalendarSources
         return $out;
     }
 
+    /**
+     * Open and done items the user is on (any people column — the engine's
+     * board_item_people), on live boards of live projects they can open. An
+     * item runs from its timeline start to its due date (the engine's mirrors:
+     * the due date falls back to the timeline's end).
+     */
     private function tasks(string $from, string $to, string $today): array
     {
-        $st = $this->db->prepare("SELECT i.id, i.title, i.due_date, i.status_label, i.progress, i.board_id, b.title AS board_title, p.name AS project_name
-                                    FROM board_items i
+        if (!CalendarRepo::projectsAvailable()) return [];
+        ProjectSchema::ensure($this->db); // board_item_people and the mirrors exist (admins skip ProjectLink::repo)
+        $vis = $this->repo->projectSql('p.project_id');
+        if ($vis === null) return [];
+        $start = 'COALESCE(i.start_date, i.due_date, i.end_date)';
+        $end = 'COALESCE(i.due_date, i.end_date, i.start_date)';
+        $st = $this->db->prepare("SELECT i.id, i.title, i.start_date, i.end_date, i.due_date, i.progress, i.board_id, b.title AS board_title, p.name AS project_name
+                                    FROM board_item_people ip
+                                    JOIN board_items i ON i.id = ip.item_id AND i.company_id = ip.company_id
                                     JOIN project_boards b ON b.board_id = i.board_id AND b.company_id = i.company_id
-                               LEFT JOIN projects p ON p.project_id = b.project_id
-                                   WHERE i.company_id = ? AND i.assigned_to = ? AND (i.archived = 0 OR i.archived IS NULL)
-                                     AND (b.archived = 0 OR b.archived IS NULL) AND i.due_date BETWEEN ? AND ?
-                                ORDER BY i.due_date LIMIT 500");
-        $st->execute([$this->repo->companyId, $this->repo->userId, $from, $to]);
+                                    JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
+                                   WHERE ip.user_id = ? AND ip.company_id = ? AND (i.archived = 0 OR i.archived IS NULL)
+                                     AND (b.archived = 0 OR b.archived IS NULL) AND (p.archived = 0 OR p.archived IS NULL)
+                                     AND p.status NOT IN ('completed','cancelled','archived')$vis
+                                     AND LEAST($start, $end) <= ? AND $end >= ?
+                                ORDER BY $end, i.id LIMIT 500");
+        $st->execute([$this->repo->userId, $this->repo->companyId, $to, $from]);
         $out = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $t) {
-            $done = (int)$t['progress'] >= 100 || preg_match('/^(done|complete|completed|finished|closed)$/i', trim((string)$t['status_label']));
-            $due = substr((string)$t['due_date'], 0, 10);
+            $due = substr((string)($t['due_date'] ?: ($t['end_date'] ?: $t['start_date'])), 0, 10);
+            $begin = $t['start_date'] ? min(substr((string)$t['start_date'], 0, 10), $due) : $due;
             $out[] = ['key' => 'item:' . $t['id'], 'title' => $t['title'],
                       'sub' => trim(($t['project_name'] ? $t['project_name'] . ' · ' : '') . $t['board_title']),
-                      'start' => $due, 'end' => $due,
-                      'url' => '/projects/board.php?board_id=' . (int)$t['board_id'] . '&item=' . (int)$t['id'],
-                      'status' => $done ? 'done' : ($due < $today ? 'overdue' : null)];
+                      'start' => $begin, 'end' => $due,
+                      'url' => ProjectLink::itemUrl((int)$t['board_id'], (int)$t['id']),
+                      'status' => (int)$t['progress'] >= 100 ? 'done' : ($due < $today ? 'overdue' : null)];
         }
         return $out;
     }

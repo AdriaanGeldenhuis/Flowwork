@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/ajax/_helpers.php';
+require_once __DIR__ . '/../projects/lib/autoload.php';
 
 // CRM_ASSET_VERSION centralized in init.php as CRM_CRM_ASSET_VERSION
 
@@ -49,8 +50,14 @@ if ($canEdit) {
     $owners = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Stage options
-$stageOptions = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost', 'converted'];
+// Project this opportunity was converted into (link kept in audit_log)
+$convertedProject = crm_opp_project($DB, (int)$companyId, $oppId);
+$canOpenProject = $convertedProject
+    && ProjectLink::canSeeProject($DB, (int)$companyId, (int)$userId, $role, (int)$convertedProject['project_id']);
+
+// Stage options (the column enum has no 'converted': a converted opportunity
+// stays 'won' and links to its project)
+$stageOptions = ['prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'];
 
 // Fetch user and company names for header
 $stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
@@ -223,10 +230,23 @@ $companyName = $company['name'] ?? 'Company';
                         <div class="fw-crm__static-text"><?= htmlspecialchars(($opp['owner_first'] ?? '') . ' ' . ($opp['owner_last'] ?? '')) ?></div>
                     <?php endif; ?>
                 </div>
+                <?php if ($convertedProject): ?>
+                    <div class="fw-crm__form-group">
+                        <label class="fw-crm__label">Project</label>
+                        <?php $projectLabel = trim(($convertedProject['project_number'] ? $convertedProject['project_number'] . ' · ' : '') . $convertedProject['name']); ?>
+                        <div class="fw-crm__static-text">
+                            <?php if ($canOpenProject): ?>
+                                <a href="<?= htmlspecialchars(ProjectLink::projectUrl((int)$convertedProject['project_id'])) ?>"><?= htmlspecialchars($projectLabel) ?></a>
+                            <?php else: ?>
+                                <?= htmlspecialchars($convertedProject['project_number'] ?: 'Converted to a project') ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <?php if ($canEdit): ?>
                     <div class="fw-crm__form-actions">
                         <button type="submit" class="fw-crm__btn fw-crm__btn--primary">Save Changes</button>
-                        <?php if ($opp['stage'] === 'won'): ?>
+                        <?php if ($opp['stage'] === 'won' && !$convertedProject): ?>
                             <button type="button" id="btnConvert" class="fw-crm__btn fw-crm__btn--secondary">Convert to Project</button>
                         <?php endif; ?>
                     </div>
@@ -364,8 +384,8 @@ $companyName = $company['name'] ?? 'Company';
                     }).then(resp => resp.json())
                     .then(data => {
                         if (data.ok) {
-                            // Redirect to projects overview
-                            window.location.href = '/projects/index.php';
+                            // Open the new project
+                            window.location.href = data.url || '/projects/';
                         } else {
                             messageEl.textContent = data.error || 'Failed to convert opportunity.';
                             messageEl.classList.remove('fw-crm__alert--success');

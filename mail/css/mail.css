@@ -538,6 +538,8 @@ body.fwm::after {
 .fwm-tag--warn, .fwm[data-theme="dark"] .fwm-tag--warn { color: var(--warning); background: var(--warning-soft); box-shadow: none; }
 .fwm-tag--danger, .fwm[data-theme="dark"] .fwm-tag--danger { color: var(--danger); background: var(--danger-soft); box-shadow: none; }
 .fwm-tag--link, .fwm[data-theme="dark"] .fwm-tag--link { color: var(--info); background: color-mix(in srgb, var(--info) 11%, transparent); box-shadow: none; }
+.fwm-subject-meta .fwm-tag--link { max-width: 260px; }
+.fwm-tag__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fwm-tag button { border: 0; background: transparent; color: inherit; padding: 0; margin-right: -4px; cursor: pointer; display: grid; place-items: center; opacity: 0.7; }
 .fwm-tag button:hover { opacity: 1; }
 .fwm-row__icon { color: var(--gold); display: inline-flex; }
@@ -776,6 +778,15 @@ body.fwm::after {
 .fwm-result__text small { display: block; color: var(--ink-3); font-size: 12px; }
 .fwm-result.is-linked { background: var(--accent-softer); box-shadow: inset 0 0 0 1px var(--accent-soft); }
 .fwm-section-title { margin: 20px 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-ink); }
+/* Add to project */
+.fwm .fwm-proj-mode { display: flex; margin: 0 0 18px; }
+.fwm .fwm-proj-mode button { flex: 1; padding: 0 8px; white-space: nowrap; }
+.fwm-proj-hint { margin: 12px 0 0; }
+.fwm-proj-hint:empty { display: none; }
+.fwm-proj-hint.is-error { color: var(--danger); }
+.fwm-proj-linked .fwm-result { cursor: default; }
+.fwm-proj-linked .fwm-result a { color: inherit; text-decoration: none; }
+.fwm-proj-linked .fwm-result a:hover { text-decoration: underline; }
 
 /* ---------- Toasts --------------------------------------------------------- */
 .fwm-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 9px; pointer-events: none; width: max-content; max-width: calc(100vw - 24px); }

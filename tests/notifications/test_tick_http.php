@@ -2,7 +2,8 @@
 /**
  * The web tick (notifications/api/tick.php) over HTTP with PHP's built-in
  * server and the test database: key check, quick answer, calendar reminder
- * sent with bell + phone notification, overlap/rate guard, run summary.
+ * sent with bell + phone notification, project due-date reminder (from 07:00),
+ * overlap/rate guard, run summary.
  *
  *   php tests/notifications/test_tick_http.php
  *
@@ -21,6 +22,7 @@ file_put_contents($saFile, json_encode([
 ]));
 putenv('FCM_SERVICE_ACCOUNT_FILE=' . $saFile);
 require FLOWWORK_ROOT . '/includes/notify.php';
+require FLOWWORK_ROOT . '/projects/lib/autoload.php';
 
 $cronKey = bin2hex(random_bytes(24));
 $stateFile = FLOWWORK_ROOT . '/storage/cron/tick.json';
@@ -48,6 +50,28 @@ $eventId = (int)$DB->lastInsertId();
 $DB->prepare("INSERT INTO calendar_event_reminders (event_id, user_id, minutes_before, channel) VALUES (?, 1, 15, 'in_app')")
    ->execute([$eventId]);
 $reminderId = (int)$DB->lastInsertId();
+
+// A project item due today with user 1 on it. Reminders go out once per item per day, from 07:00.
+ProjectSchema::ensure($DB);
+$today = date('Y-m-d');
+$remindNow = (int)date('G') >= 7;
+$DB->exec("INSERT INTO projects (company_id, name, status, created_by) VALUES (1, 'TickTest project', 'active', 1)");
+$projectId = (int)$DB->lastInsertId();
+$DB->exec("INSERT INTO project_boards (company_id, project_id, title) VALUES (1, $projectId, 'TickTest board')");
+$boardId = (int)$DB->lastInsertId();
+$DB->exec("INSERT INTO board_groups (board_id, name) VALUES ($boardId, 'TickTest group')");
+$groupId = (int)$DB->lastInsertId();
+$DB->prepare("INSERT INTO board_items (board_id, company_id, group_id, title, due_date, progress, created_by)
+              VALUES (?, 1, ?, 'TickTest item', ?, 0, 1)")->execute([$boardId, $groupId, $today]);
+$itemId = (int)$DB->lastInsertId();
+$DB->exec("INSERT INTO board_item_people (item_id, user_id, company_id, board_id) VALUES ($itemId, 1, 1, $boardId)");
+register_shutdown_function(function () use ($DB, $projectId, $boardId, $itemId) {
+    $DB->exec("DELETE FROM board_item_people WHERE item_id = $itemId");
+    $DB->exec("DELETE FROM board_items WHERE id = $itemId");
+    $DB->exec("DELETE FROM board_groups WHERE board_id = $boardId");
+    $DB->exec("DELETE FROM project_boards WHERE board_id = $boardId");
+    $DB->exec("DELETE FROM projects WHERE project_id = $projectId");
+});
 
 // ---------------------------------------------------------------- server
 
@@ -119,6 +143,23 @@ assert_eq(1, $state['last']['jobs']['reminders'], 'summary: 1 reminder');
 assert_true(is_array($state['last']['jobs']['mail']), 'summary: mail sync ran');
 assert_true(isset($state['last']['jobs']['reply_reminders']), 'summary: reply reminders ran');
 
+$dueQuery = $DB->prepare("SELECT * FROM notifications WHERE type = 'project_due' AND user_id = 1 AND link = ?");
+$dueQuery->execute([ProjectLink::itemUrl($boardId, $itemId)]);
+$due = $dueQuery->fetchAll();
+if ($remindNow) {
+    assert_true($state['last']['jobs']['project_reminders'] >= 1, 'summary: project reminders sent');
+    assert_eq(1, count($due), 'project due-date reminder stored');
+    assert_eq('Due today: TickTest item', $due[0]['title'], 'project reminder title');
+    assert_eq('TickTest board · TickTest project', $due[0]['message'], 'project reminder text');
+    assert_eq($today, $DB->query("SELECT reminded_on FROM board_items WHERE id = $itemId")->fetchColumn(), 'item marked as reminded today');
+    $push = $DB->query("SELECT payload FROM push_outbox WHERE payload LIKE '%TickTest item%'")->fetchColumn();
+    assert_true((bool)$push, 'phone notification queued for the project reminder');
+    assert_eq('projects', json_decode($push, true)['data']['ch'], 'project reminder uses the projects channel');
+} else {
+    assert_eq(0, $state['last']['jobs']['project_reminders'], 'summary: no project reminders before 07:00');
+    assert_eq(0, count($due), 'no project reminder before 07:00');
+}
+
 $r = get($url . '?key=' . $cronKey);
 assert_eq(200, $r['code'], 'second call ok');
 assert_true(str_contains((string)($r['json']['skipped'] ?? ''), '20 seconds'), 'not run twice within 20 s');
@@ -133,6 +174,9 @@ assert_true(wait_for(fn() => is_array(json_decode((string)@file_get_contents($st
             'second run finished');
 $state2 = json_decode((string)file_get_contents($stateFile), true);
 assert_eq(0, $state2['last']['jobs']['reminders'], 'a reminder is sent only once');
+assert_eq(0, $state2['last']['jobs']['project_reminders'], 'a project reminder is sent once a day');
+$dueQuery->execute([ProjectLink::itemUrl($boardId, $itemId)]);
+assert_eq($remindNow ? 1 : 0, count($dueQuery->fetchAll()), 'no second project reminder');
 assert_true(!isset($state2['last']['jobs']['reply_reminders']), 'reply reminders only every 15 minutes');
 
 $DB->exec("DELETE FROM push_outbox");

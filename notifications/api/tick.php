@@ -5,7 +5,8 @@
 // A free outside scheduler (e.g. cron-job.org) calls this URL every minute.
 // Each call, within about 45 seconds:
 //   - sends queued phone notifications and retries failed ones,
-//   - sends calendar reminders that are due,
+//   - sends calendar reminders that are due, and project due-date reminders
+//     (once per item per day, from 07:00),
 //   - sends due scheduled / undo-window mail and syncs mailboxes that were not
 //     synced in the last 90 seconds (that is what finds new mail to notify),
 //   - every 15 minutes: reply-overdue reminders; hourly: housekeeping.
@@ -108,6 +109,11 @@ $pushed = function () use ($DB): int|string {
 
 $run('push', $pushed);
 $run('reminders', fn() => fw_calendar_send_due_reminders($DB));
+$run('project_reminders', function () use ($DB) {
+    // Loaded here so a problem in Projects never stops the other jobs.
+    require_once __DIR__ . '/../../projects/lib/autoload.php';
+    return ProjectNotify::sendDueReminders($DB);
+});
 $run('mail', function () use ($DB, $deadline) {
     $left = (int)floor($deadline - microtime(true)) - 6; // keep time for the last push flush
     if ($left < 12) return 'no time left';

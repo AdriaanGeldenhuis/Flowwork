@@ -6,6 +6,7 @@ $companyId = (int)$_SESSION['company_id'];
 $userId = (int)$_SESSION['user_id'];
 
 require_once __DIR__ . '/../includes/companies.php';
+require_once __DIR__ . '/../projects/lib/autoload.php';
 fw_require_admin();
 
 // Fetch all boards with member counts
@@ -23,7 +24,7 @@ $stmt = $DB->prepare("
          JOIN users u ON u.id = bm2.user_id
          WHERE bm2.board_id = pb.board_id AND bm2.role = 'owner' LIMIT 1) as owner_name
     FROM project_boards pb
-    LEFT JOIN projects p ON p.project_id = pb.project_id
+    LEFT JOIN projects p ON p.project_id = pb.project_id AND p.company_id = pb.company_id
     WHERE pb.company_id = ?
     ORDER BY pb.created_at DESC
 ");
@@ -66,14 +67,16 @@ $boards = $stmt->fetchAll();
                             <?php foreach ($boards as $board): ?>
                             <tr>
                                 <td>
-                                    <a href="/projects/board.php?id=<?= $board['board_id'] ?>" target="_blank" style="color: var(--fw-primary); text-decoration: none;">
+                                    <a href="<?= htmlspecialchars(ProjectLink::boardUrl((int)$board['board_id'])) ?>" target="_blank" style="color: var(--fw-primary); text-decoration: none;">
                                         <?= htmlspecialchars($board['title']) ?>
                                     </a>
                                 </td>
                                 <td>
-                                    <a href="/projects/project.php?id=<?= $board['project_id'] ?? '' ?>" target="_blank" style="color: inherit; text-decoration: none;">
+                                    <?php if (!empty($board['project_id'])): ?>
+                                    <a href="<?= htmlspecialchars(ProjectLink::projectUrl((int)$board['project_id'])) ?>" target="_blank" style="color: inherit; text-decoration: none;">
                                         <?= htmlspecialchars($board['project_name'] ?? '') ?>
                                     </a>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <span class="fw-admin__badge fw-admin__badge--<?= strtolower($board['board_type']) ?>">

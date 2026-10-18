@@ -2179,6 +2179,13 @@
   padding: 10px 0;
 }
 
+.fw-crm__static-text a {
+  color: var(--fw-primary);
+  text-decoration: none;
+}
+
+.fw-crm__static-text a:hover { text-decoration: underline; }
+
 /* ===== 2-COLUMN GRID ===== */
 .fw-crm__grid-2col {
   display: grid;

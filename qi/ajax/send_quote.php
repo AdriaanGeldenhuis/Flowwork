@@ -61,7 +61,7 @@ try {
          LEFT JOIN crm_accounts ca ON q.customer_id = ca.id
          LEFT JOIN companies c ON q.company_id = c.id
          LEFT JOIN crm_addresses addr ON addr.account_id = ca.id AND addr.id = (SELECT a2.id FROM crm_addresses a2 WHERE a2.account_id = ca.id ORDER BY FIELD(a2.type, 'billing', 'head_office', 'shipping', 'site') LIMIT 1)
-         LEFT JOIN projects p ON q.project_id = p.project_id
+         LEFT JOIN projects p ON p.project_id = q.project_id AND p.company_id = q.company_id
          WHERE q.id = ? AND q.company_id = ?"
     );
     $stmt->execute([$quoteId, $companyId]);

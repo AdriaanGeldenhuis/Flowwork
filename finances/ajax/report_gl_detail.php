@@ -51,6 +51,12 @@ try {
 
     $accountCode = $account['account_code'];
 
+    // Project filter: lines tagged with the project, or untagged lines on one
+    // of its boards (AP bills and receipts posted before their lines carried
+    // project_id only have the board). The project tag wins, as in the
+    // project P&L, so a line never shows under two projects.
+    $projectSql = "(jl.project_id = ? OR (jl.project_id IS NULL AND jl.board_id IN (SELECT pb.board_id FROM project_boards pb WHERE pb.project_id = ? AND pb.company_id = ?)))";
+
     // Opening balance: everything posted STRICTLY BEFORE the period start.
     // Without a start date the ledger runs from inception and opens at 0.
     // (Previously this summed everything before the END date while the
@@ -66,8 +72,8 @@ try {
               AND je.entry_date < ?";
         $obParams = [$accountCode, $companyId, $startDate];
         if ($projectId > 0) {
-            $obSql .= " AND jl.project_id = ?";
-            $obParams[] = $projectId;
+            $obSql .= " AND " . $projectSql;
+            array_push($obParams, $projectId, $projectId, $companyId);
         }
         $stmt = $DB->prepare($obSql);
         $stmt->execute($obParams);
@@ -97,8 +103,8 @@ try {
         $params[] = $startDate;
     }
     if ($projectId > 0) {
-        $sql .= " AND jl.project_id = ?";
-        $params[] = $projectId;
+        $sql .= " AND " . $projectSql;
+        array_push($params, $projectId, $projectId, $companyId);
     }
     // jl.id is the final tiebreaker so multiple lines of one journal to the same
     // account render in a stable order (keeps the running-balance display

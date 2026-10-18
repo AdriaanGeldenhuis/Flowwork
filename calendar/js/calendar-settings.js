@@ -107,7 +107,7 @@
   // ---------------------------------------------------------- sources
   const SOURCE_HINTS = {
     projects: 'Start and due dates of the projects you can open.',
-    tasks: 'Board items assigned to you, on their due date.',
+    tasks: 'Board items you are on, from their start to their due date.',
     invoices: 'Unpaid invoices on their due date — overdue ones in red.',
     quotes: 'Sent quotes on the day they expire.',
     deals: 'Your open CRM deals on their expected close date.',

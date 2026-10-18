@@ -4,6 +4,7 @@ require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
 require_once __DIR__ . '/lib/Currencies.php';
 require_once __DIR__ . '/lib/LineHeadings.php';
+require_once __DIR__ . '/lib/QiProjects.php';
 
 define('ASSET_VERSION', QI_ASSET_VERSION);
 
@@ -69,11 +70,22 @@ $stmt = $DB->prepare("SELECT id, name, currency FROM crm_accounts WHERE company_
 $stmt->execute([$companyId]);
 $customers = $stmt->fetchAll();
 
-// Fetch projects
-$stmt = $DB->prepare("SELECT project_id, name FROM projects WHERE company_id = ? AND status IN ('active','draft') AND archived = 0 ORDER BY name");
-$stmt->execute([$companyId]);
+// New invoice opened from Projects (?project_id=N[&customer_id=M]): preselect
+// the project (if the user can see it) and the customer (else its client)
+$prefill = $editMode ? ['project_id' => 0, 'customer_id' => 0, 'currency' => null]
+    : QiProjects::prefill($DB, (int)$companyId, (int)$userId, $_GET['project_id'] ?? 0, $_GET['customer_id'] ?? 0);
+// Only a customer this form offers (active customers) is preselected, and only
+// then does the invoice take on that customer's currency
+if ($prefill['customer_id'] && !in_array($prefill['customer_id'], array_map('intval', array_column($customers, 'id')), true)) {
+    $prefill['customer_id'] = 0;
+    $prefill['currency'] = null;
+}
+$selectedCustomerId = $editMode ? (int)$invoiceData['customer_id'] : $prefill['customer_id'];
+$selectedProjectId = $editMode ? (int)($invoiceData['project_id'] ?? 0) : $prefill['project_id'];
 
-$projects = $stmt->fetchAll();
+// Fetch projects: open ones the user can see, plus this invoice's own project
+// (kept even if it has since been completed or archived)
+$projects = QiProjects::options($DB, (int)$companyId, (int)$userId, $selectedProjectId);
 
 // Fetch inventory items for this company to allow linking invoice lines to stock items
 $stmt = $DB->prepare("SELECT id, sku, name FROM inventory_items WHERE company_id = ? ORDER BY name");
@@ -92,7 +104,7 @@ $dueDate = $editMode ? $invoiceData['due_date'] : date('Y-m-d', strtotime('+' . 
 
 // Document currency: existing invoice keeps its currency, new invoices use the company default
 $defaultCurrency = Currencies::isValid($qiSettings['default_currency'] ?? null) ? strtoupper($qiSettings['default_currency']) : Currencies::BASE;
-$docCurrency = $editMode ? (Currencies::isValid($invoiceData['currency'] ?? null) ? strtoupper($invoiceData['currency']) : Currencies::BASE) : $defaultCurrency;
+$docCurrency = $editMode ? (Currencies::isValid($invoiceData['currency'] ?? null) ? strtoupper($invoiceData['currency']) : Currencies::BASE) : ($prefill['currency'] ?? $defaultCurrency);
 $docRate = $editMode ? (float)($invoiceData['exchange_rate'] ?? 1) : ($docCurrency === Currencies::BASE ? 1.0 : 0.0);
 $docSymbol = Currencies::symbol($docCurrency);
 ?>
@@ -180,7 +192,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                                 <option value="">Select Customer...</option>
                                 <?php foreach ($customers as $c): ?>
                                     <?php $custCur = Currencies::isValid($c['currency'] ?? null) ? strtoupper($c['currency']) : ''; ?>
-                                    <option value="<?= $c['id'] ?>" data-currency="<?= $custCur ?>" <?= ($editMode && $invoiceData['customer_id'] == $c['id']) ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
+                                    <option value="<?= $c['id'] ?>" data-currency="<?= $custCur ?>" <?= ((int)$c['id'] === $selectedCustomerId) ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -190,7 +202,7 @@ $docSymbol = Currencies::symbol($docCurrency);
                             <select name="project_id" class="fw-qi__input">
                                 <option value="">None</option>
                                 <?php foreach ($projects as $p): ?>
-                                    <option value="<?= $p['project_id'] ?>" <?= ($editMode && $invoiceData['project_id'] == $p['project_id']) ? 'selected' : '' ?>><?= htmlspecialchars($p['name']) ?></option>
+                                    <option value="<?= $p['id'] ?>" <?= ($p['id'] === $selectedProjectId) ? 'selected' : '' ?>><?= htmlspecialchars($p['label']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -641,6 +653,10 @@ $docSymbol = Currencies::symbol($docCurrency);
             projectSelect.addEventListener('change', function() {
                 loadBoards(this.value);
             });
+            // A preselected project (editing, or opened from Projects): load its boards now
+            if (projectSelect.value) {
+                loadBoards(projectSelect.value);
+            }
         }
 
         if (importBtn) {

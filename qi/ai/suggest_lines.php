@@ -7,6 +7,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
+require_once __DIR__ . '/../../projects/lib/autoload.php';
 
 header('Content-Type: application/json');
 
@@ -36,13 +37,19 @@ if ($companyId) {
 // Basic heuristics for suggestions
 $suggestions = [];
 
-// If a project_id is provided, fetch board items to suggest
-if ($projectId > 0) {
+// If a project_id is provided, fetch board items to suggest: only from this
+// company's project and the live boards of it the user can open
+if ($projectId > 0 && $companyId) {
     try {
-        // Fetch items from board_items for the given project boards (join board_items -> projects?)
-        $stmt = $DB->prepare("SELECT bi.title FROM board_items bi JOIN project_boards pb ON bi.board_id = pb.board_id WHERE pb.project_id = ? AND bi.archived = 0 ORDER BY bi.title LIMIT 10");
-        $stmt->execute([$projectId]);
-        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $boardIds = array_map(fn($b) => (int)$b['id'], ProjectLink::pickerBoards($DB, (int)$companyId, (int)$_SESSION['user_id'], (string)($_SESSION['role'] ?? 'viewer'), $projectId));
+        $items = [];
+        if ($boardIds) {
+            $stmt = $DB->prepare("SELECT bi.title FROM board_items bi
+                                   WHERE bi.board_id IN (" . implode(',', $boardIds) . ") AND bi.company_id = ? AND (bi.archived = 0 OR bi.archived IS NULL)
+                                ORDER BY bi.title LIMIT 10");
+            $stmt->execute([$companyId]);
+            $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
         foreach ($items as $item) {
             $desc = trim($item['title']);
             if ($desc) {

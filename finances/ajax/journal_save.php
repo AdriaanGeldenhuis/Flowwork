@@ -84,6 +84,33 @@ if (!empty($invalidCodes)) {
     json_error('Invalid or restricted account code(s): ' . implode(', ', $invalidCodes));
 }
 
+// Project tags come back from the client (journal_get → edit → save): keep
+// only a project, board and item of THIS company, an item only together with
+// its own board, and a board only on the tagged project. A board without a
+// project tag gives the line its project, so the GL project filter sees it.
+// Invalid tags are dropped.
+require_once __DIR__ . '/../../projects/lib/autoload.php';
+foreach ($lines as $i => $line) {
+    $tagProject = !empty($line['project_id']) ? (int)$line['project_id'] : null;
+    $tagBoard   = !empty($line['board_id']) ? (int)$line['board_id'] : null;
+    $tagItem    = !empty($line['item_id']) ? (int)$line['item_id'] : null;
+    if ($tagProject && !ProjectLink::belongs($DB, $companyId, $tagProject)) $tagProject = null;
+    if ($tagBoard && !ProjectLink::boardBelongs($DB, $companyId, $tagBoard)) $tagBoard = null;
+    if ($tagItem && (!$tagBoard || !ProjectLink::boardBelongs($DB, $companyId, $tagBoard, $tagItem))) $tagItem = null;
+    if ($tagBoard) {
+        $boardProject = ProjectLink::projectOfBoard($DB, $companyId, $tagBoard) ?: null;
+        if ($tagProject && $boardProject !== $tagProject) {
+            $tagBoard = null;
+            $tagItem  = null;
+        } elseif (!$tagProject && $boardProject && ProjectLink::belongs($DB, $companyId, $boardProject)) {
+            $tagProject = $boardProject;
+        }
+    }
+    $lines[$i]['project_id'] = $tagProject;
+    $lines[$i]['board_id']   = $tagBoard;
+    $lines[$i]['item_id']    = $tagItem;
+}
+
 // Period locks: an entry may not be created in — nor moved into — a locked
 // period (mirrors journal_post.php and the notice shown on journals.php).
 // The existing entry_date of a draft being edited is checked in the update

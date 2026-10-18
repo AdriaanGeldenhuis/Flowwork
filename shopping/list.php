@@ -33,11 +33,11 @@ if (!$list) {
 $stmt = $DB->prepare("
     SELECT i.*, p.name as project_name
     FROM shopping_items i
-    LEFT JOIN projects p ON i.project_id = p.project_id
+    LEFT JOIN projects p ON i.project_id = p.project_id AND p.company_id = ?
     WHERE i.list_id = ? AND i.status != 'removed'
     ORDER BY i.order_index, i.id
 ");
-$stmt->execute([$listId]);
+$stmt->execute([$companyId, $listId]);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch suppliers (CRM accounts of type supplier) for PO conversion dropdown

@@ -2,7 +2,7 @@
 // /calendar/partials/head.php — <head> + opening <body> shared by every Calendar page.
 // The calendar is built on the Mail design system: /mail/css/mail.css first,
 // then /calendar/css/calendar.css. Inputs: $pageTitle, $companyName, $bodyExtraClass (optional)
-if (!defined('CAL_ASSET_VERSION')) define('CAL_ASSET_VERSION', '2026-10-17-maison-2');
+if (!defined('CAL_ASSET_VERSION')) define('CAL_ASSET_VERSION', '2026-10-18-projects');
 $fwTheme = (($_COOKIE['fw_theme'] ?? 'dark') === 'light') ? 'light' : 'dark';
 $mailCssVersion = @filemtime(__DIR__ . '/../../mail/css/mail.css') ?: CAL_ASSET_VERSION;
 ?>
