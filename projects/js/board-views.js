@@ -90,6 +90,9 @@
       if (this.by() !== 'group' && !c) { v.innerHTML = emptyView('Kanban needs a status', 'Add a Status, Priority, People or Dropdown column and cards line up in its lanes.', addColumnBtn('status', 'Add a status column')); return; }
       const scroll = {};
       $$('.fwp-kb__list', v).forEach((l) => { scroll[l.dataset.lane] = l.scrollTop; });
+      // An open add box comes back with what was typed in it (live updates re-render the lanes).
+      const a = document.activeElement;
+      const adds = $$('.fwp-kb__add-input', v).map((f) => { const i = $('input', f); return { key: f.dataset.kbform, value: i.value, focus: i === a, from: i.selectionStart, to: i.selectionEnd }; }).filter((k) => k.value || k.focus);
       const lanes = this.lanes();
       const by = new Map(lanes.map((l) => [l.key, []]));
       const list = FWB.itemsSorted(FWB.filtered());
@@ -108,6 +111,7 @@
         </section>`;
       }).join('')}</div>`;
       $$('.fwp-kb__list', v).forEach((x) => { if (scroll[x.dataset.lane]) x.scrollTop = scroll[x.dataset.lane]; });
+      adds.forEach((k) => { const b = $(`[data-kbadd="${CSS.escape(k.key)}"]`, v); if (b) kbAddBox(b, k); });
     },
     card(it, c, ps) {
       const g = FWB.group(it.group_id);
@@ -163,6 +167,22 @@
       catch (x) { toastError(x); }
     },
   };
+  /** A lane's add box in place of its '+ Add' button; keep: {value, focus, from, to} from before a re-render. */
+  function kbAddBox(add, keep) {
+    const key = add.dataset.kbadd;
+    const f = document.createElement('form');
+    f.className = 'fwp-kb__add-input';
+    f.dataset.kbform = key;
+    f.innerHTML = `<input maxlength="500" placeholder="${esc(FWB.Noun())} name — Enter to add" aria-label="New ${esc(FWB.noun())}">`;
+    add.replaceWith(f);
+    const inp = $('input', f);
+    inp.value = keep ? keep.value : '';
+    if (!keep) inp.focus();
+    else if (keep.focus) { inp.focus({ preventScroll: true }); inp.setSelectionRange(keep.from, keep.to); }
+    f.addEventListener('submit', (ev) => { ev.preventDefault(); const t = inp.value.trim(); if (t) { inp.value = ''; kanban.add(key, t); } });
+    inp.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') { inp.value = ''; inp.blur(); FWB.renderView(); } });
+    inp.addEventListener('blur', () => setTimeout(() => { if (f.isConnected && !inp.value.trim()) FWB.renderView(); }, 120));
+  }
   // kanban events
   let kbDrag = null;
   el.view.addEventListener('dragstart', (e) => {
@@ -193,19 +213,7 @@
   el.view.addEventListener('click', (e) => {
     if (S.view !== 'kanban') return;
     const add = e.target.closest('[data-kbadd]');
-    if (add) {
-      const key = add.dataset.kbadd;
-      const f = document.createElement('form');
-      f.className = 'fwp-kb__add-input';
-      f.innerHTML = `<input maxlength="500" placeholder="${esc(FWB.Noun())} name — Enter to add" aria-label="New ${esc(FWB.noun())}">`;
-      add.replaceWith(f);
-      const inp = $('input', f);
-      inp.focus();
-      f.addEventListener('submit', (ev) => { ev.preventDefault(); const t = inp.value.trim(); if (t) kanban.add(key, t); });
-      inp.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') FWB.renderView(); });
-      inp.addEventListener('blur', () => setTimeout(() => { if (f.isConnected && !inp.value.trim()) FWB.renderView(); }, 120));
-      return;
-    }
+    if (add) { kbAddBox(add); return; }
     const card = e.target.closest('[data-kid]');
     if (card) FWB.openItem(card.dataset.kid);
   });
@@ -537,7 +545,7 @@
       }
       el.view.scrollTo({ left: Math.max(0, x), behavior: smooth ? 'smooth' : 'auto' });
     },
-    destroy() { this.scrolled = false; tip(null); },
+    destroy() { this.scrolled = false; tip(null); gDrag = null; }, // a drag left behind would hold up live updates
   };
   // gantt interaction: drag bars (move / resize), click to open, collapse groups
   let gDrag = null;
@@ -604,7 +612,8 @@
     FWB.renderView();
   });
   el.view.addEventListener('pointercancel', () => { if (gDrag) { gDrag = null; tip(null); FWB.renderView(); } });
-  document.addEventListener('lostpointercapture', (e) => { if (gDrag && e.target === gDrag.bar && !gDrag.bar.isConnected) { gDrag = null; tip(null); FWB.renderView(); } });
+  // (Chrome fires it at the document once the captured bar has left the page.)
+  document.addEventListener('lostpointercapture', () => { if (gDrag && !gDrag.bar.isConnected) { gDrag = null; tip(null); FWB.renderView(); } });
   el.view.addEventListener('pointerleave', () => { if (!gDrag) tip(null); });
   el.view.addEventListener('click', (e) => {
     if (S.view !== 'gantt') return;

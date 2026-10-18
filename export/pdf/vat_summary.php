@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/permissions.php';
 requireRoles(['admin', 'bookkeeper', 'viewer']); // gate like every other VAT surface
+require_once __DIR__ . '/../../includes/pdf/text_report_pdf.php';
 require_once __DIR__ . '/../../finances/lib/AccountsMap.php';
 
 $companyId = $_SESSION['company_id'] ?? null;
@@ -65,52 +66,7 @@ $lines[] = sprintf("%-25s %15s", 'Input VAT (Std Rate)', number_format($inputVat
 $lines[] = str_repeat('-', 45);
 $lines[] = sprintf("%-25s %15s", 'Net VAT Due', number_format($netVat, 2, '.', ''));
 
-function pdf_escape($str)
-{
-    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $str);
-}
-
-function generate_simple_pdf_content(array $lines): string
-{
-    $pdf = "%PDF-1.4\n";
-    $offsets = [];
-    $offsets[] = strlen($pdf);
-    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-    $offsets[] = strlen($pdf);
-    $pdf .= "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
-    $offsets[] = strlen($pdf);
-    $pdf .= "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>\nendobj\n";
-    $offsets[] = strlen($pdf);
-    $pdf .= "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n";
-    // Content
-    // PDF `Td` is a RELATIVE line-matrix translation, not absolute page
-    // coordinates. Passing an absolute (36, yPos) every line accumulated, so
-    // only the first line stayed on the page and the rest marched off it.
-    // Anchor the first line once, then advance each subsequent line by 0 -14.
-    $content = "BT\n/F1 12 Tf\n";
-    $first = true;
-    foreach ($lines as $line) {
-        if ($first) {
-            $content .= sprintf("36 812 Td (%s) Tj\n", pdf_escape($line));
-            $first = false;
-        } else {
-            $content .= sprintf("0 -14 Td (%s) Tj\n", pdf_escape($line));
-        }
-    }
-    $content .= "ET";
-    $offsets[] = strlen($pdf);
-    $pdf .= "5 0 obj\n<< /Length " . strlen($content) . " >>\nstream\n";
-    $pdf .= $content . "\nendstream\nendobj\n";
-    $xrefOffset = strlen($pdf);
-    $pdf .= "xref\n0 6\n0000000000 65535 f \n";
-    foreach ($offsets as $off) {
-        $pdf .= sprintf("%010d 00000 n \n", $off);
-    }
-    $pdf .= "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" . $xrefOffset . "\n%%EOF";
-    return $pdf;
-}
-
-$pdfContent = generate_simple_pdf_content($lines);
+$pdfContent = fw_text_report_pdf($lines);
 header('Content-Type: application/pdf');
 header('Content-Disposition: attachment; filename="vat_summary.pdf"');
 echo $pdfContent;

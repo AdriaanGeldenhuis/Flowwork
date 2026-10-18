@@ -448,7 +448,7 @@ final class ProjectLink
     /**
      * The column a board keeps its cost in, if it has one: a number or formula column
      * called "Actual cost" / "Cost" / "Spent" / "Amount spent", else a money-formatted
-     * one called "… total" or "… amount" — never a percentage, rate, price, budget or margin.
+     * one called "… total" or "… amount" — never a percentage, rate, price, per-unit cost, budget or margin.
      */
     public static function boardCostColumn(array $cols): ?array
     {
@@ -458,7 +458,7 @@ final class ProjectLink
             if (!in_array($c['type'], ['number', 'formula'], true)) continue;
             $cfg = Columns::config($c);
             $name = mb_strtolower(trim((string)$c['name']));
-            if (($cfg['format'] ?? '') === 'percent' || preg_match('/%|percent|margin|variance|markup|budget|rate|price|qty|quantity|hours/u', $name)) continue;
+            if (($cfg['format'] ?? '') === 'percent' || preg_match('/%|percent|margin|variance|markup|budget|rate|price|qty|quantity|hours|\bunits?\b|\bper\b|\beach\b/u', $name)) continue;
             $r = 0;
             if (preg_match('/^(actual\s*costs?|actual|costs?|spent|amount\s*spent|cost\s*to\s*date)$/u', $name)) $r = 3;
             elseif (preg_match('/\bactual\b.*\bcost|\bcost\b/u', $name)) $r = 2;
@@ -536,9 +536,10 @@ final class ProjectLink
         $st->execute([$co, $like, $like, $like, $like]);
         $projects = array_map(fn($p) => ['id' => (int)$p['project_id'], 'name' => $p['name'], 'number' => (string)$p['project_number'], 'status' => $p['status'],
                                         'color' => ProjectRepo::projectColor($p), 'url' => self::projectUrl((int)$p['project_id'])], $st->fetchAll(PDO::FETCH_ASSOC));
-        // A project is visible to its boards' members too: keep only the boards (and their items) the user can open.
+        // A project is visible to its boards' members too: keep only the boards (and their items) the user can open
+        // (a level on the project opens all of its boards, so only board members need the per-board check).
         $limit = max(1, min(100, $limit));
-        $canOpen = fn(array $r) => $repo->boardLevel((int)$r['board_id']) >= 1;
+        $canOpen = fn(array $r) => $repo->projectLevel((int)$r['project_id']) >= 1 || $repo->boardLevel((int)$r['board_id']) >= 1;
         $st = $repo->db->prepare("SELECT b.board_id, b.title, p.name AS project, p.project_id, p.color FROM project_boards b JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
                                    WHERE b.company_id = ? AND $vis AND (b.archived = 0 OR b.archived IS NULL) AND b.title LIKE ? ORDER BY b.title LIMIT 50");
         $st->execute([$co, $like]);

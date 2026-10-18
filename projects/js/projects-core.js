@@ -161,7 +161,12 @@
       const item = ev.target.closest('[data-v]');
       if (!item || !el.contains(item) || item.disabled) return;
       const keep = opts.onClick && opts.onClick(item, ev) === false;
-      if (!keep && activePop === pop) closePop();
+      if (!keep && activePop === pop) {
+        // The chosen item goes with the menu: the keyboard returns to the menu's button (a dialog opened after an await finds it there).
+        const back = pop.el.contains(document.activeElement) && pop.anchor;
+        closePop();
+        if (back && back.isConnected && back.focus) back.focus({ preventScroll: true });
+      }
     });
     el.addEventListener('keydown', (ev) => {
       const items = $$('[data-v]:not([disabled])', el);

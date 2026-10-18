@@ -47,7 +47,7 @@
     const qi = h.indexOf('?');
     const base = qi >= 0 ? h.slice(0, qi) : h;
     const params = new URLSearchParams(qi >= 0 ? h.slice(qi + 1) : '');
-    if (base === 'search') { S.route = 'search'; S.q = params.get('q') || ''; if (el.search) el.search.value = S.q; }
+    if (base === 'search') { S.route = 'search'; S.q = params.get('q') || ''; if (el.search) { el.search.value = S.q; el.searchClear.hidden = !S.q; } }
     else if (base === 'mywork') S.route = 'mywork';
     else if (base === 'archive') S.route = 'archive';
     else { S.route = 'portfolio'; if (params.get('status')) S.filter = params.get('status'); }

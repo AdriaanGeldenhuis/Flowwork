@@ -486,7 +486,12 @@
         : '<div class="hint" style="padding:6px 0">No guests yet.</div>';
     };
     const showLink = (d) => {
-      $('#gLink', m).innerHTML = `<div class="fwp-banner" style="margin-top:10px">${icon(d.sent ? 'check' : 'alert')}<span class="grow">${d.sent ? 'Invitation sent.' : 'The email could not be sent — share this link with them yourself.'} The link works once and expires with the access.</span></div>
+      // Extend (a guest who already joined): same link and password, a later end.
+      const g = d.guest || {};
+      const msg = g.status === 'active'
+        ? `Access extended${g.expires_at ? ' until ' + esc(fmtDate(String(g.expires_at).slice(0, 10))) : ''} — their link and password keep working.${d.sent ? ' They were emailed.' : ''}`
+        : `${d.sent ? 'Invitation sent.' : 'The email could not be sent — share this link with them yourself.'} The link works once and expires with the access.`;
+      $('#gLink', m).innerHTML = `<div class="fwp-banner" style="margin-top:10px">${icon(d.sent || g.status === 'active' ? 'check' : 'alert')}<span class="grow">${msg}</span></div>
         <div class="fwp-copyline"><input class="input" readonly value="${esc(d.link)}" aria-label="Invitation link"><button class="btn btn--sm" type="button" data-copy="${esc(d.link)}">${icon('copy')}Copy</button></div>`;
     };
     m.addEventListener('submit', async (e) => {

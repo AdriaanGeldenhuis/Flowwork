@@ -30,6 +30,8 @@ final class ProjectRepo
     /** Computed access levels (cleared when a project, a board or a membership changes). */
     private array $projectLevels = [];
     private array $boardLevels = [];
+    /** The user's project_members row per project (false: none); the portfolio fills it in one query. */
+    private array $memberRows = [];
     private ?array $names = null;
 
     public function __construct(public readonly PDO $db, public readonly int $companyId, public readonly int $userId, public readonly string $role)
@@ -75,7 +77,7 @@ final class ProjectRepo
 
     public function forgetProject(int $projectId): void
     {
-        unset($this->projectCache[$projectId], $this->projectLevels[$projectId]);
+        unset($this->projectCache[$projectId], $this->projectLevels[$projectId], $this->memberRows[$projectId]);
         $this->boardLevels = [];
     }
 
@@ -89,9 +91,12 @@ final class ProjectRepo
         $level = 0;
         if (in_array($this->userId, [(int)$p['owner_id'], (int)$p['created_by']], true)) $level = 4;
         elseif ((int)$p['project_manager_id'] === $this->userId) $level = 3;
-        $st = $this->db->prepare("SELECT role, can_edit FROM project_members WHERE project_id = ? AND user_id = ? AND company_id = ?");
-        $st->execute([$projectId, $this->userId, $this->companyId]);
-        if ($m = $st->fetch(PDO::FETCH_ASSOC)) {
+        if (!array_key_exists($projectId, $this->memberRows)) {
+            $st = $this->db->prepare("SELECT role, can_edit FROM project_members WHERE project_id = ? AND user_id = ? AND company_id = ?");
+            $st->execute([$projectId, $this->userId, $this->companyId]);
+            $this->memberRows[$projectId] = $st->fetch(PDO::FETCH_ASSOC);
+        }
+        if ($m = $this->memberRows[$projectId]) {
             $l = self::LEVELS[$m['role']] ?? 2;
             if ($l >= 2 && isset($m['can_edit']) && !(int)$m['can_edit']) $l = 1;
             $level = max($level, $l);
@@ -276,7 +281,15 @@ final class ProjectRepo
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) return [];
         foreach ($rows as $r) $this->projectCache[(int)$r['project_id']] ??= $r;
-        $stats = $this->projectStats(array_map(fn($r) => (int)$r['project_id'], $rows));
+        $ids = array_map(fn($r) => (int)$r['project_id'], $rows);
+        if (!$this->isAdmin()) {
+            // The levels below need the user's membership on each project: one query, not one per project.
+            foreach ($ids as $id) $this->memberRows[$id] ??= false;
+            $st = $this->db->prepare("SELECT project_id, role, can_edit FROM project_members WHERE user_id = ? AND company_id = ? AND project_id IN (" . implode(',', $ids) . ")");
+            $st->execute([$this->userId, $this->companyId]);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $m) if ($this->memberRows[(int)$m['project_id']] === false) $this->memberRows[(int)$m['project_id']] = $m;
+        }
+        $stats = $this->projectStats($ids);
         // The caller's level, so the portfolio only offers what the server allows.
         return array_map(fn($r) => $this->projectSummary($r, $stats[(int)$r['project_id']] ?? []) + ['level' => $this->projectLevel((int)$r['project_id'])], $rows);
     }
@@ -408,7 +421,8 @@ final class ProjectRepo
     {
         $st = $this->db->prepare("SELECT b.board_id FROM project_boards b WHERE b.project_id = ? AND b.company_id = ? AND (b.archived = 0 OR b.archived IS NULL)");
         $st->execute([$projectId, $this->companyId]);
-        $boards = array_values(array_filter(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)), fn($b) => $this->boardLevel($b) >= 1));
+        $open = $this->projectLevel($projectId) >= 1; // a level on the project opens all of its boards; board members see theirs
+        $boards = array_values(array_filter(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)), fn($b) => $open || $this->boardLevel($b) >= 1));
         if (!$boards) return [];
         $in = implode(',', $boards);
         $first = [];

@@ -221,6 +221,7 @@
     if (value == null || value === '' || (Array.isArray(value) && !value.length)) delete it.values[c.id];
     else it.values[c.id] = c.type === 'number' && value !== '' && !Number.isNaN(Number(value)) ? Number(String(value).replace(/[\s,R%]/g, '')) : value;
     decorate(it);
+    applySeq++; // a poll answer already on its way predates this value
     refreshItem(it.id, { pop: c.type === 'status' });
     pendingWrites++;
     const live = cellFor(it.id, c.id); // the row was just re-rendered
@@ -420,7 +421,7 @@
       : `<button class="fwp-name__sub" type="button" data-subs="${it.id}" aria-label="Subitems" aria-expanded="${S.expanded.has(it.id)}" title="${n} subitems done">${icon('chev-right')}${n}</button>`;
     const sel = S.selected.has(it.id);
     return `<div class="fwp-row fwp-grid ${sel ? 'is-selected' : ''} ${S.openItem === it.id ? 'is-open' : ''} ${S.expanded.has(it.id) ? 'is-expanded' : ''}" data-iid="${it.id}" role="row" style="--cols:${colsTemplate(vc)}">
-      <div class="fwp-cell fwp-cell--check" style="position:sticky;left:0;z-index:2;background:inherit"><button class="fwp-check ${sel ? 'is-on' : ''}" type="button" data-sel="${it.id}" role="checkbox" aria-checked="${sel}" aria-label="Select ${esc(it.title)}">${icon('check')}</button></div>
+      <div class="fwp-cell fwp-cell--check" style="position:sticky;left:0;z-index:2"><button class="fwp-check ${sel ? 'is-on' : ''}" type="button" data-sel="${it.id}" role="checkbox" aria-checked="${sel}" aria-label="Select ${esc(it.title)}">${icon('check')}</button></div>
       <div class="fwp-cell fwp-cell--name" style="left:${CHECK_W}px" data-cid="name" tabindex="-1">
         ${canEdit() && !S.sort.length && finePointer() ? `<span class="fwp-grip" draggable="true" data-drag="${it.id}" aria-hidden="true">${icon('grip')}</span>` : ''}
         <span class="fwp-name"><span class="fwp-name__text" ${canEdit() ? 'data-rename' : ''}>${esc(it.title)}</span>${subs}</span>
@@ -475,6 +476,7 @@
     // Take the keyboard back only if a cell had it: a re-render from the search box, a filter or a poll must not.
     const a = document.activeElement;
     const hadFocus = !!(a && el.view.contains(a) && a.matches('.fwp-cell[data-cid]'));
+    const restoreAdds = keepAddBoxes(el.view);
     el.view.innerHTML = `<div class="fwp-board" id="board">
       ${S.board.truncated ? `<div class="fwp-banner" role="status" style="margin:0 12px 10px">${icon('alert')}<span class="grow">This board has ${esc(S.board.items_total)} ${esc(noun())}s — the first ${esc(S.items.length)} are shown. Archive or move some to see the rest.</span></div>` : ''}
       ${S.guest ? `<div class="fwp-guestbar">${icon('eye')}<span class="grow">You’re viewing this board as a guest — read only. It stays up to date as the team works.</span><form method="post" action="/projects/guest-logout.php" style="display:contents"><input type="hidden" name="csrf_token" value="${esc((document.querySelector('meta[name="csrf-token"]') || {}).content || '')}"><button class="btn btn--sm btn--ghost" type="submit">Sign out</button></form></div>` : ''}
@@ -486,6 +488,22 @@
       if (hadFocus) focusCell(S.focus.itemId, S.focus.colId, false);
       else { const c = cellFor(S.focus.itemId, S.focus.colId); if (c) c.classList.add('is-focus'); }
     }
+    restoreAdds();
+  }
+  // What is half typed in an add box (and its caret) comes back after a re-render: live updates neither wipe it nor wait for it.
+  const ADD_BOXES = '[data-addto] input, [data-subadd] input, .fwp-kb__add-input input';
+  function keepAddBoxes(root) {
+    const a = document.activeElement;
+    const kept = $$('[data-addto] input, [data-subadd] input', root).filter((i) => i.value || i === a).map((i) => ({
+      sel: i.form.dataset.addto ? `[data-addto="${i.form.dataset.addto}"] input` : `[data-subadd="${i.form.dataset.subadd}"] input`,
+      value: i.value, focus: i === a, from: i.selectionStart, to: i.selectionEnd,
+    }));
+    return () => kept.forEach((k) => {
+      const i = el.view.querySelector(k.sel);
+      if (!i) return;
+      i.value = k.value;
+      if (k.focus) { i.focus({ preventScroll: true }); i.setSelectionRange(k.from, k.to); }
+    });
   }
   function rowEl(id) { return el.view.querySelector(`.fwp-row[data-iid="${id}"]`); }
   function cellFor(id, cid) { const r = rowEl(id); return r ? r.querySelector(`.fwp-cell[data-cid="${cid}"]`) : null; }
@@ -504,10 +522,13 @@
         const fresh = tmp.firstElementChild;
         // The row and, when expanded, its subitems block (a sibling) are replaced together.
         const old = row.nextElementSibling;
-        if (old && old.matches(`.fwp-subs[data-subsof="${id}"]`)) old.remove();
+        const subs = old && old.matches(`.fwp-subs[data-subsof="${id}"]`) ? old : null;
+        const restoreAdds = subs ? keepAddBoxes(subs) : null;
+        if (subs) subs.remove();
         const hadFocus = row.contains(document.activeElement);
         row.replaceWith(...tmp.children);
         if (hadFocus && S.focus && S.focus.itemId === Number(id)) focusCell(S.focus.itemId, S.focus.colId, false);
+        if (restoreAdds) restoreAdds();
         if (opts.pop) { const st = fresh.querySelector('.fwp-cell--status .fwp-st'); if (st) st.classList.add('is-pop'); }
         if (opts.flash) fresh.classList.add('is-flash');
         refreshSummary(g.id);
@@ -562,7 +583,11 @@
     if (c.type === 'files') { openItem(it.id, 'files'); return; }
     if (!canEdit() || !C.editable(c)) { if (c.type !== 'formula') openItem(it.id); return; }
     closePop();
-    C.edit(c, it, cellEl, (v) => setValue(it, c, v), {
+    C.edit(c, it, cellEl, (v) => {
+      // Picked in a popover: once it closes, the keyboard is back on the cell (not on the page).
+      setTimeout(() => { if (document.activeElement === document.body && S.focus && S.focus.itemId === it.id && String(S.focus.colId) === String(c.id)) focusCell(it.id, c.id, false); }, 0);
+      return setValue(it, c, v);
+    }, {
       canManage: canManage(),
       onEditLabels: (cc) => FWB.dialogs && FWB.dialogs.columnSettings(cc),
       allTags: (cc) => Array.from(new Set(S.items.flatMap((x) => x.values[cc.id] || []))).sort(),
@@ -1023,7 +1048,8 @@
     }
     if (/^[0-9]$/.test(e.key) && canEdit() && S.focus.colId !== 'name') {
       const c = col(S.focus.colId);
-      if (c && c.type === 'rating') { e.preventDefault(); setValue(it, c, Math.min(Number(e.key), (c.config || {}).max || 5) || null); return; }
+      // Not also a view switch (1–6): the row re-renders, so the page-wide keys would not see a grid key any more.
+      if (c && c.type === 'rating') { e.preventDefault(); e.stopPropagation(); setValue(it, c, Math.min(Number(e.key), (c.config || {}).max || 5) || null); return; }
     }
     if (e.key === 'x') { e.preventDefault(); const b = rowEl(it.id).querySelector('[data-sel]'); if (b) b.click(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.focus.colId !== 'name' && canEdit()) {
@@ -1359,9 +1385,9 @@
   function editingInView() {
     if (window.FWP.activePop || (FWB.ganttDragging && FWB.ganttDragging())) return true;
     if (document.querySelector('.fwp-cell input.fwp-inline, .fwp-name__input, [data-gname][contenteditable="true"], #boardTitle[contenteditable="true"]')) return true;
+    // An add box keeps its text through a re-render (keepAddBoxes): only one being typed in holds updates back.
     const a = document.activeElement;
-    if (a && el.view.contains(a) && a.matches('input, textarea, select, [contenteditable="true"]')) return true;
-    return $$('[data-addto] input, [data-subadd] input, .fwp-kb__add-input input', el.view).some((i) => i.value.trim() !== '');
+    return !!(a && el.view.contains(a) && a.matches('input, textarea, select, [contenteditable="true"]') && !(a.matches(ADD_BOXES) && !a.value));
   }
   async function poll() {
     clearTimeout(pollTimer);

@@ -682,8 +682,10 @@ final class BoardRepo
     {
         $now = [];
         foreach ($new['options'] as $o) $now[mb_strtolower($o['label'])] = $o['label'];
+        // A page loaded before `was` existed sends renames as new options: keep those cells.
+        $knows = (bool)array_filter($posted, fn($p) => is_array($p) && array_key_exists('was', $p));
         $map = [];
-        foreach ($old['options'] as $o) $map[mb_strtolower($o['label'])] = $now[mb_strtolower($o['label'])] ?? null; // kept, or removed …
+        foreach ($old['options'] as $o) $map[mb_strtolower($o['label'])] = $now[mb_strtolower($o['label'])] ?? ($knows ? null : $o['label']); // kept, or removed …
         foreach ($posted as $p) { // … unless renamed
             if (!is_array($p) || !is_string($p['was'] ?? null)) continue;
             $was = mb_strtolower(trim($p['was']));
@@ -833,6 +835,7 @@ final class BoardRepo
         $upsert = $db->prepare("INSERT INTO board_item_values (item_id, column_id, value) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)");
         $delete = $db->prepare("DELETE FROM board_item_values WHERE item_id = ? AND column_id = ?");
         $out = [];
+        $writes = [];
         foreach ($items as $it) {
             $iid = (int)$it['id'];
             $raw = $vals[$iid] ?? [];
@@ -854,9 +857,24 @@ final class BoardRepo
                 $fid = (int)$f['column_id'];
                 $new = $raw[$fid] ?? null;
                 $old = $vals[$iid][$fid] ?? null;
-                if ($new === null || $new === '') { if ($old !== null) $delete->execute([$iid, $fid]); }
-                elseif ((string)$old !== $new) $upsert->execute([$iid, $fid, $new]);
+                if ($new === null || $new === '') { if ($old !== null) $writes[] = [$iid, $fid, null]; }
+                elseif ((string)$old !== $new) $writes[] = [$iid, $fid, $new];
                 $out[$iid][$fid] = $new === null || $new === '' ? null : (is_numeric($new) ? (float)$new : $new);
+            }
+        }
+        // One commit for a whole board (callers may hold their own transaction), not one per cell.
+        if ($writes) {
+            $own = !$db->inTransaction();
+            if ($own) $db->beginTransaction();
+            try {
+                foreach ($writes as [$iid, $fid, $new]) {
+                    if ($new === null) $delete->execute([$iid, $fid]);
+                    else $upsert->execute([$iid, $fid, $new]);
+                }
+                if ($own) $db->commit();
+            } catch (Throwable $e) {
+                if ($own) $db->rollBack();
+                throw $e;
             }
         }
         return $out;

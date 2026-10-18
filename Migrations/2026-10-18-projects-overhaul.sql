@@ -65,7 +65,6 @@ ALTER TABLE `board_items`
   ADD COLUMN IF NOT EXISTS `reminded_on` date DEFAULT NULL,
   ADD INDEX IF NOT EXISTS `idx_company_assigned` (`company_id`, `assigned_to`),
   ADD INDEX IF NOT EXISTS `idx_company_due` (`company_id`, `due_date`),
-  ADD INDEX IF NOT EXISTS `idx_due` (`due_date`),
   ADD INDEX IF NOT EXISTS `idx_board_company_archived` (`board_id`, `company_id`, `archived`);
 
 ALTER TABLE `board_item_comments`
@@ -98,7 +97,8 @@ PREPARE fw_stmt FROM @fw_sql;
 EXECUTE fw_stmt;
 DEALLOCATE PREPARE fw_stmt;
 
--- Lookups other modules' lines get from Projects (item panel, Money tab).
+-- The reminders' due-date lookup (across companies), and the lookups other
+-- modules' lines get from Projects (item panel, Money tab).
 DROP PROCEDURE IF EXISTS fw_projects_add_index;
 DELIMITER //
 CREATE PROCEDURE fw_projects_add_index(IN t VARCHAR(64), IN n VARCHAR(64), IN cols VARCHAR(255))
@@ -108,7 +108,7 @@ BEGIN
            SELECT index_name FROM information_schema.statistics
             WHERE table_schema = DATABASE() AND table_name = t
          GROUP BY index_name
-           HAVING LEFT(GROUP_CONCAT(column_name ORDER BY seq_in_index), CHAR_LENGTH(cols)) = cols) x) = 0 THEN
+           HAVING LEFT(CONCAT(GROUP_CONCAT(column_name ORDER BY seq_in_index), ','), CHAR_LENGTH(cols) + 1) = CONCAT(cols, ',')) x) = 0 THEN
     SET @fw_sql := CONCAT('ALTER TABLE `', t, '` ADD INDEX `', n, '` (`', REPLACE(cols, ',', '`,`'), '`)');
     PREPARE fw_stmt FROM @fw_sql;
     EXECUTE fw_stmt;
@@ -116,6 +116,7 @@ BEGIN
   END IF;
 END //
 DELIMITER ;
+CALL fw_projects_add_index('board_items', 'idx_due', 'due_date');
 CALL fw_projects_add_index('quote_lines', 'idx_project_item', 'project_item_id');
 CALL fw_projects_add_index('invoice_lines', 'idx_project_item', 'project_item_id');
 CALL fw_projects_add_index('ap_bill_lines', 'idx_project_item', 'project_item_id');
