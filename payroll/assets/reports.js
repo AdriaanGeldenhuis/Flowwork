@@ -51,7 +51,7 @@
           if (data.ok) {
             this.renderEMP201(data.report);
           } else {
-            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + (data.error || 'Report failed') + '</div>';
+            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + this.escapeHtml(data.error || 'Report failed') + '</div>';
           }
         })
         .catch(err => {
@@ -67,7 +67,7 @@
         <div class="fw-payroll__report-output">
           <div class="fw-payroll__report-output-header">
             <h3>EMP201 Monthly Return</h3>
-            <p>Period: ${report.period_label}</p>
+            <p>Period: ${this.escapeHtml(report.period_label)}</p>
           </div>
 
           <div class="fw-payroll__report-table">
@@ -104,13 +104,13 @@
           </div>
 
           <div class="fw-payroll__report-meta">
-            <p><strong>Pay Runs Included:</strong> ${report.run_count}</p>
-            <p><strong>Total Employees:</strong> ${report.employee_count}</p>
+            <p><strong>Pay Runs Included:</strong> ${this.escapeHtml(report.run_count)}</p>
+            <p><strong>Total Employees:</strong> ${this.escapeHtml(report.employee_count)}</p>
             <p><strong>Gross Pay:</strong> R ${this.formatMoney(report.gross)}</p>
           </div>
 
           <div class="fw-payroll__report-actions">
-            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadEMP201('${report.period}')">
+            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadEMP201(${this.jsArg(report.period)})">
               Download CSV
             </button>
             <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.printReport()">
@@ -143,7 +143,7 @@
           if (data.ok) {
             this.renderEMP501(data.report);
           } else {
-            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + (data.error || 'Report failed') + '</div>';
+            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + this.escapeHtml(data.error || 'Report failed') + '</div>';
           }
         })
         .catch(err => {
@@ -159,7 +159,7 @@
         <div class="fw-payroll__report-output">
           <div class="fw-payroll__report-output-header">
             <h3>EMP501 Reconciliation</h3>
-            <p>Period: ${report.period_label}</p>
+            <p>Period: ${this.escapeHtml(report.period_label)}</p>
           </div>
 
           <div class="fw-payroll__report-table">
@@ -176,7 +176,7 @@
               <tbody>
                 ${report.months.map(month => `
                   <tr>
-                    <td>${month.label}</td>
+                    <td>${this.escapeHtml(month.label)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(month.paye)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(month.uif)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(month.sdl)}</td>
@@ -195,7 +195,7 @@
           </div>
 
           <div class="fw-payroll__report-actions">
-            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadEMP501('${report.period}')">
+            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadEMP501(${this.jsArg(report.period)})">
               Download CSV
             </button>
             <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.printReport()">
@@ -241,7 +241,7 @@
           if (data.ok) {
             this.renderSummary(data.summary);
           } else {
-            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + (data.error || 'Report failed') + '</div>';
+            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + this.escapeHtml(data.error || 'Report failed') + '</div>';
           }
         })
         .catch(err => {
@@ -257,7 +257,7 @@
         <div class="fw-payroll__report-output">
           <div class="fw-payroll__report-output-header">
             <h3>Payroll Summary</h3>
-            <p>Period: ${summary.period_label}</p>
+            <p>Period: ${this.escapeHtml(summary.period_label)}</p>
           </div>
 
           <div class="fw-payroll__report-table">
@@ -275,7 +275,7 @@
               <tbody>
                 ${summary.employees.map(emp => `
                   <tr>
-                    <td>${emp.name}</td>
+                    <td>${this.escapeHtml(emp.name)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(emp.gross)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(emp.paye)}</td>
                     <td class="fw-payroll__report-table-amount">${this.formatMoney(emp.uif)}</td>
@@ -296,7 +296,7 @@
           </div>
 
           <div class="fw-payroll__report-actions">
-            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadSummary('${summary.period}')">
+            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadSummary(${this.jsArg(summary.period)})">
               Download CSV
             </button>
             <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.printReport()">
@@ -329,7 +329,7 @@
           if (data.ok) {
             this.renderCostAllocation(data.allocation);
           } else {
-            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + (data.error || 'Report failed') + '</div>';
+            output.innerHTML = '<div class="fw-payroll__alert fw-payroll__alert--error">' + this.escapeHtml(data.error || 'Report failed') + '</div>';
           }
         })
         .catch(err => {
@@ -345,7 +345,7 @@
         <div class="fw-payroll__report-output">
           <div class="fw-payroll__report-output-header">
             <h3>Project Cost Allocation</h3>
-            <p>Period: ${allocation.period_label}</p>
+            <p>Period: ${this.escapeHtml(allocation.period_label)}</p>
           </div>
 
           <div class="fw-payroll__report-table">
@@ -378,7 +378,7 @@
           </div>
 
           <div class="fw-payroll__report-actions">
-            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadCostAllocation('${allocation.period}')">
+            <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.downloadCostAllocation(${this.jsArg(allocation.period)})">
               Download CSV
             </button>
             <button class="fw-payroll__btn fw-payroll__btn--secondary" onclick="PayrollReports.printReport()">
@@ -405,15 +405,27 @@
       window.location.href = '/payroll/payslips.php?run_id=' + runId;
     },
 
-    escapeHtml: function(text) {
-      const div = document.createElement('div');
-      div.textContent = text == null ? '' : String(text);
-      return div.innerHTML;
-    },
-
     formatMoney: function(cents) {
       const amount = parseFloat(cents) / 100;
       return amount.toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    },
+
+    // HTML escape utility to prevent XSS
+    escapeHtml: function(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    },
+
+    // Argument for an inline onclick="...": JSON.stringify makes it a JS string
+    // literal, escapeHtml keeps it inside the attribute (the browser decodes the
+    // entities back before running the handler, so escapeHtml alone is not enough).
+    jsArg: function(value) {
+      return this.escapeHtml(JSON.stringify(String(value ?? '')));
     },
 
     downloadEMP201: function(period) {
