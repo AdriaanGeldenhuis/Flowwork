@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../init.php';
 require_once __DIR__ . '/../../auth_gate.php';
 require_once __DIR__ . '/../../finances/permissions.php';
 requireRoles(['admin', 'bookkeeper']); // payroll detail: finance staff only, not viewers
+require_once __DIR__ . '/../../includes/pdf/text_report_pdf.php';
 
 $companyId = $_SESSION['company_id'] ?? null;
 if (!$companyId) {
@@ -67,44 +68,7 @@ foreach ($runs as $run) {
     );
 }
 
-function pdf_escape($str)
-{
-    return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $str);
-}
-
-function generate_simple_pdf_content(array $lines): string
-{
-    $pdf = "%PDF-1.4\n";
-    $offsets = [];
-    $offsets[] = strlen($pdf);
-    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-    $offsets[] = strlen($pdf);
-    $pdf .= "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
-    $offsets[] = strlen($pdf);
-    $pdf .= "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>\nendobj\n";
-    $offsets[] = strlen($pdf);
-    $pdf .= "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n";
-    // Content
-    $yPos = 812;
-    $content = "BT\n/F1 12 Tf\n";
-    foreach ($lines as $line) {
-        $content .= sprintf("36 %.2f Td (%s) Tj\n", $yPos, pdf_escape($line));
-        $yPos -= 14;
-    }
-    $content .= "ET";
-    $offsets[] = strlen($pdf);
-    $pdf .= "5 0 obj\n<< /Length " . strlen($content) . " >>\nstream\n";
-    $pdf .= $content . "\nendstream\nendobj\n";
-    $xrefOffset = strlen($pdf);
-    $pdf .= "xref\n0 6\n0000000000 65535 f \n";
-    foreach ($offsets as $off) {
-        $pdf .= sprintf("%010d 00000 n \n", $off);
-    }
-    $pdf .= "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" . $xrefOffset . "\n%%EOF";
-    return $pdf;
-}
-
-$pdfContent = generate_simple_pdf_content($lines);
+$pdfContent = fw_text_report_pdf($lines);
 header('Content-Type: application/pdf');
 header('Content-Disposition: attachment; filename="payroll_summary.pdf"');
 echo $pdfContent;
