@@ -51,6 +51,9 @@ final class Automations
     private static int $actions = 0;
     private static array $seen = [];
     private const MAX_ACTIONS = 100;
+    /** A bulk edit starts a chain per item: all chains of one request stop after MAX_TOTAL. */
+    private static int $total = 0;
+    private const MAX_TOTAL = 5000;
 
     public static function forget(int $boardId): void
     {
@@ -100,10 +103,12 @@ final class Automations
                 $ac = json_decode((string)$r['action_config'], true) ?: [];
                 $ok = true;
                 $err = null;
-                $stop = ++self::$actions > self::MAX_ACTIONS;
+                $stop = null;
+                if (++self::$actions > self::MAX_ACTIONS) $stop = 'Automation limit reached for this change (' . self::MAX_ACTIONS . ' actions).';
+                elseif (++self::$total > self::MAX_TOTAL) $stop = 'Automation limit reached for this request (' . self::MAX_TOTAL . ' actions).';
                 if ($stop) {
                     $ok = false;
-                    $err = 'Automation limit reached for this change (' . self::MAX_ACTIONS . ' actions).';
+                    $err = $stop;
                 } else {
                     try {
                         self::act($repo, $r, $ac, $item);

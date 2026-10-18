@@ -77,7 +77,8 @@ while (($row = fgetcsv($fh, 0, $delim, '"', '')) !== false) {
     if ($added >= 2000) { $skipped[] = 'Stopped after 2 000 rows.'; break; }
     if (!array_filter($row, fn($v) => trim((string)$v) !== '')) continue;
     if (++$read > 20000) { $skipped[] = 'Stopped after reading 20 000 rows.'; break; }
-    $title = trim((string)($row[$titleIdx] ?? ''));
+    // Spaces as ItemRepo::create counts them, so a name of only (non-breaking) spaces is a nameless row, not a stop.
+    $title = trim((string)preg_replace('/\s+/u', ' ', (string)($row[$titleIdx] ?? '')));
     if ($title === '') { if (++$noName <= 10 && count($skipped) < 50) $skipped[] = "Row $line: no name"; continue; }
     $gid = $defaultGroup;
     if ($groupIdx !== null && ($gname = trim((string)($row[$groupIdx] ?? ''))) !== '') {

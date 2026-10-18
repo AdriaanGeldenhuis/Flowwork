@@ -46,6 +46,7 @@ final class ProjectSchema
         try {
             clearstatcache();
             if ($marker !== null && is_file($marker)) return; // finished while this request waited
+            if ($failed !== null && is_file($failed) && filemtime($failed) > time() - 600) return; // … or failed: wait as above
 
             $ok = true;
             foreach (['createTables' => true, 'addColumns' => true, 'extendEnums' => true, 'addIndexes' => false, 'backfill' => false] as $step => $required) {

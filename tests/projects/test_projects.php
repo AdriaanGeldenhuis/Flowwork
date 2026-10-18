@@ -253,6 +253,129 @@ assert_true($res['automated'], 'automation reported');
 assert_eq($doneGroup, (int)$DB->query("SELECT group_id FROM board_items WHERE id = $a")->fetchColumn(), 'status → move to group');
 throws(fn() => Automations::save(repo(ADMIN2, 'member'), $bid, ['trigger' => 'item_created', 'action' => 'archive']), 'only managers add automations', ProjectForbidden::class);
 
+// ------------------------------------------------------------------ formulas: new columns, loops, labels, progress, TODAY()
+$cell = fn(int $item, int $col) => $DB->query("SELECT value FROM board_item_values WHERE item_id = $item AND column_id = $col")->fetchColumn();
+$rb = $br->createBoard($pid, ['template' => 'blank', 'title' => 'PrTest Formulas']);
+$rg = $br->load($rb)['groups'][0]['id'];
+$rS = col($br->load($rb), 'Status'); $rD = col($br->load($rb), 'Date');
+$rA = $br->createColumn($rb, ['type' => 'number', 'name' => 'A']);
+$r1 = $ir->create($rb, $rg, 'Formula row', [$rA['id'] => 5])['id'];
+$rF = $br->createColumn($rb, ['type' => 'formula', 'name' => 'F', 'config' => ['formula' => '{A} * 2', 'precision' => 0]]);
+assert_eq('10', $cell($r1, $rF['id']), 'a new formula column fills in on existing items');
+throws(fn() => $br->createColumn($rb, ['type' => 'formula', 'name' => 'Me', 'config' => ['formula' => '{Me} + 1']]), 'a formula cannot read itself');
+throws(fn() => $br->updateColumn($rF['id'], ['config' => ['formula' => '[#' . $rF['id'] . '] + 1']]), 'nor itself by #id');
+$rG = $br->createColumn($rb, ['type' => 'formula', 'name' => 'G', 'config' => ['formula' => '{H} + 1', 'precision' => 0]]);
+throws(fn() => $br->createColumn($rb, ['type' => 'formula', 'name' => 'H', 'config' => ['formula' => '{G} + 1']]), 'two formulas cannot read each other');
+$setFormula = fn(array $c, string $f) => $DB->prepare("UPDATE board_columns SET config = ? WHERE column_id = ?")->execute([json_encode(['formula' => $f, 'precision' => 0]), $c['id']]);
+$setFormula($rF, '{G} + 1'); $setFormula($rG, '{F} + 1'); // a loop saved by an older version
+BoardRepo::computeFormulas($DB, C, $rb); BoardRepo::computeFormulas($DB, C, $rb);
+assert_eq([false, false], [$cell($r1, $rF['id']), $cell($r1, $rG['id'])], 'a stored loop stays empty instead of growing on every recompute');
+$setFormula($rF, '{A} * 2'); $setFormula($rG, '{F} + 1');
+BoardRepo::computeFormulas($DB, C, $rb);
+assert_eq('11', $cell($r1, $rG['id']), 'formulas reading formulas, in order');
+$rL = $br->createColumn($rb, ['type' => 'formula', 'name' => 'Long', 'config' => ['formula' => implode('+', array_fill(0, 249, '{A}'))]]);
+throws(fn() => $br->updateColumn($rA['id'], ['name' => 'Amount']), 'a rename that would push a formula past 1000 characters is refused');
+assert_eq('A', $DB->query("SELECT name FROM board_columns WHERE column_id = {$rA['id']}")->fetchColumn(), '… and changes nothing');
+$br->deleteColumn($rL['id']);
+$rSF = $br->createColumn($rb, ['type' => 'formula', 'name' => 'Is done', 'config' => ['formula' => 'IF({Status} = "Done", 1, 0)', 'precision' => 0]]);
+$ir->setValue($r1, $rS['id'], 'Done');
+assert_eq('1', $cell($r1, $rSF['id']), 'formula reads the status label');
+$br->updateColumn($rS['id'], ['config' => ['labels' => array_map(fn($l) => $l['key'] === 'done' ? ['label' => 'Complete'] + $l : $l, $rS['config']['labels'])]]);
+assert_eq(['0', 'Complete'], [$cell($r1, $rSF['id']), $DB->query("SELECT status_label FROM board_items WHERE id = $r1")->fetchColumn()], 'a renamed status label recomputes formulas and the item’s field');
+$rP = $br->createColumn($rb, ['type' => 'progress', 'name' => 'Pct', 'config' => ['mode' => 'subitems']]);
+$rPF = $br->createColumn($rb, ['type' => 'formula', 'name' => 'Pct x2', 'config' => ['formula' => '{Pct} * 2', 'precision' => 0]]);
+$rs = $ir->addSubitem($r1, 'one'); $ir->addSubitem($r1, 'two');
+$ir->updateSubitem($rs['id'], ['done' => true]);
+assert_eq('100', $cell($r1, $rPF['id']), 'formulas read progress from subitems and follow subitem changes');
+$rT = $br->createColumn($rb, ['type' => 'formula', 'name' => 'Days left', 'config' => ['formula' => '{Date} - TODAY()', 'precision' => 0]]);
+$ir->setValue($r1, $rD['id'], date('Y-m-d', strtotime('+10 days')));
+$DB->exec("UPDATE board_item_values SET value = '12' WHERE item_id = $r1 AND column_id = {$rT['id']}");
+$DB->prepare("UPDATE project_boards SET formulas_on = ? WHERE board_id = ?")->execute([date('Y-m-d', strtotime('-1 day')), $rb]);
+assert_eq(10.0, val(item($br->load($rb)['items'], $r1), $rT['id']), 'TODAY() formulas are recomputed once a day when the board is read');
+
+// ------------------------------------------------------------------ dropdown remaps, copies and moves keep values right
+$rDD = $br->createColumn($rb, ['type' => 'dropdown', 'name' => 'Trade', 'config' => ['options' => [['label' => 'Plumbing'], ['label' => 'Electrical'], ['label' => 'Roofing']], 'multi' => true]]);
+$r2 = $ir->create($rb, $rg, 'Second row', [$rDD['id'] => 'Electrical'])['id'];
+$ir->setValue($r1, $rDD['id'], ['Plumbing', 'Roofing']);
+$br->updateColumn($rDD['id'], ['config' => ['options' => [['label' => 'Electrical', 'was' => 'Plumbing'], ['label' => 'Plumbing', 'was' => 'Electrical']], 'multi' => true]]);
+assert_eq(['Electrical', 'Plumbing'], [$cell($r1, $rDD['id']), $cell($r2, $rDD['id'])], 'dropdown options renamed (even swapped) or removed: the cells follow');
+$br->updateColumn($rDD['id'], ['config' => ['options' => [['label' => 'Sparky'], ['label' => 'Plumbing']], 'multi' => true]]);
+assert_eq('Electrical', $cell($r1, $rDD['id']), 'an editor that does not say what an option was keeps the cells');
+$rR = $br->createColumn($rb, ['type' => 'formula', 'name' => 'By id', 'config' => ['formula' => '[#' . $rA['id'] . '] + 1', 'precision' => 0]]);
+$br->createColumn($rb, ['type' => 'progress', 'name' => 'From status', 'config' => ['mode' => 'status', 'sources' => [$rS['id']]]]);
+$rc = $br->copyBoard($rb, $pid, true);
+$rcc = array_column($br->load($rc)['columns'], null, 'name');
+assert_eq('[#' . $rcc['A']['id'] . '] + 1', $rcc['By id']['config']['formula'], 'a copied board’s formulas use the copied column ids');
+assert_eq([$rcc['Status']['id']], $rcc['From status']['config']['sources'], '… and so do its progress sources');
+assert_eq('6', $cell((int)$DB->query("SELECT id FROM board_items WHERE board_id = $rc AND title = 'Formula row'")->fetchColumn(), $rcc['By id']['id']), 'copied formulas computed');
+$rt = $br->createBoard($pid, ['template' => 'blank', 'title' => 'PrTest Target']);
+$rtS = col($br->load($rt), 'Status');
+$br->updateColumn($rtS['id'], ['config' => ['labels' => [['key' => 'open', 'label' => 'Open'], ['key' => 'fin', 'label' => 'Complete', 'done' => true]]]]);
+$rtDD = $br->createColumn($rt, ['type' => 'dropdown', 'name' => 'Trade', 'config' => ['options' => [['label' => 'plumbing']]]]);
+$ir->setValue($r2, $rS['id'], 'Complete');
+$r3 = $ir->create($rb, $rg, 'Third row', [$rS['id'] => 'Working on it'])['id'];
+$ir->moveToBoard($rb, [$r2, $r3], $rt, null);
+assert_eq(['fin', false, 'plumbing'], [$cell($r2, $rtS['id']), $cell($r3, $rtS['id']), $cell($r2, $rtDD['id'])], 'moving boards maps statuses and options to the target’s own, and drops what it does not have');
+
+// ------------------------------------------------------------------ automations: deleted columns / groups, other boards' ids, chains
+$rgp = $br->createGroup($rb, 'Parked', null, 'bottom');
+$ra1 = Automations::save($member, $rb, ['name' => 'To parked', 'trigger' => 'item_created', 'trigger_config' => [], 'action' => 'move_to_group', 'action_config' => ['group_id' => $rgp['id']]]);
+$ra2 = Automations::save($member, $rb, ['name' => 'A changed', 'trigger' => 'column_changed', 'trigger_config' => ['column_id' => $rA['id']], 'action' => 'notify', 'action_config' => ['to' => 'creator']]);
+throws(fn() => Automations::delete($member, $bid, $ra1), 'an automation is changed only through its own board');
+$br->deleteGroup($rgp['id']);
+$br->deleteColumn($rA['id']);
+assert_eq([0, 0], array_map('intval', $DB->query("SELECT is_active FROM board_automations WHERE id IN ($ra1, $ra2)")->fetchAll(PDO::FETCH_COLUMN)), 'deleting a group or column switches off the automations that used it');
+$rcb = $br->createBoard($pid, ['template' => 'blank', 'title' => 'PrTest Chain']);
+$rK = $br->createColumn($rcb, ['type' => 'text', 'name' => 'K']);
+for ($n = 0; $n < 8; $n++) Automations::save($member, $rcb, ['name' => "Set $n", 'trigger' => 'column_changed', 'trigger_config' => ['column_id' => $rK['id']], 'action' => 'set_value', 'action_config' => ['column_id' => $rK['id'], 'value' => "v$n"]]);
+$rk = $ir->create($rcb, null, 'Chain')['id'];
+$ir->setValue($rk, $rK['id'], 'go');
+assert_true((int)$DB->query("SELECT COUNT(*) FROM board_audit_log WHERE item_id = $rk AND action = 'value_changed'")->fetchColumn() <= 9, 'recipes that set each other off run once each per change');
+
+// ------------------------------------------------------------------ promote, bulk people, group delete, long text, legacy copy, due date
+$rpb = $br->createBoard($pid, ['template' => 'tasks', 'title' => 'PrTest Promote']);
+$rpc = array_column($br->load($rpb)['columns'], null, 'name');
+$rpg = $br->load($rpb)['groups'][0]['id'];
+$rp = $ir->create($rpb, $rpg, 'Parent')['id'];
+$rn = $ir->create($rpb, $rpg, 'Next')['id'];
+$rsub = $ir->addSubitem($rp, 'Child', ADMIN2, '2026-11-05');
+$ir->updateSubitem($rsub['id'], ['done' => true]);
+$rpr = $ir->promoteSubitem($rsub['id']);
+assert_eq([[ADMIN2], '2026-11-05', 'done'], [val($rpr, $rpc['Owner']['id']), val($rpr, $rpc['Due date']['id']), val($rpr, $rpc['Status']['id'])], 'a promoted subitem keeps its owner, due date and done state');
+assert_eq([$rp, $rpr['id'], $rn], array_map('intval', $DB->query("SELECT id FROM board_items WHERE board_id = $rpb ORDER BY position, id")->fetchAll(PDO::FETCH_COLUMN)), '… and sits right below its parent');
+throws(fn() => $ir->promoteSubitem($rsub['id']), 'a subitem is promoted once');
+$rbulk = [];
+for ($n = 0; $n < 5; $n++) $rbulk[] = $ir->create($rpb, $rpg, "Bulk $n", [], 'bottom', ['quiet' => true, 'no_payload' => true])['id'];
+$rnote = (int)$DB->query("SELECT COALESCE(MAX(id), 0) FROM notifications")->fetchColumn();
+$ir->setValues($rpb, $rbulk, $rpc['Owner']['id'], [MEMBER, ADMIN2]);
+$ir->setValues($rpb, array_slice($rbulk, 0, 2), $rpc['Owner']['id'], [ADMIN2]);
+assert_eq(1, (int)$DB->query("SELECT COUNT(*) FROM notifications WHERE id > $rnote AND user_id = " . ADMIN2)->fetchColumn(), 'a bulk assign sends one notification per person');
+$want = [];
+foreach ($DB->query("SELECT v.item_id, v.value FROM board_item_values v JOIN board_items i ON i.id = v.item_id WHERE i.board_id = $rpb AND v.column_id = {$rpc['Owner']['id']}")->fetchAll(PDO::FETCH_NUM) as [$wi, $wv]) {
+    foreach (explode(',', $wv) as $wu) $want[] = "$wi:$wu";
+}
+$have = array_map(fn($p) => $p[0] . ':' . $p[1], $DB->query("SELECT item_id, user_id FROM board_item_people WHERE board_id = $rpb")->fetchAll(PDO::FETCH_NUM));
+sort($want); sort($have);
+assert_eq($want, $have, 'the people index matches the cells after bulk edits');
+$rgx = $br->createGroup($rpb, 'Short-lived', null, 'bottom');
+$rparked = [$ir->create($rpb, $rgx['id'], 'Parked 1')['id'], $ir->create($rpb, $rgx['id'], 'Parked 2')['id']];
+$br->deleteGroup($rgx['id']);
+$ir->archive($rpb, $rparked, false);
+$rorder = array_map('intval', $DB->query("SELECT id FROM board_items WHERE board_id = $rpb AND group_id = $rpg AND archived = 0 ORDER BY position, id")->fetchAll(PDO::FETCH_COLUMN));
+assert_eq($rparked, array_slice($rorder, -2), 'items of a deleted group come back below the items already there');
+$rlt = $br->createColumn($rpb, ['type' => 'longtext', 'name' => 'Notes']);
+$ir->setValue($rp, $rlt['id'], str_repeat("\u{1F600}", 20000));
+assert_true(strlen($cell($rp, $rlt['id'])) <= 65535 && mb_check_encoding($cell($rp, $rlt['id']), 'UTF-8'), 'long text is cut to what a TEXT cell holds');
+$rtl = $br->createColumn($rpb, ['type' => 'timeline', 'name' => 'Window']);
+$ir->setValue($rn, $rtl['id'], ['start' => '2026-11-01', 'end' => '2026-11-09']);
+BoardRepo::migrateLegacyFields($DB, C, $rpb);
+assert_eq(false, $cell($rn, $rpc['Due date']['id']), 'the legacy copy leaves alone a due date that only mirrors the timeline');
+$rin = $br->createColumn($rpb, ['type' => 'date', 'name' => 'Inspection']);
+$ir->setValue($rn, $rin['id'], '2026-10-30');
+$br->updateColumn($rpc['Due date']['id'], ['name' => 'Ordered']);
+$br->updateColumn($rin['id'], ['name' => 'Inspection deadline']);
+assert_eq('2026-10-30', $DB->query("SELECT due_date FROM board_items WHERE id = $rn")->fetchColumn(), 'renaming date columns moves the items’ due date');
+
 // ------------------------------------------------------------------ views, prefs, stars
 $v = $br->saveView($bid, ['name' => 'Mine', 'view' => 'kanban', 'config' => ['person' => MEMBER], 'shared' => true]);
 assert_eq('kanban', $v['view'], 'saved view');

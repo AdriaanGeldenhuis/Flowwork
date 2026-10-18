@@ -331,6 +331,8 @@ final class ItemRepo
             $this->db->rollBack();
             throw $e;
         }
+        $moved = array_map(fn($r) => (int)$r['id'], array_filter($from, fn($r) => (int)$r['group_id'] !== $groupId));
+        if ($moved) BoardRepo::computeFormulas($this->db, $this->repo->companyId, $boardId, $moved); // Last updated moved
         if (self::$depth < 3) {
             self::$depth++;
             try {
@@ -547,6 +549,7 @@ final class ItemRepo
         if (!$archived) {
             // A restored item whose group was deleted goes to the first group.
             $this->db->prepare("UPDATE board_items i LEFT JOIN board_groups g ON g.id = i.group_id SET i.group_id = ? WHERE i.id IN ($in) AND g.id IS NULL")->execute([$this->firstGroup($boardId)]);
+            BoardRepo::computeFormulas($this->db, $this->repo->companyId, $boardId, $itemIds); // Last updated moved
         }
         return $itemIds;
     }

@@ -682,8 +682,10 @@ final class BoardRepo
     {
         $now = [];
         foreach ($new['options'] as $o) $now[mb_strtolower($o['label'])] = $o['label'];
+        // A page loaded before `was` existed sends renames as new options: keep those cells.
+        $knows = (bool)array_filter($posted, fn($p) => is_array($p) && array_key_exists('was', $p));
         $map = [];
-        foreach ($old['options'] as $o) $map[mb_strtolower($o['label'])] = $now[mb_strtolower($o['label'])] ?? null; // kept, or removed …
+        foreach ($old['options'] as $o) $map[mb_strtolower($o['label'])] = $now[mb_strtolower($o['label'])] ?? ($knows ? null : $o['label']); // kept, or removed …
         foreach ($posted as $p) { // … unless renamed
             if (!is_array($p) || !is_string($p['was'] ?? null)) continue;
             $was = mb_strtolower(trim($p['was']));
