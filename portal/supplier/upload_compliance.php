@@ -75,33 +75,34 @@ if (!$typeRow) {
     exit;
 }
 
-// Determine destination directory for uploads (under the app root's
-// /uploads, matching the web path recorded in file_path below)
-$destDir = __DIR__ . '/../../uploads/company/' . $companyId . '/compliance';
-if (!is_dir($destDir) && !mkdir($destDir, 0775, true)) {
-    http_response_code(500);
-    echo 'Failed to create upload directory';
+if ($expiryDate < $issueDate) {
+    http_response_code(400);
+    echo 'The expiry date is before the issue date';
     exit;
 }
 
-// Generate a unique filename based on supplier ID, type ID and timestamp
-$ext = pathinfo($uploadedFile['name'], PATHINFO_EXTENSION);
-$timestamp = time();
-$safeExt = preg_replace('/[^a-zA-Z0-9]/', '', $ext);
-$filename = 'doc_' . $sid . '_' . $typeId . '_' . $timestamp . ($safeExt ? '.' . $safeExt : '');
-$destPath = $destDir . '/' . $filename;
-
-// Move the uploaded file
-if (!move_uploaded_file($uploadedFile['tmp_name'], $destPath)) {
+// Store the file the same way the CRM does: PDF or image only (checked by
+// content, 10 MB at most), a random name, in the private /uploads/compliance
+// folder that is never served directly (downloads go through the CRM).
+require_once __DIR__ . '/../../crm/lib/CrmCompliance.php';
+try {
+    $stored = CrmCompliance::storeUpload($uploadedFile);
+} catch (CrmUserError $e) {
+    http_response_code(400);
+    echo htmlspecialchars($e->getMessage());
+    exit;
+} catch (Throwable $e) {
+    error_log('[portal/compliance] ' . $e->getMessage());
     http_response_code(500);
     echo 'Failed to save uploaded file';
     exit;
 }
+$destPath = $stored['abs'];
+CrmSchema::ensure($DB);
 
 // Record the document in crm_compliance_docs
-$stmt = $DB->prepare("INSERT INTO crm_compliance_docs (company_id, account_id, type_id, reference_no, issue_date, expiry_date, file_path, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'valid', NOW())");
-$relativePath = '/uploads/company/' . $companyId . '/compliance/' . $filename;
-$stmt->execute([$companyId, $sid, $typeId, $referenceNo, $issueDate, $expiryDate, $relativePath]);
+$stmt = $DB->prepare("INSERT INTO crm_compliance_docs (company_id, account_id, type_id, reference_no, issue_date, expiry_date, file_path, original_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'valid', NOW())");
+$stmt->execute([$companyId, $sid, $typeId, mb_substr($referenceNo, 0, 190), $issueDate, $expiryDate, $stored['path'], $stored['name']]);
 
 // Publish the uploaded file to FlowWork Drive under the supplier's Documents
 // folder, identity-tagged with the row id (best-effort; never blocks the upload).

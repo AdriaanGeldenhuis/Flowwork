@@ -9,6 +9,8 @@
 //     (once per item per day, from 07:00),
 //   - sends due scheduled / undo-window mail and syncs mailboxes that were not
 //     synced in the last 90 seconds (that is what finds new mail to notify),
+//   - CRM task reminders that are due; hourly: CRM compliance-document
+//     reminders; daily: supplier delivery figures,
 //   - every 15 minutes: reply-overdue reminders and due recurring invoices
 //     (Quotes & Invoices); hourly: housekeeping.
 // It answers at once with the previous run's figures (visible in the
@@ -127,6 +129,27 @@ if ($now - (int)($state['qi_recurring_at'] ?? 0) >= 900 || !empty($state['qi_rec
         $r = QiRecurring::runDue($DB, 20, min($deadline - 20, microtime(true) + 12));
         $state['qi_recurring_more'] = !empty($r['more']);
         return $r;
+    });
+}
+// CRM: task reminders every tick (a cheap indexed look-up), compliance
+// document reminders hourly, supplier delivery figures once a day.
+$run('crm_tasks', function () use ($DB, $deadline) {
+    require_once __DIR__ . '/../../crm/lib/CrmNotify.php';
+    CrmSchema::ensure($DB);
+    return CrmNotify::tasks($DB, min($deadline - 20, microtime(true) + 5));
+});
+if ($now - (int)($state['crm_compliance_at'] ?? 0) >= 3600) {
+    $state['crm_compliance_at'] = $now;
+    $run('crm_compliance', function () use ($DB, $deadline) {
+        require_once __DIR__ . '/../../crm/lib/CrmNotify.php';
+        return CrmNotify::compliance($DB, min($deadline - 20, microtime(true) + 8));
+    });
+}
+if (date('Y-m-d', (int)($state['crm_kpis_at'] ?? 0)) !== date('Y-m-d', $now) && (int)date('G', $now) >= 2) {
+    $state['crm_kpis_at'] = $now;
+    $run('crm_supplier_kpis', function () use ($DB) {
+        require_once __DIR__ . '/../../crm/lib/CrmNotify.php';
+        return CrmNotify::supplierKpis($DB);
     });
 }
 $run('mail', function () use ($DB, $deadline) {

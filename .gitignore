@@ -90,3 +90,8 @@ storage/projects/
 # Quotes & Invoices runtime data (generated PDFs, schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/qi/
+
+# ---------------------------------------------------------------------------
+# CRM runtime data (import scratch files, schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/crm/

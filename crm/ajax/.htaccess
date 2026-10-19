@@ -1,6 +1,10 @@
-# CRM AJAX endpoints are same-origin only; auth + CSRF are enforced in PHP
-# (init.php + auth_gate.php). No CORS headers, no debug flags here.
-<Files "*.php">
-    Order Allow,Deny
-    Allow from all
-</Files>
+# The CRM's old AJAX endpoints were replaced by /crm/api/ (JSON, CSRF-checked).
+# The deploy never deletes files on the server, so any old copies left here
+# are closed off: nothing in this folder is served.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+</IfModule>

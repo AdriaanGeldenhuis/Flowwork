@@ -8,6 +8,7 @@
 //   invoices  unpaid invoices on their due date (overdue ones flagged)
 //   quotes    sent quotes on their expiry date
 //   deals     the user's open CRM opportunities on their expected close date
+//   followups the user's open CRM follow-ups (tasks) on their due date
 //   payroll   pay days (admins and bookkeepers only)
 // Admins switch sources on or off for the company; users hide the ones they
 // do not want (CalendarSettings). Every query is scoped to the company and to
@@ -21,6 +22,7 @@ final class CalendarSources
         'invoices' => ['label' => 'Invoices due',    'color' => '#2f7457', 'icon' => 'receipt'],
         'quotes'   => ['label' => 'Quotes expiring', 'color' => '#2f5c84', 'icon' => 'file-text'],
         'deals'    => ['label' => 'Deals closing',   'color' => '#b4577a', 'icon' => 'target'],
+        'followups' => ['label' => 'CRM follow-ups', 'color' => '#a0522d', 'icon' => 'flag'],
         'payroll'  => ['label' => 'Pay days',        'color' => '#5b6670', 'icon' => 'wallet'],
     ];
 
@@ -176,14 +178,42 @@ final class CalendarSources
                                 ORDER BY o.close_date LIMIT 500");
         $st->execute([$this->repo->companyId, $this->repo->userId, $from, $to]);
         $out = [];
+        $stages = self::crmAvailable() ? Crm::stageMap($this->db, $this->repo->companyId) : []; // the company's own stage names
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
             $day = substr((string)$o['close_date'], 0, 10);
             $out[] = ['key' => 'deal:' . $o['id'], 'title' => $o['title'] . ' closes',
-                      'sub' => trim(($o['account'] ?: '') . ' · ' . self::money($o['amount'], null) . ' · ' . ucfirst($o['stage']), ' ·'),
+                      'sub' => trim(($o['account'] ?: '') . ' · ' . self::money($o['amount'], null) . ' · ' . ($stages[$o['stage']]['label'] ?? ucfirst(str_replace('_', ' ', (string)$o['stage']))), ' ·'),
                       'start' => $day, 'end' => $day, 'url' => '/crm/opp_view.php?opp_id=' . (int)$o['id'],
                       'status' => $day < $today ? 'overdue' : null];
         }
         return $out;
+    }
+
+    private function followups(string $from, string $to, string $today): array
+    {
+        if (!self::crmAvailable()) return [];
+        CrmSchema::ensure($this->db);
+        $out = [];
+        foreach (CrmTasks::forCalendar($this->db, $this->repo->companyId, $this->repo->userId, $from, $to) as $t) {
+            $day = substr((string)$t['due_at'], 0, 10);
+            $time = $t['all_day'] ? '' : substr((string)$t['due_at'], 11, 5) . ' · ';
+            $out[] = ['key' => 'crm-task:' . $t['id'], 'title' => $time . $t['title'],
+                      'sub' => trim(($t['account']['name'] ?? '') . ($t['deal'] ? ' · ' . $t['deal']['title'] : ''), ' ·'),
+                      'start' => $day, 'end' => $day, 'url' => CrmTasks::url($t),
+                      'status' => $t['state'] === 'overdue' ? 'overdue' : null];
+        }
+        return $out;
+    }
+
+    private static function crmAvailable(): bool
+    {
+        static $ok = null;
+        if ($ok === null) {
+            $lib = dirname(__DIR__, 2) . '/crm/lib/CrmTasks.php';
+            $ok = is_file($lib);
+            if ($ok) require_once $lib;
+        }
+        return $ok;
     }
 
     private function payroll(string $from, string $to, string $today): array
