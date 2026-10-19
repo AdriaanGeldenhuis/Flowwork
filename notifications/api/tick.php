@@ -9,7 +9,8 @@
 //     (once per item per day, from 07:00),
 //   - sends due scheduled / undo-window mail and syncs mailboxes that were not
 //     synced in the last 90 seconds (that is what finds new mail to notify),
-//   - every 15 minutes: reply-overdue reminders; hourly: housekeeping.
+//   - every 15 minutes: reply-overdue reminders and due recurring invoices
+//     (Quotes & Invoices); hourly: housekeeping.
 // It answers at once with the previous run's figures (visible in the
 // scheduler's history) and does the work after the answer has gone out.
 //
@@ -114,6 +115,20 @@ $run('project_reminders', function () use ($DB) {
     require_once __DIR__ . '/../../projects/lib/autoload.php';
     return ProjectNotify::sendDueReminders($DB);
 });
+// Recurring invoices that are due (Quotes & Invoices): before mail, so a long
+// mailbox sync can never starve it, and bounded so mail keeps most of the time.
+// Every 15 minutes, or on the next tick while a backlog remains.
+if ($now - (int)($state['qi_recurring_at'] ?? 0) >= 900 || !empty($state['qi_recurring_more'])) {
+    $state['qi_recurring_at'] = $now;
+    $run('qi_recurring', function () use ($DB, $deadline, &$state) {
+        require_once __DIR__ . '/../../qi/lib/QiSchema.php';
+        require_once __DIR__ . '/../../qi/lib/QiRecurring.php';
+        QiSchema::ensure($DB);
+        $r = QiRecurring::runDue($DB, 20, min($deadline - 20, microtime(true) + 12));
+        $state['qi_recurring_more'] = !empty($r['more']);
+        return $r;
+    });
+}
 $run('mail', function () use ($DB, $deadline) {
     $left = (int)floor($deadline - microtime(true)) - 6; // keep time for the last push flush
     if ($left < 12) return 'no time left';

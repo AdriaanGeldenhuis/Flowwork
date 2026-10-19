@@ -39,17 +39,18 @@ accounts whose names MySQL considers equal get a `"Name (id)"` suffix).
 
 ## Where publishing is triggered
 
-- **Create/edit**: `qi/ajax/save_invoice.php`, `save_quote.php`, `save_credit_note.php`
-- **Send** (re-render after issue so the PDF shows the issued status):
-  `send_invoice.php`, `send_quote.php`
-- **Status/balance changes**: `accept_quote.php`, `decline_quote.php`,
-  `convert_to_invoice.php`, `invoice_action.php`, `record_payment.php`,
-  `refund_invoice.php`, `apply_credit_note.php`, `approve_credit_note.php`,
-  `issue_full_credit.php`, `webhooks/yoco.php` (online payments)
-- **Copies**: `duplicate_invoice.php`, `duplicate_quote.php`,
-  `run_recurring.php`, `qi/cron/generate_recurring.php`
+- **Create/edit**: `qi/lib/QiWriter.php` (the editor's save, `qi/api/document.php`)
+  re-renders and files the PDF after every save of a quote, invoice or credit note
+- **Status/balance changes**: every action in `qi/lib/QiActions.php`
+  (`QiActions::after()` — send, accept/decline, convert, issue, payments,
+  refunds, credits, void/reopen, write-off, archive/restore), the customer
+  pages `qi/p/quote.php` / `qi/p/invoice.php`, and `webhooks/yoco.php`
+  (online payments, through `QiActions::recordPayment`)
+- **Copies**: `qi/lib/QuoteConverter.php` (quote → invoice) and
+  `qi/lib/QiRecurring.php` (recurring runs from the background tick and
+  `qi/cron/generate_recurring.php`)
 - **Downloads**: `qi/ajax/download_pdf.php` (delegates to the service)
-- **Deletes**: `delete_invoice.php`, `delete_quote.php`,
+- **Deletes**: `QiActions::deleteQuote` / `deleteInvoice` / `deleteCredit` and
   `crm/ajax/compliance_doc_delete.php` soft-delete the drive copy
 - **Compliance uploads**: `crm/ajax/compliance_doc_save.php`,
   `portal/supplier/upload_compliance.php`

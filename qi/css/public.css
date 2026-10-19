@@ -1,0 +1,68 @@
+/* ==========================================================================
+   Flowwork — customer pages (/qi/p/): a quote or invoice opened from a link.
+   Built on the Maison tokens (/mail/css/mail.css, light theme); the call to
+   action takes the company's own accent colour (--brand, set on <body>).
+   The document itself is styled by /qi/css/doc.css.
+   ========================================================================== */
+body.fwq-pub { height: auto; min-height: 100vh; overflow: auto; background: #f4efe8; }
+body.fwq-pub::before, body.fwq-pub::after { display: none; }
+.fwq-pub .pub-top { max-width: 1120px; margin: 0 auto; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.fwq-pub .pub-top__brand img { max-height: 46px; max-width: 220px; object-fit: contain; display: block; }
+.fwq-pub .pub-top__brand span { font-family: var(--font-display); font-size: 24px; letter-spacing: -0.015em; }
+.fwq-pub .pub-main { max-width: 1120px; margin: 0 auto; padding: 0 20px 40px; display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 24px; align-items: start; }
+.fwq-pub .pub-card { position: sticky; top: 16px; padding: 22px 22px 20px; border-radius: 22px; background: #fffdf9; box-shadow: 0 0 0 1px rgba(70, 45, 30, 0.08), 0 30px 60px -40px rgba(70, 35, 25, 0.45); }
+.fwq-pub .pub-card::before { content: ''; position: absolute; left: 22px; right: 22px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--brand); }
+.fwq-pub .pub-card__eyebrow { font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+.fwq-pub .pub-card__label { margin-top: 16px; font-size: 12px; color: var(--ink-3); }
+.fwq-pub .pub-card__amount { margin-top: 6px; font-family: var(--font-display); font-weight: 300; font-size: 42px; letter-spacing: -0.03em; line-height: 1.05; font-variant-numeric: tabular-nums lining-nums; display: flex; align-items: center; gap: 10px; overflow-wrap: anywhere; }
+.fwq-pub .pub-card__amount.is-paid { color: #2f7457; }
+.fwq-pub .pub-card__amount.is-paid svg.i { width: 30px; height: 30px; }
+.fwq-pub .pub-card__lead { margin: 8px 0 0; color: var(--ink-2); line-height: 1.55; }
+.fwq-pub .pub-card__lead b { color: var(--ink); font-weight: 600; }
+.fwq-pub .pub-card__lead .is-late { color: #a8281e; }
+.fwq-pub .pub-state { margin-top: 16px; display: flex; gap: 12px; align-items: flex-start; padding: 13px 14px; border-radius: 14px; background: #f6f1ea; color: var(--ink-2); }
+.fwq-pub .pub-state svg.i { flex: 0 0 auto; margin-top: 2px; color: var(--ink-3); }
+.fwq-pub .pub-state b { display: block; color: var(--ink); font-weight: 600; }
+.fwq-pub .pub-state span { display: block; font-size: 13px; line-height: 1.5; margin-top: 2px; }
+.fwq-pub .pub-state.is-good { background: rgba(47, 116, 87, 0.09); }
+.fwq-pub .pub-state.is-good svg.i { color: #2f7457; }
+.fwq-pub .pub-state.is-warn { background: rgba(154, 101, 18, 0.1); }
+.fwq-pub .pub-state.is-warn svg.i { color: #9a6512; }
+.fwq-pub .pub-error { margin-top: 14px; padding: 11px 13px; border-radius: 12px; background: rgba(168, 40, 30, 0.08); color: #a8281e; font-size: 13px; line-height: 1.5; }
+.fwq-pub .pub-decide { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+.fwq-pub .pub-agree { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--ink-2); line-height: 1.5; cursor: pointer; }
+.fwq-pub .pub-agree input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--brand); flex: 0 0 auto; }
+.fwq-pub .pub-decide__actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fwq-pub .pub-cta, .fwq-pub .pub-cta:hover { background: linear-gradient(140deg, var(--brand), var(--brand-deep)); color: var(--brand-ink); border-color: transparent; flex: 1; justify-content: center; }
+.fwq-pub .pub-cta svg.i { color: var(--brand-ink); opacity: 0.9; }
+.fwq-pub .pub-pay { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.fwq-pub .pub-pay__hint { font-size: 11.5px; color: var(--ink-3); text-align: center; }
+.fwq-pub .pub-bank { margin-top: 6px; padding: 14px 15px; border-radius: 15px; background: #f6f1ea; }
+.fwq-pub .pub-bank__title, .fwq-pub .pub-schedule__title { font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+.fwq-pub .pub-bank dl { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.fwq-pub .pub-bank dl div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.fwq-pub .pub-bank dt { color: var(--ink-3); }
+.fwq-pub .pub-bank dd { margin: 0; font-weight: 600; text-align: right; display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.fwq-pub .pub-copy { border: 0; background: none; padding: 2px; cursor: pointer; color: var(--ink-3); border-radius: 6px; display: inline-grid; place-items: center; }
+.fwq-pub .pub-copy:hover { color: var(--ink); background: rgba(0, 0, 0, 0.05); }
+.fwq-pub .pub-copy.is-done { color: #2f7457; }
+.fwq-pub .pub-schedule { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(70, 45, 30, 0.1); }
+.fwq-pub .pub-schedule__row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 13px; color: var(--ink-2); }
+.fwq-pub .pub-schedule__row b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fwq-pub .pub-paper { min-width: 0; overflow: hidden; }
+.fwq-pub .pub-paper__inner { transform-origin: top left; }
+.fwq-pub .pub-paper .qd { box-shadow: 0 1px 2px rgba(40, 20, 10, 0.08), 0 34px 70px -34px rgba(40, 20, 10, 0.5); border-radius: 3px; }
+.fwq-pub .pub-foot { max-width: 1120px; margin: 0 auto; padding: 10px 20px 40px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-3); }
+.fwq-pub .pub-foot a { color: var(--ink-2); }
+@media (max-width: 900px) {
+  .fwq-pub .pub-main { grid-template-columns: minmax(0, 1fr); padding: 0 12px 30px; gap: 16px; }
+  .fwq-pub .pub-card { position: static; padding: 18px 16px 16px; border-radius: 18px; }
+  .fwq-pub .pub-card__amount { font-size: 36px; }
+  .fwq-pub .pub-top { padding: 14px 12px; }
+  .fwq-pub .pub-foot { padding: 6px 12px 30px; }
+}
+@media print {
+  .fwq-pub .pub-top, .fwq-pub .pub-card, .fwq-pub .pub-foot { display: none; }
+  .fwq-pub .pub-main { display: block; padding: 0; }
+  .fwq-pub .pub-paper .qd { box-shadow: none; }
+}

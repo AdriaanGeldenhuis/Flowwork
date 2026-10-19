@@ -1,30 +1,6 @@
 <?php
-// /qi/invoice_edit.php - COMPLETE
-error_reporting(E_ALL);
-ini_set('display_errors', '0');
-
+// /qi/invoice_edit.php — kept so existing links keep working: editing an invoice now lives in /qi/edit.php.
 require_once __DIR__ . '/../init.php';
 require_once __DIR__ . '/../auth_gate.php';
-
-$companyId = $_SESSION['company_id'];
-$invoiceId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
-
-if (!$invoiceId) {
-    header('Location: /qi/?tab=invoices');
-    exit;
-}
-
-$stmt = $DB->prepare("SELECT id, status FROM invoices WHERE id = ? AND company_id = ?");
-$stmt->execute([$invoiceId, $companyId]);
-$invoice = $stmt->fetch();
-
-if (!$invoice) {
-    die('Invoice not found');
-}
-
-if ($invoice['status'] !== 'draft') {
-    die('Only draft invoices can be edited');
-}
-
-header('Location: /qi/invoice_new.php?edit=' . $invoiceId);
-exit;
+$id = (int)($_GET['id'] ?? 0);
+header('Location: /qi/edit.php?type=invoice' . ($id > 0 ? '&id=' . $id : ''), true, 302);

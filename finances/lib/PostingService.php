@@ -559,6 +559,28 @@ class PostingService
     }
 
     /**
+     * Take a credit note's journal out of the GL (cancelling an approved
+     * credit note that was never applied). Same mechanics as unpostInvoice.
+     */
+    public function unpostCreditNote(int $creditNoteId, string $reason): void
+    {
+        $this->withTransaction(function () use ($creditNoteId, $reason) {
+            $stmt = $this->db->prepare(
+                "SELECT journal_id, issue_date FROM credit_notes
+                  WHERE id = ? AND company_id = ? LIMIT 1 FOR UPDATE"
+            );
+            $stmt->execute([$creditNoteId, $this->companyId]);
+            $credit = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$credit || empty($credit['journal_id'])) {
+                return;
+            }
+            $this->supersedeJournal((int)$credit['journal_id'], $reason, date('Y-m-d'));
+            $this->db->prepare("UPDATE credit_notes SET journal_id = NULL WHERE id = ? AND company_id = ?")
+                ->execute([$creditNoteId, $this->companyId]);
+        });
+    }
+
+    /**
      * Post a bad-debt write-off for an invoice: debit Bad Debts (net), debit
      * VAT Output for the tax fraction (s22(1) VAT Act — output tax relief on
      * consideration that has become irrecoverable, invoice basis), credit AR.
@@ -768,7 +790,7 @@ class PostingService
      * the receipt's Dr Bank / Cr AR stayed posted, so the GL bank was overstated
      * by the cash paid out and AR control no longer tied to the invoice.
      *
-     * qi/ajax/refund_invoice.php stores the refund payment and its allocation as
+     * QiActions::refund (qi/lib/QiActions.php) stores the refund payment and its allocation as
      * NEGATIVE amounts (so the subledger nets and the payments-basis VAT201
      * claws back the receipt's output tax via the negative allocation); here we
      * post the absolute values as positive debit/credit legs so journal_lines
@@ -926,8 +948,7 @@ class PostingService
             }
 
             $stmt = $this->db->prepare(
-                "SELECT quantity, unit_price, discount, tax_rate, tax_code_id
-                   FROM credit_note_lines WHERE credit_note_id = ?"
+                "SELECT * FROM credit_note_lines WHERE credit_note_id = ?"
             );
             $stmt->execute([$creditNoteId]);
             $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -942,7 +963,9 @@ class PostingService
             $reference = $credit['credit_note_number'];
             $customerId = $credit['effective_customer_id'] ?: null;
 
-            // Per-tax-code grouping, mirroring postInvoice (reversed sides).
+            // Per-(account, tax code) grouping, mirroring postInvoice (reversed
+            // sides). A line copied from an invoice keeps that line's income
+            // account, so the return lands where the sale was booked.
             $netGroups = [];
             $vatGroups = [];
             foreach ($lines as $li) {
@@ -950,7 +973,9 @@ class PostingService
                 $rate = (float)($li['tax_rate'] ?? 0);
                 $vatC = (int)round($netC * $rate / 100);
                 $taxCodeId = $li['tax_code_id'] ? (int)$li['tax_code_id'] : $this->resolveOutputTaxCodeId($rate);
-                $netGroups[$taxCodeId ?? 0] = ($netGroups[$taxCodeId ?? 0] ?? 0) + $netC;
+                $code = $this->accounts->getById(!empty($li['gl_account_id']) ? (int)$li['gl_account_id'] : null) ?: $salesDef;
+                $gkey = $code . '|' . ($taxCodeId ?? '');
+                $netGroups[$gkey] = ($netGroups[$gkey] ?? 0) + $netC;
                 if ($vatC !== 0) {
                     $vatGroups[$taxCodeId ?? 0] = ($vatGroups[$taxCodeId ?? 0] ?? 0) + $vatC;
                 }
@@ -959,17 +984,18 @@ class PostingService
 
             $journalLines = [];
             $totalZar = 0.0;
-            foreach ($netGroups as $taxCodeId => $netC) {
+            foreach ($netGroups as $gkey => $netC) {
+                [$code, $taxCodeId] = explode('|', $gkey);
                 $amt = $toZar($netC);
                 if (abs($amt) < 0.005) {
                     continue;
                 }
                 $journalLines[] = [
-                    'account_code' => $salesDef,
+                    'account_code' => $code,
                     'description'  => 'Sales Return',
                     'debit'        => $amt,
                     'credit'       => 0,
-                    'tax_code_id'  => $taxCodeId ?: null,
+                    'tax_code_id'  => $taxCodeId !== '' ? (int)$taxCodeId : null,
                     'customer_id'  => $customerId,
                 ];
                 $totalZar += $amt;
