@@ -17,6 +17,7 @@ final class CalendarSettings
         'invoices' => ['key' => 'calendar_sync_invoice_due',   'default' => '1'],
         'quotes'   => ['key' => 'calendar_sync_quotes',        'default' => '1'],
         'deals'    => ['key' => 'calendar_sync_deals',         'default' => '1'],
+        'followups' => ['key' => 'calendar_sync_crm_tasks',    'default' => '1'],
         'payroll'  => ['key' => 'calendar_sync_payroll_dates', 'default' => '0', 'roles' => ['admin', 'bookkeeper']],
     ];
 

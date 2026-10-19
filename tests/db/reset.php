@@ -23,6 +23,9 @@ $tables = [
     // Quotes & Invoices documents and the rows that hang off them
     'quote_lines', 'quotes', 'recurring_invoice_lines', 'recurring_invoices', 'yoco_payment_events',
     'qi_line_headings', 'qi_activity', 'qi_email_log', 'payment_milestones', 'milestone_payments',
+    // CRM activity, deals, tasks and settings (accounts stay: they are master data)
+    'crm_tasks', 'crm_opportunities', 'crm_interactions', 'crm_notify_log', 'crm_merge_candidates',
+    'crm_custom_values', 'crm_custom_fields', 'crm_pipeline_stages', 'crm_prefs', 'crm_import_history',
     'audit_log',
     'gl_budgets',
 ];
