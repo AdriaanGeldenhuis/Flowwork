@@ -287,7 +287,7 @@
         : `<div class="fwp-panelcard"><div class="fwp-panelcard__empty">Record materials, hire and other costs that do not go through Finance.</div></div>`}
 
       ${m.finance === false ? `<p class="hint" style="margin:14px 2px 0">Costs posted in Finance, bills awaiting posting and labour cost from timesheets are shown to the company’s finance roles.</p>` : ''}
-      ${m.gl_lines.length ? `<div class="fwp-sec"><h3>Costs from Finance<small>${esc(fmtMoney(m.gl_cost))}</small></h3><a class="fwp-link" href="/finances/reports.php">${icon('external')}Reports</a></div>
+      ${m.gl_lines.length ? `<div class="fwp-sec"><h3>Costs from Finance<small>${esc(fmtMoney(m.gl_cost))}</small></h3><a class="fwp-link" href="/finances/#reports">${icon('external')}Reports</a></div>
         <div class="fwp-tbl-wrap"><table class="fwp-tbl"><thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>Account</th><th class="is-num">Amount</th></tr></thead><tbody>
         ${m.gl_lines.map((l) => `<tr style="cursor:default"><td>${esc(fmtDate(l.date))}</td><td>${esc(l.reference)}</td><td>${esc(l.description)}</td><td>${esc(l.account)}</td><td class="is-num">${esc(fmtMoney(l.amount))}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div></div>`;

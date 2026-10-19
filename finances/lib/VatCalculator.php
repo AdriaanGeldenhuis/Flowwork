@@ -555,7 +555,10 @@ class VatCalculator
         //    its own input-side adjustment field. Always excluded here.
         //  - 'vat_adjust': manual VAT201 adjustments are reported in their own
         //    boxes (see vat201Boxes) — excluded only for box presentation.
-        $exclModules = ['vat_settle', 'bad_debt'];
+        //  - 'year_end': the closing journal moves the year's income to
+        //    retained earnings. It is not a supply (and never touches the VAT
+        //    accounts), so it must not show as negative "untagged revenue".
+        $exclModules = ['vat_settle', 'bad_debt', 'year_end'];
         if ($excludeAdjustments) {
             $exclModules[] = 'vat_adjust';
         }

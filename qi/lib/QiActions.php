@@ -229,7 +229,7 @@ final class QiActions
     }
 
     /**
-     * Record money received. $p: amount, date, method, reference, notes, exchange_rate, idempotency_key.
+     * Record money received. $p: amount, date, method, reference, notes, exchange_rate, idempotency_key, bank_account_id (optional).
      * $userId null = a system receipt (Yoco); $actor names it on the timeline.
      */
     public static function recordPayment(PDO $db, int $companyId, ?int $userId, int $id, array $p, ?string $actor = null): array
@@ -278,9 +278,16 @@ final class QiActions
             // payment-date rate for foreign invoices (realised FX); default = the invoice's own rate
             $rate = $rateIn !== null && $rateIn > 0 ? $rateIn : ((float)($inv['exchange_rate'] ?? 1) ?: 1.0);
             $receiver = (int)($userId ?: $inv['created_by']);
-            $db->prepare("INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key, exchange_rate)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-               ->execute([$companyId, $date, $amountC / 100, $method, $reference ?: null, $notes ?: null, $receiver, $key !== '' ? $key : null, $rate]);
+            // the bank account the money arrived in (default: the company's bank mapping)
+            $bankId = null;
+            if (!empty($p['bank_account_id'])) {
+                $st = $db->prepare("SELECT id FROM gl_bank_accounts WHERE id = ? AND company_id = ? AND is_active = 1");
+                $st->execute([(int)$p['bank_account_id'], $companyId]);
+                $bankId = (int)$st->fetchColumn() ?: null;
+            }
+            $db->prepare("INSERT INTO payments (company_id, payment_date, amount, method, reference, notes, received_by, idempotency_key, exchange_rate, bank_account_id)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+               ->execute([$companyId, $date, $amountC / 100, $method, $reference ?: null, $notes ?: null, $receiver, $key !== '' ? $key : null, $rate, $bankId]);
             $paymentId = (int)$db->lastInsertId();
             $db->prepare("INSERT INTO payment_allocations (payment_id, invoice_id, amount) VALUES (?, ?, ?)")->execute([$paymentId, $id, $amountC / 100]);
             if (!empty($inv['has_milestones'])) {

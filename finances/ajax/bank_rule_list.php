@@ -1,42 +1,5 @@
 <?php
-// /finances/ajax/bank_rule_list.php
-require_once __DIR__ . '/../../init.php';
-require_once __DIR__ . '/../../auth_gate.php';
-
-header('Content-Type: application/json');
-
-// Role check
-$role = strtolower($_SESSION['role'] ?? 'member');
-if (!in_array($role, ['admin', 'bookkeeper', 'viewer'])) {
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
-    exit;
-}
-
-$companyId = $_SESSION['company_id'];
-
-try {
-    $stmt = $DB->prepare("
-        SELECT 
-            r.*,
-            a.account_code,
-            a.account_name
-        FROM gl_bank_rules r
-        LEFT JOIN gl_accounts a ON r.gl_account_id = a.account_id AND a.company_id = r.company_id
-        WHERE r.company_id = ?
-        ORDER BY r.priority ASC, r.id DESC
-    ");
-    $stmt->execute([$companyId]);
-    $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    echo json_encode([
-        'ok' => true,
-        'data' => $rules
-    ]);
-
-} catch (Exception $e) {
-    error_log("Bank rule list error: " . $e->getMessage());
-    echo json_encode([
-        'ok' => false,
-        'error' => 'Failed to load rules'
-    ]);
-}
+// finances/ajax/bank_rule_list.php — retired endpoint (Finance now uses /finances/api/bank.php). Answers 410 Gone so the
+// old code can no longer change the books.
+require_once __DIR__ . '/../lib/FinRetired.php';
+FinRetired::gone('/finances/api/bank.php');

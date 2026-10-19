@@ -1,10 +1,5 @@
 <?php
-// /finances/ar/invoices_list.php
-// Superseded by the Accounts Receivable workspace at /finances/ar/, which
-// lists invoices inline. This standalone page was not linked anywhere in the
-// app; it redirects permanently to the maintained workspace.
-require_once __DIR__ . '/../../init.php';
-require_once __DIR__ . '/../../auth_gate.php';
-
-header('Location: /finances/ar/', true, 301);
-exit;
+// finances/ar/invoices_list.php — retired: Finance is one page now. This address sends the browser
+// to the matching screen (#receivables?status=all).
+require_once __DIR__ . '/../lib/FinRetired.php';
+FinRetired::redirect('#receivables?status=all');

@@ -28,6 +28,9 @@ $tables = [
     'crm_custom_values', 'crm_custom_fields', 'crm_pipeline_stages', 'crm_prefs', 'crm_import_history',
     'audit_log',
     'gl_budgets',
+    // Finance: bank workflow, saved settings and supporting documents
+    'gl_bank_accounts', 'gl_bank_rules', 'bank_import_batches', 'bank_reconciliations',
+    'fin_prefs', 'fin_attachments',
 ];
 
 $DB->exec('SET FOREIGN_KEY_CHECKS = 0');
