@@ -94,27 +94,31 @@ if ($vendorName !== '') {
     }
     // 4. Determine compliance for bestSupplier if found
     if ($bestSupplier) {
-        // Determine required compliance types for this company
-        $stmt = $DB->prepare("SELECT id, name, days_valid FROM crm_compliance_types WHERE company_id = ? ORDER BY name");
+        // Only the document types the company marks as required count
+        $stmt = $DB->prepare("SELECT id, name FROM crm_compliance_types WHERE company_id = ? AND required = 1 ORDER BY name");
         $stmt->execute([$companyId]);
         $types = $stmt->fetchAll();
+        // Latest expiry per type for this supplier; a document without an expiry date never expires
+        $stmt = $DB->prepare(
+            "SELECT type_id, MAX(COALESCE(expiry_date, '9999-12-31')) AS expiry_date
+             FROM crm_compliance_docs
+             WHERE company_id = ? AND account_id = ?
+             GROUP BY type_id"
+        );
+        $stmt->execute([$companyId, $bestSupplier['id']]);
+        $latestExpiry = [];
+        foreach ($stmt->fetchAll() as $doc) {
+            $latestExpiry[(int)$doc['type_id']] = $doc['expiry_date'];
+        }
+        $today = date('Y-m-d');
         $missing = [];
         foreach ($types as $type) {
-            // Look for most recent doc for this supplier and type
-            $stmt2 = $DB->prepare(
-                "SELECT expiry_date FROM crm_compliance_docs
-                 WHERE company_id = ? AND account_id = ? AND compliance_type_id = ?
-                 ORDER BY expiry_date DESC LIMIT 1"
-            );
-            $stmt2->execute([$companyId, $bestSupplier['id'], $type['id']]);
-            $doc = $stmt2->fetch();
-            if (!$doc) {
+            $typeId = (int)$type['id'];
+            if (!isset($latestExpiry[$typeId])) {
                 $missing[] = $type['name'];
-            } else {
-                $exp = $doc['expiry_date'];
-                if ($exp && strtotime($exp) < time()) {
-                    $missing[] = $type['name'];
-                }
+            } elseif ($latestExpiry[$typeId] >= '1000-01-02' && $latestExpiry[$typeId] < $today) {
+                // Valid through its expiry date; zero dates count as no expiry
+                $missing[] = $type['name'] . ' (expired)';
             }
         }
         if (!empty($missing)) {
