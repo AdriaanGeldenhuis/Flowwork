@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'calendar_sync_project_dates' => isset($_POST['calendar_sync_project_dates']) ? '1' : '0',
             'calendar_sync_tasks' => isset($_POST['calendar_sync_tasks']) ? '1' : '0',
             'calendar_sync_deals' => isset($_POST['calendar_sync_deals']) ? '1' : '0',
+            'calendar_sync_crm_tasks' => isset($_POST['calendar_sync_crm_tasks']) ? '1' : '0',
             'calendar_sync_payroll_dates' => isset($_POST['calendar_sync_payroll_dates']) ? '1' : '0',
         ];
         if ($settings['calendar_work_hours_end'] <= $settings['calendar_work_hours_start']) throw new Exception('Work hours must end after they start');
@@ -63,6 +64,7 @@ $s = [
     'calendar_sync_project_dates' => getCRMSetting('calendar_sync_project_dates', '1'),
     'calendar_sync_tasks' => getCRMSetting('calendar_sync_tasks', '1'),
     'calendar_sync_deals' => getCRMSetting('calendar_sync_deals', '1'),
+    'calendar_sync_crm_tasks' => getCRMSetting('calendar_sync_crm_tasks', '1'),
     'calendar_sync_payroll_dates' => getCRMSetting('calendar_sync_payroll_dates', '0'),
 ];
 
@@ -200,6 +202,12 @@ if (!in_array($s['calendar_timezone'], $timezones, true)) $timezones[] = $s['cal
                             <label class="fw-admin__checkbox">
                                 <input type="checkbox" name="calendar_sync_deals" value="1" <?= $s['calendar_sync_deals'] === '1' ? 'checked' : '' ?>>
                                 <span>Deals — open CRM deals on their expected close date, for their owner</span>
+                            </label>
+                        </div>
+                        <div class="fw-admin__form-group fw-admin__form-group--full">
+                            <label class="fw-admin__checkbox">
+                                <input type="checkbox" name="calendar_sync_crm_tasks" value="1" <?= $s['calendar_sync_crm_tasks'] === '1' ? 'checked' : '' ?>>
+                                <span>CRM follow-ups — open CRM tasks on their due date, for the person they are assigned to</span>
                             </label>
                         </div>
                         <div class="fw-admin__form-group fw-admin__form-group--full">

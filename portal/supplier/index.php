@@ -242,8 +242,8 @@ $pageTitle = htmlspecialchars($supplier['name']) . ' – Supplier Portal';
             <input type="date" name="issue_date" id="issue_date" required>
             <label for="expiry_date">Expiry Date</label>
             <input type="date" name="expiry_date" id="expiry_date" required>
-            <label for="file">Document File (PDF or Image)</label>
-            <input type="file" name="file" id="file" accept="application/pdf,image/*" required>
+            <label for="file">Document File (PDF, JPG, PNG or WebP, up to 10 MB)</label>
+            <input type="file" name="file" id="file" accept="application/pdf,image/jpeg,image/png,image/webp" required>
             <button type="submit">Upload Document</button>
         </form>
     </div>

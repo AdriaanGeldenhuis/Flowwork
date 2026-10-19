@@ -1069,7 +1069,7 @@
     const it = ent.it;
     const m = sourceMeta(it.source);
     const status = it.status === 'overdue' ? '<span class="fwm-tag fwm-tag--danger">Overdue</span>' : it.status === 'done' ? '<span class="fwm-tag fwm-tag--plain">Done</span>' : '';
-    const openLabel = { projects: 'Open project', tasks: 'Open task', invoices: 'Open invoice', quotes: 'Open quote', deals: 'Open deal', payroll: 'Open pay run' }[it.source] || 'Open';
+    const openLabel = { projects: 'Open project', tasks: 'Open task', invoices: 'Open invoice', quotes: 'Open quote', deals: 'Open deal', followups: 'Open in CRM', payroll: 'Open pay run' }[it.source] || 'Open';
     S.detail = { item: it };
     detailShell(`<button class="icon-btn" data-d="close" aria-label="Close" data-tip="Close">${icon('x')}</button><span class="grow"></span>
       <a class="btn btn--sm btn--primary" href="${esc(it.url)}">${icon('external', 'i--sm')}${esc(openLabel)}</a>`,

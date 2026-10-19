@@ -99,7 +99,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <select id="supplierId" required>
                         <option value="">Select Supplier</option>
                         <?php foreach ($suppliers as $s): ?>
-                            <option value="<?php echo (int)$s['id']; ?>"><?php echo htmlspecialchars($s['name']); ?></option>
+                            <option value="<?php echo (int)$s['id']; ?>"<?php echo (int)($_GET['supplier_id'] ?? 0) === (int)$s['id'] ? ' selected' : ''; ?>><?php echo htmlspecialchars($s['name']); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
