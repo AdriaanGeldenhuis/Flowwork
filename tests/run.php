@@ -1,7 +1,7 @@
 <?php
 /**
- * Finance, Quotes & Invoices, CRM and Receipts test runner. Each tests/finance/test_*.php,
- * tests/qi/test_*.php, tests/crm/test_*.php and tests/receipts/test_*.php runs in its own PHP
+ * Finance, Quotes & Invoices, CRM, Receipts and FlowDrive test runner. Each tests/finance/test_*.php,
+ * tests/qi/test_*.php, tests/crm/test_*.php, tests/receipts/test_*.php and tests/flowdrive/test_*.php runs in its own PHP
  * subprocess against the flowwork_test database (see tests/db/setup.sh).
  * Transactional tables are reset before every test via tests/db/reset.php.
  *
@@ -10,7 +10,7 @@
 
 $root = __DIR__;
 $filter = $argv[1] ?? '';
-$files = array_merge(glob($root . '/finance/test_*.php') ?: [], glob($root . '/qi/test_*.php') ?: [], glob($root . '/crm/test_*.php') ?: [], glob($root . '/receipts/test_*.php') ?: []);
+$files = array_merge(glob($root . '/finance/test_*.php') ?: [], glob($root . '/qi/test_*.php') ?: [], glob($root . '/crm/test_*.php') ?: [], glob($root . '/receipts/test_*.php') ?: [], glob($root . '/flowdrive/test_*.php') ?: []);
 sort($files);
 if ($filter !== '') {
     $files = array_values(array_filter($files, fn($f) => str_contains(basename($f), $filter)));

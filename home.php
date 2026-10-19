@@ -150,7 +150,7 @@ $modules = [
     ['key' => 'shopping', 'name' => 'Shopping List', 'tag' => '', 'desc' => 'Procurement and supplies', 'href' => '/shopping/', 'icon' => 'ih-cart', 'c' => '#6f7a35', 'live' => '', 'kw' => 'procurement supplies buy order'],
     ['key' => 'mail', 'name' => 'Mail', 'tag' => '', 'desc' => 'Your business correspondence', 'href' => '/mail/', 'icon' => 'i-mail', 'c' => '#9b3048', 'live' => $mailLive, 'alert' => false, 'kw' => 'email inbox messages'],
     ['key' => 'calendar', 'name' => 'Calendar', 'tag' => '', 'desc' => 'Schedule, meetings and reminders', 'href' => '/calendar/', 'icon' => 'i-calendar', 'c' => '#2f5c84', 'live' => $calendarLive, 'alert' => false, 'kw' => 'events schedule meetings agenda'],
-    ['key' => 'drive', 'name' => 'Drive', 'tag' => 'FlowDrive', 'desc' => 'Cloud storage for all your files', 'href' => 'https://flowdrive.co.za/', 'icon' => 'ih-cloud', 'c' => '#4f5d6b', 'live' => '', 'kw' => 'files documents storage cloud'],
+    ['key' => 'drive', 'name' => 'Drive', 'tag' => 'FlowDrive', 'desc' => 'Cloud storage for all your files', 'href' => '/drive/', 'icon' => 'ih-cloud', 'c' => '#4f5d6b', 'live' => '', 'kw' => 'files documents storage cloud'],
     ['key' => 'admin', 'name' => 'Admin', 'tag' => '', 'desc' => 'Company, users and settings', 'href' => '/admin/', 'icon' => 'i-shield', 'c' => '#5a4636', 'live' => '', 'kw' => 'settings users company billing'],
 ];
 
