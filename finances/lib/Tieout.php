@@ -31,8 +31,15 @@ class Tieout
         $settingKey = $groupKey === 'AR' ? 'finance_ar_account_id'
             : ($groupKey === 'AP' ? 'finance_ap_account_id' : null);
         $sign = $groupKey === 'AP' ? -1.0 : 1.0;
-        if ($settingKey && ($accountId = $map->getAccountId($settingKey))) {
-            return $sign * $this->asof->sumAccounts([$accountId], $asOf);
+        // code() resolves the mapping the way the posting engine does (setting,
+        // then the standard account); getAccountId() only read a pinned setting,
+        // so a company without one compared its subledger with nothing.
+        if ($settingKey && ($code = $map->code($settingKey))) {
+            $stmt = $this->db->prepare("SELECT account_id FROM gl_accounts WHERE company_id = ? AND account_code = ? LIMIT 1");
+            $stmt->execute([$this->companyId, $code]);
+            if ($accountId = (int)$stmt->fetchColumn()) {
+                return $sign * $this->asof->sumAccounts([$accountId], $asOf);
+            }
         }
         $stmt = $this->db->prepare("
             SELECT account_id

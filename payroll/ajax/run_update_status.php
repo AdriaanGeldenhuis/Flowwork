@@ -12,6 +12,16 @@ header('Content-Type: application/json');
 
 $companyId = $_SESSION['company_id'];
 $userId    = $_SESSION['user_id'];
+
+// Approving, locking and posting a pay run is payroll / finance work: the
+// same roles as run.post_gl.php (this endpoint used to accept any signed-in user).
+require_once __DIR__ . '/../../finances/permissions.php';
+if (!in_array(fw_get_user_role($DB), ['admin', 'bookkeeper'], true)) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Permission denied']);
+    exit;
+}
+
 $runId     = $_POST['run_id'] ?? 0;
 $newStatus = $_POST['status'] ?? '';
 
@@ -81,9 +91,18 @@ try {
     // Final param is the run id for WHERE clause
     $params[] = $runId;
 
-    $sql = 'UPDATE pay_runs SET ' . implode(', ', $updateFields) . ' WHERE id = ?';
+    $params[] = $companyId;
+    $sql = 'UPDATE pay_runs SET ' . implode(', ', $updateFields) . ' WHERE id = ? AND company_id = ?';
     $stmt = $DB->prepare($sql);
     $stmt->execute($params);
+
+    // Moving to 'posted' posts the journal in this same transaction, so a run
+    // can never read 'posted' without its journal (it used to commit the status
+    // first and post afterwards).
+    if ($newStatus === 'posted') {
+        $postingService = new PostingService($DB, (int)$companyId, (int)$userId);
+        $postingService->postPayrollRun((int)$runId);
+    }
 
     // Audit the change
     $stmt = $DB->prepare(
@@ -152,25 +171,12 @@ try {
         exit;
     }
 
-    // Manual posting: when explicitly moving to posted status
-    if ($newStatus === 'posted') {
-        try {
-            $postingService = new PostingService($DB, (int)$companyId, (int)$userId);
-            $postingService->postPayrollRun((int)$runId);
-            echo json_encode(['ok' => true]);
-        } catch (Exception $e) {
-            error_log('Payroll post error: ' . $e->getMessage());
-            echo json_encode(['ok' => false, 'error' => 'Posting to finance failed: ' . $e->getMessage()]);
-        }
-        exit;
-    }
-
     // Default response for review or approved statuses
     echo json_encode(['ok' => true]);
 
 } catch (Exception $e) {
     // If any exception thrown, roll back and return error
-    $DB->rollBack();
+    if ($DB->inTransaction()) $DB->rollBack();
     error_log('Status update error: ' . $e->getMessage());
-    echo json_encode(['ok' => false, 'error' => 'Update failed']);
+    echo json_encode(['ok' => false, 'error' => $newStatus === 'posted' ? 'Posting to finance failed: ' . $e->getMessage() : 'Update failed']);
 }

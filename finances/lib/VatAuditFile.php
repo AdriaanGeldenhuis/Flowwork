@@ -91,7 +91,7 @@ class VatAuditFile
               WHERE je.company_id = ? AND je.status = 'posted'
                 AND je.entry_date BETWEEN ? AND ?
                 AND COALESCE(je.module,'') <> 'vat_settle'
-                AND (jl.account_code IN (?, ?) OR ga.account_type = 'revenue')
+                AND (jl.account_code IN (?, ?) OR (ga.account_type = 'revenue' AND COALESCE(je.module,'') <> 'year_end'))
               ORDER BY je.entry_date, je.id, jl.id"
         );
         $stmt->execute([$companyId, $startDate, $endDate, $vatOutputCode, $vatInputCode]);

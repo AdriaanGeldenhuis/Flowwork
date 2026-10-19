@@ -1,55 +1,5 @@
 <?php
-// /finances/ap/api/bill_post.php
-// Posts an AP bill to the GL using the PostingService. Only
-// permitted users (admin/bookkeeper) can post. Returns journal id
-// on success.
-
-require_once __DIR__ . '/../../../init.php';
-require_once __DIR__ . '/../../../auth_gate.php';
-require_once __DIR__ . '/../../../finances/lib/PostingService.php';
-
-header('Content-Type: application/json');
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['ok' => false, 'error' => 'POST required']);
-    exit;
-}
-
-require_once __DIR__ . '/../../lib/Csrf.php';
-Csrf::validate();
-
-$role = $_SESSION['role'] ?? 'member';
-if (!in_array($role, ['admin', 'bookkeeper'])) {
-    http_response_code(403);
-    echo json_encode(['ok' => false, 'error' => 'Insufficient permissions']);
-    exit;
-}
-
-$companyId = (int)$_SESSION['company_id'];
-$userId    = (int)$_SESSION['user_id'];
-
-$input  = json_decode(file_get_contents('php://input'), true);
-$billId = isset($input['bill_id']) ? (int)$input['bill_id'] : 0;
-// Reposting a posted bill must be an explicit, deliberate act — the engine
-// rejects it otherwise (and always rejects reposting a PAID bill).
-$repost = !empty($input['repost']);
-
-if (!$billId) {
-    echo json_encode(['ok' => false, 'error' => 'Missing bill_id']);
-    exit;
-}
-
-try {
-    $posting = new PostingService($DB, $companyId, $userId);
-    $posting->postApBill($billId, $repost);
-    // Get journal id for the bill
-    $stmt = $DB->prepare("SELECT journal_id FROM ap_bills WHERE id = ? AND company_id = ?");
-    $stmt->execute([$billId, $companyId]);
-    $jid = $stmt->fetchColumn();
-    echo json_encode(['ok' => true, 'journal_id' => $jid]);
-} catch (Exception $e) {
-    error_log('AP bill post error: ' . $e->getMessage());
-    $msg = ($e instanceof PDOException) ? 'Failed to post bill' : $e->getMessage();
-    echo json_encode(['ok' => false, 'error' => $msg]);
-}
+// finances/ap/api/bill_post.php — retired endpoint (Finance now uses /finances/api/payables.php). Answers 410 Gone so the
+// old code can no longer change the books.
+require_once __DIR__ . '/../../lib/FinRetired.php';
+FinRetired::gone('/finances/api/payables.php');

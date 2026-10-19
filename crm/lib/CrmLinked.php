@@ -238,7 +238,7 @@ final class CrmLinked
                     $out['bills'][] = ['id' => (int)$b['id'], 'number' => (string)($b['vendor_invoice_number'] ?: 'Bill #' . $b['id']), 'date' => $b['issue_date'],
                         'due' => $b['due_date'], 'total' => (float)$b['total'], 'balance' => $balance, 'symbol' => $sym($b['currency'] ?? 'ZAR'), 'currency' => $b['currency'] ?? 'ZAR',
                         'status' => $late ? ['key' => 'overdue', 'label' => 'Overdue', 'tone' => 'danger'] : ['key' => $status, 'label' => $status === 'posted' ? 'Unpaid' : ucfirst($status), 'tone' => $tones[$status] ?? 'muted'],
-                        'url' => '/finances/ap/bill_view.php?id=' . (int)$b['id']];
+                        'url' => '/finances/#payables?status=all&id=' . (int)$b['id']];
                 }
             } catch (Throwable $e) { }
         }

@@ -95,3 +95,8 @@ storage/qi/
 # CRM runtime data (import scratch files, schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/crm/
+
+# ---------------------------------------------------------------------------
+# Finance runtime data (supporting documents, schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/finance/
