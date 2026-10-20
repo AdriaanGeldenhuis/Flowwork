@@ -238,6 +238,17 @@ final class AdminKit
             'qi_bank_details_changed' => ['Changed bank details', 'danger'],
             'finance_settings_saved' => ['Changed finance settings', 'gold'], 'finance_settings_updated' => ['Changed finance settings', 'gold'],
             'yoco_updated' => ['Changed card payments', 'gold'],
+            'payrun_created' => ['Started a pay run', 'info'], 'payrun_approved' => ['Approved a pay run', 'gold'], 'payrun_finalised' => ['Finalised a pay run', 'gold'],
+            'payrun_post_gl' => ['Put a pay run in the books', 'success'], 'payrun_reopened' => ['Reopened a pay run', 'warning'], 'payrun_deleted' => ['Deleted a pay run', 'danger'],
+            'payrun_adjusted' => ['Added to someone’s pay', 'info'], 'payrun_adjustment_removed' => ['Removed from someone’s pay', 'warning'],
+            'payrun_people_added' => ['Added people to a pay run', 'info'], 'payrun_person_removed' => ['Took someone out of a pay run', 'warning'],
+            'payrun_bank_export' => ['Downloaded a bank payments file', 'gold'], 'payslips_emailed' => ['Emailed payslips', 'info'],
+            'employee_created' => ['Added an employee', 'success'], 'employee_updated' => ['Changed an employee', 'info'], 'employee_deleted' => ['Deleted an employee', 'danger'],
+            'employee_terminated' => ['Ended an employment', 'warning'], 'employee_reinstated' => ['Restored an employee', 'success'],
+            'employee_item_saved' => ['Changed someone’s regular pay item', 'info'], 'employee_item_removed' => ['Removed someone’s regular pay item', 'warning'],
+            'payitem_created' => ['Added a pay item', 'info'], 'payitem_updated' => ['Changed a pay item', 'info'], 'payitem_archived' => ['Switched off a pay item', 'warning'],
+            'payitem_deleted' => ['Deleted a pay item', 'warning'], 'payitems_added' => ['Added the usual pay items', 'info'],
+            'payroll_settings_updated' => ['Changed payroll settings', 'gold'], 'tax_table_saved' => ['Saved a tax table', 'gold'], 'tax_table_removed' => ['Removed a tax table', 'warning'],
         ];
         if (isset($map[$action])) return $map[$action];
         $words = trim(str_replace(['_', '-', '.'], ' ', $action));

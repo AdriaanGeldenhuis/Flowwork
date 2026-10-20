@@ -1,8 +1,9 @@
 <?php
-// /admin/payroll.php — Payroll: the pay schedule the run wizard starts with
-// and whether finished runs post to Finance by themselves. Saved to the
-// payroll_settings table Payroll reads (run_new.php, run_update_status.php);
-// tax tables, pay items and overtime stay in Payroll's own settings.
+// /admin/payroll.php — Payroll: the pay schedule a new run starts with and
+// whether finalised runs go to Finance by themselves. Saved to the
+// payroll_settings table Payroll reads (PayKit::settings, PayKit::suggest,
+// PayRuns::finalise); tax tables, pay items, overtime and the PAYE reference
+// are in Payroll's own settings.
 require_once __DIR__ . '/lib/AdminBoot.php';
 
 $values = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'payroll');
@@ -53,5 +54,5 @@ include __DIR__ . '/partials/head.php';
     <?= AdminSettings::render('payroll', $values) ?>
 </form>
 
-<div class="fwa-banner" style="margin-top:16px"><svg class="i"><use href="#i-info"/></svg><div class="fwa-banner__body">Tax tables, pay items, overtime rules and bank export formats are in <a href="/payroll/settings.php">Payroll settings</a>. Payslips are emailed from the company’s first connected mailbox — see <a href="/admin/mail.php">Mail</a>.</div></div>
+<div class="fwa-banner" style="margin-top:16px"><svg class="i"><use href="#i-info"/></svg><div class="fwa-banner__body">Tax tables, overtime, the PAYE reference and the salaries bank account are in <a href="/payroll/settings.php">Payroll settings</a>; earnings and deductions in <a href="/payroll/payitems.php">Pay items</a>. Payslips are emailed from the company’s first connected mailbox — see <a href="/admin/mail.php">Mail</a>.</div></div>
 <?php include __DIR__ . '/partials/foot.php'; ?>

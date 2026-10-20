@@ -16,11 +16,11 @@ try {
     $boxes = $st->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $ex) {
 }
-// Payslips use the company's first mailbox that can send (payroll/lib/PayslipEmailer.php)
+// Payslips use the company's first active mailbox that can send (PayPayslips::mailbox)
 $payslipBox = null;
 $byId = $boxes;
 usort($byId, fn($a, $b) => (int)$a['account_id'] <=> (int)$b['account_id']);
-foreach ($byId as $b) if (!empty($b['smtp_server'])) { $payslipBox = $b; break; }
+foreach ($byId as $b) if (!empty($b['smtp_server']) && (int)$b['is_active'] === 1) { $payslipBox = $b; break; }
 $mine = AdminMail::mailbox($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID);
 $system = AdminMail::systemReady();
 $broken = count(array_filter($boxes, fn($b) => (int)$b['is_active'] && trim((string)$b['last_error']) !== ''));

@@ -85,8 +85,9 @@ proxy, `download.php`, serves them after checking session + company + role.
 
 - **Stored XSS (~30 sinks)** — add one shared `escapeHtml()` in the board UI and
   a Content-Security-Policy. Highest remaining risk after this branch.
-- **PAYE tax engine** (`payroll/calc_engine.php`) — bracket math is wrong; fix
-  and cover with unit tests against SARS tables.
+- ~~**PAYE tax engine** (`payroll/calc_engine.php`) — bracket math is wrong; fix
+  and cover with unit tests against SARS tables.~~ Done: `payroll/lib/PayTax.php`
+  with the official SARS tables, tested in `tests/payroll/test_payroll_tax.php`.
 - **Auth hardening** — hash reset tokens, pin the reset/invite `Host`, rate-limit
   login, validate the login `redirect` param.
 - **File-upload allow-lists**, **error-message suppression**, **FX on AP postings**,

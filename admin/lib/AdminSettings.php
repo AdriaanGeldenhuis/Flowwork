@@ -98,7 +98,7 @@ final class AdminSettings
 
             'payroll' => [
                 'cards' => [
-                    'pay-schedule' => ['Pay schedule', 'The new pay-run wizard starts with these. You can change them on any run.', 'i-calendar'],
+                    'pay-schedule' => ['Pay schedule', 'A new pay run starts with these. You can change the dates on any run.', 'i-calendar'],
                     'pay-finance' => ['Finance', 'What happens in Finance once a run is done.', 'if-ledger'],
                 ],
                 'fields' => [
@@ -106,9 +106,9 @@ final class AdminSettings
                      'options' => ['monthly' => 'Monthly', 'fortnight' => 'Every two weeks', 'weekly' => 'Weekly'], 'card' => 'pay-schedule', 'kw' => 'frequency'],
                     ['key' => 'monthly_anchor_day', 'store' => 'payroll', 'label' => 'Monthly pay day', 'hint' => 'Day of the month salaries are paid. Months that are shorter use their last day.', 'type' => 'number',
                      'default' => '25', 'min' => 1, 'max' => 31, 'unit' => 'of the month', 'card' => 'pay-schedule', 'kw' => 'pay day salary date'],
-                    ['key' => 'fortnight_anchor_day', 'store' => 'payroll', 'label' => 'Fortnightly pay day', 'hint' => 'Day of the month suggested for two-weekly runs.', 'type' => 'number',
-                     'default' => '15', 'min' => 1, 'max' => 31, 'unit' => 'of the month', 'card' => 'pay-schedule'],
-                    $toggle('auto_post_to_finance', 'Post to Finance automatically', 'When a run is marked posted, its wages, PAYE, UIF and SDL journal is written to the ledger at once.', '0', 'pay-finance', ['store' => 'payroll', 'kw' => 'journal ledger gl']),
+                    ['key' => 'weekly_anchor_day', 'store' => 'payroll', 'label' => 'Weekly and two-weekly pay day', 'hint' => 'Weekly and two-weekly periods end on this day and are paid on it.', 'type' => 'select',
+                     'default' => '5', 'options' => ['1' => 'Monday', '2' => 'Tuesday', '3' => 'Wednesday', '4' => 'Thursday', '5' => 'Friday', '6' => 'Saturday', '7' => 'Sunday'], 'card' => 'pay-schedule', 'kw' => 'weekly fortnight'],
+                    $toggle('auto_post_to_finance', 'Put runs in the books when they are finalised', 'Their wages, PAYE, UIF and SDL journal goes to Finance as soon as a run is finalised.', '0', 'pay-finance', ['store' => 'payroll', 'kw' => 'journal ledger gl post']),
                 ],
             ],
 

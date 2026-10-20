@@ -3,9 +3,8 @@
 //
 // Zero-dependency PDF writer for payslips. PDF 1.4 with the built-in
 // Helvetica family (no font embedding) so output is small and works on
-// any host. The layout below mirrors the HTML payslip template
-// (PayslipGenerator.php) so the on-disk PDF and the cover-note email
-// attachment look the same as what users see in the browser.
+// any host. renderPayslipPdf() lays out one payslip; PayPayslips decides
+// what goes on it, where it is stored and who it is emailed to.
 
 class PayslipPdf
 {
@@ -190,255 +189,189 @@ class PayslipPdf
 }
 
 /**
- * Render a payslip PDF that mirrors the HTML payslip layout.
+ * One payslip.
+ *   $company  companies row (+ paye_reference from the payroll settings)
+ *   $run      pay_runs row
+ *   $emp      pay_run_employees row joined with the employee
+ *   $lines    pay_run_lines with the pay item's type
+ *   $ytd      tax-year-to-date totals from finalised runs
+ *   $draft    true while the run is not finalised: a "DRAFT" band is printed
  */
-function renderPayslipPdf(array $company, array $run, array $emp, array $lines, array $ytd, string $taxYearStart): string
+function renderPayslipPdf(array $company, array $run, array $emp, array $lines, array $ytd, string $taxYearStart, bool $draft = false): string
 {
-    $primary  = $company['primary_color'] ?? '#f97316';
-    $textOnP  = '#ffffff';
-    $cName    = $company['name'] ?? 'Company';
-    $empName  = trim(($emp['first_name'] ?? '') . ' ' . ($emp['last_name'] ?? ''));
+    $primary = preg_match('/^#[0-9a-f]{6}$/i', (string)($company['primary_color'] ?? '')) ? $company['primary_color'] : '#a4552c';
+    $onP = '#ffffff';
+    $ink = '#1f2937';
+    $muted = '#6b7280';
+    $rule = '#e5e7eb';
+    $cName = (string)($company['name'] ?? 'Company');
+    $empName = trim(($emp['first_name'] ?? '') . ' ' . ($emp['last_name'] ?? ''));
+    $money = static fn($cents) => 'R ' . number_format(((int)$cents) / 100, 2, '.', ' ');
+    $d = static fn($s) => $s ? date('j M Y', strtotime($s)) : '—';
 
-    $money = static fn ($cents) => 'R ' . number_format(((int)$cents) / 100, 2, '.', ' ');
-
-    $earningRows  = [];
-    $deductionRows = [];
+    // Sort the lines the way a person reads a payslip
+    $groups = ['earning' => [], 'reimbursement' => [], 'benefit' => [], 'deduction' => [], 'contribution' => []];
     foreach ($lines as $li) {
         $type = strtolower((string)($li['type'] ?? 'earning'));
-        $row  = [
-            'name' => $li['item_name'] ?: ($li['description'] ?? ''),
-            'qty'  => (float)($li['qty'] ?? 1),
-            'rate' => (int)($li['rate_cents'] ?? 0),
-            'amt'  => (int)($li['amount_cents'] ?? 0),
-        ];
-        if ($type === 'deduction') {
-            $deductionRows[] = $row;
-        } else {
-            $earningRows[] = $row;
+        if (!isset($groups[$type])) $type = 'earning';
+        $qty = (float)($li['qty'] ?? 1);
+        $label = (string)($li['description'] ?: ($li['item_name'] ?? ''));
+        $detail = '';
+        if (abs($qty - 1) > 0.0001 && $qty > 0) {
+            $detail = rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.') . ' × ' . $money(abs((int)$li['rate_cents']));
         }
+        $groups[$type][] = ['name' => $label, 'detail' => $detail, 'amt' => abs((int)$li['amount_cents']) * ((int)$li['amount_cents'] < 0 && $type !== 'deduction' ? -1 : 1)];
     }
 
-    $gross    = (int)($emp['gross_cents'] ?? 0);
-    $taxable  = (int)($emp['taxable_income_cents'] ?? 0);
-    $paye     = (int)($emp['paye_cents'] ?? 0);
-    $uifEmp   = (int)($emp['uif_employee_cents'] ?? 0);
-    $uifEmpr  = (int)($emp['uif_employer_cents'] ?? 0);
-    $sdl      = (int)($emp['sdl_cents'] ?? 0);
+    $gross = (int)($emp['gross_cents'] ?? 0);
+    $paye = (int)($emp['paye_cents'] ?? 0);
+    $uifEmp = (int)($emp['uif_employee_cents'] ?? 0);
+    $uifEmpr = (int)($emp['uif_employer_cents'] ?? 0);
+    $sdl = (int)($emp['sdl_cents'] ?? 0);
     $otherDed = (int)($emp['other_deductions_cents'] ?? 0);
-    $reimb    = (int)($emp['reimbursements_cents'] ?? 0);
-    $net      = (int)($emp['net_cents'] ?? 0);
-    $emprCost = (int)($emp['employer_cost_cents'] ?? 0);
-
-    $taxYearLabel = date('Y', strtotime($taxYearStart)) . '/' . (date('Y', strtotime($taxYearStart)) + 1);
+    $reimb = (int)($emp['reimbursements_cents'] ?? 0);
+    $net = (int)($emp['net_cents'] ?? 0);
+    $cost = (int)($emp['employer_cost_cents'] ?? 0);
+    $taxable = (int)($emp['taxable_income_cents'] ?? 0);
+    $ty = (int)date('Y', strtotime($taxYearStart));
+    $taxYearLabel = $ty . '/' . substr((string)($ty + 1), 2);
 
     $pdf = new PayslipPdf();
-    $L = PayslipPdf::MARGIN;            // left margin x
-    $R = PayslipPdf::PAGE_W - PayslipPdf::MARGIN; // right margin x
-    $W = $R - $L;                       // usable width
+    $L = PayslipPdf::MARGIN;
+    $R = PayslipPdf::PAGE_W - PayslipPdf::MARGIN;
+    $W = $R - $L;
 
-    // ---------- Header band (full-bleed, height grows to fit content) ----------
+    // ---------- Header band ----------
     $companyLines = array_values(array_filter([
-        $company['address_line1'] ?? '',
-        $company['address_line2'] ?? '',
+        $company['address_line1'] ?? '', $company['address_line2'] ?? '',
         trim(($company['city'] ?? '') . ' ' . ($company['postal'] ?? '')),
-        $company['region'] ?? '',
-        !empty($company['phone']) ? 'Tel: ' . $company['phone'] : '',
-        $company['email'] ?? '',
-        $company['website'] ?? '',
+        !empty($company['phone']) ? 'Tel: ' . $company['phone'] : '', $company['email'] ?? '',
     ], fn($l) => trim((string)$l) !== ''));
     $refs = array_values(array_filter([
         !empty($company['reg_number']) ? 'Reg: ' . $company['reg_number'] : '',
-        !empty($company['tax_number']) ? 'PAYE Ref: ' . $company['tax_number'] : '',
-        !empty($company['vat_number']) ? 'VAT: ' . $company['vat_number'] : '',
+        !empty($company['paye_reference']) ? 'PAYE ref: ' . $company['paye_reference'] : '',
     ]));
-
-    $nameTopY = 28;
-    $linesTopY = 52;
-    $lineGap = 12;
-    $leftEndY = $linesTopY + count($companyLines) * $lineGap + ($refs ? 16 : 0);
-    $rightEndY = 100;          // last right-side line baseline
-    $headerH = max(118, $leftEndY + 8, $rightEndY + 8);
-
+    $headerH = max(112, 52 + count($companyLines) * 12 + ($refs ? 16 : 0) + 8);
     $pdf->fillRect(0, 0, PayslipPdf::PAGE_W, $headerH, $primary);
-
-    // Right side: title, run number, period, pay date.
-    $pdf->textRight($R, 30, 'PAYSLIP', 24, true, $textOnP);
-    $pdf->textRight($R, 60, $run['run_number'] ?? '', 10, false, $textOnP);
-    $period = date('d M Y', strtotime($run['period_start'])) . ' – ' . date('d M Y', strtotime($run['period_end']));
-    $pdf->textRight($R, 76, $period, 9, false, $textOnP);
-    $pdf->textRight($R, 92, 'Pay Date: ' . date('d M Y', strtotime($run['pay_date'])), 9, false, $textOnP);
-
-    // Left side: company name + contact + refs.
-    $pdf->text($L, $nameTopY, $cName, 17, true, $textOnP);
-    $y = $linesTopY;
-    foreach ($companyLines as $line) {
-        $pdf->text($L, $y, $line, 8.5, false, $textOnP);
-        $y += $lineGap;
+    $pdf->textRight($R, 28, 'PAYSLIP', 22, true, $onP);
+    $pdf->textRight($R, 56, (string)($run['name'] ?? ''), 10, true, $onP);
+    $pdf->textRight($R, 71, $d($run['period_start']) . ' – ' . $d($run['period_end']), 9, false, $onP);
+    $pdf->textRight($R, 85, 'Paid ' . $d($run['pay_date']) . '  ·  Run ' . ($run['run_number'] ?? ''), 9, false, $onP);
+    $pdf->text($L, 28, $cName, 17, true, $onP);
+    $y = 52;
+    foreach ($companyLines as $line) { $pdf->text($L, $y, $line, 8.5, false, $onP); $y += 12; }
+    if ($refs) $pdf->text($L, $y + 2, implode('   |   ', $refs), 8, false, $onP);
+    $y = $headerH;
+    if ($draft) {
+        $pdf->fillRect(0, $y, PayslipPdf::PAGE_W, 20, '#fde68a');
+        $pdf->textCenter(PayslipPdf::PAGE_W / 2, $y + 5, 'DRAFT — this pay run is not final yet. Figures may still change.', 9, true, '#78350f');
+        $y += 20;
     }
-    if ($refs) {
-        $pdf->text($L, $y + 2, implode('   |   ', $refs), 8, false, $textOnP);
-    }
+    $pdf->setY($y + 22);
 
-    $pdf->setY($headerH + 24);
-
-    // ---------- Employee details (4-column grid) ----------
-    $kvCols = 4;
-    $kvColW = $W / $kvCols;
-    $kvRowH = 36;
+    // ---------- Employee details ----------
     $kv = [
-        ['EMPLOYEE',      $empName ?: '—'],
-        ['EMPLOYEE NO.',  $emp['employee_no'] ?? '—'],
-        ['ID NUMBER',     $emp['id_number'] ?? '—'],
-        ['TAX NUMBER',    $emp['tax_number'] ?? '—'],
-        ['HIRE DATE',     !empty($emp['hire_date']) ? date('d M Y', strtotime($emp['hire_date'])) : '—'],
-        ['PAY FREQUENCY', ucfirst((string)($emp['pay_frequency'] ?? '—'))],
-        ['PAY DATE',      date('d M Y', strtotime($run['pay_date']))],
-        ['TAX YEAR',      $taxYearLabel],
+        ['EMPLOYEE', $empName ?: '—'], ['NUMBER', $emp['employee_no'] ?? '—'], ['JOB TITLE', ($emp['job_title'] ?? '') ?: '—'], ['TAX NUMBER', ($emp['tax_number'] ?? '') ?: '—'],
+        ['ID / PASSPORT', ($emp['id_number'] ?? '') ?: '—'], ['STARTED', $d($emp['hire_date'] ?? null)], ['PAID', ucfirst(['monthly' => 'monthly', 'fortnight' => 'every two weeks', 'weekly' => 'weekly'][$run['frequency']] ?? '')], ['TAX YEAR', $taxYearLabel],
     ];
     $startY = $pdf->getY();
-    foreach ($kv as $i => $item) {
-        $col = $i % $kvCols;
-        $row = (int)($i / $kvCols);
-        $x = $L + $col * $kvColW;
-        $rowY = $startY + $row * $kvRowH;
-        $pdf->text($x, $rowY, $item[0], 7.2, true, '#6b7280');
-        $pdf->text($x, $rowY + 12, (string)$item[1], 11, true, '#111827');
+    $colW = $W / 4;
+    foreach ($kv as $i => [$k, $v]) {
+        $x = $L + ($i % 4) * $colW;
+        $ry = $startY + intdiv($i, 4) * 34;
+        $pdf->text($x, $ry, $k, 7, true, $muted);
+        $pdf->text($x, $ry + 11, mb_strimwidth((string)$v, 0, 26, '…'), 10.5, true, '#111827');
     }
-    $pdf->setY($startY + ceil(count($kv) / $kvCols) * $kvRowH + 10);
+    $pdf->setY($startY + 2 * 34 + 8);
 
-    // ---------- Earnings + Deductions side by side ----------
+    // ---------- Earnings | Deductions ----------
     $gap = 16;
-    $colW = ($W - $gap) / 2;
-    $earnX = $L;
-    $dedX  = $L + $colW + $gap;
-
-    $secY = $pdf->getY();
-    $pdf->text($earnX, $secY, 'EARNINGS',   9.5, true, $primary);
-    $pdf->text($dedX,  $secY, 'DEDUCTIONS', 9.5, true, $primary);
-
-    // Header row
-    $hdrY = $secY + 18;
-    $pdf->text($earnX, $hdrY, 'DESCRIPTION', 7, true, '#6b7280');
-    $pdf->textRight($earnX + $colW, $hdrY, 'AMOUNT', 7, true, '#6b7280');
-    $pdf->text($dedX, $hdrY, 'DESCRIPTION', 7, true, '#6b7280');
-    $pdf->textRight($dedX + $colW, $hdrY, 'AMOUNT', 7, true, '#6b7280');
-    $pdf->line($earnX, $hdrY + 6, $earnX + $colW, $hdrY + 6, '#e5e7eb', 0.6);
-    $pdf->line($dedX,  $hdrY + 6, $dedX  + $colW, $hdrY + 6, '#e5e7eb', 0.6);
-
-    $rowY = $hdrY + 14;
+    $cw = ($W - $gap) / 2;
+    $ex = $L;
+    $dx = $L + $cw + $gap;
+    $sy = $pdf->getY();
+    $pdf->text($ex, $sy, 'EARNINGS', 9.5, true, $primary);
+    $pdf->text($dx, $sy, 'DEDUCTIONS', 9.5, true, $primary);
+    $hy = $sy + 18;
+    foreach ([$ex, $dx] as $x) {
+        $pdf->text($x, $hy, 'DESCRIPTION', 7, true, $muted);
+        $pdf->textRight($x + $cw, $hy, 'AMOUNT', 7, true, $muted);
+        $pdf->line($x, $hy + 6, $x + $cw, $hy + 6, $rule, 0.6);
+    }
     $rowH = 16;
+    $put = function (float $x, float &$yy, string $name, string $detail, int $amt, bool $bold = false) use ($pdf, $cw, $money, $ink, $muted, $rule, $rowH) {
+        $pdf->text($x, $yy, mb_strimwidth($name, 0, $detail !== '' ? 26 : 44, '…'), 9.5, $bold, $ink);
+        if ($detail !== '') $pdf->textRight($x + $cw - 78, $yy + 1, $detail, 7.5, false, $muted);
+        $pdf->textRight($x + $cw, $yy, $money($amt), 9.5, $bold, $ink);
+        $yy += $rowH;
+        $pdf->line($x, $yy - 4, $x + $cw, $yy - 4, $rule, 0.4);
+    };
+    $ey = $hy + 14;
+    foreach ($groups['earning'] as $r) $put($ex, $ey, $r['name'], $r['detail'], $r['amt']);
+    foreach ($groups['reimbursement'] as $r) $put($ex, $ey, $r['name'] . ' (refund)', $r['detail'], $r['amt']);
+    $pdf->line($ex, $ey - 2, $ex + $cw, $ey - 2, '#cbd5e1', 0.8);
+    $ey += 4;
+    $put($ex, $ey, 'Total earnings', '', $gross + $reimb, true);
 
-    // Earnings rows
-    $eY = $rowY;
-    foreach ($earningRows as $r) {
-        $pdf->text($earnX, $eY, $r['name'], 9.5, false, '#1f2937');
-        $pdf->textRight($earnX + $colW, $eY, $money($r['amt']), 9.5, false, '#1f2937');
-        $eY += $rowH;
-        $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#e5e7eb', 0.4);
+    $dy = $hy + 14;
+    if ($paye > 0) $put($dx, $dy, 'Income tax (PAYE)', '', $paye);
+    if ($uifEmp > 0) $put($dx, $dy, 'UIF (1%)', '', $uifEmp);
+    foreach ($groups['deduction'] as $r) $put($dx, $dy, $r['name'], $r['detail'], abs($r['amt']));
+    if (!$groups['deduction'] && $otherDed > 0) $put($dx, $dy, 'Other deductions', '', $otherDed);
+    if ($paye === 0 && $uifEmp === 0 && !$groups['deduction'] && $otherDed === 0) $put($dx, $dy, 'No deductions', '', 0);
+    $pdf->line($dx, $dy - 2, $dx + $cw, $dy - 2, '#cbd5e1', 0.8);
+    $dy += 4;
+    $put($dx, $dy, 'Total deductions', '', $paye + $uifEmp + $otherDed, true);
+    $pdf->setY(max($ey, $dy) + 8);
+
+    // ---------- Net pay ----------
+    $ny = $pdf->getY();
+    $pdf->fillRect($L, $ny, $W, 44, $primary);
+    $pdf->text($L + 18, $ny + 17, 'NET PAY', 11, true, $onP);
+    $bank = trim((string)($emp['bank_name'] ?? ''));
+    $acct = preg_replace('/\D/', '', (string)($emp['bank_account_no'] ?? ''));
+    if ($acct !== '') $pdf->text($L + 100, $ny + 18, 'Into ' . ($bank !== '' ? $bank . ' ' : '') . 'account ending ' . substr($acct, -4), 8.5, false, $onP);
+    $pdf->textRight($R - 18, $ny + 13, $money($net), 22, true, $onP);
+    $pdf->setY($ny + 60);
+
+    // ---------- Not paid in cash: fringe benefits and employer contributions ----------
+    if ($groups['benefit'] || $groups['contribution'] || $uifEmpr || $sdl) {
+        $by = $pdf->getY();
+        $pdf->text($L, $by, 'PAID BY YOUR EMPLOYER', 9.5, true, $primary);
+        $pdf->textRight($R, $by + 1, '(not taken off your pay)', 8, false, '#9ca3af');
+        $pdf->line($L, $by + 10, $R, $by + 10, $rule, 0.6);
+        $yy = $by + 18;
+        $full = function (string $name, int $amt, string $note = '') use ($pdf, $L, $R, &$yy, $money, $ink, $muted, $rule) {
+            $pdf->text($L, $yy, $name, 9.5, false, $ink);
+            if ($note !== '') $pdf->text($L + 230, $yy + 1, $note, 7.5, false, $muted);
+            $pdf->textRight($R, $yy, $money($amt), 9.5, false, $ink);
+            $yy += 16;
+            $pdf->line($L, $yy - 4, $R, $yy - 4, $rule, 0.4);
+        };
+        foreach ($groups['benefit'] as $r) $full($r['name'], $r['amt'], 'taxable fringe benefit');
+        foreach ($groups['contribution'] as $r) $full($r['name'], $r['amt'], 'employer contribution');
+        if ($uifEmpr) $full('UIF (employer 1%)', $uifEmpr);
+        if ($sdl) $full('Skills Development Levy (1%)', $sdl);
+        $yy += 4;
+        $pdf->text($L, $yy, 'Total cost to company', 10, true, '#111827');
+        $pdf->textRight($R, $yy, $money($cost), 10, true, '#111827');
+        $pdf->setY($yy + 26);
     }
-    if ($reimb > 0) {
-        $pdf->text($earnX, $eY, 'Reimbursements', 9.5, false, '#1f2937');
-        $pdf->textRight($earnX + $colW, $eY, $money($reimb), 9.5, false, '#1f2937');
-        $eY += $rowH;
-        $pdf->line($earnX, $eY - 4, $earnX + $colW, $eY - 4, '#e5e7eb', 0.4);
+
+    // ---------- Year to date ----------
+    $ty0 = $pdf->getY();
+    $pdf->text($L, $ty0, 'TAX YEAR TO DATE (' . $taxYearLabel . ($draft ? ', finalised runs only' : '') . ')', 9.5, true, $primary);
+    $hy = $ty0 + 18;
+    $cols = [['Earnings', 'gross'], ['Taxable income', 'taxable'], ['PAYE', 'paye'], ['UIF', 'uif_emp'], ['Net pay', 'net']];
+    $cwy = $W / count($cols);
+    foreach ($cols as $i => [$label, $k]) {
+        $x = $L + $i * $cwy;
+        $pdf->text($x, $hy, strtoupper($label), 7, true, $muted);
+        $pdf->text($x, $hy + 11, $money((int)($ytd[$k] ?? 0)), 10.5, true, '#111827');
     }
-    // Gross + Taxable
-    $pdf->line($earnX, $eY - 2, $earnX + $colW, $eY - 2, '#cbd5e1', 0.8);
-    $eY += 4;
-    $pdf->text($earnX, $eY, 'Gross Earnings', 10, true, '#111827');
-    $pdf->textRight($earnX + $colW, $eY, $money($gross + $reimb), 10, true, '#111827');
-    $eY += $rowH;
-    $pdf->text($earnX, $eY, 'Taxable Income', 8.5, false, '#6b7280');
-    $pdf->textRight($earnX + $colW, $eY, $money($taxable), 8.5, false, '#6b7280');
-    $eY += $rowH;
+    $pdf->text($L, $hy + 34, 'Taxable income this period: ' . $money($taxable), 8, false, $muted);
 
-    // Deductions rows
-    $dY = $rowY;
-    $dRows = array_merge(
-        [['name' => 'PAYE (Income Tax)', 'amt' => $paye],
-         ['name' => 'UIF (Employee 1%)', 'amt' => $uifEmp]],
-        array_map(fn ($r) => ['name' => $r['name'], 'amt' => $r['amt']], $deductionRows)
-    );
-    if ($otherDed > 0 && !$deductionRows) {
-        $dRows[] = ['name' => 'Other Deductions', 'amt' => $otherDed];
-    }
-    foreach ($dRows as $r) {
-        $pdf->text($dedX, $dY, $r['name'], 9.5, false, '#1f2937');
-        $pdf->textRight($dedX + $colW, $dY, $money($r['amt']), 9.5, false, '#1f2937');
-        $dY += $rowH;
-        $pdf->line($dedX, $dY - 4, $dedX + $colW, $dY - 4, '#e5e7eb', 0.4);
-    }
-    $pdf->line($dedX, $dY - 2, $dedX + $colW, $dY - 2, '#cbd5e1', 0.8);
-    $dY += 4;
-    $totalDed = $paye + $uifEmp + $otherDed + array_sum(array_column($deductionRows, 'amt'));
-    $pdf->text($dedX, $dY, 'Total Deductions', 10, true, '#111827');
-    $pdf->textRight($dedX + $colW, $dY, $money($totalDed), 10, true, '#111827');
-    $dY += $rowH;
-
-    $pdf->setY(max($eY, $dY) + 10);
-
-    // ---------- Net Pay band ----------
-    $netY = $pdf->getY();
-    $netH = 44;
-    $pdf->fillRect($L, $netY, $W, $netH, $primary);
-    $pdf->text($L + 18, $netY + 18, 'NET PAY', 11, true, $textOnP);
-    $pdf->textRight($R - 18, $netY + 14, $money($net), 22, true, $textOnP);
-    $pdf->setY($netY + $netH + 16);
-
-    // ---------- Employer Contributions (3-column grid) ----------
-    $ecY = $pdf->getY();
-    $pdf->text($L, $ecY, 'EMPLOYER CONTRIBUTIONS', 9.5, true, $primary);
-    $pdf->textRight($R, $ecY + 1, '(not deducted from net pay)', 8, false, '#9ca3af');
-    $pdf->line($L, $ecY + 8, $R, $ecY + 8, '#e5e7eb', 0.6);
-
-    $ec = [
-        ['UIF (EMPLOYER 1%)',     $money($uifEmpr)],
-        ['SDL (1%)',              $money($sdl)],
-        ['TOTAL COST TO COMPANY', $money($emprCost ?: ($gross + $uifEmpr + $sdl))],
-    ];
-    $ecCols = count($ec);
-    $ecColW = $W / $ecCols;
-    foreach ($ec as $i => $item) {
-        $x = $L + $i * $ecColW;
-        $pdf->text($x, $ecY + 18, $item[0], 7.2, true, '#6b7280');
-        $pdf->text($x, $ecY + 30, $item[1], 11, true, '#111827');
-    }
-    $pdf->setY($ecY + 50);
-
-    // ---------- Year to Date table ----------
-    $ytdY = $pdf->getY();
-    $pdf->text($L, $ytdY, 'YEAR TO DATE (' . $taxYearLabel . ')', 9.5, true, $primary);
-    $hdrY = $ytdY + 18;
-    $pdf->text($L, $hdrY, 'ITEM', 7, true, '#6b7280');
-    $pdf->textRight($R, $hdrY, 'YTD AMOUNT', 7, true, '#6b7280');
-    $pdf->line($L, $hdrY + 6, $R, $hdrY + 6, '#e5e7eb', 0.6);
-
-    $ytdItems = [
-        ['Gross Earnings',  $money((int)($ytd['gross']    ?? 0))],
-        ['Taxable Income',  $money((int)($ytd['taxable']  ?? 0))],
-        ['PAYE',            $money((int)($ytd['paye']     ?? 0))],
-        ['UIF (Employee)',  $money((int)($ytd['uif_emp']  ?? 0))],
-        ['UIF (Employer)',  $money((int)($ytd['uif_empr'] ?? 0))],
-        ['SDL',             $money((int)($ytd['sdl']      ?? 0))],
-    ];
-    $rY = $hdrY + 14;
-    foreach ($ytdItems as $r) {
-        $pdf->text($L, $rY, $r[0], 9.5, false, '#1f2937');
-        $pdf->textRight($R, $rY, $r[1], 9.5, false, '#1f2937');
-        $rY += 16;
-        $pdf->line($L, $rY - 4, $R, $rY - 4, '#e5e7eb', 0.4);
-    }
-    $pdf->line($L, $rY - 2, $R, $rY - 2, '#cbd5e1', 0.8);
-    $rY += 4;
-    $pdf->text($L, $rY, 'Net Paid', 10, true, '#111827');
-    $pdf->textRight($R, $rY, $money((int)($ytd['net'] ?? 0)), 10, true, '#111827');
-    $pdf->setY($rY + 22);
-
-    // ---------- Footer ----------
-    $footerY = max($pdf->getY(), PayslipPdf::PAGE_H - 30);
-    $pdf->textCenter(PayslipPdf::PAGE_W / 2, $footerY,
-        'This is a computer-generated payslip and is valid without a signature. Generated ' . date('d M Y H:i') . '.',
-        8, false, '#9ca3af');
-
+    $footerY = max($hy + 60, PayslipPdf::PAGE_H - 30);
+    $pdf->textCenter(PayslipPdf::PAGE_W / 2, $footerY, 'Computer-generated payslip — valid without a signature. Created ' . date('j M Y H:i') . '.', 7.5, false, '#9ca3af');
     return $pdf->output();
 }

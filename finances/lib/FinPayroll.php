@@ -76,7 +76,7 @@ final class FinPayroll
             $r = $st->fetch(PDO::FETCH_ASSOC);
             if (!$r) throw new FinUserError('That pay run was not found.');
             if ($r['status'] === 'posted') throw new FinUserError('This pay run is already in the books.', 409);
-            if ($r['status'] !== 'locked') throw new FinUserError('Lock the pay run in Payroll first; only a locked run is posted.', 409);
+            if ($r['status'] !== 'locked') throw new FinUserError('Finalise the pay run in Payroll first; only a finalised run goes into the books.', 409);
             (new PostingService($db, $companyId, $userId))->postPayrollRun($runId);
             $db->prepare("UPDATE pay_runs SET status = 'posted', posted_by = ?, posted_at = NOW(), updated_at = NOW() WHERE id = ? AND company_id = ?")->execute([$userId, $runId, $companyId]);
             Fin::audit($db, $companyId, $userId, 'payrun_post_gl', 'pay_run', $runId, ['from' => 'finance']);

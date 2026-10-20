@@ -1,283 +1,200 @@
 <?php
-// /payroll/index.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /payroll/index.php — Payroll at a glance: the run that is due or in
+// progress, what the last pay day cost, what is owed to SARS and by when,
+// what needs fixing before the next run, and the cost of pay over a year.
+require_once __DIR__ . '/lib/PayBoot.php';
 
-// DB compatibility check
-if (!isset($pdo) && isset($DB)) { $pdo = $DB; }
+$C = $PAY_COMPANY_ID;
+$money = fn(int $c) => PayKit::money($c);
 
-define('ASSET_VERSION', '2026-07-09-PAYROLL-UI-3D');
+$people = PayEmployees::list($DB, $C, ['status' => 'active'])['rows'];
+$active = count($people);
+$st = $DB->prepare("SELECT * FROM pay_runs WHERE company_id = ? AND status IN ('draft','calculated','review','approved') ORDER BY pay_date, id LIMIT 1");
+$st->execute([$C]);
+$open = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+$openRun = $open ? PayRuns::get($DB, $C, (int)$open['id']) : null;
+$suggest = PayKit::suggest($DB, $C, $PAY_SETTINGS['default_frequency'], $PAY_SETTINGS);
+$st = $DB->prepare("SELECT r.id, r.name, r.pay_date, r.status, SUM(x.net_cents) net, SUM(x.employer_cost_cents) cost, COUNT(x.id) people
+                      FROM pay_runs r JOIN pay_run_employees x ON x.run_id = r.id WHERE r.company_id = ? AND r.status IN ('locked','posted')
+                     GROUP BY r.id ORDER BY r.pay_date DESC, r.id DESC LIMIT 1");
+$st->execute([$C]);
+$last = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+$sarsMonth = $last ? substr($last['pay_date'], 0, 7) : date('Y-m');
+$emp201 = PayReports::emp201($DB, $C, $sarsMonth);
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
+// Cost of pay, month by month, for the last 12 months
+$st = $DB->prepare("SELECT DATE_FORMAT(r.pay_date, '%Y-%m') ym, SUM(x.employer_cost_cents) cost, SUM(x.net_cents) net FROM pay_runs r JOIN pay_run_employees x ON x.run_id = r.id
+                     WHERE r.company_id = ? AND r.status IN ('locked','posted') AND r.pay_date >= ? GROUP BY ym");
+$st->execute([$C, date('Y-m-01', strtotime('-11 months'))]);
+$byMonth = [];
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $byMonth[$r['ym']] = (int)$r['cost'];
+$bars = [];
+for ($i = 11; $i >= 0; $i--) {
+    $ym = date('Y-m', strtotime(date('Y-m-01') . " -$i months"));
+    $bars[] = ['ym' => $ym, 'label' => date('M', strtotime($ym . '-01')), 'v' => $byMonth[$ym] ?? 0];
+}
+$maxBar = max(1, max(array_column($bars, 'v')));
 
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
+// What needs attention
+$attn = [];
+$miss = fn(string $what) => array_values(array_filter($people, fn($p) => in_array($what, $p['missing'], true)));
+if ($x = $miss('tax number')) $attn[] = ['i-file-text', count($x) . ' ' . (count($x) === 1 ? 'person has' : 'people have') . ' no tax number', 'SARS needs it on every tax certificate: ' . implode(', ', array_slice(array_column($x, 'name'), 0, 3)) . (count($x) > 3 ? '…' : '') . '.', '/payroll/employees.php?filter=missing'];
+if ($x = $miss('bank details')) $attn[] = ['if-bank', count($x) . ' ' . (count($x) === 1 ? 'person has' : 'people have') . ' no bank details', 'They are left out of the bank payments file.', '/payroll/employees.php?filter=missing'];
+if ($x = $miss('date of birth')) $attn[] = ['i-calendar', count($x) . ' ' . (count($x) === 1 ? 'person has' : 'people have') . ' no date of birth', 'It decides the extra tax rebates from age 65. An SA ID number fills it in.', '/payroll/employees.php?filter=missing'];
+if ($PAY_SETTINGS['paye_reference'] === '') $attn[] = ['ip-sars', 'Add your PAYE reference number', 'It is printed on payslips and needed for EMP201 and EMP501.', '/payroll/settings.php#set-paye_reference'];
+if (!$PAY_SETTINGS['bank_account_id']) $attn[] = ['if-ledger', 'Choose the bank account salaries are paid from', 'Finance needs it to put pay runs in the books.', '/payroll/settings.php#set-bank_account_id'];
+$st = $DB->prepare("SELECT COUNT(*) FROM pay_runs WHERE company_id = ? AND status = 'locked'");
+$st->execute([$C]);
+if ($n = (int)$st->fetchColumn()) $attn[] = ['if-post', $n . ' finalised ' . ($n === 1 ? 'run is' : 'runs are') . ' not in the books yet', 'Post ' . ($n === 1 ? 'it' : 'them') . ' so Finance shows the wages, PAYE, UIF and SDL.', '/payroll/runs.php?stage=final'];
+$st = $DB->prepare("SELECT COUNT(*), MAX(r.id) FROM pay_run_employees x JOIN pay_runs r ON r.id = x.run_id WHERE r.company_id = ? AND x.payslip_email_error IS NOT NULL AND r.pay_date >= ?");
+$st->execute([$C, date('Y-m-d', strtotime('-60 days'))]);
+[$n, $failedRun] = $st->fetch(PDO::FETCH_NUM);
+if ($n = (int)$n) $attn[] = ['i-mail', $n . ' payslip' . ($n === 1 ? '' : 's') . ' could not be emailed', 'Open the run to see why and send again.', '/payroll/run_view.php?id=' . (int)$failedRun];
+$tax = PaySettings::taxTables($DB, $C);
+if (!$tax['has_next'] && (int)date('n') >= 2 && (int)date('n') <= 3) $attn[] = ['ip-calc', 'The ' . $tax['next_label'] . ' tax tables are not in yet', 'Runs paid from 1 March need them. Add SARS’s new figures under Settings → Tax tables if they are out.', '/payroll/settings.php#tax'];
 
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
+$st = $DB->prepare("SELECT r.id, r.run_number, r.name, r.pay_date, r.status, COUNT(x.id) people, COALESCE(SUM(x.net_cents),0) net FROM pay_runs r LEFT JOIN pay_run_employees x ON x.run_id = r.id
+                     WHERE r.company_id = ? GROUP BY r.id ORDER BY r.pay_date DESC, r.id DESC LIMIT 5");
+$st->execute([$C]);
+$recent = $st->fetchAll(PDO::FETCH_ASSOC);
+$tones = ['prepare' => 'info', 'approved' => 'gold', 'final' => 'accent', 'booked' => 'success'];
 
-// Dashboard stats
-$stmt = $DB->prepare("
-    SELECT COUNT(*) as total_employees
-    FROM employees
-    WHERE company_id = ? AND termination_date IS NULL
-");
-$stmt->execute([$companyId]);
-$stats = $stmt->fetch();
-$totalEmployees = $stats['total_employees'] ?? 0;
+$page = 'index';
+$pageTitle = 'Overview';
+include __DIR__ . '/partials/head.php';
 
-$stmt = $DB->prepare("
-    SELECT COUNT(*) as open_runs
-    FROM pay_runs
-    WHERE company_id = ? AND status IN ('draft','calculated','review')
-");
-$stmt->execute([$companyId]);
-$stats = $stmt->fetch();
-$openRuns = $stats['open_runs'] ?? 0;
-
-$stmt = $DB->prepare("
-    SELECT 
-        COUNT(*) as last_run_count,
-        SUM(net_cents) as last_run_net
-    FROM pay_run_employees pre
-    JOIN pay_runs pr ON pre.run_id = pr.id
-    WHERE pr.company_id = ? AND pr.status = 'posted'
-    ORDER BY pr.pay_date DESC
-    LIMIT 1
-");
-$stmt->execute([$companyId]);
-$lastRun = $stmt->fetch();
-$lastRunNet = ($lastRun['last_run_net'] ?? 0) / 100;
-
-// Upcoming pay dates
-$stmt = $DB->prepare("
-    SELECT id, name, pay_date, status
-    FROM pay_runs
-    WHERE company_id = ? AND pay_date >= CURDATE()
-    ORDER BY pay_date ASC
-    LIMIT 5
-");
-$stmt->execute([$companyId]);
-$upcomingRuns = $stmt->fetchAll();
+$stagesHtml = function (?array $run) use ($e): string {
+    $cur = $run ? $run['stage'] : null;
+    $order = ['prepare', 'approved', 'final', 'booked'];
+    $idx = $cur ? array_search($cur, $order, true) : -1;
+    $steps = [['Prepare', 'Add hours, overtime and bonuses'], ['Approve', 'Check and freeze the figures'], ['Finalise', 'Payslips and the bank file'], ['In the books', 'Wages, PAYE, UIF, SDL']];
+    $h = '<div class="fwp-stages" role="list">';
+    foreach ($steps as $i => [$t, $s]) {
+        $cls = $i < $idx || ($i === $idx && $cur === 'booked') ? 'is-done' : ($i === $idx ? 'is-current' : '');
+        $h .= '<div class="fwp-stage ' . $cls . '" role="listitem"><span class="fwp-stage__dot">' . ($cls === 'is-done' ? '<svg class="i"><use href="#i-check"/></svg>' : ($i + 1)) . '</span><b>' . $e($t) . '</b><small>' . $e($s) . '</small></div>';
+    }
+    return $h . '</div>';
+};
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payroll – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body>
-    <main class="fw-payroll">
-        <div class="fw-payroll__container">
-            
-            <!-- Header -->
-            <header class="fw-payroll__header">
-                <div class="fw-payroll__brand">
-                    <div class="fw-payroll__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                        </svg>
-                    </div>
-                    <div class="fw-payroll__brand-text">
-                        <div class="fw-payroll__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-payroll__app-name">Payroll</div>
-                    </div>
-                </div>
+<header class="fwp-head">
+    <div class="fwp-head__text">
+        <p class="fwp-eyebrow">Payroll <i>◆</i> <?= $e(PayTax::taxYearLabel(date('Y-m-d'))) ?> tax year</p>
+        <h1>Payroll</h1>
+        <p><?= $active ?> <?= $active === 1 ? 'person is' : 'people are' ?> on the payroll<?php if ($last): ?> · the last pay day, <b><?= $e(PayKit::date($last['pay_date'])) ?></b>, paid <b><?= $e($money((int)$last['net'])) ?></b><?php endif; ?>.</p>
+    </div>
+    <div class="fwp-head__actions">
+        <a class="btn" href="/payroll/employees.php?new=1"><svg class="i"><use href="#i-plus"/></svg>Add employee</a>
+        <a class="btn btn--primary" href="/payroll/runs.php?new=1"><svg class="i"><use href="#ip-run"/></svg>New pay run</a>
+    </div>
+</header>
 
-                <div class="fw-payroll__greeting">
-                    Hello, <span class="fw-payroll__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
+<?php if ($active === 0 && !$recent): ?>
+<section class="fwp-card">
+    <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#ip-seal"/></svg></span>
+        <div class="fwp-card__title"><h3>Set up payroll in three steps</h3><p>Flowwork works out PAYE, UIF and SDL with SARS’s current tables, makes payslips and puts every run in the books.</p></div></div>
+    <div class="fwp-steps">
+        <a class="fwp-step" href="/payroll/settings.php"><span class="fwp-step__dot">1</span><span class="fwp-step__text"><b>Check the pay day and your PAYE reference</b><small>Settings — the 25th by default, paid the Friday before when it falls on a weekend.</small></span><svg class="i"><use href="#i-chev-right"/></svg></a>
+        <a class="fwp-step" href="/payroll/employees.php?new=1"><span class="fwp-step__dot">2</span><span class="fwp-step__text"><b>Add your employees</b><small>Salary or hourly rate, tax number and bank details.</small></span><svg class="i"><use href="#i-chev-right"/></svg></a>
+        <a class="fwp-step" href="/payroll/runs.php?new=1"><span class="fwp-step__dot">3</span><span class="fwp-step__text"><b>Start your first pay run</b><small>Everyone is worked out at once; add overtime or a bonus, approve and finalise.</small></span><svg class="i"><use href="#i-chev-right"/></svg></a>
+    </div>
+</section>
+<?php else: ?>
 
-                <div class="fw-payroll__controls">
-                    <a href="/" class="fw-payroll__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-payroll__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-payroll__theme-icon fw-payroll__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-payroll__theme-icon fw-payroll__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-payroll__menu-wrapper">
-                        <button class="fw-payroll__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-payroll__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/payroll/employees.php" class="fw-payroll__kebab-item">Employees</a>
-                            <a href="/payroll/payitems.php" class="fw-payroll__kebab-item">Pay Items</a>
-                            <a href="/payroll/runs.php" class="fw-payroll__kebab-item">Pay Runs</a>
-                            <a href="/payroll/reports.php" class="fw-payroll__kebab-item">Reports</a>
-                            <a href="/payroll/settings.php" class="fw-payroll__kebab-item">Settings</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Dashboard -->
-            <div class="fw-payroll__main">
-                
-
-                <!-- Quick Actions -->
-                <div class="fw-payroll__quick-actions">
-                    <a href="/payroll/run_new.php" class="fw-payroll__btn fw-payroll__btn--primary fw-payroll__btn--large">
-                        + New Pay Run
-                    </a>
-                    <a href="/payroll/employees.php" class="fw-payroll__btn fw-payroll__btn--secondary fw-payroll__btn--large">
-                        Manage Employees
-                    </a>
-                    <a href="/payroll/reports.php" class="fw-payroll__btn fw-payroll__btn--secondary fw-payroll__btn--large">
-                        View Reports
-                    </a>
-                </div>
-
-                <!-- Upcoming Pay Dates -->
-                <?php if (count($upcomingRuns) > 0): ?>
-                <div class="fw-payroll__section">
-                    <h2 class="fw-payroll__section-title">Upcoming Pay Dates</h2>
-                    <div class="fw-payroll__upcoming-list">
-                        <?php foreach ($upcomingRuns as $run): ?>
-                        <a href="/payroll/run_view.php?id=<?= $run['id'] ?>" class="fw-payroll__upcoming-card">
-                            <div class="fw-payroll__upcoming-date">
-                                <?= date('d M Y', strtotime($run['pay_date'])) ?>
-                            </div>
-                            <div class="fw-payroll__upcoming-name"><?= htmlspecialchars($run['name']) ?></div>
-                            <span class="fw-payroll__badge fw-payroll__badge--<?= $run['status'] ?>">
-                                <?= ucfirst($run['status']) ?>
-                            </span>
-                        </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <!-- Payroll Overview Dashboard -->
-                <div id="payroll-overview" class="fw-container">
-                    <!-- First row: KPI cards -->
-                    <div class="kpi-row">
-                        <div class="kpi">
-                            <div class="kpi-icon">
-                                <!-- Employees icon -->
-                                <svg viewBox="0 0 24 24" fill="none"><path d="M17 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 20v-2a4 4 0 0 0-3-3.87" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </div>
-                            <div class="kpi-main">
-                                <div class="kpi-value" id="kpiEmployees">-</div>
-                                <div class="kpi-label">Active Employees</div>
-                            </div>
-                        </div>
-                        <div class="kpi">
-                            <div class="kpi-icon">
-                                <!-- Open runs icon -->
-                                <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>
-                            </div>
-                            <div class="kpi-main">
-                                <div class="kpi-value" id="kpiOpenRuns">-</div>
-                                <div class="kpi-label">Open Runs</div>
-                            </div>
-                        </div>
-                        <div class="kpi">
-                            <div class="kpi-icon">
-                                <!-- Last payroll icon -->
-                                <svg viewBox="0 0 24 24" fill="none"><path d="M6 7V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="7" width="18" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                            </div>
-                            <div class="kpi-main">
-                                <div class="kpi-value" id="kpiLastPayroll">-</div>
-                                <div class="kpi-label">Last Net Payroll</div>
-                            </div>
-                        </div>
-                        <div class="kpi">
-                            <div class="kpi-icon">
-                                <!-- New employees icon -->
-                                <svg viewBox="0 0 24 24" fill="none"><path d="M16 14v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19 17h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 20v-2a4 4 0 0 0-4-4H4a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                            </div>
-                            <div class="kpi-main">
-                                <div class="kpi-value" id="kpiNewEmployees">-</div>
-                                <div class="kpi-label">New Employees</div>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Second row: Cost, Headcount, MTD charts -->
-                    <div class="fw-grid fw-grid-3">
-                        <div class="fw-card">
-                            <div class="fw-card-head"><h3>Monthly Payroll Cost</h3></div>
-                            <canvas id="chartCost" height="220"></canvas>
-                        </div>
-                        <div class="fw-card">
-                            <div class="fw-card-head"><h3>Monthly Headcount</h3></div>
-                            <canvas id="chartHeadcount" height="220"></canvas>
-                        </div>
-                        <div class="fw-card">
-                            <div class="fw-card-head"><h3>MTD Payroll</h3></div>
-                            <canvas id="chartMtd" height="220"></canvas>
-                        </div>
-                    </div>
-                    <!-- Third row: Top employees table, Employment types and Runs volume charts -->
-                    <div class="fw-grid fw-grid-3">
-                        <div class="fw-card">
-                            <div class="fw-card-head"><h3>Top Employees</h3></div>
-                            <div class="fw-table-wrap">
-                                <table class="fw-table fw-table-compact">
-                                    <thead><tr><th>Employee</th><th>Runs</th><th>Total Net</th></tr></thead>
-                                    <tbody id="tableTopEmployees"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <div class="fw-card">
-                            <div class="fw-card-head"><h3>Employment Types</h3></div>
-                            <canvas id="chartEmploymentType" height="220"></canvas>
-                        </div>
-                        <div class="fw-card">
-                            <div class="fw-card-head"><h3>Runs Volume</h3></div>
-                            <canvas id="chartRunsVolume" height="220"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- Footer -->
-            <footer class="fw-payroll__footer">
-                <span>Payroll v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Light</span>
-            </footer>
-
+<section class="fwp-card">
+    <div class="fwp-next">
+        <span class="fwp-next__icon"><svg class="i"><use href="#<?= $openRun ? 'ip-run' : 'i-calendar' ?>"/></svg></span>
+        <div class="fwp-next__text">
+            <?php if ($openRun): ?>
+                <p class="fwp-eyebrow"><?= $e($openRun['stage_label']) ?> <i>◆</i> paid <?= $e(PayKit::date($openRun['pay_date'])) ?></p>
+                <h3><?= $e($openRun['name']) ?></h3>
+                <p><?= count($openRun['people']) ?> <?= count($openRun['people']) === 1 ? 'person' : 'people' ?> · net pay <b><?= $e($money($openRun['totals']['net'])) ?></b> · cost to company <?= $e($money($openRun['totals']['cost'])) ?><?php
+                    $w = array_sum(array_map(fn($p) => count(array_intersect($p['warnings'], ['negative_net', 'no_hours'])), $openRun['people']));
+                    if ($w) echo ' · <span class="fwp-flag fwp-flag--danger">' . $w . ' to sort out</span>'; ?></p>
+            <?php else: ?>
+                <p class="fwp-eyebrow">Next <i>◆</i> <?= $e(PayKit::FREQ[$suggest['frequency']]) ?></p>
+                <h3>Start the <?= $e($suggest['name']) ?> run</h3>
+                <p><?= $e(PayKit::period($suggest['period_start'], $suggest['period_end'])) ?>, paid <b><?= $e(date('l j F', strtotime($suggest['pay_date']))) ?></b>.</p>
+            <?php endif; ?>
         </div>
-    </main>
+        <?php if ($openRun): ?>
+            <a class="btn btn--primary" href="/payroll/run_view.php?id=<?= (int)$openRun['id'] ?>">Continue<svg class="i"><use href="#i-chev-right"/></svg></a>
+        <?php else: ?>
+            <a class="btn btn--primary" href="/payroll/runs.php?new=1">Start pay run<svg class="i"><use href="#i-chev-right"/></svg></a>
+        <?php endif; ?>
+        <?= $stagesHtml($openRun) ?>
+    </div>
+</section>
 
-    <script src="/payroll/assets/payroll.js?v=<?= ASSET_VERSION ?>"></script>
-    <!-- Chart.js for rendering overview charts -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- Payroll overview logic -->
-    <script src="/payroll/assets/overview.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+<div class="fwp-stats" style="margin-top:16px">
+    <a class="fwp-stat" href="/payroll/employees.php" style="--i:0"><span class="fwp-stat__label">On the payroll</span><span class="fwp-stat__value"><?= $active ?></span>
+        <span class="fwp-stat__sub"><?= count(array_filter($people, fn($p) => $p['basis'] === 'hourly')) ?> paid by the hour</span></a>
+    <a class="fwp-stat" href="<?= $last ? '/payroll/run_view.php?id=' . (int)$last['id'] : '/payroll/runs.php' ?>" style="--i:1"><span class="fwp-stat__label">Last net pay</span>
+        <span class="fwp-stat__value fwp-num"><?= $last ? $e($money((int)$last['net'])) : '—' ?></span><span class="fwp-stat__sub"><?= $last ? $e($last['name']) : 'No finalised run yet' ?></span></a>
+    <div class="fwp-stat" style="--i:2"><span class="fwp-stat__label">Cost to company</span><span class="fwp-stat__value fwp-num"><?= $last ? $e($money((int)$last['cost'])) : '—' ?></span>
+        <span class="fwp-stat__sub">Pay plus employer UIF and SDL</span></div>
+    <a class="fwp-stat<?= $emp201['overdue'] ? ' is-alert' : '' ?>" href="/payroll/reports.php?month=<?= $e($sarsMonth) ?>" style="--i:3"><span class="fwp-stat__label">Owed to SARS · <?= $e(date('M', strtotime($sarsMonth . '-01'))) ?></span>
+        <span class="fwp-stat__value fwp-num"><?= $e($money($emp201['totals']['total'])) ?></span><span class="fwp-stat__sub">EMP201 due <?= $e(PayKit::date($emp201['due'], false)) ?></span></a>
+</div>
+
+<div class="fwp-cols" style="margin-top:16px">
+    <div>
+        <section class="fwp-card">
+            <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#i-chart"/></svg></span>
+                <div class="fwp-card__title"><h3>Cost of pay</h3><p>Cost to company of finalised runs, by pay month.</p></div></div>
+            <?php if (array_sum(array_column($bars, 'v')) === 0): ?>
+                <div class="fwp-bars__empty">The first finalised run will show here.</div>
+            <?php else: ?>
+                <div class="fwp-bars" role="img" aria-label="Cost of pay for the last 12 months">
+                    <?php foreach ($bars as $b): ?>
+                        <div class="fwp-bar"><i style="--h:<?= max(3, round($b['v'] / $maxBar * 130)) ?>px" data-v="<?= $e($b['label'] . ': ' . $money($b['v'])) ?>"></i><small><?= $e($b['label']) ?></small></div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <div class="fwp-card__body"></div>
+        </section>
+        <section class="fwp-card">
+            <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#ip-run"/></svg></span>
+                <div class="fwp-card__title"><h3>Recent pay runs</h3></div><a class="fwp-mini" href="/payroll/runs.php">All runs</a></div>
+            <div class="fwp-card__body" style="padding-top:0">
+                <?php if (!$recent): ?><p class="fwp-muted">No pay runs yet.</p><?php endif; ?>
+                <ul class="fwp-list">
+                    <?php foreach ($recent as $r): $sg = PayKit::stage($r['status']); ?>
+                        <li><a class="fwp-list__text" href="/payroll/run_view.php?id=<?= (int)$r['id'] ?>"><b><?= $e($r['name']) ?></b><small><?= $e($r['run_number']) ?> · paid <?= $e(PayKit::date($r['pay_date'])) ?> · <?= (int)$r['people'] ?> <?= (int)$r['people'] === 1 ? 'person' : 'people' ?></small></a>
+                            <span class="fwp-money"><?= $e($money((int)$r['net'])) ?></span><span class="fwp-pill" data-tone="<?= $tones[$sg] ?>"><?= $e(PayKit::STAGE_LABEL[$sg]) ?></span></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </section>
+    </div>
+    <div>
+        <section class="fwp-card">
+            <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#i-alert"/></svg></span>
+                <div class="fwp-card__title"><h3>Needs attention</h3><p><?= $attn ? 'Sort these out before the next pay day.' : 'Everything looks ready.' ?></p></div></div>
+            <div class="fwp-steps">
+                <?php foreach ($attn as [$icon, $title, $sub, $href]): ?>
+                    <a class="fwp-step" href="<?= $e($href) ?>"><span class="fwp-step__dot"><svg class="i"><use href="#<?= $e($icon) ?>"/></svg></span>
+                        <span class="fwp-step__text"><b><?= $e($title) ?></b><small><?= $e($sub) ?></small></span><svg class="i"><use href="#i-chev-right"/></svg></a>
+                <?php endforeach; ?>
+                <?php if (!$attn): ?>
+                    <div class="fwp-step is-done"><span class="fwp-step__dot"><svg class="i"><use href="#i-check"/></svg></span><span class="fwp-step__text"><b>Nothing to fix</b><small>Tax numbers, bank details and settings are complete.</small></span></div>
+                <?php endif; ?>
+            </div>
+            <div class="fwp-card__body"></div>
+        </section>
+        <section class="fwp-card">
+            <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#ip-sars"/></svg></span>
+                <div class="fwp-card__title"><h3>SARS · <?= $e($emp201['label']) ?></h3><p>From finalised runs paid in <?= $e(date('F', strtotime($sarsMonth . '-01'))) ?>.</p></div></div>
+            <div class="fwp-card__body">
+                <dl class="fwp-kv">
+                    <dt>PAYE</dt><dd class="fwp-money"><?= $e($money($emp201['totals']['paye'])) ?></dd>
+                    <dt>UIF</dt><dd class="fwp-money"><?= $e($money($emp201['totals']['uif'])) ?></dd>
+                    <dt>SDL</dt><dd class="fwp-money"><?= $e($money($emp201['totals']['sdl'])) ?></dd>
+                    <dt>Pay SARS by</dt><dd><b><?= $e(date('l j F', strtotime($emp201['due']))) ?></b></dd>
+                </dl>
+            </div>
+            <div class="fwp-card__foot"><a class="fwp-mini" href="/payroll/reports.php?month=<?= $e($sarsMonth) ?>"><svg class="i"><use href="#if-report"/></svg>EMP201 details</a></div>
+        </section>
+    </div>
+</div>
+<?php endif; ?>
+<?php include __DIR__ . '/partials/foot.php'; ?>
