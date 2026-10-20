@@ -28,6 +28,10 @@ ALTER TABLE `receipt_settings`
   ADD COLUMN IF NOT EXISTS `ai_model` varchar(40) DEFAULT 'gpt-4o-mini' AFTER `ocr_provider`,
   ADD COLUMN IF NOT EXISTS `default_due_days` smallint(5) UNSIGNED DEFAULT 30 AFTER `auto_split_lines`;
 
+-- What an admin override was given for (the supplier, the amount): a changed bill needs a new override.
+ALTER TABLE `receipt_policy_log`
+  ADD COLUMN IF NOT EXISTS `override_scope` varchar(64) DEFAULT NULL AFTER `override_at`;
+
 -- One reading per receipt: keep the newest, then a re-read replaces it.
 DELETE o1 FROM `receipt_ocr` o1 JOIN `receipt_ocr` o2 ON o1.file_id = o2.file_id AND o1.ocr_id < o2.ocr_id;
 ALTER TABLE `receipt_ocr` ADD UNIQUE KEY IF NOT EXISTS `uq_file` (`file_id`);

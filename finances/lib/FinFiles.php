@@ -114,7 +114,7 @@ final class FinFiles
         $size = (int)filesize($path);
         $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file($path);
         $ext = self::TYPES[$mime] ?? null;
-        if (!$ext || $size <= 0 || $size > self::MAX_BYTES) return null;
+        if (!$ext || $size <= 0 || $size > 25 * 1024 * 1024) return null; // a slip from Receipts (checked there; up to 25 MB)
         $sha = hash_file('sha256', $path);
         $st = $db->prepare("SELECT id FROM fin_attachments WHERE company_id = ? AND entity = ? AND entity_id = ? AND sha256 = ? AND deleted_at IS NULL LIMIT 1");
         $st->execute([$companyId, $entity, $entityId, $sha]);

@@ -182,6 +182,11 @@ $mine = (int)$r['json']['files'][0]['file_id'];
 $r = $get('receipts.php?op=list&view=all');
 assert_true(!in_array($id, array_column($r['json']['rows'], 'id'), true), 'a member\'s list leaves out others\' receipts');
 assert_eq(403, $api('bill.php', ['op' => 'save', 'id' => $mine, 'form' => $form])['code'], 'a member cannot make a bill');
+$r = $get("bill.php?op=load&id=$mine");
+assert_true($r['code'] === 200 && $r['json']['lookups']['banks'] === [] && $r['json']['lookups']['boards'] === [] && $r['json']['checks']['checks'] === []
+            && count($r['json']['lookups']['accounts']) <= count($r['json']['form']['lines']), 'a member follows their slip, not Finance: no banks, chart or check results');
+assert_eq(403, $get("bill.php?op=supplier&id=$supplierId")['code'], 'nor a supplier\'s spend and orders');
+assert_eq(403, $api('bill.php', ['op' => 'check', 'id' => $mine, 'form' => $form])['code'], 'nor the checks on a bill they typed');
 assert_eq(200, $api('receipts.php', ['op' => 'note', 'id' => $mine, 'note' => 'coffee'])['code'], 'a member adds a note to their slip');
 assert_eq(200, $api('receipts.php', ['op' => 'delete', 'ids' => [$mine]])['code'], 'and deletes it before a bill is made');
 $setRole('viewer');
@@ -194,6 +199,9 @@ $r = $api('settings.php', ['op' => 'save', 'default_due_days' => '14', 'max_file
 assert_true($r['code'] === 422 && isset($r['json']['errors']['max_file_size_mb']), 'values are checked');
 $r = $api('settings.php', ['op' => 'save', 'default_due_days' => '14']);
 assert_true($r['code'] === 200 && $r['json']['settings']['default_due_days'] === 14, 'a bookkeeper saves the payment terms');
+$r = $api('settings.php', ['op' => 'save', 'require_po_over_amount' => '10,000']);
+assert_true($r['code'] === 200 && (float)$r['json']['settings']['require_po_over_amount'] === 10000.0, '"10,000" is ten thousand rand, not ten');
+$api('settings.php', ['op' => 'save', 'require_po_over_amount' => '0']);
 $setRole('admin');
 
 test_done('receipts_http');

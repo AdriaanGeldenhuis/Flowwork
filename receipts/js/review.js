@@ -11,7 +11,7 @@
 // through the receipts waiting.
 (function () {
   'use strict';
-  const { $, $$, esc, icon, api, toast, toastError, dialog, modal, openModal, closeModal, popover, closePop, busy, money, moneyC, toCents, fmtDay, ago, hue, initials, debounce, typingIn, boot } = window.FWR;
+  const { $, $$, esc, icon, api, toast, toastError, dialog, modal, openModal, closeModal, popover, closePop, busy, money, moneyC, toCents, toNum, fmtDay, ago, hue, initials, debounce, typingIn, boot } = window.FWR;
   const ID = boot.id;
   const caps = boot.caps || {};
   const formEl = $('#form');
@@ -21,6 +21,8 @@
   let items = [];        // tasks of the chosen board
   let checkSeq = 0;
   let lastChecks = null;
+  /** A line's quantity as the server reads it: empty is 1, not a number is 0 (the server refuses it), three decimals. */
+  const qtyOf = (v) => { if (String(v == null ? '' : v).trim() === '') return 1; const n = toNum(v); return n == null ? 0 : Math.round(n * 1000) / 1000; };
   const SOURCE = { word: 'Learned', supplier: 'Usual', history: 'Last time', ai: 'AI pick', default: 'Default' };
 
   // ================================================================ viewer
@@ -65,7 +67,8 @@
       try {
         if (!window.pdfjsLib) await loadScript(PDFJS + 'pdf.min.js');
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
-        const pdf = await window.pdfjsLib.getDocument({ url: doc.dataset.pdf, withCredentials: true }).promise;
+        // isEvalSupported:false — PDF.js 3.x can be made to run a crafted font's code (CVE-2024-4367); this closes that path.
+        const pdf = await window.pdfjsLib.getDocument({ url: doc.dataset.pdf, withCredentials: true, isEvalSupported: false }).promise;
         const n = Math.min(pdf.numPages, 10);
         const ratio = Math.min(2, window.devicePixelRatio || 1) * 1.5;
         doc.innerHTML = '';
@@ -371,7 +374,7 @@
   }
   function lineHtml(l, i) {
     const rates = D.lookups.rates;
-    const q = parseFloat(String(l.qty).replace(',', '.')) || 0;
+    const q = qtyOf(l.qty);
     const p = toCents(l.price);
     const tot = p != null && q > 0 ? moneyC(Math.round(q * p)) : '';
     return `<div class="fwr-line" data-i="${i}">
@@ -556,7 +559,7 @@
         const l = F.lines[+box.dataset.i];
         l[k] = e.target.value;
         if (k === 'qty' || k === 'price') {
-          const q = parseFloat(String(l.qty).replace(',', '.')) || 0, p = toCents(l.price);
+          const q = qtyOf(l.qty), p = toCents(l.price);
           $('[data-total]', box).textContent = p != null && q > 0 ? moneyC(Math.round(q * p)) : '';
         }
         changed(k === 'description');
@@ -601,7 +604,7 @@
     F.lines.forEach((l) => {
       const p = toCents(l.price);
       if (p == null) return;
-      const q = parseFloat(String(l.qty).replace(',', '.')) || 0;
+      const q = qtyOf(l.qty);
       const rate = +l.rate || 0;
       const g = Math.round(q * p);
       let n = F.incl ? Math.round(g * 100 / (100 + rate)) : g;
@@ -679,7 +682,7 @@
       if (f.op === 'match_total' && F.lines.length === 1) {
         const slip = toCents(F.slip_total);
         const l = F.lines[0];
-        const q = parseFloat(String(l.qty).replace(',', '.')) || 1;
+        const q = qtyOf(l.qty) || 1;
         if (F.incl) l.price = (slip / q / 100).toFixed(2);
         else l.price = (Math.round(slip * 100 / (100 + (+l.rate || 0))) / q / 100).toFixed(2);
         render(); changed();
@@ -798,7 +801,7 @@
       html += `<section class="fwr-block"><div class="fwr-block__head"><h2>The bill</h2>${r.bill_url && caps.all ? `<a class="fwr-mini" href="${esc(r.bill_url)}">${icon('if-ledger')}Finance</a>` : ''}</div>
         <dl class="fwr-kv"><dt>Supplier</dt><dd>${esc(D.supplier ? D.supplier.name : '—')}</dd><dt>Number</dt><dd>${esc(F.number || '—')}</dd><dt>Date</dt><dd>${esc(fmtDay(F.issued, true))}${F.due ? ' · due ' + esc(fmtDay(F.due, true)) : ''}</dd>
           ${F.paid.method ? `<dt>Paid</dt><dd>${esc(L.paid_methods[F.paid.method] || F.paid.method)} · ${esc(fmtDay(F.paid.date, true))}</dd>` : ''}</dl>
-        <table class="fwr-summary">${F.lines.map((l) => `<tr><td>${esc(l.description || 'Item')}<small>${esc(acc(l.account_id))}${+l.rate ? ' · ' + esc(l.rate) + '% VAT' : ' · no VAT'}</small></td><td>${esc(moneyC(Math.round((parseFloat(l.qty) || 1) * (toCents(l.price) || 0))))}</td></tr>`).join('')}
+        <table class="fwr-summary">${F.lines.map((l) => `<tr><td>${esc(l.description || 'Item')}<small>${esc(acc(l.account_id))}${+l.rate ? ' · ' + esc(l.rate) + '% VAT' : ' · no VAT'}</small></td><td>${esc(moneyC(Math.round(qtyOf(l.qty) * (toCents(l.price) || 0))))}</td></tr>`).join('')}
           <tr><td><b>Total</b> <small>${esc(moneyC(t.net))} + VAT ${esc(moneyC(t.vat))}</small></td><td><b>${esc(moneyC(t.total))}</b></td></tr></table></section>`;
     } else {
       const rd = D.reading;

@@ -179,6 +179,17 @@ final class RcKit
         return (int)round((float)$s * 100);
     }
 
+    /** A quantity or rate as typed ("2,5", "1 000", "1,000.5") to a number; null when not one. Mirrors FWR.toNum. */
+    public static function number($v): ?float
+    {
+        if (is_int($v) || is_float($v)) return (float)$v;
+        $s = str_replace(["\u{2212}", ' ', "\u{00A0}"], ['-', '', ''], trim((string)$v));
+        if ($s === '') return null;
+        if (preg_match('/^-?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/', $s)) $s = str_replace(',', '', $s);
+        elseif (preg_match('/^-?\d+,\d+$/', $s)) $s = str_replace(',', '.', $s);
+        return preg_match('/^-?\d+(\.\d+)?$/', $s) ? (float)$s : null;
+    }
+
     public static function money(int $cents): string
     {
         return ($cents < 0 ? '−' : '') . 'R ' . number_format(abs($cents) / 100, 2, '.', "\u{00A0}");

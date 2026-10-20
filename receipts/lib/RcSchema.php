@@ -12,12 +12,13 @@
 //   receipt_file.dismissed_at/_by/dismiss_reason       set aside (not a bill)
 //   receipt_file.form_json            the review form as typed (VAT-inclusive prices, the slip's total)
 //   receipt_settings.ai_model, default_due_days
+//   receipt_policy_log.override_scope  what an admin override was given for (the supplier, the amount)
 //   receipt_ocr: one reading per receipt (older duplicate rows removed, then unique);
 //                readings the old engine made up are cleared (clearInventedReadings)
 
 final class RcSchema
 {
-    public const VERSION = '2026-10-22-1';
+    public const VERSION = '2026-10-22-2';
     private static bool $done = false;
 
     public static function ensure(PDO $db): void
@@ -49,6 +50,9 @@ final class RcSchema
             self::columns($db, 'receipt_settings', [
                 'ai_model' => "ADD COLUMN `ai_model` varchar(40) DEFAULT 'gpt-4o-mini' AFTER `ocr_provider`",
                 'default_due_days' => "ADD COLUMN `default_due_days` smallint(5) UNSIGNED DEFAULT 30 AFTER `auto_split_lines`",
+            ]);
+            self::columns($db, 'receipt_policy_log', [
+                'override_scope' => "ADD COLUMN `override_scope` varchar(64) DEFAULT NULL AFTER `override_at`",
             ]);
             // One reading per receipt: keep the newest, then make it unique so a re-read replaces it.
             if (!self::hasIndex($db, 'receipt_ocr', 'uq_file')) {

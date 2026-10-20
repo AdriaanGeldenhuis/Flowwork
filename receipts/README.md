@@ -43,6 +43,8 @@ they sent in; admins, bookkeepers and viewers see the company's.
   amount (held only once purchase orders are in use); bill against its
   order; price jumps; the payment date. Admins can override the compliance,
   purchase order and VAT-number holds with a reason (`receipt_policy_log`).
+  An override holds for the supplier it was given for (and a purchase-order
+  override up to its amount): another supplier or a larger bill is held again.
 * **Learning** (`RcLearn`) — printed name → supplier (`ai_hints`),
   supplier → account and board, word → account
   (`company_settings.receipts_ai_map`). Settings → Learning shows it all and
@@ -75,6 +77,12 @@ chosen so the VAT (rounded per line) lands on the printed amount whenever a
 net can. The slip is attached to the bill as a supporting document
 (`FinFiles::attachCopy`, once). Project costs are added to the board's cost
 column (or noted in the task's activity) after posting.
+
+A bill made from a receipt is posted from Receipts only: Finance shows
+**Check & post in Receipts** instead of Post, and `FinPayables::postBill`
+refuses it from anywhere else, so the checks, an admin's holds and the
+payment made on the spot cannot be skipped. It can still be edited in
+Finance; Receipts then shows it as Finance has it.
 
 The old Receipts made AR **sales invoices** out of supplier slips
 (`ajax/bill_approve_post.php`), created bank rules that would have expensed
@@ -128,6 +136,10 @@ now closed to the web too (`uploads/receipts/.htaccess`).
 | Make, save and post bills; set aside; add suppliers | | ✓ | ✓ | |
 | Settings | | ✓ | ✓ | |
 | Choose the reader (AI sends slips to OpenAI); override a hold | | | ✓ | |
+
+Members follow their own slips (where each one is, what the bill says) but
+see none of Finance: no bank accounts, chart, supplier spend, orders or
+check results.
 
 The person who sent a receipt in hears (the bell) when it is in the books,
 and (the bell and the phone) when it is set aside.

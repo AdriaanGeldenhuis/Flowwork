@@ -8,7 +8,7 @@
 //   POST op=save      id, form       save the draft bill (Finance status "review")
 //   POST op=post      id, form       save, check and post (and record the payment when paid on the spot)
 //   POST op=delete_draft id          delete the draft bill, keep the receipt
-//   POST op=override  id, code, reason   (admins) post past a block, on record
+//   POST op=override  id, code, reason, form   (admins) post past a block, on record, for the bill as it stands
 //   POST op=supplier_new  name, vat_no, email, phone[, confirm_duplicate]
 //   POST op=supplier_vat  supplier_id, vat
 require_once __DIR__ . '/_bootstrap.php';
@@ -28,7 +28,25 @@ function rc_review(PDO $db, int $c, int $u, string $role, int $id): array
         if ($label !== '') $data['lookups']['boards'][] = ['id' => $board, 'label' => $label . ' (on this bill)', 'project' => ''];
     }
     $data['items'] = $board ? ProjectLink::pickerItems($db, $c, $u, $role, $board) : [];
+    if (!RcKit::canSeeAll($role)) {
+        // Members follow their own slip, not Finance: no supplier spend, orders or
+        // check results, no bank accounts or chart — only the accounts on this bill.
+        $used = array_flip(array_map(fn($l) => (int)($l['account_id'] ?? 0), (array)($data['form']['lines'] ?? [])));
+        $data['lookups'] = ['accounts' => array_values(array_filter($data['lookups']['accounts'], fn($a) => isset($used[$a['id']]))),
+                            'rates' => $data['lookups']['rates'], 'standard_rate' => $data['lookups']['standard_rate'], 'banks' => [], 'boards' => [],
+                            'locked_through' => null, 'paid_methods' => $data['lookups']['paid_methods']];
+        $data['checks'] = ['checks' => [], 'totals' => $data['checks']['totals'], 'blocked' => false];
+        $data['supplier'] = $data['supplier'] ? ['id' => $data['supplier']['id'], 'name' => $data['supplier']['name']] : null;
+        $data['suggestion'] = null;
+        $data['items'] = [];
+    }
     return $data;
+}
+
+/** The pickers and live checks are for the people who make bills. */
+function rc_need_capture(string $role): void
+{
+    if (!RcKit::canCapture($role)) rc_error('Only admins and bookkeepers can make bills from receipts.', 403);
 }
 
 if (!rc_is_post()) {
@@ -36,6 +54,7 @@ if (!rc_is_post()) {
         case 'load':
             rc_json(rc_review($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, rc_int($_GET['id'] ?? 0)));
         case 'supplier':
+            rc_need_capture($RC_ROLE);
             $sid = rc_int($_GET['id'] ?? 0);
             $s = RcBills::supplierInfo($DB, $RC_COMPANY_ID, $sid);
             if (!$s) rc_error('That supplier was not found.', 404);
@@ -47,6 +66,7 @@ if (!rc_is_post()) {
             $s['learned'] = ['account_id' => $acc, 'source' => $why, 'board_id' => $board];
             rc_json(['supplier' => $s]);
         case 'suppliers':
+            rc_need_capture($RC_ROLE);
             $q = trim((string)($_GET['q'] ?? ''));
             $args = [$RC_COMPANY_ID];
             $where = "a.company_id = ? AND a.type = 'supplier' AND a.deleted_at IS NULL";
@@ -61,6 +81,7 @@ if (!rc_is_post()) {
             rc_json(['suppliers' => array_map(fn($r) => ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'vat_no' => (string)($r['vat_no'] ?? ''),
                                                           'status' => (string)$r['status'], 'last' => $r['last_bill']], $st->fetchAll(PDO::FETCH_ASSOC))]);
         case 'items':
+            rc_need_capture($RC_ROLE);
             rc_json(['items' => ProjectLink::pickerItems($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, rc_int($_GET['board'] ?? 0))]);
     }
     rc_error('Unknown request.', 400);
@@ -71,6 +92,7 @@ $id = rc_int($in['id'] ?? 0);
 $form = is_array($in['form'] ?? null) ? $in['form'] : [];
 switch ($op) {
     case 'check':
+        rc_need_capture($RC_ROLE);
         $row = RcBills::need($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $id);
         rc_json(RcBills::checks($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $row, $form));
     case 'save':
@@ -88,7 +110,7 @@ switch ($op) {
         RcBills::deleteDraft($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $id);
         rc_json(['review' => rc_review($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $id)]);
     case 'override':
-        RcBills::override($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $id, (string)($in['code'] ?? ''), (string)($in['reason'] ?? ''));
+        RcBills::override($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $id, (string)($in['code'] ?? ''), (string)($in['reason'] ?? ''), $form);
         $row = RcBills::need($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $id);
         rc_json(RcBills::checks($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $row, $form));
     case 'supplier_new':

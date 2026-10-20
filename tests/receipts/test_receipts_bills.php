@@ -80,6 +80,9 @@ $r = RcBills::financeLines([['description' => 'x', 'qty' => 1, 'price' => '115.0
 assert_eq([10000, 1500, 11500], [$r['net'], $r['vat'], $r['total']], 'R115 incl. VAT is R100 + R15');
 $r = RcBills::financeLines([['description' => 'x', 'qty' => 2, 'price' => '50', 'rate' => 15], ['description' => '', 'qty' => 1, 'price' => '']], false, null);
 assert_eq([1, 10000, 1500, '0.00'], [count($r['lines']), $r['net'], $r['vat'], $r['lines'][0]['discount']], 'excl. VAT: prices as typed; blank lines dropped');
+$r = RcBills::financeLines([['description' => 'x', 'qty' => '2,5', 'price' => '20,00', 'rate' => '15'], ['description' => 'y', 'qty' => '', 'price' => '11.50', 'rate' => 15]], true, null);
+assert_eq([5000, 1150], [$r['lines'][0]['net_c'] + $r['lines'][0]['vat_c'], $r['lines'][1]['net_c'] + $r['lines'][1]['vat_c']], 'a quantity typed "2,5" is 2.5; an empty quantity is 1');
+try { RcBills::financeLines([['description' => 'x', 'qty' => 'two', 'price' => '5', 'rate' => 15]], true, null); fail('a quantity that is not a number was taken'); } catch (RcProblem $e) { assert_true(true, 'a quantity that is not a number is refused, not booked as 1'); }
 try { RcBills::financeLines([['description' => 'x', 'qty' => 1, 'price' => '-5', 'rate' => 15]], true, null); fail('a negative price was taken'); } catch (RcProblem $e) { assert_true(true, 'negative prices are refused (refunds are credit notes)'); }
 
 // ---------------------------------------------------------------- finding the supplier
@@ -109,6 +112,8 @@ $doc = fn(int $acc, int $type, ?string $exp) => $DB->prepare("INSERT INTO crm_co
 $future = date('Y-m-d', strtotime('+1 year')); $past = date('Y-m-d', strtotime('-10 days'));
 $lacking = $supplier("Lacking $tag", $vatLacking);
 $doc($lacking, $tax, $future); $doc($lacking, $coida, $past);
+$lacking2 = $supplier("Lacking too $tag", $vat());
+$doc($lacking2, $tax, $future);
 $complete = $supplier("Complete $tag", $vatComplete);
 $doc($complete, $tax, null); $doc($complete, $ins, $past); $doc($complete, $ins, $future); $doc($complete, $coida, date('Y-m-d')); $doc($complete, $bee, $past);
 assert_eq(['ok' => false, 'missing' => ["COIDA $tag (expired)", "Liability Insurance $tag"]], RcBills::compliance($DB, $C, $lacking), 'a missing and an expired required type; optional ones ignored');
@@ -155,9 +160,16 @@ assert_true($po && $po['level'] === ($hasPos ? 'block' : 'warn'), 'a purchase or
 RcKit::saveSettings($DB, $C, ['require_po_over_amount' => 0]);
 
 // overrides: admins only, with a reason, on record
-try { RcBills::override($DB, $C, $U, 'bookkeeper', $id, 'compliance', 'because'); fail('a bookkeeper overrode a check'); } catch (RcForbidden $e) { assert_true(true, 'bookkeepers cannot override'); }
-try { RcBills::override($DB, $C, $U, 'admin', $id, 'compliance', 'ok'); fail('an override without a reason'); } catch (RcProblem $e) { assert_true(true, 'an override needs a reason'); }
-try { RcBills::override($DB, $C, $U, 'admin', $id, 'duplicate', 'yes really'); fail('a duplicate was overridden'); } catch (RcProblem $e) { assert_true(true, 'not every check can be overridden'); }
+try { RcBills::override($DB, $C, $U, 'bookkeeper', $id, 'compliance', 'because', $form); fail('a bookkeeper overrode a check'); } catch (RcForbidden $e) { assert_true(true, 'bookkeepers cannot override'); }
+try { RcBills::override($DB, $C, $U, 'admin', $id, 'compliance', 'ok', $form); fail('an override without a reason'); } catch (RcProblem $e) { assert_true(true, 'an override needs a reason'); }
+try { RcBills::override($DB, $C, $U, 'admin', $id, 'duplicate', 'yes really', $form); fail('a duplicate was overridden'); } catch (RcProblem $e) { assert_true(true, 'not every check can be overridden'); }
+try { RcBills::override($DB, $C, $U, 'admin', $id, 'compliance', 'nothing to see', ['supplier_id' => $complete] + $form); fail('overrode a check that holds nothing'); }
+catch (RcProblem $e) { assert_eq(409, $e->getCode(), 'nothing to override when the check does not hold the bill'); }
+$covers = new ReflectionMethod(RcBills::class, 'covers');
+$covers->setAccessible(true);
+assert_eq([true, false, true, false, false, false], [$covers->invoke(null, 'compliance', 's5', 's5'), $covers->invoke(null, 'compliance', 's5', 's6'),
+          $covers->invoke(null, 'po', 's5:1000', 's5:900'), $covers->invoke(null, 'po', 's5:1000', 's5:1100'), $covers->invoke(null, 'po', 's5:1000', 's6:900'), $covers->invoke(null, 'vat_number', '', '')],
+          'an override holds for its supplier, and a purchase-order override up to its amount');
 
 // ---------------------------------------------------------------- save, post blocked, override, post paid
 $saved = RcBills::save($DB, $C, $U, 'admin', $id, $form);
@@ -182,11 +194,18 @@ try {
     assert_eq(['compliance'], array_values(array_map(fn($c) => $c['code'], array_filter($e->checks, fn($c) => $c['level'] === 'block'))), 'a held bill is not posted; the hold is named');
 }
 assert_eq('review', $DB->query("SELECT status FROM ap_bills WHERE id = $billId")->fetchColumn(), 'the draft is kept');
+try { FinPayables::postBill($DB, $C, $U, 'admin', $billId); fail('Finance posted a held receipt bill'); }
+catch (FinUserError $e) { assert_eq(409, $e->getCode(), 'Finance does not post a bill from a receipt — Receipts does, with its checks'); }
+assert_true(FinPayables::bill($DB, $C, $billId)['bill']['post_in_receipts'] && !FinPayables::bill($DB, $C, $billId)['bill']['postable'], 'Finance shows "post in Receipts" instead of Post');
 
-RcBills::override($DB, $C, $U, 'admin', $id, 'compliance', 'Renewal is on its way');
+RcBills::override($DB, $C, $U, 'admin', $id, 'compliance', 'Renewal is on its way', $form);
 $res = RcBills::checks($DB, $C, $U, 'admin', RcBills::row($DB, $C, $id), $form);
 $cc = array_values(array_filter($res['checks'], fn($c) => $c['code'] === 'compliance'))[0];
-assert_true($cc['level'] === 'warn' && $cc['overridden']['reason'] === 'Renewal is on its way' && !$res['blocked'], 'overridden: a warning with who and why');
+assert_true($cc['level'] === 'warn' && $cc['overridden']['reason'] === 'Renewal is on its way' && !$res['blocked'] && !isset($cc['scope']), 'overridden: a warning with who and why');
+$res = RcBills::checks($DB, $C, $U, 'bookkeeper', RcBills::row($DB, $C, $id), ['supplier_id' => $lacking2, 'vendor_vat' => ''] + $form);
+assert_true(in_array('compliance', $codes($res, 'block'), true), 'the override was for that supplier: another supplier lacking documents is held again');
+try { RcBills::post($DB, $C, $U, 'bookkeeper', $id, ['supplier_id' => $lacking2, 'vendor_vat' => ''] + $form); fail('posted to another supplier on an old override'); }
+catch (RcBlocked $e) { assert_true(true, 'and is not posted'); }
 $form['paid'] = ['method' => 'card', 'date' => '2026-10-14', 'bank_account_id' => null];
 $post = RcBills::post($DB, $C, $U, 'admin', $id, $form);
 $b = $DB->query("SELECT status, journal_id, total FROM ap_bills WHERE id = $billId")->fetch(PDO::FETCH_ASSOC);
@@ -200,6 +219,9 @@ assert_eq('paid', RcBills::row($DB, $C, $id)['state'], 'the receipt is paid');
 try { RcBills::save($DB, $C, $U, 'admin', $id, $form); fail('a posted bill was changed'); } catch (RcProblem $e) { assert_eq(409, $e->getCode(), 'a posted bill cannot change'); }
 try { RcReceipts::delete($DB, $C, $U, 'admin', [$id]); fail('the source document of a posted bill was deleted'); } catch (RcProblem $e) { assert_eq(409, $e->getCode(), 'its slip is kept'); }
 try { RcReceipts::aside($DB, $C, $U, 'admin', [$id], 'personal'); fail('a posted receipt was set aside'); } catch (RcProblem $e) { assert_eq(409, $e->getCode(), 'and cannot be set aside'); }
+$loose = rc_slip($DB, ['LOOSE ' . $tag]);
+assert_eq(1, RcReceipts::delete($DB, $C, $U, 'admin', [$id, $loose], $kept), 'a batch goes ahead past a receipt in the books');
+assert_eq([$id], array_column($kept, 'id'), 'which is kept, and named');
 
 // learning from the saved bill
 $id2 = rc_slip($DB, ['LEARN']);

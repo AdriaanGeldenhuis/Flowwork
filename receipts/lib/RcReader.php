@@ -77,7 +77,14 @@ TXT;
             error_log('[receipts] read ' . $file['file_id'] . ': ' . $e->getMessage());
             $r = ['ok' => false, 'engine' => null, 'error' => 'Reading stopped unexpectedly.', 'fields' => self::blank(), 'text' => '', 'account_code' => null];
         }
-        self::store($db, (int)$file['file_id'], $r);
+        try {
+            if (!self::store($db, (int)$file['file_id'], $r)) {
+                $r = ['ok' => false, 'error' => 'A bill was made from this receipt while it was being read, so the reading was not kept.'] + $r;
+            }
+        } catch (Throwable $e) {
+            error_log('[receipts] store reading ' . $file['file_id'] . ': ' . $e->getMessage());
+            $r = ['ok' => false, 'error' => 'The reading could not be saved — try again.'] + $r;
+        }
         RcKit::audit($db, $companyId, $userId, 'receipt_read', (int)$file['file_id'], ['engine' => $r['engine'], 'ok' => $r['ok'], 'error' => $r['error']]);
         return ['ok' => $r['ok'], 'engine' => $r['engine'], 'error' => $r['error'], 'fields' => $r['fields']];
     }
@@ -322,8 +329,21 @@ TXT;
     }
 
     /** One reading per receipt (a new one replaces the old). */
-    private static function store(PDO $db, int $fileId, array $r): void
+    /**
+     * Keep a reading — under the receipt's row lock, so two reads at once take
+     * turns, and never once a bill is made from it (the bill links the reading).
+     * @return bool false when a bill came first
+     */
+    private static function store(PDO $db, int $fileId, array $r): bool
     {
+        return Fin::atomic($db, fn() => self::storeLocked($db, $fileId, $r));
+    }
+
+    private static function storeLocked(PDO $db, int $fileId, array $r): bool
+    {
+        $st = $db->prepare("SELECT bill_id FROM receipt_file WHERE file_id = ? FOR UPDATE");
+        $st->execute([$fileId]);
+        if ($st->fetchColumn()) return false;
         $f = $r['fields'];
         $raw = ['engine' => $r['engine'], 'error' => $r['error'], 'fields' => $f, 'account_code' => $r['account_code'] ?? null, 'text' => mb_substr((string)($r['text'] ?? ''), 0, 20000)];
         $db->prepare("DELETE FROM receipt_ocr WHERE file_id = ?")->execute([$fileId]);
@@ -334,5 +354,6 @@ TXT;
                       $f['subtotal'], $f['tax'], $f['total'], json_encode($f['lines'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), $f['confidence'] ?? 0]);
         $db->prepare("UPDATE receipt_file SET ocr_status = ?, read_engine = ?, read_error = ?, read_at = NOW() WHERE file_id = ?")
            ->execute([$r['ok'] ? 'parsed' : 'failed', $r['engine'], $r['error'] !== null ? mb_substr($r['error'], 0, 255) : null, $fileId]);
+        return true;
     }
 }

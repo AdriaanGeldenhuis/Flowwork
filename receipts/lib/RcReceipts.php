@@ -225,37 +225,57 @@ final class RcReceipts
         $db->prepare("UPDATE receipt_file SET note = ? WHERE file_id = ? AND company_id = ?")->execute([$note !== '' ? $note : null, $fileId, $companyId]);
     }
 
+    /**
+     * Run $one on each receipt of a batch. One that cannot be done (in the
+     * books, not theirs) is kept and the rest go ahead; when none could be,
+     * the first reason is the error. @return int how many were done
+     */
+    private static function each(array $ids, callable $one, ?array &$kept = null): int
+    {
+        $done = 0;
+        $kept = [];
+        $first = null;
+        foreach (self::ids($ids) as $id) {
+            try {
+                if ($one($id)) $done++;
+            } catch (RcProblem | RcForbidden | FinUserError $e) {
+                $kept[] = ['id' => $id, 'why' => $e->getMessage()];
+                $first = $first ?? $e;
+            }
+        }
+        if (!$done && $first) throw $first;
+        return $done;
+    }
+
     /** Set receipts aside (not bills). A draft bill on one is deleted with it. @return int how many */
-    public static function aside(PDO $db, int $companyId, int $userId, string $role, array $ids, string $reason, string $note = ''): int
+    public static function aside(PDO $db, int $companyId, int $userId, string $role, array $ids, string $reason, string $note = '', ?array &$kept = null): int
     {
         if (!RcKit::canCapture($role)) throw new RcForbidden('Only admins and bookkeepers can set receipts aside.');
         if (!isset(RcKit::ASIDE_REASONS[$reason])) throw new RcProblem('Choose why it is set aside.', 422);
         $text = RcKit::ASIDE_REASONS[$reason] . (trim($note) !== '' ? ' — ' . mb_substr(trim($note), 0, 180) : '');
-        $done = 0;
-        foreach (self::ids($ids) as $id) {
+        return self::each($ids, function (int $id) use ($db, $companyId, $userId, $role, $text): bool {
             $row = RcBills::need($db, $companyId, $userId, $role, $id);
-            if ($row['dismissed_at']) continue;
+            if ($row['dismissed_at']) return false;
             if (in_array($row['b_status'], ['posted', 'paid'], true)) throw new RcProblem('Receipt #' . $id . ' is in the books and cannot be set aside.', 409);
             if ($row['b_id']) RcBills::deleteDraft($db, $companyId, $userId, $role, $id);
             $db->prepare("UPDATE receipt_file SET dismissed_at = NOW(), dismissed_by = ?, dismiss_reason = ? WHERE file_id = ? AND company_id = ?")->execute([$userId, $text, $id, $companyId]);
             RcKit::audit($db, $companyId, $userId, 'receipt_set_aside', $id, ['reason' => $text]);
             RcKit::notify($db, $companyId, (int)$row['uploaded_by'], $userId, 'receipt_set_aside', 'A receipt you sent in was set aside', $text, '/receipts/review.php?id=' . $id, true);
-            $done++;
-        }
-        return $done;
+            return true;
+        }, $kept);
     }
 
-    public static function restore(PDO $db, int $companyId, int $userId, string $role, array $ids): int
+    public static function restore(PDO $db, int $companyId, int $userId, string $role, array $ids, ?array &$kept = null): int
     {
         if (!RcKit::canCapture($role)) throw new RcForbidden('Only admins and bookkeepers can bring receipts back.');
-        $done = 0;
-        foreach (self::ids($ids) as $id) {
+        return self::each($ids, function (int $id) use ($db, $companyId, $userId, $role): bool {
             RcBills::need($db, $companyId, $userId, $role, $id);
             $st = $db->prepare("UPDATE receipt_file SET dismissed_at = NULL, dismissed_by = NULL, dismiss_reason = NULL WHERE file_id = ? AND company_id = ? AND dismissed_at IS NOT NULL");
             $st->execute([$id, $companyId]);
-            if ($st->rowCount()) { $done++; RcKit::audit($db, $companyId, $userId, 'receipt_restored', $id); }
-        }
-        return $done;
+            if (!$st->rowCount()) return false;
+            RcKit::audit($db, $companyId, $userId, 'receipt_restored', $id);
+            return true;
+        }, $kept);
     }
 
     /**
@@ -263,10 +283,9 @@ final class RcReceipts
      * stays (it is the source document). Members may delete their own until
      * a bill is made from it.
      */
-    public static function delete(PDO $db, int $companyId, int $userId, string $role, array $ids): int
+    public static function delete(PDO $db, int $companyId, int $userId, string $role, array $ids, ?array &$kept = null): int
     {
-        $done = 0;
-        foreach (self::ids($ids) as $id) {
+        return self::each($ids, function (int $id) use ($db, $companyId, $userId, $role): bool {
             $row = RcBills::need($db, $companyId, $userId, $role, $id);
             if (in_array($row['b_status'], ['posted', 'paid'], true)) throw new RcProblem('Receipt #' . $id . ' is behind a bill in the books, so it is kept.', 409);
             $own = (int)$row['uploaded_by'] === $userId && !$row['b_id'];
@@ -279,9 +298,8 @@ final class RcReceipts
             });
             RcFiles::unlinkFiles($row);
             RcKit::audit($db, $companyId, $userId, 'receipt_deleted', $id, ['name' => $row['original_name'], 'sha1' => $row['sha1']]);
-            $done++;
-        }
-        return $done;
+            return true;
+        }, $kept);
     }
 
     /** CSV of the list as filtered (formulas defused). */

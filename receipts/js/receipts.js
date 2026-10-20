@@ -268,6 +268,15 @@
     if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
     return Math.round(parseFloat(s) * 100);
   }
+  /** A quantity or rate as typed ("2,5", "1 000", "1,000.5") → a number, or null. Mirrors RcKit::number. */
+  function toNum(v) {
+    let s = String(v == null ? '' : v).trim().replace(/[\s\u00a0]/g, '').replace('\u2212', '-');
+    if (s === '') return null;
+    if (/^-?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
+    else if (/^-?\d+,\d+$/.test(s)) s = s.replace(',', '.');
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+    return parseFloat(s);
+  }
   const STATE_TONE = { reading: 'info', review: 'gold', draft: 'accent', posted: 'success', paid: 'success', aside: 'muted' };
   const STATE_ICON = { reading: 'ir-scan', review: 'i-eye', draft: 'i-pen', posted: 'if-ledger', paid: 'if-cash', aside: 'i-archive' };
   const pill = (state, label) => `<span class="fwr-pill" data-tone="${STATE_TONE[state] || 'muted'}">${esc(label)}</span>`;
@@ -782,7 +791,7 @@
   })();
 
   const FWR = { $, $$, esc, icon, api, ApiError, toast, toastError, popover, closePop, modal, openModal, closeModal, dialog, initials, hue, busy, fmtDay, ago,
-    money, moneyC, toCents, debounce, card, pill, typingIn, uploader, boot: BOOT, STATE_TONE };
+    money, moneyC, toCents, toNum, debounce, card, pill, typingIn, uploader, boot: BOOT, STATE_TONE };
   window.FWR = FWR;
 
   // A slip whose file is gone shows a placeholder instead of a broken picture.

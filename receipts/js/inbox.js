@@ -127,6 +127,8 @@
     const ids = Array.from(state.selected);
     const act = b.dataset.bulk;
     if (act === 'clear') { state.selected.clear(); draw(); return; }
+    /** " · 2 kept — Receipt #12 is in the books…" when some of a batch could not be done. */
+    const kept = (r) => (r.kept ? ` · ${r.kept} kept — ${r.why}` : '');
     try {
       if (act === 'read') {
         busy(b, true);
@@ -141,16 +143,16 @@
         if (!res) return;
         busy(b, true);
         const r = await api.post('receipts.php', { op: 'aside', ids, reason: res.choice, note: res.note });
-        toast(r.done === 1 ? 'Set aside' : r.done + ' set aside');
+        toast((r.done === 1 ? 'Set aside' : r.done + ' set aside') + kept(r));
       } else if (act === 'restore') {
         busy(b, true);
         const r = await api.post('receipts.php', { op: 'restore', ids });
-        toast(r.done === 1 ? 'Brought back' : r.done + ' brought back');
+        toast((r.done === 1 ? 'Brought back' : r.done + ' brought back') + kept(r));
       } else if (act === 'delete') {
         if (!await dialog({ title: ids.length === 1 ? 'Delete this receipt?' : `Delete ${ids.length} receipts?`, body: 'The slips are removed for good, with any draft bill made from them. Receipts behind a bill in the books are kept.', confirm: 'Delete', danger: true })) return;
         busy(b, true);
         const r = await api.post('receipts.php', { op: 'delete', ids });
-        toast(r.done === 1 ? 'Deleted' : r.done + ' deleted');
+        toast((r.done === 1 ? 'Deleted' : r.done + ' deleted') + kept(r));
       }
       state.selected.clear();
       await load();

@@ -7,6 +7,7 @@
 //   POST op=aside     ids[], reason, note       (set aside: not a bill)
 //   POST op=restore   ids[]
 //   POST op=delete    ids[]                     (not behind a bill in the books)
+//   (a batch goes ahead past a receipt that cannot be done: {done, kept, why})
 require_once __DIR__ . '/_bootstrap.php';
 
 $op = rc_op();
@@ -32,10 +33,13 @@ switch ($op) {
         RcReceipts::setNote($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, rc_int($in['id'] ?? 0), (string)($in['note'] ?? ''));
         rc_json(['saved' => true]);
     case 'aside':
-        rc_json(['done' => RcReceipts::aside($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $ids, (string)($in['reason'] ?? ''), (string)($in['note'] ?? ''))]);
+        $done = RcReceipts::aside($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $ids, (string)($in['reason'] ?? ''), (string)($in['note'] ?? ''), $kept);
+        rc_json(['done' => $done, 'kept' => count($kept), 'why' => $kept[0]['why'] ?? '']);
     case 'restore':
-        rc_json(['done' => RcReceipts::restore($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $ids)]);
+        $done = RcReceipts::restore($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $ids, $kept);
+        rc_json(['done' => $done, 'kept' => count($kept), 'why' => $kept[0]['why'] ?? '']);
     case 'delete':
-        rc_json(['done' => RcReceipts::delete($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $ids)]);
+        $done = RcReceipts::delete($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE, $ids, $kept);
+        rc_json(['done' => $done, 'kept' => count($kept), 'why' => $kept[0]['why'] ?? '']);
 }
 rc_error('Unknown request.', 400);

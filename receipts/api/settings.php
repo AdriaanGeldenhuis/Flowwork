@@ -24,13 +24,15 @@ if ($op !== 'save') rc_error('Unknown request.', 400);
 
 $errors = [];
 $out = [];
-$num = function (string $k, float $min, float $max, string $msg) use ($in, &$errors, &$out) {
+$num = function (string $k, float $min, float $max, string $msg, bool $money = false) use ($in, &$errors, &$out) {
     if (!array_key_exists($k, $in)) return;
-    $v = str_replace([' ', ','], ['', '.'], trim((string)$in[$k]));
-    if ($v === '' || !is_numeric($v) || (float)$v < $min || (float)$v > $max) { $errors[$k] = $msg; return; }
+    // "10 000", "10,000", "R10 000.50" and "2,5" read as people mean them
+    $v = $money ? RcKit::cents($in[$k]) : RcKit::number($in[$k]);
+    if ($v !== null && $money) $v /= 100;
+    if ($v === null || $v < $min || $v > $max) { $errors[$k] = $msg; return; }
     $out[$k] = (float)$v;
 };
-$num('require_po_over_amount', 0, 100000000, 'Enter an amount (0 switches it off).');
+$num('require_po_over_amount', 0, 100000000, 'Enter an amount (0 switches it off).', true);
 $num('variance_tolerance_pct', 0, 100, 'Between 0 and 100 percent.');
 $num('line_variance_tolerance_pct', 5, 500, 'Between 5 and 500 percent.');
 $num('max_file_size_mb', 1, 25, 'Between 1 and 25 MB.');

@@ -481,9 +481,12 @@ final class RcBills
             $n = count($out) + 1;
             if ($priceC === null) throw new RcProblem("Line $n: enter the amount.", 422);
             if ($priceC < 0) throw new RcProblem("Line $n: an amount cannot be negative — a refund is a supplier credit note in Finance.", 422);
-            $qty = is_numeric($l['qty'] ?? null) ? round((float)$l['qty'], 3) : 1.0;
+            $qty = trim((string)($l['qty'] ?? '')) === '' ? 1.0 : RcKit::number($l['qty']);
+            if ($qty === null) throw new RcProblem("Line $n: the quantity is not a number.", 422);
+            $qty = round($qty, 3);
             if ($qty <= 0) throw new RcProblem("Line $n: the quantity must be more than nil.", 422);
-            $rate = is_numeric($l['rate'] ?? null) ? round((float)$l['rate'], 2) : 15.0;
+            $rate = RcKit::number($l['rate'] ?? '');
+            $rate = $rate === null ? 15.0 : round($rate, 2);
             if ($rate < 0 || $rate > 100) throw new RcProblem("Line $n: choose a VAT rate.", 422);
             $grossC = (int)round($qty * $priceC);
             if ($incl) {
@@ -519,7 +522,7 @@ final class RcBills
      * What stands between this form and the books.
      * @return array{checks: array, totals: array, blocked: bool}
      */
-    public static function checks(PDO $db, int $companyId, int $userId, string $role, array $row, array $in): array
+    public static function checks(PDO $db, int $companyId, int $userId, string $role, array $row, array $in, bool $keepScope = false): array
     {
         $settings = RcKit::settings($db, $companyId);
         $c = [];
@@ -621,7 +624,7 @@ final class RcBills
             if ($calc['vat'] > 0 && !preg_match('/^4\d{9}$/', $supVat) && !preg_match('/^4\d{9}$/', $slipVat)) {
                 $add('vat_number', $settings['require_vat_number'] ? 'block' : 'warn', 'VAT is claimed, but there is no VAT number for ' . $sup['name'],
                      'SARS only allows input VAT on a tax invoice with the supplier’s VAT number. Add it, or do not claim the VAT.',
-                     ['fix' => ['op' => 'no_vat', 'label' => 'Don’t claim VAT'], 'overridable' => true]);
+                     ['fix' => ['op' => 'no_vat', 'label' => 'Don’t claim VAT'], 'overridable' => true, 'scope' => 's' . $sid]);
             }
             if (preg_match('/^4\d{9}$/', $slipVat)) {
                 if ($supVat === '' && RcKit::canCapture($role)) {
@@ -632,7 +635,7 @@ final class RcBills
             }
             if (!$sup['compliance']['ok']) {
                 $add('compliance', $settings['block_expired_compliance'] ? 'block' : 'warn', $sup['name'] . ' is missing compliance documents',
-                     implode(', ', $sup['compliance']['missing']) . '.', ['link' => ['label' => 'Open in the CRM', 'href' => $sup['url'] . '#compliance'], 'overridable' => true]);
+                     implode(', ', $sup['compliance']['missing']) . '.', ['link' => ['label' => 'Open in the CRM', 'href' => $sup['url'] . '#compliance'], 'overridable' => true, 'scope' => 's' . $sid]);
             }
         }
 
@@ -655,7 +658,7 @@ final class RcBills
             $hasPos = (int)$db->query("SELECT COUNT(*) FROM purchase_orders WHERE company_id = " . (int)$companyId)->fetchColumn() > 0;
             $add('po', $hasPos ? 'block' : 'warn', 'Bills of ' . RcKit::money($threshold) . ' or more need a purchase order',
                  $hasPos ? 'Choose the order this bill is for.' : 'No purchase orders exist yet — create them in Procurement, or change the limit in Receipts settings.',
-                 ['overridable' => true]);
+                 ['overridable' => true, 'scope' => 's' . $sid . ':' . $calc['total']]);
         }
 
         // Prices that jumped
@@ -685,17 +688,19 @@ final class RcBills
             elseif ((new PeriodService($db, $companyId))->isLocked($pd)) $add('paid', 'block', 'The books are closed for the payment date ' . RcKit::date($pd));
         }
 
-        // Admin overrides
+        // Admin overrides — each holds only for what it was given for (see covers())
         $over = self::overrides($db, $companyId, (int)$row['file_id']);
         foreach ($c as &$x) {
             if (!empty($x['overridable']) && $x['level'] === 'block') {
-                if (isset($over[$x['code']])) {
+                $o = $over[$x['code']] ?? null;
+                if ($o && self::covers($x['code'], (string)$o['scope'], (string)($x['scope'] ?? ''))) {
                     $x['level'] = 'warn';
-                    $x['overridden'] = $over[$x['code']];
+                    $x['overridden'] = array_diff_key($o, ['scope' => 1]);
                 } elseif (RcKit::canOverride($role)) {
                     $x['can_override'] = true;
                 }
             }
+            if (!$keepScope) unset($x['scope']);
         }
         unset($x);
         $order = ['block' => 0, 'warn' => 1, 'info' => 2];
@@ -705,28 +710,58 @@ final class RcBills
 
     private static function overrides(PDO $db, int $companyId, int $fileId): array
     {
-        $st = $db->prepare("SELECT code, override_by, override_reason, override_at FROM receipt_policy_log WHERE company_id = ? AND file_id = ? AND override_by IS NOT NULL ORDER BY id");
+        $st = $db->prepare("SELECT code, override_by, override_reason, override_at, override_scope FROM receipt_policy_log WHERE company_id = ? AND file_id = ? AND override_by IS NOT NULL ORDER BY id");
         $st->execute([$companyId, $fileId]);
         $out = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
-            $out[$o['code']] = ['by' => RcKit::personName($db, (int)$o['override_by']), 'reason' => (string)$o['override_reason'], 'at' => $o['override_at']];
+            $out[$o['code']] = ['by' => RcKit::personName($db, (int)$o['override_by']), 'reason' => (string)$o['override_reason'], 'at' => $o['override_at'],
+                                'scope' => (string)($o['override_scope'] ?? '')];
         }
         return $out;
     }
 
+    /**
+     * Whether an override still holds: the compliance and VAT-number holds for
+     * the same supplier ("s12"), the purchase-order hold for the same supplier
+     * and an amount no larger than the one overridden ("s12:45000").
+     */
+    private static function covers(string $code, string $given, string $now): bool
+    {
+        if ($given === '' || $now === '') return false;
+        if ($code !== 'po') return $given === $now;
+        [$gs, $gt] = array_pad(explode(':', $given, 2), 2, '');
+        [$ns, $nt] = array_pad(explode(':', $now, 2), 2, '');
+        return $gs === $ns && ctype_digit($gt) && ctype_digit($nt) && (int)$nt <= (int)$gt;
+    }
+
     /** An admin posts past a block, with a reason that stays on record. */
-    public static function override(PDO $db, int $companyId, int $userId, string $role, int $fileId, string $code, string $reason): void
+    /**
+     * An admin posts past a block, with a reason that stays on record. The
+     * override is for the bill as it stands in $form (the supplier, and for a
+     * purchase order the amount): choosing another supplier or a larger amount
+     * brings the hold back.
+     */
+    public static function override(PDO $db, int $companyId, int $userId, string $role, int $fileId, string $code, string $reason, array $form): void
     {
         if (!RcKit::canOverride($role)) throw new RcForbidden('Only an admin can override a check.');
         if (!in_array($code, self::OVERRIDABLE, true)) throw new RcProblem('That check cannot be overridden.', 422);
         $reason = mb_substr(trim($reason), 0, 500);
         if (mb_strlen($reason) < 4) throw new RcProblem('Say why — the reason stays on record.', 422);
         $row = self::need($db, $companyId, $userId, $role, $fileId);
-        $labels = ['compliance' => 'Supplier compliance documents', 'po' => 'Purchase order required', 'vat_number' => 'VAT claimed without a VAT number'];
+        $scope = '';
+        $title = '';
+        foreach (self::checks($db, $companyId, $userId, $role, $row, $form, true)['checks'] as $x) {
+            if ($x['code'] === $code && !empty($x['overridable']) && ($x['level'] === 'block' || !empty($x['overridden'])) && (string)($x['scope'] ?? '') !== '') {
+                $scope = (string)$x['scope'];
+                $title = (string)$x['title'];
+                break;
+            }
+        }
+        if ($scope === '') throw new RcProblem('That check is not holding this bill — there is nothing to override.', 409);
         $db->prepare("DELETE FROM receipt_policy_log WHERE company_id = ? AND file_id = ? AND code = ?")->execute([$companyId, $fileId, $code]);
-        $db->prepare("INSERT INTO receipt_policy_log (company_id, file_id, code, message, severity, override_by, override_reason, override_at, created_at) VALUES (?, ?, ?, ?, 'error', ?, ?, NOW(), NOW())")
-           ->execute([$companyId, $fileId, $code, $labels[$code], $userId, $reason]);
-        RcKit::audit($db, $companyId, $userId, 'receipt_check_overridden', $fileId, ['code' => $code, 'reason' => $reason, 'bill_id' => $row['b_id']]);
+        $db->prepare("INSERT INTO receipt_policy_log (company_id, file_id, code, message, severity, override_by, override_reason, override_at, override_scope, created_at) VALUES (?, ?, ?, ?, 'error', ?, ?, NOW(), ?, NOW())")
+           ->execute([$companyId, $fileId, $code, mb_substr($title, 0, 255), $userId, $reason, $scope]);
+        RcKit::audit($db, $companyId, $userId, 'receipt_check_overridden', $fileId, ['code' => $code, 'reason' => $reason, 'for' => $scope, 'bill_id' => $row['b_id']]);
     }
 
     /** Keep receipt_policy_log in line with the latest checks (overrides stay). */
@@ -769,7 +804,7 @@ final class RcBills
             $checks = self::checks($db, $companyId, $userId, $role, $row, $in);
             if ($checks['blocked']) throw new RcBlocked('Sort out the checks marked in red before posting.', $checks['checks']);
             try {
-                FinPayables::postBill($db, $companyId, $userId, $role, $ctx['bill_id']);
+                FinPayables::postBill($db, $companyId, $userId, $role, $ctx['bill_id'], true);
                 $st = $db->prepare("SELECT total, journal_id FROM ap_bills WHERE id = ? AND company_id = ?");
                 $st->execute([$ctx['bill_id'], $companyId]);
                 [$total, $journal] = $st->fetch(PDO::FETCH_NUM);
@@ -875,7 +910,7 @@ final class RcBills
         $st = $db->prepare("SELECT * FROM ap_bill_lines WHERE bill_id = ? ORDER BY sort_order, id");
         $st->execute([$billId]);
         $form = ['incl' => $incl, 'slip_total' => RcKit::cents($in['slip_total'] ?? '') !== null ? RcKit::cents($in['slip_total']) / 100 : null,
-                 'lines' => array_map(fn($l) => ['description' => mb_substr(trim((string)($l['description'] ?? '')), 0, 255), 'qty' => is_numeric($l['qty'] ?? null) ? (float)$l['qty'] : 1.0,
+                 'lines' => array_map(fn($l) => ['description' => mb_substr(trim((string)($l['description'] ?? '')), 0, 255), 'qty' => round(RcKit::number($l['qty'] ?? '') ?? 1.0, 3),
                                                  'price' => RcKit::cents($l['price'] ?? '') !== null ? RcKit::cents($l['price']) / 100 : 0, 'rate' => (float)($l['rate'] ?? 0),
                                                  'account_id' => (int)($l['account_id'] ?? 0) ?: null, 'account_source' => '', 'item_id' => $boardId ? ((int)($l['item_id'] ?? 0) ?: null) : null],
                                     array_values(array_filter((array)($in['lines'] ?? []), fn($l) => is_array($l) && (trim((string)($l['description'] ?? '')) !== '' || (RcKit::cents($l['price'] ?? '') ?? 0) !== 0)))),

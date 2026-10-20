@@ -44,7 +44,8 @@ if (!$isZip) {
     if (filesize($tmp) > 150 * 1048576) rc_error('That ZIP file is too large (150 MB at most).', 413);
     $zip = new ZipArchive();
     if ($zip->open($tmp) !== true) rc_error('That ZIP file could not be opened.', 422);
-    $budget = 400 * 1048576; // unpacked bytes, against zip bombs
+    if ($zip->numFiles > 1000) { $zip->close(); rc_error('That ZIP holds too many files (1 000 at most) — send the slips in smaller ZIPs.', 413); }
+    $budget = 400 * 1048576; // unpacked bytes, against zip bombs: the size each entry claims, then what really came out
     $count = 0;
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $stat = $zip->statIndex($i);
@@ -63,6 +64,7 @@ if (!$isZip) {
         if ($src) fclose($src);
         if ($dst) fclose($dst);
         if ($copied === false || $copied > $max) { $skipped[] = ['name' => $label, 'reason' => 'Could not be unpacked.']; @unlink($out); continue; }
+        if (($budget -= max(0, $copied - $size)) < 0) { $skipped[] = ['name' => $label, 'reason' => 'The ZIP holds too much — send the rest in another one.']; @unlink($out); continue; }
         $keep($out, $label);
         @unlink($out);
     }
