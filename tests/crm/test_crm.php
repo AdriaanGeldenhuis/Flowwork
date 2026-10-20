@@ -335,7 +335,17 @@ try {
 } catch (Throwable $e) { }
 $scan = CrmDedupe::scan($DB, $C, 'supplier');
 assert_true($scan['found'] >= 1, 'scan finds the twin');
-$cand = array_values(array_filter(CrmDedupe::candidates($DB, $C), fn($c) => in_array($c['left']['id'], [$sup, $twin], true) && in_array($c['right']['id'], [$sup, $twin], true)));
+// The open candidates for one pair, read directly: candidates() lists the top 500 by score, and a
+// test database that has seen many runs holds more than that, so a pair could fall off its end.
+$pairOf = function (int $a, int $b) use ($DB, $C): array {
+    $st = $DB->prepare("SELECT id, reason FROM crm_merge_candidates WHERE company_id = ? AND resolved = 0
+                         AND ((left_id = ? AND right_id = ?) OR (left_id = ? AND right_id = ?))");
+    $st->execute([$C, $a, $b, $b, $a]);
+    return array_map(fn($r) => ['id' => (int)$r['id'], 'why' => json_decode((string)$r['reason'], true) ?: []], $st->fetchAll(PDO::FETCH_ASSOC));
+};
+$cand = $pairOf($sup, $twin);
+$list = CrmDedupe::candidates($DB, $C);
+assert_true($list && count($list) <= 500 && isset($list[0]['left']['id'], $list[0]['right']['id'], $list[0]['why'], $list[0]['score']), 'the list shows both accounts side by side, best matches first');
 assert_true(count($cand) === 1 && in_array('Same VAT number', $cand[0]['why'], true), 'candidate with reason');
 $throws(fn() => CrmDedupe::merge($DB, $C, $U, $sup, $acme, []), 'customer and supplier never merge');
 CrmDedupe::merge($DB, $C, $U, $sup, $twin, ['email' => 'other'], $cand[0]['id']);
@@ -343,14 +353,14 @@ assert_true(CrmAccounts::row($DB, $C, $twin)['deleted_at'] !== null, 'loser soft
 assert_eq('sales@steel.example', CrmAccounts::row($DB, $C, $sup)['email'], 'picked field taken from the other account');
 assert_eq(1, (int)$DB->query("SELECT COUNT(*) FROM crm_contacts WHERE account_id = $sup AND first_name = 'Pieter'")->fetchColumn(), 'contacts moved');
 if ($billId) assert_eq($sup, (int)$DB->query("SELECT supplier_id FROM ap_bills WHERE id = $billId")->fetchColumn(), 'supplier bills repointed');
-assert_eq(0, count(array_filter(CrmDedupe::candidates($DB, $C), fn($c) => in_array($twin, [$c['left']['id'], $c['right']['id']], true))), 'candidate resolved');
+assert_eq([], $pairOf($sup, $twin), 'candidate resolved');
 $twin2 = CrmAccounts::save($DB, $C, $U, 'admin', ['type' => 'supplier', 'name' => "Steel Supplies CC $tag", 'confirm_duplicate' => 1])['id'];
 CrmDedupe::merge($DB, $C, $U, $sup, $twin2, []);
 assert_true(CrmAccounts::row($DB, $C, $twin2)['deleted_at'] !== null, 'a second account with the same name merges into the same one');
 $e1 = CrmAccounts::save($DB, $C, $U, 'admin', ['type' => 'customer', 'name' => "Email Twin A $tag", 'email' => "same-$tag@twin.example", 'confirm_duplicate' => 1])['id'];
 $e2 = CrmAccounts::save($DB, $C, $U, 'admin', ['type' => 'customer', 'name' => "Totally Other $tag", 'email' => "same-$tag@twin.example", 'confirm_duplicate' => 1])['id'];
 CrmDedupe::scan($DB, $C, 'customer');
-assert_eq(1, count(array_filter(CrmDedupe::candidates($DB, $C), fn($c) => in_array($e1, [$c['left']['id'], $c['right']['id']], true) && in_array($e2, [$c['left']['id'], $c['right']['id']], true))), 'the same email alone is worth a look');
+assert_eq(1, count($pairOf($e1, $e2)), 'the same email alone is worth a look');
 
 // -------------------------------------------------------- import / export
 $csv = "Company,Email,Phone,Contact,Contact email,City,Tags,Status,Company size\n"

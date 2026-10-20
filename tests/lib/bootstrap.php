@@ -101,9 +101,11 @@ function tb_snapshot(PDO $db, int $companyId = TEST_COMPANY_ID): array
 function make_customer(PDO $db, string $name = 'Test Customer', array $overrides = []): int
 {
     $name .= ' ' . bin2hex(random_bytes(4)); // crm_accounts has a unique (company,type,name) key
+    // A valid VAT number of its own: one shared number made every test customer a duplicate of every other.
+    $vat = $overrides['vat_no'] ?? '4' . str_pad((string)random_int(0, 999999999), 9, '0', STR_PAD_LEFT);
     $db->prepare("INSERT INTO crm_accounts (company_id, type, name, vat_no, status, created_by, created_at)
                   VALUES (?, 'customer', ?, ?, 'active', ?, NOW())")
-       ->execute([TEST_COMPANY_ID, $name, $overrides['vat_no'] ?? '4123456789', TEST_USER_ID]);
+       ->execute([TEST_COMPANY_ID, $name, $vat, TEST_USER_ID]);
     return (int)$db->lastInsertId();
 }
 
