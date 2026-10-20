@@ -35,6 +35,7 @@ accounts whose names MySQL considers equal get a `"Name (id)"` suffix).
 | `FlowDriveRepo.php` | Low-level fd_* writer: drive/folder/file upsert, blob dedup, version snapshots, soft delete, per-company `GET_LOCK` mutex. Never throws. |
 | `FlowDriveSync.php` | Business layer: maps a `crm_accounts` row to its folder tree, files/removes account documents and compliance docs. |
 | `FlowDriveBackfill.php` | `runForCompany()` full sweep; `autoRunOnce()` self-heal (first-ever full backfill, then a daily bounded sweep of changed docs); stranded-file rescue; legacy-skeleton cleanup. |
+| `FlowDriveSso.php` | Single sign-on: `/drive/` (the home page's Drive tile) issues a one-time, state-bound token in `fd_sso_tokens` so FlowDrive opens already signed in, in the active company. |
 | `../../qi/services/DocumentPdfService.php` | Renders quote/invoice/credit-note PDFs (single recipe shared by save/send/download), writes `storage/qi/...`, updates `pdf_path`, publishes to the drive. |
 
 ## Where publishing is triggered
