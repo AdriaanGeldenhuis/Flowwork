@@ -111,3 +111,8 @@ storage/admin/
 # Receipts runtime data (slips, previews, schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/receipts/
+
+# ---------------------------------------------------------------------------
+# Shopping runtime data (schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/shopping/

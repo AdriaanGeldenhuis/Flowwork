@@ -146,6 +146,19 @@ try {
 } catch (Throwable $ex) {
     error_log('[home] receipts: ' . $ex->getMessage());
 }
+$shoppingLive = '';
+try {
+    require_once __DIR__ . '/shopping/lib/ShKit.php';
+    require_once __DIR__ . '/shopping/lib/ShSchema.php';
+    require_once __DIR__ . '/shopping/lib/ShLists.php';
+    ShSchema::ensure($DB);
+    $sh = ShLists::navCounts($DB, $activeCompanyId, $userId);
+    if ($sh['shopping']) $shoppingLive = $sh['shopping'] . ' out shopping now';
+    elseif ($sh['items']) $shoppingLive = $sh['items'] . ' to buy on ' . $sh['open'] . ' ' . ($sh['open'] === 1 ? 'list' : 'lists');
+    elseif ($sh['open']) $shoppingLive = 'Everything bought';
+} catch (Throwable $ex) {
+    error_log('[home] shopping: ' . $ex->getMessage());
+}
 $mailLive = '';
 if ($mail['ok']) {
     $mailLive = $mail['accounts'] === 0 ? 'Connect your mailbox' : ($mail['unread'] ? $mail['unread'] . ' unread' : 'Inbox at rest');
@@ -159,7 +172,7 @@ $modules = [
     ['key' => 'receipts', 'name' => 'Receipts', 'tag' => 'AI', 'desc' => 'Scan, read and file every receipt', 'href' => '/receipts/', 'icon' => 'i-receipt', 'c' => '#6b3a6e', 'live' => $receiptsLive, 'alert' => $receiptsAlert, 'kw' => 'expenses scan slips ai'],
     ['key' => 'payroll', 'name' => 'Payroll', 'tag' => '', 'desc' => 'Employees, wages and pay runs', 'href' => '/payroll/', 'icon' => 'i-wallet', 'c' => '#a4552c', 'live' => '', 'kw' => 'wages salaries employees timesheets'],
     ['key' => 'suppliers_ai', 'name' => 'Suppliers AI', 'tag' => 'AI', 'desc' => 'AI-powered supplier insights', 'href' => '/suppliers_ai/', 'icon' => 'i-sparkle', 'c' => '#3d5a8a', 'live' => '', 'kw' => 'ai insights suppliers'],
-    ['key' => 'shopping', 'name' => 'Shopping List', 'tag' => '', 'desc' => 'Procurement and supplies', 'href' => '/shopping/', 'icon' => 'ih-cart', 'c' => '#6f7a35', 'live' => '', 'kw' => 'procurement supplies buy order'],
+    ['key' => 'shopping', 'name' => 'Shopping', 'tag' => '', 'desc' => 'Lists, the trolley and the price book', 'href' => '/shopping/', 'icon' => 'ih-cart', 'c' => '#6f7a35', 'live' => $shoppingLive, 'alert' => false, 'kw' => 'shopping list procurement supplies buy order groceries prices'],
     ['key' => 'mail', 'name' => 'Mail', 'tag' => '', 'desc' => 'Your business correspondence', 'href' => '/mail/', 'icon' => 'i-mail', 'c' => '#9b3048', 'live' => $mailLive, 'alert' => false, 'kw' => 'email inbox messages'],
     ['key' => 'calendar', 'name' => 'Calendar', 'tag' => '', 'desc' => 'Schedule, meetings and reminders', 'href' => '/calendar/', 'icon' => 'i-calendar', 'c' => '#2f5c84', 'live' => $calendarLive, 'alert' => false, 'kw' => 'events schedule meetings agenda'],
     ['key' => 'drive', 'name' => 'Drive', 'tag' => 'FlowDrive', 'desc' => 'Cloud storage for all your files', 'href' => '/drive/', 'icon' => 'ih-cloud', 'c' => '#4f5d6b', 'live' => '', 'kw' => 'files documents storage cloud'],

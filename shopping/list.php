@@ -1,425 +1,86 @@
 <?php
-// /shopping/list.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /shopping/list.php?id= — one list. Add things by typing or pasting (read as
+// you type), sorted by aisle; tick them off; "Start shopping" turns the page
+// into the in-the-shop view: big rows, the trolley total against the budget,
+// the price asked as you tick, the screen kept awake, ticks kept on the phone
+// when the signal drops and sent when it is back, and other people's ticks
+// appearing as they happen. Share a link with someone without Flowwork, make
+// a purchase order, save it as a template, export or print it.
+require_once __DIR__ . '/lib/ShBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-shopping-crm-parity');
+$listId = (int)($_GET['id'] ?? 0);
+try {
+    $detail = ShLists::detail($DB, $SH_COMPANY_ID, $SH_USER_ID, $SH_ROLE, $listId);
+} catch (ShProblem $ex) {
+    $detail = null;
+}
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-$listId = intval($_GET['id'] ?? 0);
-
-if (!$listId) {
-    header('Location: /shopping/');
+if (!$detail) {
+    http_response_code(404);
+    $page = 'list';
+    $pageTitle = 'Not found';
+    include __DIR__ . '/partials/head.php';
+    ?>
+    <div class="fwm-empty">
+        <span class="fwm-empty__art" aria-hidden="true"><svg class="i"><use href="#is-list"/></svg></span>
+        <p class="fwm-empty__eyebrow">Shopping</p>
+        <h3>That list is not here</h3>
+        <p>It may have been deleted, or it is someone’s private list.</p>
+        <a class="btn btn--primary" href="/shopping/"><svg class="i"><use href="#i-arrow-left"/></svg>All lists</a>
+    </div>
+    <?php
+    include __DIR__ . '/partials/foot.php';
     exit;
 }
 
-// Fetch list
-$stmt = $DB->prepare("
-    SELECT l.*, u.first_name, u.last_name
-    FROM shopping_lists l
-    JOIN users u ON l.owner_id = u.id
-    WHERE l.id = ? AND l.company_id = ?
-");
-$stmt->execute([$listId, $companyId]);
-$list = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$list) {
-    die('List not found');
-}
-
-// Fetch items
-$stmt = $DB->prepare("
-    SELECT i.*, p.name as project_name
-    FROM shopping_items i
-    LEFT JOIN projects p ON i.project_id = p.project_id AND p.company_id = ?
-    WHERE i.list_id = ? AND i.status != 'removed'
-    ORDER BY i.order_index, i.id
-");
-$stmt->execute([$companyId, $listId]);
-$items = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Fetch suppliers (CRM accounts of type supplier) for PO conversion dropdown
-$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'supplier' ORDER BY name");
-$stmt->execute([$companyId]);
-$suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Check if in buying mode
-$stmt = $DB->prepare("
-    SELECT id, active_store_id 
-    FROM shopping_sessions 
-    WHERE list_id = ? AND ended_at IS NULL
-    ORDER BY started_at DESC
-    LIMIT 1
-");
-$stmt->execute([$listId]);
-$activeSession = $stmt->fetch(PDO::FETCH_ASSOC);
-$isBuying = !empty($activeSession);
-
-// Determine user role for permissions (admin/bookkeeper can convert to PO)
-$userRole = $_SESSION['role'] ?? 'member';
-
-// Calculate stats
-$totalItems = count($items);
-$boughtItems = count(array_filter($items, fn($i) => $i['status'] === 'bought'));
-$pendingItems = $totalItems - $boughtItems;
-$progressPct = $totalItems > 0 ? round(($boughtItems / $totalItems) * 100) : 0;
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
+$L = $detail['list'];
+$stores = array_map(fn($s) => ['id' => $s['id'], 'name' => $s['name']], ShStores::all($DB, $SH_COMPANY_ID, $SH_USER_ID));
+$page = 'list';
+$pageTitle = $L['name'];
+$activeListId = $L['id'];
+$bodyClass = $detail['session'] ? 'is-shopping' : '';
+$pageScripts = ['list'];
+$pageBoot = ['detail' => $detail, 'stores' => $stores, 'aiReady' => ShKit::aiReady($DB, $SH_COMPANY_ID)];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title><?= htmlspecialchars($list['name']) ?> – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/shopping/assets/shopping.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-shopping">
-    <div class="fw-shopping__container">
-
-            <!-- Header -->
-            <header class="fw-shopping__header">
-                <div class="fw-shopping__brand">
-                    <div class="fw-shopping__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v13c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                        </svg>
-                    </div>
-                    <div class="fw-shopping__brand-text">
-                        <div class="fw-shopping__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-shopping__app-name">Shopping AI</div>
-                    </div>
-                </div>
-
-                <div class="fw-shopping__greeting">
-                    Hello, <span class="fw-shopping__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-
-                <div class="fw-shopping__controls">
-                    <a href="/shopping/" class="fw-shopping__home-btn" title="Back to Lists">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-
-                    <a href="/" class="fw-shopping__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-
-                    <button class="fw-shopping__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-shopping__menu-wrapper">
-                        <button class="fw-shopping__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-shopping__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="#" class="fw-shopping__kebab-item" onclick="alert('Export coming soon'); return false;">📄 Export PDF</a>
-                            <a href="#" class="fw-shopping__kebab-item" onclick="alert('Share coming soon'); return false;">🔗 Share Link</a>
-                            <a href="#" class="fw-shopping__kebab-item" onclick="alert('Convert to RFQ coming soon'); return false;">📋 Convert to RFQ</a>
-                            <a href="#" class="fw-shopping__kebab-item" onclick="if(confirm('Delete list?')) location.href='/shopping/ajax/list_delete.php?id=<?=$listId?>'">🗑️ Delete List</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <main class="fw-shopping__main">
-            <div class="fw-shopping__content">
-
-            <!-- List Header -->
-            <div class="fw-shopping__list-header">
-                <div class="fw-shopping__list-header-top">
-                    <div class="fw-shopping__list-title-group">
-                        <h1 class="fw-shopping__list-title"><?= htmlspecialchars($list['name']) ?></h1>
-                        <div class="fw-shopping__list-meta">
-                            <span class="fw-shopping__badge fw-shopping__badge--<?= $list['purpose'] ?>">
-                                <?= ucfirst($list['purpose']) ?>
-                            </span>
-                            <span class="fw-shopping__list-meta-item">
-                                Owner: <?= htmlspecialchars($list['first_name'] . ' ' . $list['last_name']) ?>
-                            </span>
-                            <span class="fw-shopping__list-meta-item">
-                                Created: <?= date('Y-m-d', strtotime($list['created_at'])) ?>
-                            </span>
-                            <?php if ($list['budget_cents'] > 0): ?>
-                                <span class="fw-shopping__list-meta-item">
-                                    Budget: R<?= number_format($list['budget_cents'] / 100, 2) ?>
-                                </span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <div class="fw-shopping__list-actions">
-                        <?php if (!$isBuying): ?>
-                            <button class="fw-shopping__btn fw-shopping__btn--success" id="btnStartBuying">
-                                🛒 Start Buying
-                            </button>
-                        <?php else: ?>
-                            <button class="fw-shopping__btn fw-shopping__btn--danger" id="btnStopBuying">
-                                ⏹️ Stop Buying
-                            </button>
-                        <?php endif; ?>
-                        
-                        <button class="fw-shopping__btn fw-shopping__btn--secondary" onclick="location.reload()">
-                            🔄 Refresh
-                        </button>
-                        <?php if (in_array($userRole, ['admin','bookkeeper'])): ?>
-                            <select id="poSupplierSelect" class="fw-shopping__form-select fw-shopping__po-supplier-select">
-                                <option value="">— Select Supplier —</option>
-                                <?php foreach ($suppliers as $sup): ?>
-                                    <option value="<?= (int)$sup['id'] ?>"><?= htmlspecialchars($sup['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <button type="button" class="fw-shopping__btn fw-shopping__btn--primary" id="btnCreatePO">
-                                📦 Create PO
-                            </button>
-                        <?php endif; ?>
-                    </div>
-                </div>
+<div id="listApp" class="fws-list" data-id="<?= (int)$L['id'] ?>">
+    <header class="fws-listhead" id="listHead">
+        <a class="fws-back" href="/shopping/"><svg class="i i--sm"><use href="#i-arrow-left"/></svg>All lists</a>
+        <div class="fws-listhead__row">
+            <div class="fws-listhead__text">
+                <p class="fws-eyebrow" id="listEyebrow"><?= $e($L['purpose_label']) ?></p>
+                <h1 id="listName"><?= $e($L['name']) ?></h1>
+                <div class="fws-meta" id="listMeta"></div>
             </div>
+            <div class="fws-listhead__actions" id="listActions"></div>
+        </div>
+    </header>
 
-            <!-- Buying Mode Banner -->
-            <?php if ($isBuying): ?>
-            <div class="fw-shopping__buying-mode">
-                <div class="fw-shopping__buying-mode-header">
-                    <h3 class="fw-shopping__buying-mode-title">
-                        🛒 Buying Mode Active
-                    </h3>
-                </div>
-                <div class="fw-shopping__buying-mode-progress">
-                    <div class="fw-shopping__buying-mode-progress-fill" style="width: <?= $progressPct ?>%"></div>
-                </div>
-                <div class="fw-shopping__buying-mode-stats">
-                    <span><?= $boughtItems ?> / <?= $totalItems ?> items bought</span>
-                    <span><?= $progressPct ?>% complete</span>
-                </div>
-            </div>
+    <div class="fws-trolley" id="trolley" hidden></div>
+    <div class="fws-offline" id="offline" hidden role="status"></div>
+
+    <div class="fws-listgrid">
+        <div class="fws-listmain">
+            <?php if ($L['edit']): ?>
+            <form class="fws-add" id="addForm" autocomplete="off">
+                <span class="fws-add__icon" aria-hidden="true"><svg class="i"><use href="#i-plus"/></svg></span>
+                <label class="sr-only" for="addText">Add items</label>
+                <textarea class="fws-add__text" id="addText" rows="1" enterkeyhint="done" placeholder="Add — e.g. 10 bags cement @ R95 · paste a whole list"></textarea>
+                <button class="btn btn--primary btn--sm" type="submit" id="addGo" disabled>Add</button>
+                <div class="fws-add__preview" id="addPreview" hidden aria-live="polite"></div>
+            </form>
             <?php endif; ?>
-
-            <!-- Main Layout -->
-            <div class="fw-shopping__list-layout">
-                
-                <!-- Items Panel -->
-                <div class="fw-shopping__items-panel">
-                    <div class="fw-shopping__items-toolbar">
-                        <h3>Items (<?= $totalItems ?>)</h3>
-                        <button class="fw-shopping__btn fw-shopping__btn--primary" onclick="document.getElementById('addItemForm').style.display='block'">
-                            + Add Item
-                        </button>
-                    </div>
-
-                    <!-- Add Item Form -->
-                    <form id="addItemForm" class="fw-shopping__add-item-form" style="display: none;">
-                        <div class="fw-shopping__form-row">
-                            <div class="fw-shopping__form-group">
-                                <label class="fw-shopping__form-label">Item Name</label>
-                                <input type="text" name="name" class="fw-shopping__form-input" placeholder="e.g. PVC Elbow 20mm" required>
-                            </div>
-                            <div class="fw-shopping__form-group">
-                                <label class="fw-shopping__form-label">Qty</label>
-                                <input type="number" name="qty" class="fw-shopping__form-input" value="1" step="0.01" min="0.01" required>
-                            </div>
-                            <div class="fw-shopping__form-group">
-                                <label class="fw-shopping__form-label">Unit</label>
-                                <select name="unit" class="fw-shopping__form-select">
-                                    <option value="ea">ea</option>
-                                    <option value="m">m</option>
-                                    <option value="mm">mm</option>
-                                    <option value="cm">cm</option>
-                                    <option value="kg">kg</option>
-                                    <option value="g">g</option>
-                                    <option value="L">L</option>
-                                    <option value="ml">ml</option>
-                                </select>
-                            </div>
-                            <div class="fw-shopping__form-group">
-                                <label class="fw-shopping__form-label">Priority</label>
-                                <select name="priority" class="fw-shopping__form-select">
-                                    <option value="low">Low</option>
-                                    <option value="med" selected>Med</option>
-                                    <option value="high">High</option>
-                                </select>
-                            </div>
-                            <div class="fw-shopping__form-group">
-                                <button type="submit" class="fw-shopping__btn fw-shopping__btn--primary">Add</button>
-                            </div>
-                        </div>
-                    </form>
-
-                    <!-- Items Table -->
-                    <table class="fw-shopping__items-table">
-                        <thead>
-                            <tr>
-                                <th class="fw-shopping__col-check">✓</th>
-                                <th>Item</th>
-                                <th class="fw-shopping__col-qty">Qty</th>
-                                <th class="fw-shopping__col-priority">!</th>
-                                <th class="fw-shopping__col-date">Needed By</th>
-                                <th class="fw-shopping__col-project">Project</th>
-                                <th class="fw-shopping__col-actions">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($items)): ?>
-                                <tr>
-                                    <td colspan="7" class="fw-shopping__empty-state">
-                                        No items yet. Add one above!
-                                    </td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($items as $item): ?>
-                                    <?php
-                                    $rowClass = $item['status'] === 'bought' ? 'fw-shopping__item-row--bought' : '';
-                                    $checked = $item['status'] === 'bought' ? 'checked' : '';
-                                    $priorityClass = 'fw-shopping__item-priority--' . $item['priority'];
-                                    ?>
-                                    <tr class="<?= $rowClass ?>" data-item-id="<?= $item['id'] ?>">
-                                        <td>
-                                            <input type="checkbox" 
-                                                   class="fw-shopping__item-checkbox" 
-                                                   <?= $checked ?> 
-                                                   onchange="ShoppingListPage.toggleCheck(<?= $item['id'] ?>, this.checked)">
-                                        </td>
-                                        <td>
-                                            <div class="fw-shopping__item-name"><?= htmlspecialchars($item['name_raw']) ?></div>
-                                            <?php if (!empty($item['notes'])): ?>
-                                                <div class="fw-shopping__item-notes">
-                                                    <?= htmlspecialchars($item['notes']) ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td class="fw-shopping__item-qty">
-                                            <?= $item['qty'] ?> <?= $item['unit'] ?>
-                                        </td>
-                                        <td>
-                                            <span class="fw-shopping__item-priority <?= $priorityClass ?>"></span>
-                                        </td>
-                                        <td>
-                                            <?= $item['needed_by'] ? date('Y-m-d', strtotime($item['needed_by'])) : '-' ?>
-                                        </td>
-                                        <td>
-                                            <?= $item['project_name'] ? htmlspecialchars($item['project_name']) : '-' ?>
-                                        </td>
-                                        <td>
-                                            <div class="fw-shopping__item-actions">
-                                                <button class="fw-shopping__item-btn" 
-                                                        onclick="ShoppingListPage.findStores(<?= $item['id'] ?>)"
-                                                        title="Find stores">
-                                                    🔍
-                                                </button>
-                                                <button class="fw-shopping__item-btn" 
-                                                        onclick="ShoppingListPage.editItem(<?= $item['id'] ?>)"
-                                                        title="Edit">
-                                                    ✏️
-                                                </button>
-                                                <button class="fw-shopping__item-btn" 
-                                                        onclick="ShoppingListPage.deleteItem(<?= $item['id'] ?>)"
-                                                        title="Delete">
-                                                    🗑️
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+            <div class="fws-toolbar" id="toolbar">
+                <div class="seg" role="tablist" aria-label="Group">
+                    <button type="button" data-group="aisle" role="tab">By aisle</button>
+                    <button type="button" data-group="order" role="tab">As added</button>
                 </div>
-
-                <!-- AI Panel -->
-                <div class="fw-shopping__ai-panel">
-                    <div class="fw-shopping__ai-panel-header">
-                        <div class="fw-shopping__ai-icon">🤖</div>
-                        <h3 class="fw-shopping__ai-panel-title">AI Store Finder</h3>
-                        <button class="fw-shopping__ai-refresh" onclick="location.reload()" title="Refresh">🔄</button>
-                    </div>
-
-                    <div id="aiSuggestions">
-                        <div class="fw-shopping__ai-empty">
-                            Select an item and click 🔍 to find stores
-                        </div>
-                    </div>
-                </div>
-
+                <span class="fws-grow"></span>
+                <span class="fws-toolbar__count" id="toolbarCount"></span>
             </div>
-
-            </div>
-            </main>
-
-            <!-- Footer -->
-            <footer class="fw-shopping__footer">
-                <span>Shopping AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Dark</span>
-            </footer>
-
+            <div class="fws-groups" id="groups" aria-live="polite"></div>
+        </div>
+        <aside class="fws-listside" id="listSide" aria-label="About this list"></aside>
     </div>
-
-    <script src="/shopping/assets/shopping.js?v=<?= ASSET_VERSION ?>"></script>
-    <script>
-        // Initialize list page
-        ShoppingListPage.init(<?= $listId ?>);
-        document.addEventListener('DOMContentLoaded', function() {
-            var btnPo = document.getElementById('btnCreatePO');
-            if (btnPo) {
-                btnPo.addEventListener('click', async function() {
-                    var supSelect = document.getElementById('poSupplierSelect');
-                    var supplierId = supSelect ? supSelect.value : '';
-                    if (!supplierId) {
-                        showToast('Please select a supplier', 'error');
-                        return;
-                    }
-                    // Disable button and show spinner
-                    var originalHtml = btnPo.innerHTML;
-                    btnPo.disabled = true;
-                    btnPo.innerHTML = '<span class="fw-shopping__spinner"></span> Creating...';
-                    try {
-                        await ShoppingListPage.createPo(supplierId);
-                    } finally {
-                        btnPo.disabled = false;
-                        btnPo.innerHTML = originalHtml;
-                    }
-                });
-            }
-        });
-    </script>
-</body>
-</html>
+</div>
+<?php include __DIR__ . '/partials/foot.php'; ?>

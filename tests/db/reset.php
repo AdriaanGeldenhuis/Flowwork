@@ -33,6 +33,9 @@ $tables = [
     'fin_prefs', 'fin_attachments',
     // Receipts: slips, their readings, check log and the learning memory
     'receipt_policy_log', 'receipt_ocr', 'receipt_file', 'ai_hints',
+    // Shopping: lists, their items and trips, links, templates, stores and the price book
+    'shopping_actions', 'shopping_candidates', 'shopping_items', 'shopping_sessions', 'shopping_share_tokens', 'shopping_lists',
+    'shopping_price_history', 'shopping_templates', 'shopping_store_catalog', 'shopping_stores', 'shopping_preferences',
 ];
 
 $DB->exec('SET FOREIGN_KEY_CHECKS = 0');

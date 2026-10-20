@@ -1,182 +1,154 @@
 <?php
-// /shopping/index.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /shopping/index.php — Shopping at a glance: a greeting with what is waiting,
+// "What do you need?" (type or paste a list — it is read as you type and
+// becomes a list, or goes onto one that is open), every list as a card with
+// its progress and budget, what is needed soon, what was bought lately and
+// where this month's money went by aisle.
+// ?deleted=ID offers to bring back the list that was just deleted.
+require_once __DIR__ . '/lib/ShBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-shopping-crm-parity');
+$cards = ShLists::cards($DB, $SH_COMPANY_ID, $SH_USER_ID, $SH_ROLE);
+$ov = ShLists::overview($DB, $SH_COMPANY_ID, $SH_USER_ID, $SH_ROLE);
+$st = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
+$st->execute([$SH_USER_ID]);
+$first = trim((string)$st->fetchColumn());
+$h = (int)date('G');
+$greet = $h < 12 ? 'Good morning' : ($h < 18 ? 'Good afternoon' : 'Good evening');
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
+$active = array_values(array_filter($cards, fn($c) => $c['status'] !== 'done'));
+$toBuy = array_sum(array_column($active, 'left'));
+$soon = $ov['needed_count'];
+$late = $ov['late_count'];
+$shopping = array_values(array_filter($active, fn($c) => $c['shopping']));
+$monthTotal = array_sum(array_column($ov['aisles'], 'total'));
+$templates = (int)$DB->query("SELECT COUNT(*) FROM shopping_templates WHERE company_id = " . (int)$SH_COMPANY_ID)->fetchColumn();
+$openLists = array_map(fn($c) => ['id' => $c['id'], 'name' => $c['name']], array_values(array_filter($active, fn($c) => $c['edit'])));
 
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch list counts
-$stmt = $DB->prepare("
-  SELECT status, COUNT(*) as cnt 
-  FROM shopping_lists 
-  WHERE company_id = ? AND (owner_id = ? OR shared_mode IN ('team', 'token'))
-  GROUP BY status
-");
-$stmt->execute([$companyId, $userId]);
-$counts = ['open' => 0, 'buying' => 0, 'done' => 0];
-while ($row = $stmt->fetch()) {
-    $counts[$row['status']] = (int)$row['cnt'];
-}
+$page = 'index';
+$pageTitle = 'Overview';
+$pageScripts = ['overview'];
+$pageBoot = ['lists' => $cards, 'open' => $openLists, 'deleted' => (int)($_GET['deleted'] ?? 0)];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Shopping AI – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/shopping/assets/shopping.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-shopping">
-    <div class="fw-shopping__container">
-
-            <!-- Header -->
-            <header class="fw-shopping__header">
-                <div class="fw-shopping__brand">
-                    <div class="fw-shopping__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v13c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                        </svg>
-                    </div>
-                    <div class="fw-shopping__brand-text">
-                        <div class="fw-shopping__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-shopping__app-name">Shopping AI</div>
-                    </div>
-                </div>
-
-                <div class="fw-shopping__greeting">
-                    Hello, <span class="fw-shopping__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-
-                <div class="fw-shopping__controls">
-                    <a href="/" class="fw-shopping__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-
-                    <button class="fw-shopping__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-shopping__theme-icon fw-shopping__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-shopping__menu-wrapper">
-                        <button class="fw-shopping__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-shopping__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/shopping/templates.php" class="fw-shopping__kebab-item">Templates</a>
-                            <a href="/shopping/preferences.php" class="fw-shopping__kebab-item">Preferences</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <main class="fw-shopping__main">
-            <div class="fw-shopping__content">
-
-            <div class="fw-shopping__page-header">
-                <h1 class="fw-shopping__page-title">Shopping Lists</h1>
-                <p class="fw-shopping__page-subtitle">Create lists, compare stores and buy smart</p>
-            </div>
-
-            <!-- View Tabs -->
-            <div class="fw-shopping__view-tabs">
-                <a href="/shopping/" class="fw-shopping__view-tab fw-shopping__view-tab--active">Lists</a>
-                <a href="/shopping/templates.php" class="fw-shopping__view-tab">Templates</a>
-                <a href="/shopping/preferences.php" class="fw-shopping__view-tab">Preferences</a>
-            </div>
-
-            <!-- Stats -->
-            <div class="fw-shopping__stats-grid">
-                <div class="fw-shopping__stat-card">
-                    <div class="fw-shopping__stat-value"><?= $counts['open'] ?></div>
-                    <div class="fw-shopping__stat-label">Open Lists</div>
-                </div>
-                <div class="fw-shopping__stat-card">
-                    <div class="fw-shopping__stat-value"><?= $counts['buying'] ?></div>
-                    <div class="fw-shopping__stat-label">Buying Now</div>
-                </div>
-                <div class="fw-shopping__stat-card">
-                    <div class="fw-shopping__stat-value"><?= $counts['done'] ?></div>
-                    <div class="fw-shopping__stat-label">Completed</div>
-                </div>
-            </div>
-
-            <!-- Quick Add -->
-            <div class="fw-shopping__quick-add-panel">
-                <h2 class="fw-shopping__section-title">Quick Add Items</h2>
-                <div class="fw-shopping__quick-add-form">
-                    <textarea 
-                        id="quickAddInput" 
-                        class="fw-shopping__quick-add-textarea" 
-                        placeholder="Type or paste items, e.g:&#10;2x PVC elbow 20mm&#10;6m conduit 16mm&#10;milk 2L&#10;bread"
-                        rows="5"
-                    ></textarea>
-                    <div class="fw-shopping__quick-add-actions">
-                        <button class="fw-shopping__btn fw-shopping__btn--secondary" id="btnQuickParse">Parse Items</button>
-                        <button class="fw-shopping__btn fw-shopping__btn--primary" id="btnQuickCreate" disabled>Create List</button>
-                    </div>
-                </div>
-                <div id="quickAddPreview" class="fw-shopping__quick-add-preview" style="display:none;"></div>
-            </div>
-
-            <!-- My Lists -->
-            <div class="fw-shopping__section">
-                <h2 class="fw-shopping__section-title">My Lists</h2>
-                <div id="myListsContainer" class="fw-shopping__lists-grid">
-                    <div class="fw-shopping__loading">Loading lists...</div>
-                </div>
-            </div>
-
-            </div>
-            </main>
-
-            <!-- Footer -->
-            <footer class="fw-shopping__footer">
-                <span>Shopping AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Dark</span>
-            </footer>
-
+<header class="fws-head">
+    <div class="fws-head__text">
+        <p class="fws-eyebrow">Shopping <i>◆</i> <?= $e(date('l j F')) ?></p>
+        <h1><?= $e($greet) ?><?= $first !== '' ? ', <em>' . $e($first) . '</em>' : '' ?></h1>
+        <p><?php if ($shopping): ?>
+            <b><?= $e($shopping[0]['shopping']['name'] ?: 'Someone') ?></b> is out shopping for “<a href="/shopping/list.php?id=<?= (int)$shopping[0]['id'] ?>"><?= $e($shopping[0]['name']) ?></a>” right now<?= count($shopping) > 1 ? ' (and ' . (count($shopping) - 1) . ' more)' : '' ?>.
+        <?php endif; ?>
+        <?php if ($toBuy): ?>
+            <b><?= (int)$toBuy ?></b> <?= $toBuy === 1 ? 'thing' : 'things' ?> to buy on <b><?= count($active) ?></b> <?= count($active) === 1 ? 'list' : 'lists' ?><?php if ($late): ?> — <b class="fws-late"><?= $late ?> late</b><?php elseif ($soon): ?> — <b><?= $soon ?></b> needed this week<?php endif; ?>.
+        <?php elseif ($cards): ?>
+            Everything is bought. Type the next thing you need below — it is read for you.
+        <?php else: ?>
+            Type or paste what you need below — quantities, sizes and prices are read for you, and it is sorted by aisle.
+        <?php endif; ?></p>
     </div>
+    <div class="fws-head__actions">
+        <?php if ($SH_CAPS['write'] && $templates): ?><a class="btn" href="/shopping/templates.php"><svg class="i"><use href="#i-template"/></svg>From a template</a><?php endif; ?>
+        <?php if ($SH_CAPS['write']): ?><button class="btn btn--primary" type="button" data-new-list><svg class="i"><use href="#i-plus"/></svg>New list</button><?php endif; ?>
+    </div>
+</header>
 
-    <script src="/shopping/assets/shopping.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+<?php if ($SH_CAPS['write']): ?>
+<section class="fws-composer" id="composer" aria-labelledby="composerTitle">
+    <span class="fws-composer__art" aria-hidden="true"><svg class="i"><use href="#is-wand"/></svg></span>
+    <div class="fws-composer__body">
+        <div class="fws-composer__head">
+            <h2 id="composerTitle">What do you need?</h2>
+            <button class="fws-link" type="button" id="composerExample">Try an example</button>
+        </div>
+        <label class="sr-only" for="composerText">Items, one a line</label>
+        <textarea class="fws-composer__text" id="composerText" rows="3" spellcheck="true" placeholder="10 bags cement @ R95&#10;2x PVC elbow 20mm&#10;milk 2L, bread, eggs!"></textarea>
+        <div class="fws-composer__preview" id="composerPreview" aria-live="polite" hidden></div>
+        <div class="fws-composer__foot" id="composerFoot" hidden>
+            <div class="fws-composer__where">
+                <label class="sr-only" for="composerTarget">Add to</label>
+                <select class="select" id="composerTarget">
+                    <option value="new">A new list</option>
+                    <?php foreach ($openLists as $ol): ?><option value="<?= (int)$ol['id'] ?>">Add to “<?= $e($ol['name']) ?>”</option><?php endforeach; ?>
+                </select>
+                <label class="sr-only" for="composerName">Name of the new list</label>
+                <input class="input" id="composerName" maxlength="120" placeholder="Name it (optional)" autocomplete="off">
+            </div>
+            <button class="btn btn--primary" type="button" id="composerGo" disabled><svg class="i"><use href="#is-list"/></svg><span>Make the list</span></button>
+        </div>
+    </div>
+</section>
+<?php endif; ?>
+
+<div class="fws-stats">
+    <div class="fws-stat" style="--i:0"><span class="fws-stat__label">Open lists</span><span class="fws-stat__value"><?= count($active) ?></span>
+        <span class="fws-stat__sub"><?= $shopping ? count($shopping) . ' out shopping now' : ($cards ? count($cards) - count($active) . ' finished' : 'Start your first one') ?></span></div>
+    <div class="fws-stat" style="--i:1"><span class="fws-stat__label">To buy</span><span class="fws-stat__value"><?= (int)$toBuy ?></span>
+        <span class="fws-stat__sub"><?php $urgent = array_sum(array_column($active, 'urgent')); echo $urgent ? $urgent . ' marked urgent' : 'Nothing urgent'; ?></span></div>
+    <div class="fws-stat<?= $late ? ' is-alert' : '' ?>" style="--i:2"><span class="fws-stat__label">Needed this week</span><span class="fws-stat__value"><?= (int)$soon ?></span>
+        <span class="fws-stat__sub"><?= $late ? $late . ' already late' : 'Give items a date to see them here' ?></span></div>
+    <a class="fws-stat" href="/shopping/prices.php" style="--i:3"><span class="fws-stat__label"><?= $e(date('F')) ?></span><span class="fws-stat__value fws-num"><?= $e(ShKit::money($monthTotal)) ?></span>
+        <span class="fws-stat__sub">Noted at the till · price book</span></a>
+</div>
+
+<div class="fws-section">
+    <h2>Your lists</h2><span class="fws-section__rule"></span>
+    <div class="fws-chips" role="tablist" aria-label="Show">
+        <button class="fwm-chip is-on" type="button" data-filter="active" role="tab" aria-selected="true">Open</button>
+        <button class="fwm-chip" type="button" data-filter="mine" role="tab" aria-selected="false">Mine</button>
+        <button class="fwm-chip" type="button" data-filter="team" role="tab" aria-selected="false"><svg class="i"><use href="#i-users"/></svg>Team</button>
+        <button class="fwm-chip" type="button" data-filter="done" role="tab" aria-selected="false"><svg class="i"><use href="#i-check"/></svg>Done</button>
+    </div>
+</div>
+<div class="fws-cards" id="cards" aria-live="polite"></div>
+
+<div class="fws-cols">
+    <section class="fws-panel fws-panel--flush">
+        <div class="fws-panel__head"><span class="fws-panel__icon"><svg class="i"><use href="#i-clock"/></svg></span>
+            <div class="fws-panel__title"><h3>Needed soon</h3><p>The next seven days, and anything late.</p></div></div>
+        <?php if ($ov['needed']): ?>
+        <ul class="fws-rows">
+            <?php foreach ($ov['needed'] as $n): ?>
+                <li><a href="/shopping/list.php?id=<?= (int)$n['list_id'] ?>#item-<?= (int)$n['id'] ?>">
+                    <span class="fws-rows__date<?= $n['late'] ? ' is-late' : '' ?>"><b><?= $e(date('j', strtotime($n['due']))) ?></b><small><?= $e(date('M', strtotime($n['due']))) ?></small></span>
+                    <span class="fws-rows__text"><b><?= $e($n['name']) ?><?= $n['urgent'] ? ' <span class="fws-flag fws-flag--danger">Urgent</span>' : '' ?></b><small><?= $e($n['qty'] . ' ' . ($n['unit'] === 'ea' ? '×' : $n['unit']) . ' · ' . $n['list']) ?></small></span>
+                    <span class="fws-rows__side<?= $n['late'] ? ' is-late' : '' ?>"><?= $e($n['due_label']) ?></span>
+                </a></li>
+            <?php endforeach; ?>
+        </ul>
+        <?php else: ?>
+            <p class="fws-panel__empty">Nothing has a date coming up. Give a list or an item a “needed by” date and it shows here.</p>
+        <?php endif; ?>
+    </section>
+
+    <section class="fws-panel fws-panel--flush">
+        <div class="fws-panel__head"><span class="fws-panel__icon"><svg class="i"><use href="#is-trolley"/></svg></span>
+            <div class="fws-panel__title"><h3>Lately in the trolley</h3><p>What was bought, by whom and for how much.</p></div></div>
+        <?php if ($ov['recent']): ?>
+        <ul class="fws-rows">
+            <?php foreach ($ov['recent'] as $r): ?>
+                <li><a href="/shopping/list.php?id=<?= (int)$r['list_id'] ?>">
+                    <span class="fws-rows__tick" aria-hidden="true"><svg class="i i--sm"><use href="#i-check"/></svg></span>
+                    <span class="fws-rows__text"><b><?= $e($r['name']) ?></b><small><?= $e(implode(' · ', array_filter([$r['by'], $r['store'], $r['list']]))) ?></small></span>
+                    <span class="fws-rows__side"><span class="fws-num"><?= $r['paid'] !== null ? $e(ShKit::money($r['paid'])) : '' ?></span><small data-ago="<?= $e($r['at']) ?>"></small></span>
+                </a></li>
+            <?php endforeach; ?>
+        </ul>
+        <?php else: ?>
+            <p class="fws-panel__empty">Tick things off in the shop and they show here — note the price and the price book fills itself.</p>
+        <?php endif; ?>
+    </section>
+
+    <section class="fws-panel">
+        <div class="fws-panel__head"><span class="fws-panel__icon"><svg class="i"><use href="#i-chart"/></svg></span>
+            <div class="fws-panel__title"><h3><?= $e(date('F')) ?> by aisle</h3><p>Prices noted at the till this month.</p></div></div>
+        <?php if ($ov['aisles']): $max = max(array_column($ov['aisles'], 'total')); ?>
+        <ul class="fws-share">
+            <?php foreach ($ov['aisles'] as $a): ?>
+                <li style="--c:<?= $e($a['color']) ?>"><b><?= $e($a['label']) ?></b><span class="fws-num"><?= $e(ShKit::money($a['total'])) ?></span><i style="--p:<?= $max > 0 ? round($a['total'] / $max * 100) : 0 ?>%"></i></li>
+            <?php endforeach; ?>
+        </ul>
+        <?php else: ?>
+            <p class="fws-panel__empty">Nothing noted yet this month.</p>
+        <?php endif; ?>
+    </section>
+</div>
+<?php include __DIR__ . '/partials/foot.php'; ?>
