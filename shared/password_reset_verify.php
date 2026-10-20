@@ -12,7 +12,7 @@ $success = false;
 $resetData = null;
 if ($token) {
   $stmt = $DB->prepare("
-    SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email 
+    SELECT pr.id, pr.user_id, pr.expires_at, pr.used, u.email, u.company_id 
     FROM password_resets pr
     JOIN users u ON u.id = pr.user_id
     WHERE pr.token = ? AND pr.used = 0
@@ -27,6 +27,9 @@ if ($token) {
   }
 }
 
+require_once __DIR__ . '/../includes/password_policy.php';
+$policy = fw_password_policy($DB, $resetData ? (int)$resetData['company_id'] : null);
+
 // Process password reset
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetData && !$err) {
   $password = $_POST['password'] ?? '';
@@ -36,14 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetData && !$err) {
     $err = 'Please enter and confirm your new password.';
   } elseif ($password !== $passwordConfirm) {
     $err = 'Passwords do not match.';
-  } elseif (strlen($password) < 8) {
-    $err = 'Password must be at least 8 characters.';
-  } elseif (!preg_match('/[A-Z]/', $password)) {
-    $err = 'Password must contain at least one uppercase letter.';
-  } elseif (!preg_match('/[a-z]/', $password)) {
-    $err = 'Password must contain at least one lowercase letter.';
-  } elseif (!preg_match('/[0-9]/', $password)) {
-    $err = 'Password must contain at least one number.';
+  } elseif ($problems = fw_password_problems($password, $policy)) {
+    // The company's password rules (Admin › Security)
+    $err = fw_password_error($problems);
   } else {
     try {
       $DB->beginTransaction();
@@ -197,8 +195,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetData && !$err) {
               required 
               autofocus
               autocomplete="new-password"
-              placeholder="Min. 8 characters"
-              minlength="8"
+              placeholder="Min. <?= (int)$policy['min'] ?> characters"
+              minlength="<?= (int)$policy['min'] ?>"
             >
             <button type="button" class="fw-auth__password-toggle" aria-label="Show password">
               <svg data-eye-open viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -216,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetData && !$err) {
             <div class="fw-auth__password-strength-text"></div>
           </div>
           <div class="fw-auth__field-help">
-            Use at least 8 characters with mixed case, numbers, and symbols
+            <?= htmlspecialchars(fw_password_rules_text($policy)) ?>
           </div>
         </div>
 
@@ -234,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $resetData && !$err) {
               required 
               autocomplete="new-password"
               placeholder="Re-enter password"
-              minlength="8"
+              minlength="<?= (int)$policy['min'] ?>"
             >
             <button type="button" class="fw-auth__password-toggle" aria-label="Show password">
               <svg data-eye-open viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

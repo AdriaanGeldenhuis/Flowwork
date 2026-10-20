@@ -1,82 +1,65 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
-require_once __DIR__ . '/../includes/companies.php';
+// /admin/companies.php — Your companies: every company your account can
+// open, your role in each, and adding another one (within your plan's limit).
+// Switching uses /admin/ajax/switch_company.php (shared/company_switcher.js).
+require_once __DIR__ . '/lib/AdminBoot.php';
+require_once __DIR__ . '/../includes/business_types.php';
 
-fw_require_admin();
+$companies = fw_user_companies($ADMIN_USER_ID);
+$limit = fw_user_plan_company_limit($ADMIN_USER_ID);
+$atLimit = count($companies) >= $limit['max'];
+$st = $DB->prepare("SELECT company_id, COUNT(*) FROM user_companies WHERE company_id IN (SELECT company_id FROM user_companies WHERE user_id = ?) GROUP BY company_id");
+$st->execute([$ADMIN_USER_ID]);
+$sizes = array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
+$st = $DB->prepare("SELECT company_id FROM users WHERE id = ?");
+$st->execute([$ADMIN_USER_ID]);
+$primaryId = (int)$st->fetchColumn();
 
-$userId          = (int)$_SESSION['user_id'];
-$activeCompanyId = (int)$_SESSION['company_id'];
-$companies       = fw_user_companies($userId);
-$limit           = fw_user_plan_company_limit($userId);
-$count           = count($companies);
-$atLimit         = $count >= $limit['max'];
-
-$pageTitle = 'Companies – Admin';
-include __DIR__ . '/_layout_top.php';
+$page = 'companies';
+$pageTitle = 'Your companies';
+include __DIR__ . '/partials/head.php';
 ?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Companies</h1>
-                    <p class="fw-admin__page-subtitle">Switch between, or add another, company tied to your account (<?= (int)$count ?> of <?= (int)$limit['max'] ?> on the <?= htmlspecialchars($limit['plan']) ?> plan).</p>
-                </div>
-                <?php if ($atLimit): ?>
-                    <button type="button" class="fw-admin__btn fw-admin__btn--primary" disabled
-                            title="Plan limit reached. Upgrade to add more companies.">
-                        + Add Company
-                    </button>
-                <?php else: ?>
-                    <a href="/admin/company_new.php" class="fw-admin__btn fw-admin__btn--primary">
-                        + Add Company
-                    </a>
-                <?php endif; ?>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">Company <i>◆</i> <?= count($companies) ?> of <?= (int)$limit['max'] ?> on the <?= $e($limit['plan']) ?> plan</p>
+        <h1>Your <em>companies</em></h1>
+        <p>Run more than one business from one sign-in. Each company keeps its own people, settings, books and documents; switch between them here or from the menu at the top.</p>
+    </div>
+    <div class="fwa-head__actions">
+        <button class="btn btn--primary" type="button" id="addCompany"<?= $atLimit ? ' disabled title="Your plan’s company limit is reached"' : '' ?>><svg class="i"><use href="#i-plus"/></svg>Add a company</button>
+    </div>
+</header>
+
+<?php if ($atLimit): ?>
+    <div class="fwa-banner"><svg class="i"><use href="#i-info"/></svg><div class="fwa-banner__body">Your <b><?= $e($limit['plan']) ?></b> plan includes <?= (int)$limit['max'] ?> compan<?= $limit['max'] === 1 ? 'y' : 'ies' ?>. <a href="/admin/billing.php">Move to a bigger plan</a> to add another.</div></div>
+<?php endif; ?>
+
+<div class="fwa-grid">
+    <?php foreach ($companies as $co): $active = (int)$co['id'] === $ADMIN_COMPANY_ID; ?>
+        <section class="fwa-card fwa-co<?= $active ? ' is-active' : '' ?>">
+            <header class="fwa-card__head">
+                <span class="fwa-ava" style="--h:<?= AdminKit::hue((string)$co['name']) ?>"><?= $e(AdminKit::initials((string)$co['name'])) ?></span>
+                <div class="fwa-card__title"><h3><?= $e($co['name']) ?></h3><p><?= $e(fw_business_type_label($co['business_type'] ?? null)) ?> · <?= (int)($sizes[(int)$co['id']] ?? 1) ?> <?= ($sizes[(int)$co['id']] ?? 1) === 1 ? 'person' : 'people' ?></p></div>
             </header>
-
-            <?php if (!empty($_GET['created'])): ?>
-                <div class="fw-admin__alert fw-admin__alert--success">
-                    Company created and set as active.
-                </div>
-            <?php endif; ?>
-
-            <div class="fw-admin__card">
-                <div class="fw-admin__table-wrapper">
-                <table class="fw-admin__table">
-                    <thead>
-                        <tr>
-                            <th>Company</th>
-                            <th>Role</th>
-                            <th>Status</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($companies as $c): ?>
-                            <?php $isActive = ((int)$c['id'] === $activeCompanyId); ?>
-                            <tr>
-                                <td>
-                                    <strong><?= htmlspecialchars($c['name']) ?></strong>
-                                    <?php if ($isActive): ?>
-                                        <span class="fw-admin__badge fw-admin__badge--success">Active</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td><?= htmlspecialchars(ucfirst($c['role'])) ?></td>
-                                <td><?= $c['subscription_active'] ? 'Subscribed' : 'Inactive' ?></td>
-                                <td style="text-align:right;">
-                                    <?php if ($isActive): ?>
-                                        <a href="/admin/company.php" class="fw-admin__btn">Edit profile</a>
-                                    <?php else: ?>
-                                        <button type="button"
-                                                class="fw-admin__btn fw-admin__btn--primary"
-                                                data-fw-switch-company="<?= (int)$c['id'] ?>">
-                                            Switch to
-                                        </button>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-                </div>
+            <div class="fwa-card__body" style="display:flex;gap:6px;flex-wrap:wrap">
+                <?php if ($active): ?><span class="fwa-pill" data-tone="accent">Open now</span><?php endif; ?>
+                <span class="fwa-pill fwa-pill--plain"><?= $e(AdminKit::ROLES[$co['role']][0] ?? ucfirst((string)$co['role'])) ?></span>
+                <?php if ((int)$co['id'] === $primaryId): ?><span class="fwa-pill" data-tone="gold" title="Your account and plan belong to this company">Your main company</span><?php endif; ?>
+                <?php if (!(int)$co['subscription_active']): ?><span class="fwa-pill" data-tone="danger">Subscription inactive</span><?php endif; ?>
             </div>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
-<script src="/shared/company_switcher.js?v=2026-04-25-2"></script>
+            <footer class="fwa-card__foot">
+                <?php if ($active): ?>
+                    <a class="btn btn--sm" href="/admin/company.php"><svg class="i"><use href="#i-pen"/></svg>Edit profile</a>
+                <?php elseif ((int)$co['subscription_active']): ?>
+                    <button class="btn btn--sm btn--primary" type="button" data-fw-switch-company="<?= (int)$co['id'] ?>"><svg class="i"><use href="#i-refresh"/></svg>Switch to it</button>
+                <?php else: ?>
+                    <span class="fwa-muted" style="font-size:12.5px">Can’t be opened until its subscription is active.</span>
+                <?php endif; ?>
+            </footer>
+        </section>
+    <?php endforeach; ?>
+</div>
+<?php
+$pageScripts = ['companies'];
+$pageBoot = ['types' => fw_business_types(), 'atLimit' => $atLimit];
+include __DIR__ . '/partials/foot.php';

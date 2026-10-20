@@ -1,293 +1,97 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /admin/billing.php — Subscription: the plan, what is used of it (paid
+// seats in this company, companies on your account), moving to another plan
+// when everything fits, and cancelling or resuming. Changes go to
+// /admin/api/billing.php.
+require_once __DIR__ . '/lib/AdminBoot.php';
+@include_once __DIR__ . '/../shared/email_config.php';
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
+$c = $ADMIN_COMPANY;
+$plans = $DB->query("SELECT * FROM plans ORDER BY price_monthly_cents, id")->fetchAll(PDO::FETCH_ASSOC);
+$sub = null;
+try {
+    $st = $DB->prepare("SELECT * FROM subscriptions WHERE company_id = ? ORDER BY created_at DESC, id DESC LIMIT 1");
+    $st->execute([$ADMIN_COMPANY_ID]);
+    $sub = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Throwable $ex) {
+}
+$seats = AdminKit::seats($DB, $ADMIN_COMPANY_ID);
+$companies = fw_user_company_count($ADMIN_USER_ID);
+$maxCompanies = (int)($c['plan_max_companies'] ?? $c['max_companies'] ?? 1);
+$periodEnd = $sub && $sub['current_period_end'] ? strtotime($sub['current_period_end']) : null;
+$support = defined('EMAIL_REPLY_TO') ? EMAIL_REPLY_TO : 'support@flowwork.co.za';
+$status = $sub['status'] ?? 'active';
+$statusPill = ['active' => ['success', 'Active'], 'pending' => ['gold', 'Starting'], 'past_due' => ['danger', 'Payment overdue'], 'canceled' => ['danger', 'Cancelled']][$status] ?? ['muted', ucfirst($status)];
+$features = ['Every module: Projects, CRM, Quotes & Invoices, Finance, Payroll, Mail, Calendar and Drive', 'The Flowwork phone app'];
 
-require_once __DIR__ . '/../includes/companies.php';
-fw_require_admin();
-
-// Fetch company with plan
-$stmt = $DB->prepare("
-    SELECT c.*, p.name as plan_name, p.code as plan_code, p.max_users, p.max_companies, p.price_monthly_cents
-    FROM companies c
-    JOIN plans p ON p.id = c.plan_id
-    WHERE c.id = ?
-");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-
-// Fetch subscription
-$stmt = $DB->prepare("
-    SELECT * FROM subscriptions 
-    WHERE company_id = ? 
-    ORDER BY created_at DESC 
-    LIMIT 1
-");
-$stmt->execute([$companyId]);
-$subscription = $stmt->fetch();
-
-// Fetch all plans
-$stmt = $DB->query("SELECT * FROM plans ORDER BY price_monthly_cents ASC");
-$plans = $stmt->fetchAll();
-
-// Calculate usage
-$stmt = $DB->prepare("
-    SELECT COUNT(*) FROM user_companies uc
-    JOIN users u ON u.id = uc.user_id
-    WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1
-");
-$stmt->execute([$companyId]);
-$currentUsers = $stmt->fetchColumn();
-
-// Companies under the current admin's account — same metric as the
-// /admin/companies.php "X of Y on the {plan} plan" row.
-$stmt = $DB->prepare("SELECT COUNT(*) FROM user_companies WHERE user_id = ?");
-$stmt->execute([$userId]);
-$currentCompanies = (int)$stmt->fetchColumn();
+$page = 'billing';
+$pageTitle = 'Subscription';
+include __DIR__ . '/partials/head.php';
 ?>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">Account <i>◆</i> Subscription</p>
+        <h1>Your <em>subscription</em></h1>
+        <p>Every plan includes every module — plans differ only in how many people and companies they hold.</p>
+    </div>
+</header>
+
+<?php if ($status === 'canceled'): ?>
+    <div class="fwa-banner fwa-banner--danger"><svg class="i"><use href="#i-alert"/></svg><div class="fwa-banner__body"><b>Your subscription is cancelled.</b> <?= $periodEnd && $periodEnd > time() ? 'You keep full access until ' . $e(date('j F Y', $periodEnd)) . '.' : '' ?> Changed your mind? Resume it below.</div></div>
+<?php elseif ($status === 'past_due'): ?>
+    <div class="fwa-banner fwa-banner--danger"><svg class="i"><use href="#i-alert"/></svg><div class="fwa-banner__body"><b>A payment is overdue.</b> Please settle your latest Flowwork invoice, or write to <a href="mailto:<?= $e($support) ?>"><?= $e($support) ?></a> if something is wrong.</div></div>
+<?php endif; ?>
+
+<div class="fwa-stats">
+    <div class="fwa-stat" style="--i:0"><span class="fwa-stat__label">Plan</span><span class="fwa-stat__value"><?= $e($c['plan_name'] ?? '—') ?></span>
+        <span class="fwa-stat__sub"><span class="fwa-pill" data-tone="<?= $statusPill[0] ?>"><?= $e($statusPill[1]) ?></span></span></div>
+    <div class="fwa-stat" style="--i:1"><span class="fwa-stat__label">Monthly</span><span class="fwa-stat__value"><?= $e(AdminKit::money((int)($c['price_monthly_cents'] ?? 0))) ?></span>
+        <span class="fwa-stat__sub"><?= $periodEnd ? ($periodEnd > time() ? 'Current period ends ' . $e(date('j M Y', $periodEnd)) : 'Billed monthly') : 'Billed monthly' ?></span></div>
+    <div class="fwa-stat" style="--i:2"><span class="fwa-stat__label">Paid seats</span><span class="fwa-stat__value"><?= (int)$seats['used'] ?><small>/ <?= (int)$seats['max'] ?></small></span>
+        <span class="fwa-meter<?= $seats['used'] >= $seats['max'] ? ' is-full' : '' ?>"><i style="--p:<?= min(100, round($seats['used'] / $seats['max'] * 100)) ?>%"></i></span><span class="fwa-stat__sub">in <?= $e($c['name']) ?></span></div>
+    <div class="fwa-stat" style="--i:3"><span class="fwa-stat__label">Companies</span><span class="fwa-stat__value"><?= $companies ?><small>/ <?= $maxCompanies ?></small></span>
+        <span class="fwa-meter<?= $companies >= $maxCompanies ? ' is-full' : '' ?>"><i style="--p:<?= min(100, round($companies / max(1, $maxCompanies) * 100)) ?>%"></i></span><span class="fwa-stat__sub">on your account</span></div>
+</div>
+
+<div class="fwa-section" id="card-plans"><h2>Plans</h2><span class="fwa-section__rule"></span><small>Prices per month</small></div>
+<div class="fwa-plans">
+    <?php foreach ($plans as $p): $current = (int)$p['id'] === (int)($c['plan_id'] ?? 0);
+        $fitsSeats = $seats['used'] <= (int)$p['max_users']; $fitsCos = $companies <= (int)$p['max_companies'];
+        $up = (int)$p['price_monthly_cents'] > (int)($c['price_monthly_cents'] ?? 0); ?>
+        <article class="fwa-plan<?= $current ? ' is-current' : '' ?>">
+            <?php if ($current): ?><span class="fwa-plan__badge">Your plan</span><?php endif; ?>
+            <h3><?= $e($p['name']) ?></h3>
+            <div class="fwa-plan__price"><?= $e(AdminKit::money((int)$p['price_monthly_cents'])) ?> <small>a month</small></div>
+            <ul>
+                <li><svg class="i"><use href="#i-users"/></svg><?= (int)$p['max_users'] ?> paid seat<?= (int)$p['max_users'] === 1 ? '' : 's' ?> <span class="fwa-muted">+ free bookkeepers</span></li>
+                <li><svg class="i"><use href="#i-building"/></svg><?= (int)$p['max_companies'] ?> compan<?= (int)$p['max_companies'] === 1 ? 'y' : 'ies' ?></li>
+                <?php foreach ($features as $f): ?><li><svg class="i"><use href="#i-check"/></svg><?= $e($f) ?></li><?php endforeach; ?>
+            </ul>
+            <?php if ($current): ?>
+                <button class="btn btn--block" type="button" disabled>Current plan</button>
+            <?php elseif (!$fitsSeats || !$fitsCos): ?>
+                <button class="btn btn--block" type="button" disabled title="Too small for what you use now">Too small for you now</button>
+                <small class="fwa-muted"><?= !$fitsSeats ? $seats['used'] . ' paid seats in use' : $companies . ' companies on your account' ?></small>
+            <?php else: ?>
+                <button class="btn btn--block<?= $up ? ' btn--primary' : '' ?>" type="button" data-plan="<?= (int)$p['id'] ?>" data-name="<?= $e($p['name']) ?>" data-price="<?= $e(AdminKit::money((int)$p['price_monthly_cents'])) ?>" data-up="<?= $up ? '1' : '0' ?>"><?= $up ? 'Upgrade to ' : 'Move to ' ?><?= $e($p['name']) ?></button>
+            <?php endif; ?>
+        </article>
+    <?php endforeach; ?>
+</div>
+
+<section class="fwa-card" style="margin-top:22px">
+    <div class="fwa-actions">
+        <div class="fwa-action"><span class="fwa-action__icon"><svg class="i"><use href="#i-receipt"/></svg></span>
+            <span class="fwa-action__text"><b>Invoices and payment</b><small>Questions about a bill, or need a copy of a Flowwork invoice? Write to us.</small></span>
+            <a class="fwa-mini" href="mailto:<?= $e($support) ?>?subject=<?= rawurlencode('Billing — ' . ($c['name'] ?? '')) ?>"><svg class="i"><use href="#i-mail"/></svg>Email billing</a></div>
+        <?php if ($sub): ?>
+        <div class="fwa-action"><span class="fwa-action__icon"<?= $status === 'canceled' ? '' : ' style="color:var(--danger);background:var(--danger-soft)"' ?>><svg class="i"><use href="#<?= $status === 'canceled' ? 'i-play' : 'ia-pause' ?>"/></svg></span>
+            <span class="fwa-action__text"><b><?= $status === 'canceled' ? 'Resume the subscription' : 'Cancel the subscription' ?></b><small><?= $status === 'canceled' ? 'Carry on as before — nothing was deleted.' : 'Flowwork stops renewing it. Your data stays, and you can export everything under Data & privacy.' ?></small></span>
+            <button class="btn btn--sm<?= $status === 'canceled' ? ' btn--primary' : ' btn--danger' ?>" type="button" id="subToggle" data-action="<?= $status === 'canceled' ? 'resume' : 'cancel' ?>"><?= $status === 'canceled' ? 'Resume' : 'Cancel subscription' ?></button></div>
+        <?php endif; ?>
+    </div>
+</section>
 <?php
-  $pageTitle = 'Billing – Admin';
-  include __DIR__ . '/_layout_top.php';
-?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Subscription & Billing</h1>
-                    <p class="fw-admin__page-subtitle">Manage your plan and payment details</p>
-                </div>
-            </header>
-
-            <!-- Current Plan -->
-            <div class="fw-admin__card">
-                <div class="fw-admin__billing-header">
-                    <div>
-                        <h2 class="fw-admin__card-title">Current Plan</h2>
-                        <div class="fw-admin__plan-name">
-                            <?= htmlspecialchars($company['plan_name']) ?>
-                            <span class="fw-admin__badge fw-admin__badge--<?= $company['subscription_active'] ? 'success' : 'danger' ?>">
-                                <?= $company['subscription_active'] ? 'Active' : 'Inactive' ?>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="fw-admin__plan-price">
-                        R<?= number_format($company['price_monthly_cents'] / 100, 2) ?>
-                        <span>/month</span>
-                    </div>
-                </div>
-
-                <div class="fw-admin__plan-details">
-                    <div class="fw-admin__plan-detail">
-                        <div class="fw-admin__plan-detail-label">Users</div>
-                        <div class="fw-admin__plan-detail-value">
-                            <?= $currentUsers ?> / <?= $company['max_users'] ?>
-                        </div>
-                        <div class="fw-admin__progress-bar">
-                            <div class="fw-admin__progress-fill" style="width: <?= min(100, ($currentUsers / $company['max_users']) * 100) ?>%"></div>
-                        </div>
-                    </div>
-
-                    <div class="fw-admin__plan-detail">
-                        <div class="fw-admin__plan-detail-label">Companies</div>
-                        <div class="fw-admin__plan-detail-value">
-                            <?= $currentCompanies ?> / <?= $company['max_companies'] ?>
-                        </div>
-                        <div class="fw-admin__progress-bar">
-                            <div class="fw-admin__progress-fill" style="width: <?= min(100, ($currentCompanies / $company['max_companies']) * 100) ?>%"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <?php if ($subscription): ?>
-                <div class="fw-admin__subscription-info">
-                    <div class="fw-admin__info-row">
-                        <span class="fw-admin__info-label">Status:</span>
-                        <span class="fw-admin__badge fw-admin__badge--<?= $subscription['status'] === 'active' ? 'success' : 'warning' ?>">
-                            <?= ucfirst($subscription['status']) ?>
-                        </span>
-                    </div>
-                    <?php if ($subscription['current_period_end']): ?>
-                    <div class="fw-admin__info-row">
-                        <span class="fw-admin__info-label">Next billing date:</span>
-                        <span><?= date('F j, Y', strtotime($subscription['current_period_end'])) ?></span>
-                    </div>
-                    <?php endif; ?>
-                    <?php if ($subscription['yoco_subscription_id']): ?>
-                    <div class="fw-admin__info-row">
-                        <span class="fw-admin__info-label">Subscription ID:</span>
-                        <code><?= htmlspecialchars($subscription['yoco_subscription_id']) ?></code>
-                    </div>
-                    <?php endif; ?>
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Available Plans -->
-            <div class="fw-admin__section">
-                <h2 class="fw-admin__section-title">Available Plans</h2>
-                <div class="fw-admin__plans-grid">
-                    <?php foreach ($plans as $plan): 
-                        $isCurrent = $plan['id'] == $company['plan_id'];
-                    ?>
-                    <div class="fw-admin__plan-card <?= $isCurrent ? 'fw-admin__plan-card--current' : '' ?>">
-                        <?php if ($isCurrent): ?>
-                        <div class="fw-admin__plan-badge">Current Plan</div>
-                        <?php endif; ?>
-                        
-                        <h3 class="fw-admin__plan-card-title"><?= htmlspecialchars($plan['name']) ?></h3>
-                        
-                        <div class="fw-admin__plan-card-price">
-                            R<?= number_format($plan['price_monthly_cents'] / 100, 2) ?>
-                            <span>/month</span>
-                        </div>
-
-                        <ul class="fw-admin__plan-features">
-                            <li>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                                <?= $plan['max_users'] ?> user<?= $plan['max_users'] > 1 ? 's' : '' ?>
-                            </li>
-                            <li>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                                <?= $plan['max_companies'] ?> compan<?= $plan['max_companies'] > 1 ? 'ies' : 'y' ?>
-                            </li>
-                            <li>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                                All features included
-                            </li>
-                        </ul>
-
-                        <?php if (!$isCurrent): ?>
-                        <button class="fw-admin__btn fw-admin__btn--primary fw-admin__btn--block" 
-                                onclick="changePlan(<?= $plan['id'] ?>, '<?= htmlspecialchars($plan['name']) ?>')">
-                            <?= $plan['price_monthly_cents'] > $company['price_monthly_cents'] ? 'Upgrade' : 'Downgrade' ?>
-                        </button>
-                        <?php endif; ?>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <!-- Payment Method -->
-            <div class="fw-admin__card">
-                <h2 class="fw-admin__card-title">Payment Method</h2>
-                
-                <?php if ($company['yoco_customer_id']): ?>
-                <div class="fw-admin__payment-method">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                        <line x1="1" y1="10" x2="23" y2="10"/>
-                    </svg>
-                    <div>
-                        <div class="fw-admin__payment-method-label">Card on file</div>
-                        <div class="fw-admin__payment-method-id">Yoco Customer: <?= htmlspecialchars($company['yoco_customer_id']) ?></div>
-                    </div>
-                    <button class="fw-admin__btn fw-admin__btn--secondary" onclick="updatePaymentMethod()">
-                        Update Card
-                    </button>
-                </div>
-                <?php else: ?>
-                <div class="fw-admin__empty-state">
-                    <p>No payment method on file</p>
-                    <button class="fw-admin__btn fw-admin__btn--primary" onclick="addPaymentMethod()">
-                        Add Payment Method
-                    </button>
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Billing Actions -->
-            <div class="fw-admin__card">
-                <h2 class="fw-admin__card-title">Actions</h2>
-                <div class="fw-admin__action-list">
-                    <button class="fw-admin__action-item" onclick="downloadInvoices()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                            <polyline points="7 10 12 15 17 10"/>
-                            <line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                        <div>
-                            <div class="fw-admin__action-title">Download Invoices</div>
-                            <div class="fw-admin__action-desc">View and download past invoices</div>
-                        </div>
-                    </button>
-
-                    <button class="fw-admin__action-item fw-admin__action-item--danger" onclick="cancelSubscription()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="15" y1="9" x2="9" y2="15"/>
-                            <line x1="9" y1="9" x2="15" y2="15"/>
-                        </svg>
-                        <div>
-                            <div class="fw-admin__action-title">Cancel Subscription</div>
-                            <div class="fw-admin__action-desc">Cancel your subscription (takes effect at period end)</div>
-                        </div>
-                    </button>
-                </div>
-            </div>
-<script>
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-
-function changePlan(planId, planName) {
-    if (!confirm(`Are you sure you want to change to the ${planName} plan? Changes will be pro-rated.`)) return;
-
-    fetch('/admin/api.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
-        body: new URLSearchParams({ action: 'change_plan', plan_id: planId })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('Plan changed successfully!');
-            location.reload();
-        } else {
-            alert(data.error || 'Failed to change plan');
-        }
-    })
-    .catch(err => {
-        console.error(err);
-        alert('Network error');
-    });
-}
-
-function updatePaymentMethod() {
-    alert('Redirect to Yoco payment update flow');
-    // TODO: Implement Yoco payment update
-}
-
-function addPaymentMethod() {
-    alert('Redirect to Yoco payment setup flow');
-    // TODO: Implement Yoco payment setup
-}
-
-function downloadInvoices() {
-    alert('Download invoices functionality');
-    // TODO: Implement invoice download
-}
-
-function cancelSubscription() {
-    if (!confirm('Are you sure? This will cancel your subscription at the end of the current billing period.')) return;
-    
-    fetch('/admin/api.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
-        body: new URLSearchParams({ action: 'cancel_subscription' })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('Subscription cancellation scheduled');
-            location.reload();
-        } else {
-            alert(data.error || 'Failed to cancel');
-        }
-    });
-}
-</script>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
+$pageScripts = ['billing'];
+$pageBoot = ['periodEnd' => $periodEnd ? date('j F Y', $periodEnd) : null];
+include __DIR__ . '/partials/foot.php';

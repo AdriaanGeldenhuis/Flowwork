@@ -12,7 +12,8 @@
 //   - CRM task reminders that are due; hourly: CRM compliance-document
 //     reminders; daily: supplier delivery figures,
 //   - every 15 minutes: reply-overdue reminders and due recurring invoices
-//     (Quotes & Invoices); hourly: housekeeping.
+//     (Quotes & Invoices); hourly: housekeeping and the audit-trail
+//     retention each company chose in Admin › Data & privacy.
 // It answers at once with the previous run's figures (visible in the
 // scheduler's history) and does the work after the answer has gone out.
 //
@@ -169,6 +170,11 @@ if ($now - (int)($state['cleanup_at'] ?? 0) >= 3600) {
     $run('cleanup', function () use ($DB) {
         fw_push_cleanup($DB);
         return 'done';
+    });
+    // Audit trail kept only as long as each company chose (Admin › Data & privacy)
+    $run('audit_retention', function () use ($DB) {
+        require_once __DIR__ . '/../../includes/audit_retention.php';
+        return fw_audit_retention_cleanup($DB);
     });
 }
 
