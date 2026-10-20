@@ -1,198 +1,59 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /receipts/upload.php — sending slips in, phone first: one big button opens
+// the camera, others choose files or a ZIP. A note says what it was for. The
+// slips are read as they arrive; the list below shows the latest ones sent
+// in by this person and where each one is. (Home's "Scan receipt" opens this.)
+require_once __DIR__ . '/lib/RcBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
+if (!$RC_CAPS['upload']) {
+    header('Location: /receipts/', true, 302);
+    exit;
+}
+$reader = ['ai' => 'Read by AI the moment it arrives', 'tesseract' => 'Read on the server the moment it arrives', 'manual' => 'Your bookkeeper types in the details'][$RC_SETTINGS['ocr_provider']] ?? '';
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch settings
-$stmt = $DB->prepare("SELECT * FROM receipt_settings WHERE company_id = ?");
-$stmt->execute([$companyId]);
-$settings = $stmt->fetch() ?: [
-    'max_file_size_mb' => 15,
-    'auto_split_lines' => 1
-];
-$maxSizeMB = $settings['max_file_size_mb'];
-$maxSizeBytes = $maxSizeMB * 1024 * 1024;
+$page = 'upload';
+$pageTitle = 'Snap a receipt';
+$pageScripts = ['capture'];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Receipt – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-receipts">
-    <div class="fw-receipts__container">
-        
-        <!-- Header -->
-        <header class="fw-receipts__header">
-            <div class="fw-receipts__brand">
-                <div class="fw-receipts__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="fw-receipts__brand-text">
-                    <div class="fw-receipts__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-receipts__app-name">Receipts – Upload</div>
-                </div>
-            </div>
-
-            <div class="fw-receipts__greeting">
-                Hello, <span class="fw-receipts__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-
-            <div class="fw-receipts__controls">
-                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back to Receipts</a>
-
-                <a href="/" class="fw-receipts__home-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
-                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </a>
-
-                <button class="fw-receipts__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </button>
-
-                <div class="fw-receipts__menu-wrapper">
-                    <button class="fw-receipts__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                        </svg>
-                    </button>
-                    <nav class="fw-receipts__kebab-menu" id="kebabMenu" aria-hidden="true">
-                        <a href="upload.php" class="fw-receipts__kebab-item">Upload Receipt</a>
-                        <a href="settings.php" class="fw-receipts__kebab-item">Settings</a>
-                        <a href="index.php" class="fw-receipts__kebab-item">Back to Receipts</a>
-                    </nav>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <main class="fw-receipts__main">
-            <div class="fw-receipts__content">
-
-            <div class="fw-receipts__page-header">
-                <h1 class="fw-receipts__page-title">Upload Receipts</h1>
-                <p class="fw-receipts__page-subtitle">Drag & drop files, or capture with your camera</p>
-            </div>
-
-            <!-- Upload Zone -->
-            <div class="fw-receipts__upload-zone" id="uploadZone">
-                <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
-                <!-- Bulk import input (ZIP) -->
-                <input type="file" id="bulkFileInput" accept=".zip" hidden>
-                
-                <div class="fw-receipts__upload-icon">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5m0 0L7 8m5-5v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <h3 class="fw-receipts__upload-title">Drop files here or click to browse</h3>
-                <p class="fw-receipts__upload-hint">Supported: PDF, JPG, PNG, WEBP (max <?= $maxSizeMB ?>MB per file)</p>
-                
-                <div class="fw-receipts__upload-actions">
-                    <button type="button" class="fw-receipts__btn fw-receipts__btn--primary" id="browseBtn">
-                        Browse Files
-                    </button>
-                    <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="cameraBtn">
-                        📷 Capture Photo
-                    </button>
-                    <!-- Bulk import button -->
-                    <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="bulkBtn">
-                        📂 Bulk Import (ZIP)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Upload Progress -->
-            <div class="fw-receipts__upload-list fw-receipts--hidden" id="uploadList">
-                <h3 class="fw-receipts__section-title">Uploading Files</h3>
-                <div id="uploadItems"></div>
-            </div>
-
-            <!-- Bulk Import Progress -->
-            <div class="fw-receipts__upload-list fw-receipts--hidden" id="bulkList">
-                <h3 class="fw-receipts__section-title">Bulk Import</h3>
-                <div id="bulkItems"></div>
-            </div>
-
-            </div>
-        </main>
-
-        <!-- Footer -->
-        <footer class="fw-receipts__footer">
-            <span>Receipts v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Dark</span>
-        </footer>
-
+<header class="fwr-head">
+    <div class="fwr-head__text">
+        <p class="fwr-eyebrow">Receipts <i>◆</i> Send in</p>
+        <h1>Snap a <em>receipt</em></h1>
+        <p>Lay the slip flat in good light and fill the frame. PDFs from email work too, and so do ZIPs of many slips. <?= $e($reader) ?>.</p>
     </div>
+</header>
 
-    <!-- Camera Modal -->
-    <div class="fw-receipts__modal-overlay" id="cameraModal" aria-hidden="true">
-        <div class="fw-receipts__modal fw-receipts__modal--large">
-            <div class="fw-receipts__modal-header">
-                <h2 class="fw-receipts__modal-title">Capture Receipt</h2>
-                <button class="fw-receipts__modal-close" id="closeCameraBtn">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="fw-receipts__modal-body">
-                <video id="cameraStream" autoplay playsinline style="width:100%; border-radius:12px; background:#000;"></video>
-                <canvas id="cameraCanvas" style="display:none;"></canvas>
-            </div>
-            <div class="fw-receipts__modal-footer">
-                <button class="fw-receipts__btn fw-receipts__btn--secondary" id="cancelCameraBtn">Cancel</button>
-                <button class="fw-receipts__btn fw-receipts__btn--primary" id="captureBtn">📸 Capture</button>
-            </div>
-        </div>
+<div class="fwr-snap">
+    <button class="fwr-snap__btn fwr-snap__btn--hero" type="button" data-capture="camera">
+        <span class="fwr-snap__icon"><svg class="i"><use href="#ir-camera"/></svg></span>
+        <b>Take a photo</b>
+        <small>Opens your camera. One slip per photo.</small>
+    </button>
+    <button class="fwr-snap__btn" type="button" data-capture="pick">
+        <span class="fwr-snap__icon"><svg class="i"><use href="#i-upload"/></svg></span>
+        <b>Choose files</b>
+        <small>PDFs and photos — as many as you like.</small>
+    </button>
+    <button class="fwr-snap__btn" type="button" data-capture="pick" data-zip>
+        <span class="fwr-snap__icon"><svg class="i"><use href="#ir-zip"/></svg></span>
+        <b>A ZIP of slips</b>
+        <small>Up to 200 slips at once, from a scanner or an export.</small>
+    </button>
+</div>
+
+<section class="fwr-panel" style="margin-top:16px">
+    <div class="fwr-panel__head"><span class="fwr-panel__icon"><svg class="i"><use href="#i-message"/></svg></span>
+        <div class="fwr-panel__title"><h3>What was it for?</h3><p>Optional — goes with the next slips you send in, so your bookkeeper knows the job or reason.</p></div></div>
+    <div class="fwr-panel__body">
+        <textarea class="textarea" id="snapNote" rows="2" maxlength="500" placeholder="Cement and sand for the Smith job"></textarea>
     </div>
+</section>
 
-    <script>
-        const MAX_SIZE_BYTES = <?= $maxSizeBytes ?>;
-        const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    </script>
-    <script src="assets/receipts.js?v=<?= ASSET_VERSION ?>"></script>
-    <script src="assets/upload.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+<section class="fwr-panel fwr-panel--flush" style="margin-top:16px">
+    <div class="fwr-panel__head"><span class="fwr-panel__icon"><svg class="i"><use href="#i-clock"/></svg></span>
+        <div class="fwr-panel__title"><h3>Sent in by you</h3><p>Where each slip is: read, made into a bill, in the books.</p></div>
+        <a class="fwr-mini" href="/receipts/inbox.php?view=all&amp;q=">All receipts</a></div>
+    <div class="fwr-panel__body"><ul class="fwr-rows" id="mine"><li><div class="fwr-loading"><span class="fwr-spin"></span>Loading…</div></li></ul></div>
+</section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

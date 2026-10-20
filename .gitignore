@@ -50,6 +50,7 @@ storage/payroll/**
 
 # Keep directory-protection files tracked even though their trees are ignored.
 !uploads/.htaccess
+!uploads/receipts/.htaccess
 !storage/.htaccess
 
 # ---------------------------------------------------------------------------
@@ -105,3 +106,8 @@ storage/finance/
 # Admin runtime data (rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/admin/
+
+# ---------------------------------------------------------------------------
+# Receipts runtime data (slips, previews, schema marker, rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/receipts/

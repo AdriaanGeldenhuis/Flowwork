@@ -425,10 +425,12 @@
     $('.fwf-sheet__acts', s).innerHTML = `${pill(b.raw_status === 'review' ? 'review' : b.status)}
       ${can('write') && b.editable ? `<button class="btn btn--sm" type="button" data-a="edit">${icon('pen')}Edit</button>` : ''}
       ${can('write') && b.postable ? `<button class="btn btn--sm btn--primary" type="button" data-a="post">${icon('if-post')}Post</button>` : ''}
+      ${can('write') && b.post_in_receipts ? `<a class="btn btn--sm btn--primary" href="${esc(b.receipt_url)}">${icon('i-receipt')}Check &amp; post in Receipts</a>` : ''}
       ${can('write') && payable ? `<button class="btn btn--sm btn--primary" type="button" data-a="pay">${icon('if-cash')}Pay</button>` : ''}
       <button class="icon-btn" type="button" data-a="more" aria-label="More actions">${icon('more-v')}</button>`;
     $('.fwf-sheet__body', s).innerHTML = `
-      ${b.raw_status === 'review' ? `<div class="fwf-banner fwf-banner--info">${icon('i-receipt')}<span>Captured from a receipt or invoice in Receipts. Check the lines and accounts, then post it.</span></div>` : ''}
+      ${b.post_in_receipts ? `<div class="fwf-banner fwf-banner--info">${icon('i-receipt')}<span>Made from a receipt. It is posted from Receipts, beside the slip, where its checks run and a payment made on the spot is recorded with it.</span></div>`
+        : b.raw_status === 'review' ? `<div class="fwf-banner fwf-banner--info">${icon('i-receipt')}<span>Captured from a receipt or invoice in Receipts. Check the lines and accounts, then post it.</span></div>` : ''}
       ${b.editable ? `<div class="fwf-banner fwf-banner--warn">${icon('info')}<span>Not in the books yet. Posting puts ${esc(money(b.total))} on the ${esc(lower('supplier'))}'s account and the expense and ${esc(L('vat'))} accounts.</span></div>` : ''}
       <dl class="fwf-kv">
         <dt>${esc(L('supplier'))}</dt><dd><a href="#payables?supplier=${b.supplier_id}">${esc(b.supplier)}</a> · <a href="#payables?view=statement&supplier=${b.supplier_id}">statement</a></dd>
@@ -463,7 +465,7 @@
       if (a === 'more') popover(btn, `${can('write') && ['posted', 'overdue', 'paid'].includes(b.status) ? `<button class="fwm-pop__item" type="button" data-v="credit">${icon('if-credit')}Record a credit note for this</button>` : ''}
         <a class="fwm-pop__item" href="#payables?view=statement&supplier=${b.supplier_id}">${icon('if-statement')}${esc(L('supplier'))} statement</a>
         <a class="fwm-pop__item" href="#payables?supplier=${b.supplier_id}&status=all">${icon('list')}All their ${esc(lower('bills'))}</a>
-        ${b.receipt_url ? `<a class="fwm-pop__item" href="${esc(b.receipt_url)}">${icon('external')}Open Receipts</a>` : ''}
+        ${b.receipt_url ? `<a class="fwm-pop__item" href="${esc(b.receipt_url)}">${icon('i-receipt')}Open the receipt</a>` : ''}
         <button class="fwm-pop__item" type="button" data-v="print">${icon('print')}Print</button>
         ${can('write') && b.editable ? `<div class="fwm-pop__sep"></div><button class="fwm-pop__item is-danger" type="button" data-v="delete">${icon('trash')}Delete draft</button>` : ''}`, {
         align: 'end',
@@ -561,7 +563,7 @@
     let lines;
     const dlg = F.formDialog({
       title: isEdit ? 'Edit ' + (b.number || lower('bill')) : 'New ' + lower('bill'), wide: true, submit: 'Save draft',
-      extraFoot: `<button class="btn" type="button" data-then="post">${icon('if-post')}Save &amp; post</button>`,
+      extraFoot: b.post_in_receipts ? '' : `<button class="btn" type="button" data-then="post">${icon('if-post')}Save &amp; post</button>`,
       html: `<div class="fwf-grid3">
           <div class="field fwf-span2"><label class="label" for="bSup">${esc(L('supplier'))}<span class="req">*</span></label><select class="select" id="bSup" name="supplier">${opts}</select>
             <div class="fwf-hint">Not listed? Add the ${esc(lower('supplier'))} in <a href="/crm/#suppliers" target="_blank" rel="noopener">CRM</a>, then reopen this.</div></div>
@@ -590,7 +592,7 @@
       if (onSaved) onSaved(r); else after();
     }
     const tb = $('[data-then]', dlg.m);
-    tb.addEventListener('click', async () => {
+    if (tb) tb.addEventListener('click', async () => {
       const err = $('.fwf-formerr', dlg.m);
       err.hidden = true;
       tb.disabled = true;

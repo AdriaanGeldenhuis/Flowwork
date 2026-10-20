@@ -1,419 +1,84 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
-require_once __DIR__ . '/../finances/lib/Csrf.php';
+// /receipts/review.php?id= — one receipt: the slip on the left (zoom, turn,
+// drag), the bill on the right (js/review.js). Bookkeepers check what was
+// read, choose the supplier, accounts and project, see the checks with
+// their one-click fixes, save the draft or post it to the books — and move
+// to the next receipt with j / k. Whoever sent it in sees how far it is.
+require_once __DIR__ . '/lib/RcBoot.php';
 
-define('ASSET_VERSION', '2026-10-18-receipts-projects');
-
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-$fileId = (int)($_GET['id'] ?? 0);
-
-if (!$fileId) {
-    header('Location: index.php');
-    exit;
-}
-
-// Fetch file
-$stmt = $DB->prepare("
-    SELECT rf.*, ro.vendor_name, ro.vendor_vat, ro.invoice_number, ro.invoice_date,
-           ro.currency, ro.subtotal, ro.tax, ro.total, ro.line_items_json, ro.confidence_score
-    FROM receipt_file rf
-    LEFT JOIN receipt_ocr ro ON ro.file_id = rf.file_id
-    WHERE rf.file_id = ? AND rf.company_id = ?
-");
-$stmt->execute([$fileId, $companyId]);
-$file = $stmt->fetch();
-
-if (!$file) {
-    header('Location: index.php');
-    exit;
-}
-
-// Parse OCR if pending
-if ($file['ocr_status'] === 'pending') {
-    // Trigger OCR (could be async, but for demo we'll do sync)
-    require_once __DIR__ . '/lib/ocr_engine.php';
-    
-    $stmt = $DB->prepare("SELECT ocr_provider FROM receipt_settings WHERE company_id = ?");
-    $stmt->execute([$companyId]);
-    $settings = $stmt->fetch();
-    $provider = $settings['ocr_provider'] ?? 'tesseract';
-    
-    $ocr = new OCREngine($provider);
-    $fullPath = __DIR__ . '/../' . $file['path'];
-    
-    if (file_exists($fullPath)) {
-        $result = $ocr->parseReceipt($fullPath, $file['mime']);
-        
-        $stmt = $DB->prepare("
-            INSERT INTO receipt_ocr (
-                file_id, raw_json, vendor_name, vendor_vat, invoice_number, invoice_date,
-                currency, subtotal, tax, total, line_items_json, confidence_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt->execute([
-            $fileId,
-            json_encode($result),
-            $result['vendor_name'],
-            $result['vendor_vat'],
-            $result['invoice_number'],
-            $result['invoice_date'],
-            $result['currency'],
-            $result['subtotal'],
-            $result['tax'],
-            $result['total'],
-            json_encode($result['lines']),
-            $result['confidence']
-        ]);
-        
-        $stmt = $DB->prepare("UPDATE receipt_file SET ocr_status = 'parsed' WHERE file_id = ?");
-        $stmt->execute([$fileId]);
-        
-        // Reload
-        header('Location: review.php?id=' . $fileId);
-        exit;
-    }
-}
-
-// Fetch company
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch user
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-// Parse lines
-$lines = json_decode($file['line_items_json'] ?? '[]', true) ?: [];
-
-// Fetch suppliers for dropdown
-$stmt = $DB->prepare("SELECT id, name FROM crm_accounts WHERE company_id = ? AND type = 'supplier' ORDER BY name");
-$stmt->execute([$companyId]);
-$suppliers = $stmt->fetchAll();
-
-// Fetch policy issues (will be displayed in step 3 if any)
-$stmt = $DB->prepare("\n    SELECT code, message, severity \n    FROM receipt_policy_log \n    WHERE company_id = ? AND file_id = ? AND override_by IS NULL\n    ORDER BY severity DESC, created_at DESC\n");
-$stmt->execute([$companyId, $fileId]);
-$policyIssues = $stmt->fetchAll();
-
-// Project boards for the "Project Workspace" picker, through the Projects API:
-// live boards of the open projects this user can see, labelled
-// "Project · Board". The board this receipt's bill already uses stays in the
-// list (and selected) even if it has since been archived or its project closed,
-// as long as the user can still open it.
-require_once __DIR__ . '/../projects/lib/autoload.php';
-$projectBoards = []; // board_id => label
-$currentBoardId = 0;
-try {
-    $projectRole = (string)($_SESSION['role'] ?? 'viewer');
-    if (!empty($file['bill_id'])) {
-        $stmt = $DB->prepare("SELECT l.project_board_id FROM ap_bill_lines l JOIN ap_bills b ON b.id = l.bill_id
-                               WHERE b.id = ? AND b.company_id = ? AND l.project_board_id IS NOT NULL ORDER BY l.sort_order, l.id LIMIT 1");
-        $stmt->execute([(int)$file['bill_id'], (int)$companyId]);
-        $currentBoardId = (int)$stmt->fetchColumn();
-    }
-    $keepProject = $currentBoardId ? ProjectLink::projectOfBoard($DB, (int)$companyId, $currentBoardId) : 0;
-    foreach (ProjectLink::pickerProjects($DB, (int)$companyId, (int)$userId, $projectRole, $keepProject ? [$keepProject] : []) as $p) {
-        foreach (ProjectLink::pickerBoards($DB, (int)$companyId, (int)$userId, $projectRole, $p['id']) as $b) {
-            $projectBoards[$b['id']] = $p['label'] . ' · ' . $b['title'];
-        }
-    }
-    if ($currentBoardId && !isset($projectBoards[$currentBoardId])
-        && ProjectLink::canSeeBoard($DB, (int)$companyId, (int)$userId, $projectRole, $currentBoardId)) {
-        $stmt = $DB->prepare("SELECT b.title, b.archived, p.name, p.project_number FROM project_boards b
-                                JOIN projects p ON p.project_id = b.project_id AND p.company_id = b.company_id
-                               WHERE b.board_id = ? AND b.company_id = ?");
-        $stmt->execute([$currentBoardId, (int)$companyId]);
-        if ($cb = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $projectBoards[$currentBoardId] = ((string)$cb['project_number'] !== '' ? $cb['project_number'] . ' · ' : '') . $cb['name'] . ' · ' . $cb['title'] . ($cb['archived'] ? ' (archived)' : '');
-        } else {
-            $currentBoardId = 0;
-        }
-    }
-} catch (Throwable $e) {
-    error_log('receipts review project boards: ' . $e->getMessage());
-}
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review Receipt – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-receipts">
-    <div class="fw-receipts__container">
-        
-        <!-- Header -->
-        <header class="fw-receipts__header">
-            <div class="fw-receipts__brand">
-                <div class="fw-receipts__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="fw-receipts__brand-text">
-                    <div class="fw-receipts__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-receipts__app-name">Receipts – Review</div>
-                </div>
-            </div>
-
-            <div class="fw-receipts__greeting">
-                Hello, <span class="fw-receipts__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-
-            <div class="fw-receipts__controls">
-                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back</a>
-
-                <a href="/" class="fw-receipts__home-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
-                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </a>
-
-                <button class="fw-receipts__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </button>
-
-                <div class="fw-receipts__menu-wrapper">
-                    <button class="fw-receipts__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                        </svg>
-                    </button>
-                    <nav class="fw-receipts__kebab-menu" id="kebabMenu" aria-hidden="true">
-                        <a href="upload.php" class="fw-receipts__kebab-item">Upload Receipt</a>
-                        <a href="settings.php" class="fw-receipts__kebab-item">Settings</a>
-                        <a href="index.php" class="fw-receipts__kebab-item">Back to Receipts</a>
-                    </nav>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <main class="fw-receipts__main">
-            <div class="fw-receipts__content fw-receipts__content--wide">
-
-            <div class="fw-receipts__page-header">
-                <h1 class="fw-receipts__page-title">Review Receipt</h1>
-                <p class="fw-receipts__page-subtitle">Verify the scanned details, resolve policy checks and post the bill</p>
-            </div>
-
-            <!-- Split View -->
-            <div class="fw-receipts__split-view">
-
-            <!-- Left: Document Viewer -->
-            <div class="fw-receipts__viewer">
-                <div class="fw-receipts__viewer-toolbar">
-                    <button class="fw-receipts__viewer-btn" id="zoomOutBtn" title="Zoom Out">−</button>
-                    <span id="zoomLevel">100%</span>
-                    <button class="fw-receipts__viewer-btn" id="zoomInBtn" title="Zoom In">+</button>
-                    <button class="fw-receipts__viewer-btn" id="rotateBtn" title="Rotate">↻</button>
-                    <a href="/<?= htmlspecialchars($file['path']) ?>" download class="fw-receipts__viewer-btn" title="Download">⬇</a>
-                </div>
-                <div class="fw-receipts__viewer-content" id="viewerContent">
-                    <?php if (strpos($file['mime'], 'image') === 0): ?>
-                        <img src="/<?= htmlspecialchars($file['path']) ?>" alt="Receipt" id="receiptImage">
-                    <?php elseif ($file['mime'] === 'application/pdf'): ?>
-                        <iframe src="/<?= htmlspecialchars($file['path']) ?>" style="width:100%; height:100%; border:none;"></iframe>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Right: Form -->
-            <div class="fw-receipts__form-panel">
-                
-                <!-- Stepper Interface -->
-                <div id="reviewStepper" class="fw-receipts__stepper">
-                    <div class="fw-receipts__stepper-nav">
-                        <div class="fw-receipts__stepper-step active" data-step="1">1. Vendor</div>
-                        <div class="fw-receipts__stepper-step" data-step="2">2. Lines</div>
-                        <div class="fw-receipts__stepper-step" data-step="3">3. Policy & Match</div>
-                        <div class="fw-receipts__stepper-step" data-step="4">4. Approve</div>
-                        <div class="fw-receipts__stepper-step" data-step="5">5. Post</div>
-                    </div>
-                    <div class="fw-receipts__stepper-content">
-                        <!-- Step 1: Vendor -->
-                        <section class="fw-step" data-step="1">
-                            <h3 class="fw-receipts__form-section-title">Vendor & Invoice Details</h3>
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Supplier <span class="fw-receipts__required">*</span></label>
-                                <select id="supplierSelect" class="fw-receipts__input" required>
-                                    <option value="">— Select Supplier —</option>
-                                    <?php foreach ($suppliers as $sup): ?>
-                                        <option value="<?= $sup['id'] ?>" <?= ($file['vendor_name'] === $sup['name']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($sup['name']) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <small class="fw-receipts__help-text">
-                                    Not found? <a href="/crm/account_new.php?type=supplier" target="_blank" class="fw-receipts__link">Create new supplier</a>
-                                </small>
-                            <!-- Compliance status will be inserted here -->
-                            <div id="supplierComplianceMsg" style="margin-top:8px;"></div>
-                            </div>
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Project Workspace<?php if ($projectBoards): ?> <span class="fw-receipts__required">*</span><?php endif; ?></label>
-                                <select id="projectSelect" class="fw-receipts__input"<?= $projectBoards ? ' required' : '' ?>>
-                                    <option value=""><?= $projectBoards ? '— Select Project · Board —' : '— No project boards you can open —' ?></option>
-                                    <?php foreach ($projectBoards as $boardId => $boardLabel): ?>
-                                        <option value="<?= (int)$boardId ?>"<?= $boardId === $currentBoardId ? ' selected' : '' ?>>
-                                            <?= htmlspecialchars($boardLabel) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Invoice Number <span class="fw-receipts__required">*</span></label>
-                                <input type="text" id="invoiceNumber" class="fw-receipts__input" value="<?= htmlspecialchars($file['invoice_number'] ?? '') ?>" required>
-                            </div>
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Invoice Date <span class="fw-receipts__required">*</span></label>
-                                <input type="date" id="invoiceDate" class="fw-receipts__input" value="<?= htmlspecialchars($file['invoice_date'] ?? date('Y-m-d')) ?>" required>
-                            </div>
-                            <div class="fw-receipts__form-row">
-                                <div class="fw-receipts__form-group">
-                                    <label class="fw-receipts__label">Currency</label>
-                                    <select id="currency" class="fw-receipts__input">
-                                        <option value="ZAR" <?= ($file['currency'] ?? 'ZAR') === 'ZAR' ? 'selected' : '' ?>>ZAR (R)</option>
-                                        <option value="USD" <?= ($file['currency'] ?? '') === 'USD' ? 'selected' : '' ?>>USD ($)</option>
-                                        <option value="EUR" <?= ($file['currency'] ?? '') === 'EUR' ? 'selected' : '' ?>>EUR (€)</option>
-                                    </select>
-                                </div>
-                                <div class="fw-receipts__form-group">
-                                    <label class="fw-receipts__label">Subtotal</label>
-                                    <input type="number" step="0.01" id="subtotal" class="fw-receipts__input" value="<?= number_format($file['subtotal'] ?? 0, 2, '.', '') ?>">
-                                </div>
-                                <div class="fw-receipts__form-group">
-                                    <label class="fw-receipts__label">Tax (VAT)</label>
-                                    <input type="number" step="0.01" id="tax" class="fw-receipts__input" value="<?= number_format($file['tax'] ?? 0, 2, '.', '') ?>">
-                                </div>
-                                <div class="fw-receipts__form-group">
-                                    <label class="fw-receipts__label">Total <span class="fw-receipts__required">*</span></label>
-                                    <input type="number" step="0.01" id="total" class="fw-receipts__input" value="<?= number_format($file['total'] ?? 0, 2, '.', '') ?>" required>
-                                </div>
-                            </div>
-                            <div class="fw-receipts__step-actions">
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--primary" id="step1Next">Next</button>
-                            </div>
-                        </section>
-
-                        <!-- Step 2: Lines -->
-                        <section class="fw-step" data-step="2" style="display:none;">
-                            <h3 class="fw-receipts__form-section-title">Line Items</h3>
-                            <div id="lineItemsContainer2">
-                                <!-- Lines will be injected via JS -->
-                            </div>
-                            <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="addLineBtn2">+ Add Line</button>
-                            <div class="fw-receipts__step-actions">
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="step2Back">Back</button>
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--primary" id="step2Next">Next</button>
-                            </div>
-                        </section>
-
-                        <!-- Step 3: Policy & Match -->
-                        <section class="fw-step" data-step="3" style="display:none;">
-                            <h3 class="fw-receipts__form-section-title">Policy & Match</h3>
-                            <div id="policyMatchContent">
-                                <?php if (!empty($policyIssues)): ?>
-                                    <div class="fw-receipts__alert fw-receipts__alert--<?= $policyIssues[0]['severity'] ?>">
-                                        <strong>⚠ Policy Issues:</strong>
-                                        <ul style="margin:8px 0 0 0; padding-left:20px;">
-                                            <?php foreach ($policyIssues as $issue): ?>
-                                                <li><?= htmlspecialchars($issue['message']) ?></li>
-                                            <?php endforeach; ?>
-                                        </ul>
-                                    </div>
-                                <?php else: ?>
-                                    <p>No policy issues detected.</p>
-                                <?php endif; ?>
-                                <div id="matchSuggestions">
-                                    <!-- Matching suggestions will be inserted via JS -->
-                                </div>
-                            </div>
-                            <div class="fw-receipts__step-actions">
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="step3Back">Back</button>
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--primary" id="step3Next">Next</button>
-                            </div>
-                        </section>
-
-                        <!-- Step 4: Approve -->
-                        <section class="fw-step" data-step="4" style="display:none;">
-                            <h3 class="fw-receipts__form-section-title">Approve Bill</h3>
-                            <div id="approveSummary">
-                                <!-- Summary will be inserted via JS -->
-                            </div>
-                            <div class="fw-receipts__step-actions">
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="step4Back">Back</button>
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--primary" id="approveBtn">Approve</button>
-                            </div>
-                        </section>
-
-                        <!-- Step 5: Post -->
-                        <section class="fw-step" data-step="5" style="display:none;">
-                            <h3 class="fw-receipts__form-section-title">Post to General Ledger</h3>
-                            <div id="postSummary">
-                                <!-- Posting summary will be inserted via JS -->
-                            </div>
-                            <div class="fw-receipts__step-actions">
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="step5Back">Back</button>
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--primary" id="postBtn">Post</button>
-                                <button type="button" class="fw-receipts__btn fw-receipts__btn--secondary" id="bankRuleBtn">Create Bank Rule</button>
-                            </div>
-                        </section>
-                    </div>
-                    <div id="formMessage" style="display:none; margin-top:16px;"></div>
-                </div>
-
-            </div>
-
-            </div><!-- /split-view -->
-            </div><!-- /content -->
-        </main>
-
-        <!-- Footer -->
-        <footer class="fw-receipts__footer">
-            <span>Receipts v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Dark</span>
-        </footer>
-
+$id = (int)($_GET['id'] ?? 0);
+$row = $id > 0 ? RcBills::row($DB, $RC_COMPANY_ID, $id) : null;
+if (!$row || !RcBills::canSee($row, $RC_ROLE, $RC_USER_ID)) {
+    http_response_code(404);
+    $page = 'inbox';
+    $navView = 'todo';
+    $pageTitle = 'Receipt not found';
+    include __DIR__ . '/partials/head.php';
+    ?>
+    <div class="fwm-empty" style="min-height:60vh">
+        <span class="fwm-empty__art"><svg class="i"><use href="#ir-seal"/></svg></span>
+        <p class="fwm-empty__eyebrow">Receipts</p>
+        <h3>That receipt is not here</h3>
+        <p>It may have been deleted, or it belongs to another company or person.</p>
+        <a class="btn btn--primary" href="/receipts/inbox.php"><svg class="i"><use href="#i-inbox"/></svg>Back to the receipts</a>
     </div>
+    <?php
+    include __DIR__ . '/partials/foot.php';
+    exit;
+}
+$r = RcBills::shapeRow($DB, $row);
+$title = (string)($row['vendor_name'] ?: $r['name']);
+if ($row['b_supplier']) {
+    $st = $DB->prepare("SELECT name FROM crm_accounts WHERE id = ? AND company_id = ?");
+    $st->execute([(int)$row['b_supplier'], $RC_COMPANY_ID]);
+    $title = (string)($st->fetchColumn() ?: $title);
+}
 
-    <script>
-        // Global variables for review stepper
-        const FILE_ID = <?= $fileId ?>;
-        // Lines parsed from OCR; will be used as starting point
-        const INITIAL_LINES = <?= json_encode($lines) ?>;
-        // Existing policy issues (if any) fetched server-side
-        const INITIAL_POLICY_ISSUES = <?= json_encode($policyIssues) ?>;
-    </script>
-    <script src="assets/receipts.js?v=<?= ASSET_VERSION ?>"></script>
-    <script src="assets/review.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+$page = 'inbox';
+$navView = in_array($r['state'], ['posted', 'paid'], true) ? 'done' : ($r['state'] === 'aside' ? 'aside' : 'todo');
+$pageTitle = $title;
+$wide = true;
+$pageScripts = ['review'];
+$pageBoot = ['id' => $id, 'aside' => RcKit::ASIDE_REASONS];
+include __DIR__ . '/partials/head.php';
+?>
+<div class="fwr-review__bar">
+    <a class="icon-btn" href="/receipts/inbox.php" id="backBtn" aria-label="Back to the receipts" data-tip="Back"><svg class="i"><use href="#i-arrow-left"/></svg></a>
+    <div class="fwr-review__title">
+        <h1 id="rvTitle"><?= $e($title) ?></h1>
+        <small id="rvMeta">Receipt #<?= (int)$id ?> · sent in <?= $e(RcKit::date(substr((string)$row['uploaded_at'], 0, 10))) ?><?= $r['uploader'] ? ' by ' . $e($r['uploader']) : '' ?></small>
+    </div>
+    <span class="fwr-pill" id="rvState" data-tone="<?= $e(RcKit::STATUS_TONE[$r['state']]) ?>"><?= $e($r['state_label']) ?></span>
+    <div class="fwr-queue" id="rvQueue" hidden>
+        <button class="icon-btn icon-btn--sm" type="button" id="prevBtn" aria-label="Previous receipt (k)" data-tip="Previous · k"><svg class="i i--sm"><use href="#i-chev-left"/></svg></button>
+        <span id="queuePos"></span>
+        <button class="icon-btn icon-btn--sm" type="button" id="nextBtn" aria-label="Next receipt (j)" data-tip="Next · j"><svg class="i i--sm"><use href="#i-chev-right"/></svg></button>
+    </div>
+    <button class="icon-btn" type="button" id="moreBtn" aria-label="More" aria-haspopup="menu" aria-expanded="false" data-tip="More" data-tip-pos="left"><svg class="i"><use href="#i-more-h"/></svg></button>
+</div>
+<div class="fwr-review" id="review">
+    <section class="fwr-viewer" id="viewer" aria-label="The slip">
+        <div class="fwr-viewer__stage" id="stage">
+            <?php if ($r['pdf']): ?>
+                <div class="fwr-viewer__doc" id="slipDoc" data-pdf="<?= $e($r['url']) ?>"><div class="fwr-loading"><span class="fwr-spin"></span>Opening the PDF…</div></div>
+            <?php else: ?>
+                <img src="<?= $e($r['url']) ?>" alt="The slip" id="slipImg" draggable="false">
+            <?php endif; ?>
+            <div class="fwr-viewer__scan" id="scan"<?= $r['state'] === 'reading' ? '' : ' hidden' ?>></div>
+        </div>
+        <div class="fwr-viewer__tools" role="toolbar" aria-label="Slip view">
+            <button class="icon-btn icon-btn--sm" type="button" data-zoom="-1" aria-label="Zoom out" data-tip="Zoom out · −"><svg class="i i--sm"><use href="#i-zoom-out"/></svg></button>
+            <span id="zoomLabel">Fit</span>
+            <button class="icon-btn icon-btn--sm" type="button" data-zoom="1" aria-label="Zoom in" data-tip="Zoom in · +"><svg class="i i--sm"><use href="#i-zoom-in"/></svg></button>
+            <button class="icon-btn icon-btn--sm" type="button" data-fit aria-label="Fit the slip" data-tip="Fit · 0"><svg class="i i--sm"><use href="#ir-fit"/></svg></button>
+            <button class="icon-btn icon-btn--sm" type="button" data-rotate aria-label="Turn the slip" data-tip="Turn · r"><svg class="i i--sm"><use href="#ir-rotate"/></svg></button>
+            <span class="fwr-sep" aria-hidden="true"></span>
+            <a class="icon-btn icon-btn--sm" href="<?= $e($r['url']) ?>" target="_blank" rel="noopener" aria-label="Open the slip in a new tab" data-tip="Open"><svg class="i i--sm"><use href="#i-external"/></svg></a>
+            <a class="icon-btn icon-btn--sm" href="<?= $e($r['url']) ?>&download=1" aria-label="Download the slip" data-tip="Download"><svg class="i i--sm"><use href="#i-download"/></svg></a>
+        </div>
+    </section>
+    <section class="fwr-form" id="form" aria-label="The bill">
+        <div class="fwr-loading" style="flex:1"><span class="fwr-spin"></span>Opening the receipt…</div>
+    </section>
+</div>
+<?php include __DIR__ . '/partials/foot.php'; ?>

@@ -9,6 +9,7 @@ Customers/{Account Name}/Quotes/Q2026-0005.pdf
 Customers/{Account Name}/Credit Notes/CN2026-0001.pdf
 Customers/{Account Name}/Documents/{compliance uploads}
 Suppliers/{Account Name}/Documents/{compliance uploads}
+Suppliers/{Account Name}/Receipts/2026-10-14 BW-204551.pdf   (slips behind posted bills)
 ```
 
 ## How it works
@@ -33,10 +34,11 @@ accounts whose names MySQL considers equal get a `"Name (id)"` suffix).
 | File | Role |
 |---|---|
 | `FlowDriveRepo.php` | Low-level fd_* writer: drive/folder/file upsert, blob dedup, version snapshots, soft delete, per-company `GET_LOCK` mutex. Never throws. |
-| `FlowDriveSync.php` | Business layer: maps a `crm_accounts` row to its folder tree, files/removes account documents and compliance docs. |
+| `FlowDriveSync.php` | Business layer: maps a `crm_accounts` row to its folder tree, files/removes account documents, compliance docs and receipts. |
 | `FlowDriveBackfill.php` | `runForCompany()` full sweep; `autoRunOnce()` self-heal (first-ever full backfill, then a daily bounded sweep of changed docs); stranded-file rescue; legacy-skeleton cleanup. |
 | `FlowDriveSso.php` | Single sign-on: `/drive/` (the home page's Drive tile) issues a one-time, state-bound token in `fd_sso_tokens` so FlowDrive opens already signed in, in the active company. |
 | `../../qi/services/DocumentPdfService.php` | Renders quote/invoice/credit-note PDFs (single recipe shared by save/send/download), writes `storage/qi/...`, updates `pdf_path`, publishes to the drive. |
+| `../../receipts/lib/RcDrive.php` | Which receipts are filed (posted/paid bills only), their name (`{bill date} {supplier's number}.{ext}`), and `receipt_file.drive_node_id` (the drive file; 0 = cannot be filed: slip missing or over 15 MB). |
 
 ## Where publishing is triggered
 
@@ -55,6 +57,14 @@ accounts whose names MySQL considers equal get a `"Name (id)"` suffix).
   `crm/ajax/compliance_doc_delete.php` soft-delete the drive copy
 - **Compliance uploads**: `crm/ajax/compliance_doc_save.php`,
   `portal/supplier/upload_compliance.php`
+- **Receipts**: `RcBills::post` files the slip as the bill is posted
+  (`FlowDriveSync::fileReceipt`, tagged `{"fw_receipt_file_id": N}`; a name
+  another receipt holds becomes `"… (receipt N)"`). Bills from Receipts are
+  only posted there, so this is the one place a receipt enters the books.
+  The full backfill files every posted receipt; after it, page loads run a
+  receipts catch-up at most hourly (`flowdrive_receipts_check`, same 2.5 s
+  budget) for slips a drive failure missed or that predate this, and after
+  filing is switched back on.
 - **Self-heal**: `home.php` and `qi/index.php` call
   `FlowDriveBackfill::autoRunOnce()` — full backfill on the first-ever load
   (flag `flowdrive_backfill_done` in `company_settings`), then at most one
@@ -79,9 +89,11 @@ Every call is **best-effort**: a drive failure is logged
 - **Payslips / payroll PDFs** are NOT published: the drive is readable by the
   whole company, while Flowwork's `download.php` restricts payroll documents
   to admin/owner/manager/bookkeeper. Publishing them would leak salary PII.
-- **Receipts** (`receipt_file`) are not yet published: an upload has no
-  supplier until it is matched to a bill (`bill_id` is NULL at upload time).
-  Future work: hook the bill-matching step and file under
-  `Suppliers/{name}/Receipts/`.
+- **Receipts that are not in the books** — slips still being reviewed, draft
+  bills and slips set aside — are not published: until a bill is posted the
+  supplier is not settled, and the drive is readable by the whole company
+  while Receipts shows members only their own slips. An admin can switch
+  filing off (Receipts → Settings → Sending in, `receipt_settings.publish_to_drive`);
+  receipts already filed stay.
 - **Files larger than 15 MB** are skipped (`FlowDriveRepo::MAX_BLOB_BYTES`)
   to stay under shared-hosting `max_allowed_packet`.

@@ -1,429 +1,138 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /receipts/settings.php — how slips are read, what a new bill starts with,
+// the checks that hold a bill back, uploads, and what Receipts has learned.
+// Admins and bookkeepers; how slips are read is an admin's choice (the AI
+// reader sends slips to OpenAI with the key from Suppliers AI).
+require_once __DIR__ . '/lib/RcBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-receipts-crm-parity');
-
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-// Determine the user's role from the database. Do not rely solely on session role as it may be unset.
-$stmtRole = $DB->prepare("SELECT role FROM users WHERE id = ? AND company_id = ? LIMIT 1");
-$stmtRole->execute([$userId, $companyId]);
-$userRole = $stmtRole->fetchColumn();
-if (!$userRole) {
-    $userRole = 'member';
-}
-
-// Only certain roles can edit settings. Align with CRM settings by allowing owners as well.
-if (!in_array($userRole, ['admin', 'bookkeeper', 'owner'])) {
-    header('Location: index.php');
+if (!$RC_CAPS['settings']) {
+    header('Location: /receipts/', true, 302);
     exit;
 }
+$S = $RC_SETTINGS;
+$engines = RcReader::engines($DB, $RC_COMPANY_ID);
+$isAdmin = $RC_ROLE === 'admin';
+$lk = RcBills::lookups($DB, $RC_COMPANY_ID, $RC_USER_ID, $RC_ROLE);
+$expense = array_values(array_filter($lk['accounts'], fn($a) => $a['type'] === 'expense'));
+$defaultId = RcBills::defaultAccount($DB, $RC_COMPANY_ID, $S);
+$defaultLabel = '';
+foreach ($lk['accounts'] as $a) if ($a['id'] === $defaultId) $defaultLabel = $a['code'] . ' · ' . $a['name'];
+$num = fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+$driveOn = FlowDriveRepo::available($DB);
+$filed = RcDrive::filed($DB, $RC_COMPANY_ID);
 
-// Fetch settings
-$stmt = $DB->prepare("SELECT * FROM receipt_settings WHERE company_id = ?");
-$stmt->execute([$companyId]);
-$settings = $stmt->fetch();
+$readers = [
+    'ai' => ['AI reader', 'Reads photos and PDFs like a person would — supplier, VAT number, lines and the likely account. Uses the OpenAI key under Suppliers AI; the slip and your expense account names are sent to OpenAI.',
+             $engines['ai'] ? '' : 'Add an OpenAI key under Suppliers AI → Settings first.'],
+    'tesseract' => ['Text recognition on this server', 'Free and private. Good with clear, flat slips and PDFs; you choose the accounts.',
+                    $engines['tesseract'] ? '' : ($engines['pdftotext'] ? 'Only PDFs with text can be read here: photos need tesseract on the server.' : 'This server has no text recognition installed — PDFs and photos are typed in.')],
+    'manual' => ['Type it in', 'Nothing is read. Slips are stored and you type the details while looking at them.', ''],
+];
 
-if (!$settings) {
-    // Create default settings
-    $stmt = $DB->prepare("
-        INSERT INTO receipt_settings (company_id) VALUES (?)
-    ");
-    $stmt->execute([$companyId]);
-    $settings = [
-        'company_id' => $companyId,
-        'require_po_over_amount' => 5000.00,
-        'require_3way_match' => 0,
-        'variance_tolerance_pct' => 5.00,
-        'line_variance_tolerance_pct' => 10.00,
-        'require_vat_number' => 1,
-        'block_expired_compliance' => 1,
-        'default_expense_account' => '5000',
-        'max_file_size_mb' => 15,
-        'ocr_provider' => 'tesseract',
-        'auto_split_lines' => 1,
-        'retention_days' => 2555
-    ];
-}
-
-// Handle form submission
-$message = '';
-$messageType = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
-    $updateStmt = $DB->prepare("
-        UPDATE receipt_settings SET
-            require_po_over_amount = ?,
-            require_3way_match = ?,
-            variance_tolerance_pct = ?,
-            line_variance_tolerance_pct = ?,
-            require_vat_number = ?,
-            block_expired_compliance = ?,
-            default_expense_account = ?,
-            max_file_size_mb = ?,
-            ocr_provider = ?,
-            auto_split_lines = ?,
-            retention_days = ?
-        WHERE company_id = ?
-    ");
-    
-    $result = $updateStmt->execute([
-        $_POST['require_po_over_amount'] ?? 5000,
-        isset($_POST['require_3way_match']) ? 1 : 0,
-        $_POST['variance_tolerance_pct'] ?? 5,
-        $_POST['line_variance_tolerance_pct'] ?? 10,
-        isset($_POST['require_vat_number']) ? 1 : 0,
-        isset($_POST['block_expired_compliance']) ? 1 : 0,
-        $_POST['default_expense_account'] ?? '5000',
-        $_POST['max_file_size_mb'] ?? 15,
-        $_POST['ocr_provider'] ?? 'tesseract',
-        isset($_POST['auto_split_lines']) ? 1 : 0,
-        $_POST['retention_days'] ?? 2555,
-        $companyId
-    ]);
-
-    if ($result) {
-        $message = 'Settings saved successfully';
-        $messageType = 'success';
-        
-        // Reload settings
-        $stmt = $DB->prepare("SELECT * FROM receipt_settings WHERE company_id = ?");
-        $stmt->execute([$companyId]);
-        $settings = $stmt->fetch();
-    } else {
-        $message = 'Error saving settings';
-        $messageType = 'error';
-    }
-}
-
-// Handle reset AI mapping
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_ai_map'])) {
-    try {
-        // Ensure company_settings entry exists; upsert resets value to empty JSON
-        $stmt = $DB->prepare("
-            INSERT INTO company_settings (company_id, setting_key, setting_value, updated_at)
-            VALUES (?, 'receipts_ai_map', '', NOW())
-            ON DUPLICATE KEY UPDATE setting_value = '', updated_at = NOW()
-        ");
-        $stmt->execute([$companyId]);
-        $message = 'AI mapping reset successfully';
-        $messageType = 'success';
-    } catch (Exception $e) {
-        $message = 'Failed to reset AI mapping';
-        $messageType = 'error';
-    }
-    // No need to reload settings as it does not affect settings table
-}
-
-// Fetch company
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch user
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
+$page = 'settings';
+$pageTitle = 'Settings';
+$pageScripts = ['settings'];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipt Settings – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <link rel="stylesheet" href="assets/receipts.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-receipts">
-    <div class="fw-receipts__container">
-        
-        <!-- Header -->
-        <header class="fw-receipts__header">
-            <div class="fw-receipts__brand">
-                <div class="fw-receipts__logo-tile">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="fw-receipts__brand-text">
-                    <div class="fw-receipts__company-name"><?= htmlspecialchars($companyName) ?></div>
-                    <div class="fw-receipts__app-name">Receipts – Settings</div>
-                </div>
-            </div>
-
-            <div class="fw-receipts__greeting">
-                Hello, <span class="fw-receipts__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-            </div>
-
-            <div class="fw-receipts__controls">
-                <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Back to Receipts</a>
-
-                <a href="/" class="fw-receipts__home-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2"/>
-                        <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </a>
-
-                <button class="fw-receipts__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                    <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <svg class="fw-receipts__theme-icon fw-receipts__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"/>
-                    </svg>
-                </button>
-
-                <div class="fw-receipts__menu-wrapper">
-                    <button class="fw-receipts__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                            <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                        </svg>
-                    </button>
-                    <nav class="fw-receipts__kebab-menu" id="kebabMenu" aria-hidden="true">
-                        <a href="upload.php" class="fw-receipts__kebab-item">Upload Receipt</a>
-                        <a href="settings.php" class="fw-receipts__kebab-item">Settings</a>
-                        <a href="index.php" class="fw-receipts__kebab-item">Back to Receipts</a>
-                    </nav>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <main class="fw-receipts__main">
-            <div class="fw-receipts__content">
-
-            <div class="fw-receipts__page-header">
-                <h1 class="fw-receipts__page-title">Receipt Settings</h1>
-                <p class="fw-receipts__page-subtitle">Configure policies, tolerances & OCR settings</p>
-            </div>
-
-            <?php if ($message): ?>
-            <div class="fw-receipts__alert fw-receipts__alert--<?= $messageType ?>">
-                <?= htmlspecialchars($message) ?>
-            </div>
-            <?php endif; ?>
-
-            <form method="POST" class="fw-receipts__settings-form">
-                <div class="fw-receipts__form">
-
-                    <!-- Policy Rules -->
-                    <div class="fw-receipts__form-section">
-                        <h3 class="fw-receipts__form-section-title">Policy Rules</h3>
-                        
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__label">Require PO over amount (ZAR)</label>
-                            <input type="number" step="0.01" name="require_po_over_amount" class="fw-receipts__input" 
-                                   value="<?= number_format($settings['require_po_over_amount'], 2, '.', '') ?>">
-                            <small class="fw-receipts__help-text">Invoices above this amount require a PO reference</small>
-                        </div>
-
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__checkbox-wrapper">
-                                <input type="checkbox" name="require_3way_match" class="fw-receipts__checkbox" 
-                                       <?= $settings['require_3way_match'] ? 'checked' : '' ?>>
-                                Require 3-way match (PO + GRN + Invoice)
-                            </label>
-                        </div>
-
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__checkbox-wrapper">
-                                <input type="checkbox" name="require_vat_number" class="fw-receipts__checkbox" 
-                                       <?= $settings['require_vat_number'] ? 'checked' : '' ?>>
-                                Require VAT number when tax > 0
-                            </label>
-                        </div>
-
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__checkbox-wrapper">
-                                <input type="checkbox" name="block_expired_compliance" class="fw-receipts__checkbox" 
-                                       <?= $settings['block_expired_compliance'] ? 'checked' : '' ?>>
-                                Block posting if supplier compliance expired
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Matching Tolerances -->
-                    <div class="fw-receipts__form-section">
-                        <h3 class="fw-receipts__form-section-title">Matching Tolerances</h3>
-                        
-                        <div class="fw-receipts__form-row">
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Header variance tolerance (%)</label>
-                                <input type="number" step="0.01" name="variance_tolerance_pct" class="fw-receipts__input" 
-                                       value="<?= number_format($settings['variance_tolerance_pct'], 2, '.', '') ?>">
-                                <small class="fw-receipts__help-text">Allow invoice total vs PO variance</small>
-                            </div>
-
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Line variance tolerance (%)</label>
-                                <input type="number" step="0.01" name="line_variance_tolerance_pct" class="fw-receipts__input" 
-                                       value="<?= number_format($settings['line_variance_tolerance_pct'], 2, '.', '') ?>">
-                                <small class="fw-receipts__help-text">Allow line-level price/qty variance</small>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- OCR Settings -->
-                    <div class="fw-receipts__form-section">
-                        <h3 class="fw-receipts__form-section-title">OCR & Processing</h3>
-                        
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__label">OCR Provider</label>
-                            <select name="ocr_provider" class="fw-receipts__input">
-                                <option value="tesseract" <?= $settings['ocr_provider'] === 'tesseract' ? 'selected' : '' ?>>Tesseract (Local)</option>
-                                <option value="google" <?= $settings['ocr_provider'] === 'google' ? 'selected' : '' ?>>Google Vision</option>
-                                <option value="aws" <?= $settings['ocr_provider'] === 'aws' ? 'selected' : '' ?>>AWS Textract</option>
-                                <option value="azure" <?= $settings['ocr_provider'] === 'azure' ? 'selected' : '' ?>>Azure Form Recognizer</option>
-                            </select>
-                        </div>
-
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__checkbox-wrapper">
-                                <input type="checkbox" name="auto_split_lines" class="fw-receipts__checkbox" 
-                                       <?= $settings['auto_split_lines'] ? 'checked' : '' ?>>
-                                Auto-split line items from OCR
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- File Settings -->
-                    <div class="fw-receipts__form-section">
-                        <h3 class="fw-receipts__form-section-title">File Management</h3>
-                        
-                        <div class="fw-receipts__form-row">
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Max file size (MB)</label>
-                                <input type="number" name="max_file_size_mb" class="fw-receipts__input" 
-                                       value="<?= (int)$settings['max_file_size_mb'] ?>">
-                            </div>
-
-                            <div class="fw-receipts__form-group">
-                                <label class="fw-receipts__label">Retention period (days)</label>
-                                <input type="number" name="retention_days" class="fw-receipts__input" 
-                                       value="<?= (int)$settings['retention_days'] ?>">
-                                <small class="fw-receipts__help-text">0 = keep forever</small>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Default Accounts -->
-                    <div class="fw-receipts__form-section">
-                        <h3 class="fw-receipts__form-section-title">Default GL Accounts</h3>
-                        
-                        <div class="fw-receipts__form-group">
-                            <label class="fw-receipts__label">Default expense account</label>
-                            <input type="text" name="default_expense_account" class="fw-receipts__input" 
-                                   value="<?= htmlspecialchars($settings['default_expense_account']) ?>" placeholder="e.g. 5000">
-                            <small class="fw-receipts__help-text">Used when no category is specified</small>
-                        </div>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="fw-receipts__form-actions">
-                        <a href="index.php" class="fw-receipts__btn fw-receipts__btn--secondary">Cancel</a>
-                        <button type="submit" name="save_settings" class="fw-receipts__btn fw-receipts__btn--primary">Save Settings</button>
-                        <!-- Utility buttons -->
-                        <button type="button" id="runOCRTest" class="fw-receipts__btn fw-receipts__btn--secondary">Run OCR Test</button>
-                        <button type="submit" name="reset_ai_map" class="fw-receipts__btn fw-receipts__btn--secondary">Reset AI Mapping</button>
-                    </div>
-
-                    <!-- Hidden file input and result container for OCR test -->
-                    <input type="file" id="ocrTestFile" accept="image/*,application/pdf" style="display:none">
-                    <pre id="ocrTestResult" class="fw-receipts__ocr-result"></pre>
-
-                </div>
-            </form>
-
-            </div>
-        </main>
-
-        <!-- Footer -->
-        <footer class="fw-receipts__footer">
-            <span>Receipts v<?= ASSET_VERSION ?></span>
-            <span id="themeIndicator">Theme: Dark</span>
-        </footer>
-
+<header class="fwr-head">
+    <div class="fwr-head__text">
+        <p class="fwr-eyebrow">Receipts <i>◆</i> Settings</p>
+        <h1>Settings</h1>
+        <p>How slips are read, what a new bill starts with, and the checks that hold a bill back before it reaches the books. Changes are saved for everyone in <?= $e($RC_COMPANY['name']) ?>.</p>
     </div>
+</header>
 
-    <script src="assets/receipts.js?v=<?= ASSET_VERSION ?>"></script>
-    <script>
-    // OCR Test handler
-    (function() {
-        const runBtn = document.getElementById('runOCRTest');
-        const fileInput = document.getElementById('ocrTestFile');
-        const resultEl = document.getElementById('ocrTestResult');
-        if (!runBtn || !fileInput) return;
-        runBtn.addEventListener('click', function() {
-            fileInput.click();
-        });
-        fileInput.addEventListener('change', function(e) {
-            const file = this.files && this.files[0];
-            if (!file) return;
-            resultEl.textContent = 'Uploading...';
-            const formData = new FormData();
-            formData.append('file', file);
-            // Upload file
-            fetch('api/upload_start.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (!data || !data.file_id) {
-                    resultEl.textContent = 'Upload failed';
-                    return;
-                }
-                const fileId = data.file_id;
-                // Trigger OCR
-                fetch('api/ocr_trigger.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_id: fileId })
-                }).then(() => {
-                    resultEl.textContent = 'Processing...';
-                    // Poll for OCR result
-                    const poll = setInterval(() => {
-                        fetch('api/ocr_poll.php?file_id=' + fileId)
-                        .then(r => r.json())
-                        .then(statusData => {
-                            if (statusData.status === 'parsed') {
-                                clearInterval(poll);
-                                // Show parsed OCR JSON
-                                resultEl.textContent = JSON.stringify(statusData.ocr, null, 2);
-                            } else if (statusData.status === 'failed') {
-                                clearInterval(poll);
-                                resultEl.textContent = 'OCR failed';
-                            }
-                        })
-                        .catch(() => {
-                            clearInterval(poll);
-                            resultEl.textContent = 'Error polling OCR';
-                        });
-                    }, 1500);
-                });
-            })
-            .catch(() => {
-                resultEl.textContent = 'Network error';
-            });
-        });
-    })();
-    </script>
-</body>
-</html>
+<form data-settings="receipts" novalidate>
+<div class="fwr-section" id="reading"><h2>Reading</h2><span class="fwr-section__rule"></span></div>
+<section class="fwr-panel">
+    <div class="fwr-panel__head"><span class="fwr-panel__icon"><svg class="i"><use href="#ir-scan"/></svg></span>
+        <div class="fwr-panel__title"><h3>How slips are read</h3><p><?= $isAdmin ? 'Nothing read is ever made up: what cannot be read is left for you to type.' : 'Only an admin can change how slips are read.' ?></p></div></div>
+    <div class="fwr-readers fwr-set fwr-set--wide"><div class="fwr-choices">
+        <?php foreach ($readers as $k => [$label, $hint, $warn]): ?>
+            <label class="fwr-choice<?= $warn && $k === 'ai' ? ' is-off' : '' ?>">
+                <input type="radio" name="ocr_provider" value="<?= $e($k) ?>"<?= $S['ocr_provider'] === $k ? ' checked' : '' ?><?= !$isAdmin || ($k === 'ai' && $warn && $S['ocr_provider'] !== 'ai') ? ' disabled' : '' ?>>
+                <span><b><?= $k === 'ai' ? '<svg class="i i--sm"><use href="#ir-ai"/></svg>' : '' ?><?= $e($label) ?><?php if ($S['ocr_provider'] === $k): ?> <span class="fwr-pill" data-tone="success">In use</span><?php endif; ?></b>
+                    <small><?= $e($hint) ?></small><?php if ($warn): ?><small class="fwr-choice__warn"><?= $e($warn) ?></small><?php endif; ?></span>
+            </label>
+        <?php endforeach; ?>
+    </div></div>
+    <div class="fwr-set" data-requires="ocr_provider=ai">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="ai_model">AI model</label><span class="fwr-set__hint">The smaller model is quick and costs little; the larger one reads difficult slips better.</span></div>
+        <div class="fwr-set__control"><select class="select" id="ai_model" name="ai_model"<?= !$isAdmin ? ' disabled' : '' ?>>
+            <?php foreach (RcKit::AI_MODELS as $k => $v): ?><option value="<?= $e($k) ?>"<?= $S['ai_model'] === $k ? ' selected' : '' ?>><?= $e($v) ?></option><?php endforeach; ?>
+        </select></div>
+    </div>
+    <label class="fwr-set fwr-set--toggle">
+        <span class="fwr-set__text"><span class="fwr-set__label">Split slips into their lines</span><span class="fwr-set__hint">When the items read add up to the total, each becomes a line of the bill. Off: one line for the whole slip.</span></span>
+        <span class="switch"><input type="checkbox" name="auto_split_lines" value="1"<?= $S['auto_split_lines'] ? ' checked' : '' ?>><span class="switch__track"></span></span>
+    </label>
+</section>
+
+<div class="fwr-section"><h2>New bills</h2><span class="fwr-section__rule"></span></div>
+<section class="fwr-panel">
+    <div class="fwr-set">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="default_expense_account">Account when nothing better is known</label>
+            <span class="fwr-set__hint">Receipts first uses what it learned from earlier bills (the supplier, the words on the line). <?= $defaultLabel ? 'Now: <b>' . $e($defaultLabel) . '</b>.' : '' ?></span></div>
+        <div class="fwr-set__control"><select class="select" id="default_expense_account" name="default_expense_account">
+            <option value="">General expenses (Finance chooses)</option>
+            <?php foreach ($expense as $a): ?><option value="<?= $e($a['code']) ?>"<?= $S['default_expense_account'] === $a['code'] ? ' selected' : '' ?>><?= $e($a['code'] . ' · ' . $a['name']) ?></option><?php endforeach; ?>
+        </select></div>
+    </div>
+    <div class="fwr-set">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="default_due_days">Payment terms</label><span class="fwr-set__hint">Days after the slip date a bill is due when the slip shows no due date and the supplier has no earlier bill. 0 leaves it empty.</span></div>
+        <div class="fwr-set__control"><div class="fwr-affix"><input class="input" id="default_due_days" name="default_due_days" type="number" min="0" max="180" step="1" value="<?= (int)$S['default_due_days'] ?>"><span>days</span></div></div>
+    </div>
+</section>
+
+<div class="fwr-section" id="checks"><h2>Checks</h2><span class="fwr-section__rule"></span></div>
+<section class="fwr-panel">
+    <label class="fwr-set fwr-set--toggle">
+        <span class="fwr-set__text"><span class="fwr-set__label">No VAT claim without a VAT number</span><span class="fwr-set__hint">SARS only allows input VAT on a tax invoice showing the supplier’s VAT number. On: such a bill is held until the number is added or the VAT is not claimed. Off: a warning.</span></span>
+        <span class="switch"><input type="checkbox" name="require_vat_number" value="1"<?= $S['require_vat_number'] ? ' checked' : '' ?>><span class="switch__track"></span></span>
+    </label>
+    <label class="fwr-set fwr-set--toggle">
+        <span class="fwr-set__text"><span class="fwr-set__label">Hold bills from suppliers missing compliance documents</span><span class="fwr-set__hint">The document types marked required in the CRM (tax clearance, COIDA, insurance…). An admin can still post one with a reason. Off: a warning.</span></span>
+        <span class="switch"><input type="checkbox" name="block_expired_compliance" value="1"<?= $S['block_expired_compliance'] ? ' checked' : '' ?>><span class="switch__track"></span></span>
+    </label>
+    <div class="fwr-set">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="require_po_over_amount">Ask for a purchase order from</label><span class="fwr-set__hint">Bills of this amount or more need the order they are for (once you use purchase orders). 0 switches it off.</span></div>
+        <div class="fwr-set__control"><div class="fwr-affix"><span>R</span><input class="input" id="require_po_over_amount" name="require_po_over_amount" inputmode="decimal" value="<?= $e($num($S['require_po_over_amount'])) ?>" pattern="[0-9 ,.]*"></div></div>
+    </div>
+    <div class="fwr-set">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="variance_tolerance_pct">Bill against its purchase order</label><span class="fwr-set__hint">Warn when a bill differs from its order by more than this.</span></div>
+        <div class="fwr-set__control"><div class="fwr-affix"><input class="input" id="variance_tolerance_pct" name="variance_tolerance_pct" type="number" min="0" max="100" step="0.5" value="<?= $e($num($S['variance_tolerance_pct'])) ?>"><span>%</span></div></div>
+    </div>
+    <div class="fwr-set">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="line_variance_tolerance_pct">Price jumps</label><span class="fwr-set__hint">Point out an item that costs this much more than the supplier’s average over the last six months.</span></div>
+        <div class="fwr-set__control"><div class="fwr-affix"><input class="input" id="line_variance_tolerance_pct" name="line_variance_tolerance_pct" type="number" min="5" max="500" step="1" value="<?= $e($num($S['line_variance_tolerance_pct'])) ?>"><span>%</span></div></div>
+    </div>
+</section>
+
+<div class="fwr-section"><h2>Sending in</h2><span class="fwr-section__rule"></span></div>
+<section class="fwr-panel">
+    <div class="fwr-set">
+        <div class="fwr-set__text"><label class="fwr-set__label" for="max_file_size_mb">Largest file</label><span class="fwr-set__hint">Photos are made smaller on the phone before they are sent, so 15 MB is plenty.</span></div>
+        <div class="fwr-set__control"><div class="fwr-affix"><input class="input" id="max_file_size_mb" name="max_file_size_mb" type="number" min="1" max="25" step="1" value="<?= (int)$S['max_file_size_mb'] ?>"><span>MB</span></div></div>
+    </div>
+    <div class="fwr-set fwr-set--wide">
+        <div class="fwr-set__text"><span class="fwr-set__label">Where slips are kept</span>
+            <span class="fwr-set__hint">In a folder the web cannot reach — a slip is only shown to people in <?= $e($RC_COMPANY['name']) ?> who may see it. When a bill is made, a copy goes on the bill in Finance as its supporting document. A slip behind a bill in the books cannot be deleted (SARS asks for five years).</span></div>
+    </div>
+    <label class="fwr-set fwr-set--toggle">
+        <span class="fwr-set__text"><span class="fwr-set__label">File posted receipts in FlowWork Drive</span>
+            <span class="fwr-set__hint">When a bill is posted, its slip goes to <b>Suppliers › <i>supplier</i> › Receipts</b> in FlowWork Drive, beside their invoices and compliance documents — dated and named by their number. Everyone in <?= $e($RC_COMPANY['name']) ?> can open the drive, so drafts and slips set aside are never filed.
+            <?= $driveOn ? ($filed ? $e(number_format($filed, 0, '.', ' ')) . ' filed so far.' : 'Older posted receipts are filed in the background once this is on.') : 'FlowWork Drive is not set up on this server.' ?>
+            <?= $isAdmin ? '' : 'Only an admin can change this.' ?></span></span>
+        <span class="switch"><input type="checkbox" name="publish_to_drive" value="1"<?= $S['publish_to_drive'] ? ' checked' : '' ?><?= !$isAdmin || !$driveOn ? ' disabled' : '' ?>><span class="switch__track"></span></span>
+    </label>
+</section>
+</form>
+
+<div class="fwr-section" id="learning"><h2>Learning</h2><span class="fwr-section__rule"></span></div>
+<section class="fwr-panel">
+    <div class="fwr-panel__head"><span class="fwr-panel__icon"><svg class="i"><use href="#ir-ai"/></svg></span>
+        <div class="fwr-panel__title"><h3>What Receipts has learned</h3><p>From every bill saved: which supplier a printed name is, the account a supplier usually goes to, and the account words point to. Forget anything that is wrong.</p></div>
+        <button class="fwr-mini fwr-mini--danger" type="button" id="forgetAll"><svg class="i"><use href="#i-trash"/></svg>Forget everything</button></div>
+    <div id="learnBody"><div class="fwr-loading"><span class="fwr-spin"></span>Loading…</div></div>
+</section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

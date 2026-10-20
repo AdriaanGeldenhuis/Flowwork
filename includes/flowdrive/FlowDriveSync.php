@@ -8,6 +8,7 @@
  *   Customers/{Account Name}/Credit Notes/CN2026-0001.pdf
  *   Customers/{Account Name}/Documents/{uploaded files}
  *   Suppliers/{Account Name}/Documents/{uploaded files}
+ *   Suppliers/{Account Name}/Receipts/2026-10-14 BW-204551.pdf   (posted bills' slips, from Receipts)
  *
  * Account folders carry meta_json {"fw_account_id": N} so they survive account
  * renames (the folder is found by id and renamed to match) and name clashes
@@ -26,6 +27,7 @@ class FlowDriveSync
     const CAT_QUOTES       = 'Quotes';
     const CAT_CREDIT_NOTES = 'Credit Notes';
     const CAT_DOCUMENTS    = 'Documents';
+    const CAT_RECEIPTS     = 'Receipts';
 
     /**
      * Publish (create or replace) a document under the account's category
@@ -121,6 +123,75 @@ class FlowDriveSync
             });
         } catch (Throwable $e) {
             error_log('FlowDriveSync::fileComplianceDoc: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Publish a receipt — the slip behind a posted supplier bill — under the
+     * supplier's Receipts folder, tagged meta_json {"fw_receipt_file_id": N}.
+     * A different receipt already filed under the same name keeps it: this
+     * one becomes "{name} (receipt N)". Any earlier copy of this receipt
+     * elsewhere (another name, or another supplier after a CRM merge) is
+     * retired first, as with compliance documents. Returns the fd_nodes id,
+     * or null when it was not published. Never throws.
+     */
+    public static function fileReceipt(
+        PDO $db,
+        int $companyId,
+        int $accountId,
+        int $receiptId,
+        string $filename,
+        string $bytes,
+        string $mime,
+        ?int $userId = null
+    ): ?int {
+        try {
+            if (!FlowDriveRepo::available($db)) {
+                return null;
+            }
+            return FlowDriveRepo::withCompanyLock($db, $companyId, function () use ($db, $companyId, $accountId, $receiptId, $filename, $bytes, $mime, $userId) {
+                $folderId = self::ensureCategoryFolder($db, $companyId, $accountId, self::CAT_RECEIPTS);
+                if ($folderId === null) {
+                    return null;
+                }
+                [$driveId] = self::driveFor($db, $companyId);
+                $name = self::sanitizeFilename($filename);
+                $dot  = strrpos($name, '.');
+                $base = $dot === false ? $name : substr($name, 0, $dot);
+                $ext  = $dot === false ? '' : strtolower(substr($name, $dot + 1));
+
+                // Is the name held by another receipt (or anything not this one)?
+                $stmt = $db->prepare(
+                    "SELECT meta_json FROM fd_nodes
+                      WHERE drive_id = ? AND parent_id = ? AND name = ? AND ext = ? AND type = 'file' AND deleted_at IS NULL
+                      LIMIT 1"
+                );
+                $stmt->execute([$driveId, $folderId, $base, $ext]);
+                $held = $stmt->fetchColumn();
+                if ($held !== false) {
+                    $meta = $held ? json_decode((string)$held, true) : null;
+                    if (!is_array($meta) || (int)($meta['fw_receipt_file_id'] ?? 0) !== $receiptId) {
+                        $name = $base . ' (receipt ' . $receiptId . ')' . ($ext !== '' ? '.' . $ext : '');
+                    }
+                }
+
+                // Retire this receipt's copies; putFile restores the one at $name.
+                $stmt = $db->prepare(
+                    "UPDATE fd_nodes SET deleted_at = NOW()
+                      WHERE drive_id = ? AND type = 'file' AND deleted_at IS NULL
+                        AND JSON_EXTRACT(meta_json, '$.fw_receipt_file_id') = ?"
+                );
+                $stmt->bindValue(1, (int)$driveId, PDO::PARAM_INT);
+                $stmt->bindValue(2, $receiptId, PDO::PARAM_INT); // a number, as stored in the JSON
+                $stmt->execute();
+
+                return FlowDriveRepo::putFile($db, $driveId, $folderId, $name, $bytes, $mime, $userId, ['fw_receipt_file_id' => $receiptId]);
+            });
+        } catch (Throwable $e) {
+            self::$lastError = 'fileReceipt: ' . $e->getMessage()
+                . ' [' . basename($e->getFile()) . ':' . $e->getLine() . ']';
+            error_log('FlowDriveSync::' . self::$lastError);
             return null;
         }
     }

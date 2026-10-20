@@ -30,7 +30,9 @@ for ($i = 1; $i <= 5; $i++) {
 $docs = (int)$DB->query("SELECT (SELECT COUNT(*) FROM invoices WHERE company_id = $C AND deleted_at IS NULL)
                               + (SELECT COUNT(*) FROM quotes WHERE company_id = $C)
                               + (SELECT COUNT(*) FROM credit_notes WHERE company_id = $C)
-                              + (SELECT COUNT(*) FROM crm_compliance_docs WHERE company_id = $C AND file_path IS NOT NULL AND file_path <> '')")->fetchColumn();
+                              + (SELECT COUNT(*) FROM crm_compliance_docs WHERE company_id = $C AND file_path IS NOT NULL AND file_path <> '')
+                              + (SELECT COUNT(*) FROM receipt_file rf JOIN ap_bills b ON b.id = rf.bill_id AND b.company_id = rf.company_id
+                                  WHERE rf.company_id = $C AND rf.drive_node_id IS NULL AND b.status IN ('posted','paid'))")->fetchColumn();
 
 // ------------------------------------------------ first backfill, in slices
 // A deadline that has already passed still publishes one document per call.

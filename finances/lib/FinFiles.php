@@ -103,6 +103,43 @@ final class FinFiles
         return ['id' => $id, 'name' => $orig, 'mime' => $mime, 'size' => $size];
     }
 
+    /**
+     * Attach a copy of a file already on the server (a slip from Receipts) to a
+     * document. The same content is attached once. @return int|null the attachment id
+     */
+    public static function attachCopy(PDO $db, int $companyId, int $userId, string $entity, int $entityId, string $path, string $name): ?int
+    {
+        if (!in_array($entity, self::ENTITIES, true) || !is_file($path)) return null;
+        self::entityState($db, $companyId, $entity, $entityId);
+        $size = (int)filesize($path);
+        $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file($path);
+        $ext = self::TYPES[$mime] ?? null;
+        if (!$ext || $size <= 0 || $size > 25 * 1024 * 1024) return null; // a slip from Receipts (checked there; up to 25 MB)
+        $sha = hash_file('sha256', $path);
+        $st = $db->prepare("SELECT id FROM fin_attachments WHERE company_id = ? AND entity = ? AND entity_id = ? AND sha256 = ? AND deleted_at IS NULL LIMIT 1");
+        $st->execute([$companyId, $entity, $entityId, $sha]);
+        if ($id = (int)$st->fetchColumn()) return $id;
+        $dir = FinSchema::storageDir();
+        if ($dir === null) return null;
+        $sub = $dir . '/' . $companyId . '/' . date('Y');
+        if (!is_dir($sub) && !@mkdir($sub, 0750, true) && !is_dir($sub)) return null;
+        $stored = bin2hex(random_bytes(16)) . '.' . $ext;
+        if (!@copy($path, $sub . '/' . $stored)) return null;
+        @chmod($sub . '/' . $stored, 0640);
+        $orig = self::cleanName($name);
+        try {
+            $db->prepare("INSERT INTO fin_attachments (company_id, entity, entity_id, stored_name, original_name, mime, size_bytes, sha256, uploaded_by, created_at)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())")
+               ->execute([$companyId, $entity, $entityId, date('Y') . '/' . $stored, $orig, $mime, $size, $sha, $userId]);
+        } catch (Throwable $e) {
+            @unlink($sub . '/' . $stored);
+            throw $e;
+        }
+        $id = (int)$db->lastInsertId();
+        Fin::audit($db, $companyId, $userId, $entity . '_attachment_added', $entity, $entityId, ['file_id' => $id, 'name' => $orig, 'sha256' => $sha, 'from' => 'receipts']);
+        return $id;
+    }
+
     /** @return array{path:string, name:string, mime:string} */
     public static function open(PDO $db, int $companyId, int $id): array
     {

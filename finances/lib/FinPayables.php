@@ -127,6 +127,7 @@ final class FinPayables
         $credits = array_map(fn($c) => ['id' => (int)$c['id'], 'number' => (string)$c['credit_number'], 'date' => $c['issue_date'], 'amount' => round((float)$c['amount'], 2)], $st->fetchAll(PDO::FETCH_ASSOC));
         require_once __DIR__ . '/FinFiles.php';
         $posted = in_array($b['status'], ['posted', 'paid'], true);
+        $viaReceipt = !$posted && self::receiptFile($db, $companyId, $id, $b['file_id'] ?? null) !== null;
         $balance = $posted ? round((float)$b['total'] - (float)$b['paid'] - (float)$b['credited'], 2) : round((float)$b['total'], 2);
         $late = $b['status'] === 'posted' && $b['due_date'] && $b['due_date'] < date('Y-m-d') && $balance > 0.005;
         return [
@@ -135,8 +136,9 @@ final class FinPayables
                        'raw_status' => (string)$b['status'], 'notes' => (string)($b['notes'] ?? ''), 'subtotal' => round((float)$b['subtotal'], 2), 'tax' => round((float)$b['tax'], 2),
                        'total' => round((float)$b['total'], 2), 'paid' => round((float)$b['paid'], 2), 'credited' => round((float)$b['credited'], 2), 'balance' => $balance,
                        'journal_id' => $b['journal_id'] ? (int)$b['journal_id'] : null, 'from_receipts' => $b['status'] === 'review' || !empty($b['ocr_id']),
-                       'receipt_url' => !empty($b['ocr_id']) || !empty($b['file_id']) ? '/receipts/' : null,
-                       'editable' => in_array($b['status'], ['draft', 'review', 'approved'], true), 'postable' => in_array($b['status'], ['draft', 'review', 'approved'], true)],
+                       'receipt_url' => !empty($b['file_id']) ? '/receipts/review.php?id=' . (int)$b['file_id'] : (!empty($b['ocr_id']) ? '/receipts/' : null),
+                       'editable' => in_array($b['status'], ['draft', 'review', 'approved'], true),
+                       'postable' => in_array($b['status'], ['draft', 'review', 'approved'], true) && !$viaReceipt, 'post_in_receipts' => $viaReceipt && !$posted],
             'lines' => $lines, 'payments' => $pays, 'credits' => $credits, 'files' => FinFiles::list($db, $companyId, 'bill', $id),
         ];
     }
@@ -252,15 +254,22 @@ final class FinPayables
         });
     }
 
-    public static function postBill(PDO $db, int $companyId, int $userId, string $role, int $id): void
+    /**
+     * Post a draft bill. A bill made from a receipt is posted from Receipts
+     * ($viaReceipts), where its checks, holds and any payment made on the spot run.
+     */
+    public static function postBill(PDO $db, int $companyId, int $userId, string $role, int $id, bool $viaReceipts = false): void
     {
         if (!Fin::canWrite($role)) throw new FinForbidden('You have read-only access to Finance.');
-        Fin::atomic($db, function () use ($db, $companyId, $userId, $id) {
-            $st = $db->prepare("SELECT status, subtotal, tax, total FROM ap_bills WHERE id = ? AND company_id = ? FOR UPDATE");
+        Fin::atomic($db, function () use ($db, $companyId, $userId, $id, $viaReceipts) {
+            $st = $db->prepare("SELECT status, subtotal, tax, total, file_id FROM ap_bills WHERE id = ? AND company_id = ? FOR UPDATE");
             $st->execute([$id, $companyId]);
             $b = $st->fetch(PDO::FETCH_ASSOC);
             if (!$b) throw new FinUserError('That bill was not found.');
             if (in_array($b['status'], ['posted', 'paid'], true)) throw new FinUserError('This bill is already in the books.', 409);
+            if (!$viaReceipts && self::receiptFile($db, $companyId, $id, $b['file_id'])) {
+                throw new FinUserError('This bill was made from a receipt — post it from the receipt in Receipts, where its checks run.', 409);
+            }
             // A bill from Receipts or the old screen may carry header totals that differ from its lines;
             // bring the header in line with what the engine posts so bill and books agree to the cent.
             $st = $db->prepare("SELECT quantity, unit_price, discount, tax_rate FROM ap_bill_lines WHERE bill_id = ?");
@@ -277,6 +286,19 @@ final class FinPayables
             }
             (new PostingService($db, $companyId, $userId))->postApBill($id);
         });
+    }
+
+    /** The receipt a bill was made from, when it is still in Receipts (null otherwise). */
+    private static function receiptFile(PDO $db, int $companyId, int $billId, $fileId): ?int
+    {
+        if (empty($fileId)) return null;
+        try {
+            $st = $db->prepare("SELECT file_id FROM receipt_file WHERE file_id = ? AND company_id = ? AND bill_id = ?");
+            $st->execute([(int)$fileId, $companyId, $billId]);
+            return ($f = $st->fetchColumn()) ? (int)$f : null;
+        } catch (PDOException $e) {
+            return null; // no Receipts tables on this install
+        }
     }
 
     public static function deleteBill(PDO $db, int $companyId, int $userId, string $role, int $id): void
