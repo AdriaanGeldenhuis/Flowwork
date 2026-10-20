@@ -37,7 +37,7 @@ function issue_fields(array $issues, string $severity): array
 }
 
 $validator = new TaxInvoiceValidator($DB, TEST_COMPANY_ID);
-$cust      = make_customer($DB);                                // vat_no 4123456789
+$cust      = make_customer($DB);                                // has a VAT number
 $custNoVat = make_customer($DB, 'No VAT Customer', ['vat_no' => '']);
 
 // --- (a) malformed company VAT number → format error -------------------------

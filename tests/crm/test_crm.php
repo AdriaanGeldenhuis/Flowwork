@@ -37,6 +37,21 @@ $DB->exec("DELETE FROM company_settings WHERE company_id = $C AND setting_key LI
 Crm::flush();
 CrmFields::flush();
 
+// Accounts are master data (tests/db/reset.php keeps them), so remove the ones this test makes or
+// every run leaves more duplicates behind for the next run's scan.
+$accountMark = (int)$DB->query("SELECT COALESCE(MAX(id), 0) FROM crm_accounts")->fetchColumn();
+register_shutdown_function(function () use ($DB, $C, $accountMark) {
+    $mine = "SELECT id FROM crm_accounts WHERE company_id = $C AND id > $accountMark";
+    try {
+        $DB->exec("DELETE FROM goods_received_notes WHERE po_id IN (SELECT id FROM purchase_orders WHERE supplier_id IN ($mine))");
+        $DB->exec("DELETE FROM purchase_orders WHERE supplier_id IN ($mine)");
+    } catch (PDOException $e) { /* purchasing not installed */ }
+    foreach (['crm_compliance_docs', 'crm_contacts', 'crm_addresses', 'crm_interactions', 'crm_tasks', 'crm_opportunities', 'crm_account_tags'] as $t) {
+        $DB->exec("DELETE FROM `$t` WHERE account_id IN ($mine)");
+    }
+    $DB->exec("DELETE FROM crm_accounts WHERE company_id = $C AND id > $accountMark");
+});
+
 // ------------------------------------------------------------------ schema
 $cols = CrmSchema::columns($DB, 'crm_opportunities');
 assert_true(isset($cols['sort_order'], $cols['contact_id'], $cols['notes']), 'deal columns provisioned');
@@ -350,7 +365,10 @@ assert_true(CrmAccounts::row($DB, $C, $twin2)['deleted_at'] !== null, 'a second 
 $e1 = CrmAccounts::save($DB, $C, $U, 'admin', ['type' => 'customer', 'name' => "Email Twin A $tag", 'email' => "same-$tag@twin.example", 'confirm_duplicate' => 1])['id'];
 $e2 = CrmAccounts::save($DB, $C, $U, 'admin', ['type' => 'customer', 'name' => "Totally Other $tag", 'email' => "same-$tag@twin.example", 'confirm_duplicate' => 1])['id'];
 CrmDedupe::scan($DB, $C, 'customer');
-assert_eq(1, count(array_filter(CrmDedupe::candidates($DB, $C), fn($c) => in_array($e1, [$c['left']['id'], $c['right']['id']], true) && in_array($e2, [$c['left']['id'], $c['right']['id']], true))), 'the same email alone is worth a look');
+// Looked up directly: candidates() lists the top 500 by score, and an email-only match scores the least that still counts.
+$pair = $DB->prepare("SELECT COUNT(*) FROM crm_merge_candidates WHERE company_id = ? AND resolved = 0 AND ((left_id = ? AND right_id = ?) OR (left_id = ? AND right_id = ?))");
+$pair->execute([$C, $e1, $e2, $e2, $e1]);
+assert_eq(1, (int)$pair->fetchColumn(), 'the same email alone is worth a look');
 
 // -------------------------------------------------------- import / export
 $csv = "Company,Email,Phone,Contact,Contact email,City,Tags,Status,Company size\n"
