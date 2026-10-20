@@ -18,7 +18,8 @@ ALTER TABLE `receipt_file`
   ADD COLUMN IF NOT EXISTS `dismissed_at` datetime DEFAULT NULL AFTER `paid_bank_account_id`,
   ADD COLUMN IF NOT EXISTS `dismissed_by` int(11) DEFAULT NULL AFTER `dismissed_at`,
   ADD COLUMN IF NOT EXISTS `dismiss_reason` varchar(255) DEFAULT NULL AFTER `dismissed_by`,
-  ADD COLUMN IF NOT EXISTS `form_json` mediumtext DEFAULT NULL AFTER `dismiss_reason`;
+  ADD COLUMN IF NOT EXISTS `form_json` mediumtext DEFAULT NULL AFTER `dismiss_reason`,
+  ADD COLUMN IF NOT EXISTS `drive_node_id` int(11) DEFAULT NULL AFTER `form_json`;
 
 ALTER TABLE `receipt_file`
   ADD INDEX IF NOT EXISTS `idx_company_sha1` (`company_id`, `sha1`),
@@ -26,7 +27,8 @@ ALTER TABLE `receipt_file`
 
 ALTER TABLE `receipt_settings`
   ADD COLUMN IF NOT EXISTS `ai_model` varchar(40) DEFAULT 'gpt-4o-mini' AFTER `ocr_provider`,
-  ADD COLUMN IF NOT EXISTS `default_due_days` smallint(5) UNSIGNED DEFAULT 30 AFTER `auto_split_lines`;
+  ADD COLUMN IF NOT EXISTS `default_due_days` smallint(5) UNSIGNED DEFAULT 30 AFTER `auto_split_lines`,
+  ADD COLUMN IF NOT EXISTS `publish_to_drive` tinyint(1) NOT NULL DEFAULT 1 AFTER `default_due_days`;
 
 -- What an admin override was given for (the supplier, the amount): a changed bill needs a new override.
 ALTER TABLE `receipt_policy_log`

@@ -195,6 +195,8 @@ assert_eq(200, http('GET', "$base/receipts/api/file.php?id=$id", $jar)['code'], 
 $setRole('bookkeeper');
 $r = $api('settings.php', ['op' => 'save', 'ocr_provider' => 'manual']);
 assert_true($r['code'] === 422 && isset($r['json']['errors']['ocr_provider']), 'only an admin chooses how slips are read');
+$r = $api('settings.php', ['op' => 'save', 'publish_to_drive' => '0']);
+assert_true($r['code'] === 422 && isset($r['json']['errors']['publish_to_drive']), 'only an admin decides what goes to FlowWork Drive');
 $r = $api('settings.php', ['op' => 'save', 'default_due_days' => '14', 'max_file_size_mb' => '99']);
 assert_true($r['code'] === 422 && isset($r['json']['errors']['max_file_size_mb']), 'values are checked');
 $r = $api('settings.php', ['op' => 'save', 'default_due_days' => '14']);

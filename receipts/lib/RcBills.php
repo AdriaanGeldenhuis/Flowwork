@@ -106,9 +106,10 @@ final class RcBills
             'pdf' => $r['mime'] === 'application/pdf', 'url' => '/receipts/api/file.php?id=' . $id, 'thumb' => !empty($r['thumb_path']) || str_starts_with((string)$r['mime'], 'image/') ? '/receipts/api/file.php?id=' . $id . '&thumb=1' : null,
             'uploaded_at' => $r['uploaded_at'], 'uploaded_by' => (int)$r['uploaded_by'], 'uploader' => RcKit::personName($db, (int)$r['uploaded_by']),
             'note' => (string)($r['note'] ?? ''), 'bill_id' => $r['b_id'] ? (int)$r['b_id'] : null, 'journal_id' => $r['b_journal'] ? (int)$r['b_journal'] : null,
-            'bill_url' => $r['b_id'] ? '/finances/#payables?bill=' . (int)$r['b_id'] : null,
+            'bill_url' => $r['b_id'] ? '/finances/#payables?id=' . (int)$r['b_id'] : null,
             'aside' => $r['dismissed_at'] ? ['at' => $r['dismissed_at'], 'by' => RcKit::personName($db, (int)$r['dismissed_by']), 'reason' => (string)$r['dismiss_reason']] : null,
             'legacy_invoice' => !empty($r['invoice_id']) && !$r['b_id'],
+            'in_drive' => (int)($r['drive_node_id'] ?? 0) > 0,
         ];
     }
 
@@ -589,7 +590,7 @@ final class RcBills
             $st->execute([$companyId, $sid, $number, $billId]);
             if ($d = $st->fetch(PDO::FETCH_ASSOC)) {
                 $add('duplicate', 'block', $sup['name'] . "'s invoice $number is already captured", 'Set this receipt aside as a duplicate if it is the same slip.',
-                     ['link' => $d['file_id'] ? ['label' => 'Open the other receipt', 'href' => '/receipts/review.php?id=' . (int)$d['file_id']] : ['label' => 'Open the bill in Finance', 'href' => '/finances/#payables?bill=' . (int)$d['id']],
+                     ['link' => $d['file_id'] ? ['label' => 'Open the other receipt', 'href' => '/receipts/review.php?id=' . (int)$d['file_id']] : ['label' => 'Open the bill in Finance', 'href' => '/finances/#payables?id=' . (int)$d['id']],
                       'fix' => RcKit::canCapture($role) ? ['op' => 'aside_duplicate', 'label' => 'Set aside as a duplicate'] : null]);
             } elseif ($issued && $calc['total'] > 0) {
                 $st = $db->prepare("SELECT vendor_invoice_number FROM ap_bills WHERE company_id = ? AND supplier_id = ? AND issue_date = ? AND ROUND(total * 100) = ? AND id <> ? AND status <> 'blocked' LIMIT 1");
@@ -826,13 +827,15 @@ final class RcBills
             return $ctx;
         });
         $costs = self::writeProjectCosts($db, $companyId, $userId, $role, $ctx['bill_id']);
-        RcKit::audit($db, $companyId, $userId, 'receipt_bill_posted', $fileId, ['bill_id' => $ctx['bill_id'], 'journal_id' => $ctx['journal_id'], 'payment_id' => $ctx['payment_id'], 'total_cents' => $ctx['total']]);
+        $drive = RcDrive::publish($db, $companyId, $fileId, $userId);   // with the supplier's papers in FlowWork Drive
+        RcKit::audit($db, $companyId, $userId, 'receipt_bill_posted', $fileId, ['bill_id' => $ctx['bill_id'], 'journal_id' => $ctx['journal_id'], 'payment_id' => $ctx['payment_id'], 'total_cents' => $ctx['total'], 'drive_node_id' => $drive]);
         $row = self::row($db, $companyId, $fileId);
         if ($row) {
             RcKit::notify($db, $companyId, (int)$row['uploaded_by'], $userId, 'receipt_posted', 'Your receipt is in the books',
                           trim(($ctx['supplier'] ?: 'A receipt') . ' · ' . RcKit::money($ctx['total'])), '/receipts/review.php?id=' . $fileId);
         }
         return ['bill_id' => $ctx['bill_id'], 'journal_id' => $ctx['journal_id'], 'payment_id' => $ctx['payment_id'], 'project_costs' => $costs, 'state' => $row['state'] ?? 'posted',
+                'drive' => $drive !== null,
                 'checks' => array_values(array_filter($ctx['checks'], fn($c) => $c['level'] !== 'block'))];
     }
 

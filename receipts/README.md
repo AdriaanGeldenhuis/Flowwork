@@ -93,6 +93,23 @@ retired: the old endpoints answer **410 Gone** (`lib/RcRetired.php`; the
 deploy never deletes files), invented readings are cleared, and slips are
 only served by `api/file.php`.
 
+## FlowWork Drive
+
+When a bill is posted, its slip is filed in FlowWork Drive with the
+supplier's other papers (`RcDrive`, through `includes/flowdrive/`):
+
+```
+Suppliers/{Supplier}/Receipts/2026-10-14 BW-204551.pdf
+```
+
+— the bill's date and the supplier's number, the slip byte for byte, once
+(`receipt_file.drive_node_id`). Only receipts in the books are filed (the
+drive is open to everyone in the company); slips still being reviewed,
+drafts and slips set aside stay in Receipts. Older posted receipts, and any
+a drive hiccup missed, are filed in the background on page loads
+(`FlowDriveBackfill`). An admin can switch it off under Settings → Sending
+in. The review page shows where a receipt is filed.
+
 ## Structure
 
 ```
@@ -119,6 +136,7 @@ receipts/
     RcLearn.php    the learning memory
     RcBills.php    load, prefill, checks, save / post through Finance, project costs, suppliers
     RcReceipts.php lists, counts, overview, set aside / restore / delete, CSV
+    RcDrive.php    posted receipts into FlowWork Drive (Suppliers/{name}/Receipts)
     RcRetired.php  410 stubs for the old endpoints
   css/receipts.css  js/receipts.js (shared helpers, window.FWR, the uploader)  partials/ (head, foot, icons)
 ```
@@ -135,7 +153,7 @@ now closed to the web too (`uploads/receipts/.htaccess`).
 | See every receipt of the company | own only | ✓ | ✓ | ✓ (read only) |
 | Make, save and post bills; set aside; add suppliers | | ✓ | ✓ | |
 | Settings | | ✓ | ✓ | |
-| Choose the reader (AI sends slips to OpenAI); override a hold | | | ✓ | |
+| Choose the reader (AI sends slips to OpenAI); filing in FlowWork Drive; override a hold | | | ✓ | |
 
 Members follow their own slips (where each one is, what the bill says) but
 see none of Finance: no bank accounts, chart, supplier spend, orders or
@@ -147,5 +165,5 @@ and (the bell and the phone) when it is set aside.
 ## Tests
 
 ```
-php tests/run.php receipts     # tests/receipts/test_receipts_parse.php, test_receipts_bills.php, test_receipts_http.php
+php tests/run.php receipts     # tests/receipts/test_receipts_parse.php, _bills, _http, _drive
 ```

@@ -18,6 +18,8 @@ $defaultId = RcBills::defaultAccount($DB, $RC_COMPANY_ID, $S);
 $defaultLabel = '';
 foreach ($lk['accounts'] as $a) if ($a['id'] === $defaultId) $defaultLabel = $a['code'] . ' · ' . $a['name'];
 $num = fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+$driveOn = FlowDriveRepo::available($DB);
+$filed = RcDrive::filed($DB, $RC_COMPANY_ID);
 
 $readers = [
     'ai' => ['AI reader', 'Reads photos and PDFs like a person would — supplier, VAT number, lines and the likely account. Uses the OpenAI key under Suppliers AI; the slip and your expense account names are sent to OpenAI.',
@@ -116,6 +118,13 @@ include __DIR__ . '/partials/head.php';
         <div class="fwr-set__text"><span class="fwr-set__label">Where slips are kept</span>
             <span class="fwr-set__hint">In a folder the web cannot reach — a slip is only shown to people in <?= $e($RC_COMPANY['name']) ?> who may see it. When a bill is made, a copy goes on the bill in Finance as its supporting document. A slip behind a bill in the books cannot be deleted (SARS asks for five years).</span></div>
     </div>
+    <label class="fwr-set fwr-set--toggle">
+        <span class="fwr-set__text"><span class="fwr-set__label">File posted receipts in FlowWork Drive</span>
+            <span class="fwr-set__hint">When a bill is posted, its slip goes to <b>Suppliers › <i>supplier</i> › Receipts</b> in FlowWork Drive, beside their invoices and compliance documents — dated and named by their number. Everyone in <?= $e($RC_COMPANY['name']) ?> can open the drive, so drafts and slips set aside are never filed.
+            <?= $driveOn ? ($filed ? $e(number_format($filed, 0, '.', ' ')) . ' filed so far.' : 'Older posted receipts are filed in the background once this is on.') : 'FlowWork Drive is not set up on this server.' ?>
+            <?= $isAdmin ? '' : 'Only an admin can change this.' ?></span></span>
+        <span class="switch"><input type="checkbox" name="publish_to_drive" value="1"<?= $S['publish_to_drive'] ? ' checked' : '' ?><?= !$isAdmin || !$driveOn ? ' disabled' : '' ?>><span class="switch__track"></span></span>
+    </label>
 </section>
 </form>
 

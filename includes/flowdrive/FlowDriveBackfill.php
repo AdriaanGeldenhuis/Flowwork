@@ -2,7 +2,8 @@
 /**
  * FlowDriveBackfill — publishes a company's EXISTING documents into FlowWork
  * Drive: renders PDFs for every invoice / quote / credit note, files stored
- * compliance uploads, and hides the legacy seeded folder skeleton.
+ * compliance uploads and the slips behind posted supplier bills (Receipts),
+ * and hides the legacy seeded folder skeleton.
  *
  * Two entry points:
  *  - runForCompany(): the full sweep, used by qi/cron/backfill_flowdrive.php
@@ -29,6 +30,11 @@ class FlowDriveBackfill
     const CURSOR_FLAG  = 'flowdrive_backfill_cursor';
     const SWEEP_FLAG   = 'flowdrive_last_sweep';
     const SWEEP_CURSOR = 'flowdrive_sweep_cursor';
+    const RECEIPTS_FLAG = 'flowdrive_receipts_check';
+    const RECEIPTS_CURSOR = 'flowdrive_receipts_cursor';
+
+    /** How often page loads look for posted receipts not yet in the drive. */
+    const RECEIPTS_INTERVAL_SECONDS = 3600;
 
     /** How often the self-healing sweep may run per company. */
     const SWEEP_INTERVAL_SECONDS = 86400; // 24h
@@ -173,6 +179,21 @@ class FlowDriveBackfill
             }
         } while (count($docs) === self::BATCH);
 
+        // Slips behind posted supplier bills → Suppliers/{Account}/Receipts
+        $rc = self::publishReceipts($db, $companyId, (int)($cursor['receipt'] ?? 0), function () use ($outOfTime, &$published): bool {
+            if ($outOfTime()) {
+                return true;
+            }
+            $published++;
+            return false;
+        }, $out);
+        $counts['ok'] += $rc['ok'];
+        $counts['fail'] += $rc['fail'];
+        $cursor['receipt'] = $rc['cursor'];
+        if (!$rc['complete']) {
+            return $pause();
+        }
+
         self::hideLegacySkeleton($db, $companyId, $out);
         self::markDone($db, $companyId);
         self::setSetting($db, $companyId, self::CURSOR_FLAG, '');
@@ -200,6 +221,10 @@ class FlowDriveBackfill
                 return 'unavailable';
             }
             if (self::isDone($db, $companyId)) {
+                // One budget per page load: receipts still being filed wait out the sweep.
+                if (self::receiptsCatchUp($db, $companyId) === 'partial') {
+                    return 'partial';
+                }
                 return self::maybeSweep($db, $companyId);
             }
             // Non-blocking lock: if another request is already backfilling,
@@ -406,6 +431,80 @@ class FlowDriveBackfill
         $counts['exhausted'] = $processed < count($candidates);
 
         return $counts;
+    }
+
+    /**
+     * File posted receipts that are not in the drive yet (Receipts' RcDrive),
+     * from file id $after on, until $stop() says the time is up. Each one is
+     * marked in receipt_file once filed, so nothing is filed twice.
+     * @return array{ok:int, fail:int, cursor:int, complete:bool}
+     */
+    public static function publishReceipts(PDO $db, int $companyId, int $after = 0, ?callable $stop = null, ?callable $out = null): array
+    {
+        $res = ['ok' => 0, 'fail' => 0, 'cursor' => $after, 'complete' => true];
+        $rcDrive = dirname(__DIR__, 2) . '/receipts/lib/RcDrive.php';
+        if (!is_file($rcDrive)) {
+            return $res;
+        }
+        require_once $rcDrive;
+        do {
+            $ids = RcDrive::pending($db, $companyId, $res['cursor'], self::BATCH);
+            foreach ($ids as $id) {
+                if ($stop !== null && $stop()) {
+                    $res['complete'] = false;
+                    return $res;
+                }
+                $node = RcDrive::publish($db, $companyId, $id);
+                $res[$node !== null ? 'ok' : 'fail']++;
+                if ($out !== null) {
+                    $out("  receipt #$id: " . ($node !== null ? 'OK' : 'FAILED (file missing, too large or drive unavailable)'));
+                }
+                $res['cursor'] = $id;
+            }
+        } while (count($ids) === self::BATCH);
+        return $res;
+    }
+
+    /**
+     * Page-load catch-up for receipts, once the first backfill is done: at
+     * most hourly, a few seconds at a time, files posted receipts the posting
+     * itself could not (the drive was down) and, after Receipts arrives on a
+     * company or filing is switched back on, the older ones. Until a pass
+     * gets through them all, the next page load carries on where it stopped
+     * (so a slip that keeps failing never holds the others up).
+     */
+    private static function receiptsCatchUp(PDO $db, int $companyId): string
+    {
+        $last = self::getSetting($db, $companyId, self::RECEIPTS_FLAG);
+        if ($last !== null && $last !== '' && (time() - strtotime($last)) < self::RECEIPTS_INTERVAL_SECONDS) {
+            return 'skipped';
+        }
+        $lockName = 'fw_flowdrive_rc_' . $companyId;
+        $stmt = $db->prepare("SELECT GET_LOCK(?, 0)");
+        $stmt->execute([$lockName]);
+        if ((int)$stmt->fetchColumn() !== 1) {
+            return 'skipped';
+        }
+        try {
+            $deadline = microtime(true) + self::PAGE_BUDGET_SECONDS;
+            $done = 0;
+            $after = (int)self::getSetting($db, $companyId, self::RECEIPTS_CURSOR);
+            $res = self::publishReceipts($db, $companyId, $after, function () use (&$done, $deadline): bool {
+                return $done++ > 0 && microtime(true) >= $deadline;
+            });
+            self::setSetting($db, $companyId, self::RECEIPTS_CURSOR, $res['complete'] ? '' : (string)$res['cursor']);
+            if ($res['complete']) {
+                self::setSetting($db, $companyId, self::RECEIPTS_FLAG, date('Y-m-d H:i:s'));
+            }
+            return $res['complete'] ? 'ran' : 'partial';
+        } finally {
+            try {
+                $rel = $db->prepare("SELECT RELEASE_LOCK(?)");
+                $rel->execute([$lockName]);
+            } catch (Throwable $e) {
+                // connection teardown releases it anyway
+            }
+        }
     }
 
     // ------------------------------------------------------------------

@@ -9,3 +9,4 @@ require_once __DIR__ . '/RcReader.php';
 require_once __DIR__ . '/RcLearn.php';
 require_once __DIR__ . '/RcBills.php';
 require_once __DIR__ . '/RcReceipts.php';
+require_once __DIR__ . '/RcDrive.php';

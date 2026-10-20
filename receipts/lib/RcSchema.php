@@ -11,14 +11,15 @@
 //   receipt_file.paid_method/_date/_bank_account_id   paid on the spot: Finance records the payment on posting
 //   receipt_file.dismissed_at/_by/dismiss_reason       set aside (not a bill)
 //   receipt_file.form_json            the review form as typed (VAT-inclusive prices, the slip's total)
-//   receipt_settings.ai_model, default_due_days
+//   receipt_file.drive_node_id        its copy in FlowWork Drive (0: cannot be filed there) — see RcDrive
+//   receipt_settings.ai_model, default_due_days, publish_to_drive
 //   receipt_policy_log.override_scope  what an admin override was given for (the supplier, the amount)
 //   receipt_ocr: one reading per receipt (older duplicate rows removed, then unique);
 //                readings the old engine made up are cleared (clearInventedReadings)
 
 final class RcSchema
 {
-    public const VERSION = '2026-10-22-2';
+    public const VERSION = '2026-10-22-3';
     private static bool $done = false;
 
     public static function ensure(PDO $db): void
@@ -44,12 +45,14 @@ final class RcSchema
                 'dismissed_by' => "ADD COLUMN `dismissed_by` int(11) DEFAULT NULL AFTER `dismissed_at`",
                 'dismiss_reason' => "ADD COLUMN `dismiss_reason` varchar(255) DEFAULT NULL AFTER `dismissed_by`",
                 'form_json' => "ADD COLUMN `form_json` mediumtext DEFAULT NULL AFTER `dismiss_reason`",
+                'drive_node_id' => "ADD COLUMN `drive_node_id` int(11) DEFAULT NULL AFTER `form_json`",
             ]);
             self::index($db, 'receipt_file', 'idx_company_sha1', '(`company_id`, `sha1`)');
             self::index($db, 'receipt_file', 'idx_bill', '(`bill_id`)');
             self::columns($db, 'receipt_settings', [
                 'ai_model' => "ADD COLUMN `ai_model` varchar(40) DEFAULT 'gpt-4o-mini' AFTER `ocr_provider`",
                 'default_due_days' => "ADD COLUMN `default_due_days` smallint(5) UNSIGNED DEFAULT 30 AFTER `auto_split_lines`",
+                'publish_to_drive' => "ADD COLUMN `publish_to_drive` tinyint(1) NOT NULL DEFAULT 1 AFTER `default_due_days`",
             ]);
             self::columns($db, 'receipt_policy_log', [
                 'override_scope' => "ADD COLUMN `override_scope` varchar(64) DEFAULT NULL AFTER `override_at`",

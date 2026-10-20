@@ -761,10 +761,11 @@
         <p class="fwr-eyebrow">${p.payment_id ? 'Posted and paid' : 'Posted'}</p>
         <h2>In the books</h2>
         <p>${esc(D.supplier ? D.supplier.name : 'The bill')} · ${esc(moneyC(totals().total))}${p.payment_id ? ' — the payment is recorded, ready to match on the bank statement.' : ' — it stays open in Payables until it is paid.'}
+          ${p.drive ? `<br>The slip is filed in FlowWork Drive under Suppliers › ${esc(D.supplier ? D.supplier.name : 'the supplier')} › Receipts.` : ''}
           ${written ? `<br>${written} project cost${written === 1 ? '' : 's'} added to the board.` : ''}${noted ? `<br>${noted} project cost${noted === 1 ? ' was' : 's were'} noted in the task’s activity (the board has no cost column you can edit).` : ''}</p>
         <div class="fwr-done__acts">
           ${D.queue.next ? `<button class="btn btn--primary btn--lg" type="button" id="nextAfter" autofocus>${icon('chev-right')}Next receipt<kbd>j</kbd></button>` : `<a class="btn btn--primary btn--lg" href="/receipts/">${icon('check')}All done — back to the overview</a>`}
-          <a class="btn" href="/finances/#payables?bill=${p.bill_id}">${icon('if-ledger')}Open in Finance</a>
+          <a class="btn" href="/finances/#payables?id=${p.bill_id}">${icon('if-ledger')}Open in Finance</a>
         </div>
       </div>${readonly(true)}</div>`;
     const nb = $('#nextAfter');
@@ -800,7 +801,8 @@
     if (r.bill_id || D.form.from === 'bill') {
       html += `<section class="fwr-block"><div class="fwr-block__head"><h2>The bill</h2>${r.bill_url && caps.all ? `<a class="fwr-mini" href="${esc(r.bill_url)}">${icon('if-ledger')}Finance</a>` : ''}</div>
         <dl class="fwr-kv"><dt>Supplier</dt><dd>${esc(D.supplier ? D.supplier.name : '—')}</dd><dt>Number</dt><dd>${esc(F.number || '—')}</dd><dt>Date</dt><dd>${esc(fmtDay(F.issued, true))}${F.due ? ' · due ' + esc(fmtDay(F.due, true)) : ''}</dd>
-          ${F.paid.method ? `<dt>Paid</dt><dd>${esc(L.paid_methods[F.paid.method] || F.paid.method)} · ${esc(fmtDay(F.paid.date, true))}</dd>` : ''}</dl>
+          ${F.paid.method ? `<dt>Paid</dt><dd>${esc(L.paid_methods[F.paid.method] || F.paid.method)} · ${esc(fmtDay(F.paid.date, true))}</dd>` : ''}
+          ${r.in_drive ? `<dt>Filed</dt><dd><a href="/drive/" target="_blank" rel="noopener">FlowWork Drive</a> · Suppliers › ${esc(D.supplier ? D.supplier.name : '—')} › Receipts</dd>` : ''}</dl>
         <table class="fwr-summary">${F.lines.map((l) => `<tr><td>${esc(l.description || 'Item')}<small>${esc(acc(l.account_id))}${+l.rate ? ' · ' + esc(l.rate) + '% VAT' : ' · no VAT'}</small></td><td>${esc(moneyC(Math.round(qtyOf(l.qty) * (toCents(l.price) || 0))))}</td></tr>`).join('')}
           <tr><td><b>Total</b> <small>${esc(moneyC(t.net))} + VAT ${esc(moneyC(t.vat))}</small></td><td><b>${esc(moneyC(t.total))}</b></td></tr></table></section>`;
     } else {

@@ -57,6 +57,11 @@ if (array_key_exists('ocr_provider', $in)) {
     elseif ($p === 'ai' && !RcReader::aiKey($DB, $RC_COMPANY_ID)) $errors['ocr_provider'] = 'Add an OpenAI key under Suppliers AI → Settings first.';
     else $out['ocr_provider'] = $p;
 }
+if (array_key_exists('publish_to_drive', $in)) {
+    // Who can see posted slips: the drive is open to everyone in the company.
+    if ($RC_ROLE !== 'admin') $errors['publish_to_drive'] = 'Only an admin can change what goes to FlowWork Drive.';
+    else $out['publish_to_drive'] = !empty($in['publish_to_drive']) && $in['publish_to_drive'] !== '0' ? 1 : 0;
+}
 if (array_key_exists('ai_model', $in)) {
     if (!isset(RcKit::AI_MODELS[(string)$in['ai_model']])) $errors['ai_model'] = 'Choose a model.';
     elseif ($RC_ROLE !== 'admin') $errors['ai_model'] = 'Only an admin can change the AI reader.';

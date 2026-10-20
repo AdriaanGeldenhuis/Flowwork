@@ -51,6 +51,7 @@ final class RcKit
         'auto_split_lines' => 1,
         'default_due_days' => 30,
         'retention_days' => 2555,
+        'publish_to_drive' => 1,
     ];
 
     // ------------------------------------------------------------------ roles
