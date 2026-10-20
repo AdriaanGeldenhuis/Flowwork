@@ -18,6 +18,7 @@
     if (r.uif) c.push('<span class="fwp-flag fwp-flag--info">UIF</span>');
     if (r.sdl) c.push('<span class="fwp-flag fwp-flag--info">SDL</span>');
     if (r.type === 'deduction') c.push(r.pre_tax ? '<span class="fwp-flag fwp-flag--ok">Before tax — lowers taxable pay</span>' : '<span class="fwp-flag fwp-flag--info">After tax</span>');
+    if (r.type === 'contribution' && r.pre_tax) c.push('<span class="fwp-flag fwp-flag--ok">Retirement — counts towards the limit</span>');
     if (r.type === 'reimbursement') c.push('<span class="fwp-flag fwp-flag--ok">Not taxed — paid back</span>');
     if (r.irregular) c.push('<span class="fwp-flag">Once-off (annual payment)</span>');
     if (r.system) c.push('<span class="fwp-flag">Built in</span>');
@@ -26,7 +27,7 @@
   function render() {
     const sug = data.suggested;
     let html = '';
-    if (sug.length) {
+    if (sug.length && FWP.boot.admin) {
       html += `<div class="fwp-banner">${icon('sparkle')}<div class="fwp-banner__body"><b>Add the usual South African items in one go:</b> ${sug.map((s) => esc(s.name)).join(', ')}. They come with their SARS source codes and sensible tax settings — change anything afterwards.</div>
         <button class="btn btn--primary btn--sm" type="button" data-defaults>${icon('plus')}Add ${sug.length === 1 ? 'it' : 'all ' + sug.length}</button></div>`;
     }
@@ -46,7 +47,7 @@
         </tbody></table></div></section>`;
     });
     app.innerHTML = html;
-    $$('tr[data-id]', app).forEach((tr) => {
+    if (FWP.boot.admin) $$('tr[data-id]', app).forEach((tr) => {
       tr.addEventListener('click', () => edit(data.rows.find((r) => r.id === +tr.dataset.id)));
       tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') tr.click(); });
     });
@@ -80,7 +81,7 @@
           ${sw('uif', R.uif, 'Counts for UIF', 'Part of the pay UIF is worked out on.')}
           ${sw('sdl', R.sdl, 'Counts for SDL', 'Part of the pay the Skills Development Levy is worked out on.')}
           ${sw('irregular', R.irregular, 'Once-off — a bonus or annual payment', 'Taxed on top of the year’s pay instead of as if it came every month, so the tax is right.')}
-          ${sw('pre_tax', R.pre_tax, 'Lowers taxable pay', 'For pension, provident fund and retirement annuity contributions (up to 27.5% of pay).')}
+          ${sw('pre_tax', R.pre_tax, 'Retirement fund contribution', 'Pension, provident fund or retirement annuity: lowers taxable pay (up to 27.5% of pay, R350 000 a year). For the company’s share, also mark it taxed — it is a fringe benefit that counts as their own contribution.')}
           ${R.system ? '' : sw('active', R.active, 'Can be used', 'Switched off items stay on old payslips but can no longer be added.')}
         </div>
         <div class="fwp-form" style="margin-top:14px">
@@ -99,7 +100,7 @@
     const form = $('form', m);
     const sync = () => {
       const k = ($('[name=type]:checked', form) || {}).value || R.type;
-      const show = { taxable: ['earning', 'benefit', 'contribution'], uif: ['earning', 'benefit'], sdl: ['earning', 'benefit'], irregular: ['earning'], pre_tax: ['deduction'] };
+      const show = { taxable: ['earning', 'benefit', 'contribution'], uif: ['earning', 'benefit', 'contribution'], sdl: ['earning', 'benefit', 'contribution'], irregular: ['earning'], pre_tax: ['deduction', 'contribution'] };
       Object.entries(show).forEach(([f, kinds]) => { const el = $(`[data-flag="${f}"]`, form); if (el) el.hidden = R.system ? true : !kinds.includes(k); });
       $$('.fwp-kind', form).forEach((l) => { const on = $('input', l).checked; l.style.borderColor = on ? 'var(--gold)' : ''; l.style.background = on ? 'var(--gold-soft)' : ''; });
       $('#glHint', form).textContent = { earning: 'The expense account it is paid from.', reimbursement: 'The expense account the cost belongs to.', deduction: 'Who it is owed to, e.g. Medical Aid Payable.', contribution: 'Who it is owed to; the cost goes to salaries & wages.', benefit: 'Benefits are not paid out, so nothing is posted.' }[k];

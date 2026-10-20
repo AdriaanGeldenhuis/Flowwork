@@ -29,7 +29,7 @@ switch (pay_op()) {
         [$id, $created, $runs] = PayEmployees::save($DB, $C, $PAY_USER_ID, $in);
         pay_json(['id' => $id, 'created' => $created, 'runs' => $runs, 'employee' => PayEmployees::get($DB, $C, $id)]);
     case 'terminate':
-        $runs = PayEmployees::terminate($DB, $C, $PAY_USER_ID, $id, trim((string)($in['termination_date'] ?? '')), (string)($in['termination_reason'] ?? ''), trim((string)($in['note'] ?? '')));
+        $runs = PayEmployees::terminate($DB, $C, $PAY_USER_ID, $id, trim(PayKit::key($in['termination_date'] ?? '')), PayKit::key($in['termination_reason'] ?? ''), trim(PayKit::key($in['note'] ?? '')));
         pay_json(['runs' => $runs, 'employee' => PayEmployees::get($DB, $C, $id)]);
     case 'reinstate':
         $runs = PayEmployees::reinstate($DB, $C, $PAY_USER_ID, $id);

@@ -4,6 +4,7 @@
 //   POST {op:'save', id?, name, code, type, taxable, uif, sdl, pre_tax, irregular, source_code, gl, active}
 //   POST {op:'remove', id}                         → {result: deleted|archived}
 //   POST {op:'defaults', codes?}                   → add the usual South African items
+// Pay items decide how everyone's pay is taxed, so changing them is for admins.
 require_once __DIR__ . '/_bootstrap.php';
 
 $C = $PAY_COMPANY_ID;
@@ -11,6 +12,7 @@ if (!pay_is_post()) {
     if ((pay_op() ?: 'list') === 'list') pay_json(PayItems::list($DB, $C) + ['accounts' => PayItems::chartCodes($DB, $C)]);
     pay_error('Unknown action');
 }
+pay_require_admin();
 $in = pay_input();
 switch (pay_op()) {
     case 'save':

@@ -38,6 +38,12 @@ final class PayKit
     ];
     public const STAGE_LABEL = ['prepare' => 'Being prepared', 'approved' => 'Approved', 'final' => 'Finalised', 'booked' => 'In the books'];
 
+    /** A request value as a lookup key: scalars as strings, anything else (arrays) as ''. */
+    public static function key($v): string
+    {
+        return is_scalar($v) ? (string)$v : '';
+    }
+
     public static function e($s): string
     {
         return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -232,6 +238,7 @@ final class PayKit
     public static function cents($v): ?int
     {
         if (is_int($v)) return $v * 100;
+        if (!is_scalar($v) && $v !== null) return null;
         $s = str_replace([' ', "\u{00a0}", 'R', 'r'], '', trim((string)$v));
         if ($s === '') return 0;
         if (preg_match('/^-?\d+,\d{1,2}$/', $s)) $s = str_replace(',', '.', $s);

@@ -29,11 +29,11 @@ final class PayEmployees
     {
         $where = ['e.company_id = ?'];
         $args = [$companyId];
-        $status = (string)($f['status'] ?? 'active');
+        $status = PayKit::key($f['status'] ?? 'active');
         if ($status === 'active') $where[] = '(e.termination_date IS NULL OR e.termination_date >= CURDATE())';
         elseif ($status === 'left') $where[] = '(e.termination_date IS NOT NULL AND e.termination_date < CURDATE())';
-        if (isset(PayKit::FREQ[$f['frequency'] ?? ''])) { $where[] = 'e.pay_frequency = ?'; $args[] = $f['frequency']; }
-        $q = trim((string)($f['q'] ?? ''));
+        if (isset(PayKit::FREQ[PayKit::key($f['frequency'] ?? '')])) { $where[] = 'e.pay_frequency = ?'; $args[] = $f['frequency']; }
+        $q = trim(PayKit::key($f['q'] ?? ''));
         if ($q !== '') {
             $like = '%' . addcslashes($q, '%_\\') . '%';
             $where[] = "(CONCAT_WS(' ', e.first_name, e.last_name) LIKE ? OR e.employee_no LIKE ? OR e.email LIKE ? OR e.job_title LIKE ?)";
@@ -121,7 +121,7 @@ final class PayEmployees
             $old = $st->fetch(PDO::FETCH_ASSOC);
             if (!$old) throw new PayProblem('That employee no longer exists.');
         }
-        $s = fn($k, $max = 190) => mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($in[$k] ?? ''))), 0, $max);
+        $s = fn($k, $max = 190) => mb_substr(trim(preg_replace('/\s+/u', ' ', PayKit::key($in[$k] ?? ''))), 0, $max);
         $errors = [];
         $v = [];
         $v['first_name'] = $s('first_name', 120);
@@ -154,8 +154,8 @@ final class PayEmployees
 
         $v['hire_date'] = $s('hire_date', 10);
         if (!self::isDate($v['hire_date'])) $errors['hire_date'] = 'Enter the date they started.';
-        $v['employment_type'] = isset(PayKit::TYPES[$in['employment_type'] ?? '']) ? $in['employment_type'] : 'permanent';
-        $v['pay_frequency'] = isset(PayKit::FREQ[$in['pay_frequency'] ?? '']) ? $in['pay_frequency'] : 'monthly';
+        $v['employment_type'] = isset(PayKit::TYPES[PayKit::key($in['employment_type'] ?? '')]) ? $in['employment_type'] : 'permanent';
+        $v['pay_frequency'] = isset(PayKit::FREQ[PayKit::key($in['pay_frequency'] ?? '')]) ? $in['pay_frequency'] : 'monthly';
 
         $basis = ($in['basis'] ?? 'salary') === 'hourly' ? 'hourly' : 'salary';
         $salary = PayKit::cents($in['monthly'] ?? '');
@@ -187,7 +187,7 @@ final class PayEmployees
         if ($acct !== '' && $branch === '' && !isset($errors['branch_code'])) $errors['branch_code'] = 'Enter the branch code too.';
         $v['branch_code'] = $branch !== '' ? $branch : null;
         $v['bank_account_no'] = $acct !== '' ? $acct : null;
-        $v['bank_account_type'] = isset(PayKit::ACCOUNT_TYPES[$in['bank_account_type'] ?? '']) ? $in['bank_account_type'] : null;
+        $v['bank_account_type'] = isset(PayKit::ACCOUNT_TYPES[PayKit::key($in['bank_account_type'] ?? '')]) ? $in['bank_account_type'] : null;
 
         $proj = (int)($in['default_project_id'] ?? 0);
         $v['default_project_id'] = null;
@@ -309,12 +309,12 @@ final class PayEmployees
             $amount = PayKit::cents($in['amount'] ?? '');
             if ($amount === null || $amount <= 0) $errors['amount'] = 'Enter the amount each pay day.';
         } else {
-            $pct = str_replace(',', '.', trim((string)($in['percent'] ?? '')));
+            $pct = str_replace(',', '.', trim(PayKit::key($in['percent'] ?? '')));
             if (!is_numeric($pct) || (float)$pct <= 0 || (float)$pct > 100) $errors['percent'] = 'Enter a percentage between 0 and 100.';
             else $rate = (int)round((float)$pct * 100);
         }
-        $from = trim((string)($in['from'] ?? ''));
-        $to = trim((string)($in['to'] ?? ''));
+        $from = trim(PayKit::key($in['from'] ?? ''));
+        $to = trim(PayKit::key($in['to'] ?? ''));
         if ($from !== '' && !self::isDate($from)) $errors['from'] = 'Enter a real date, or leave it empty.';
         if ($to !== '' && !self::isDate($to)) $errors['to'] = 'Enter a real date, or leave it empty.';
         if ($from !== '' && $to !== '' && $to < $from) $errors['to'] = 'The end date is before the start date.';

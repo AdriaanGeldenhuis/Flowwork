@@ -243,6 +243,11 @@
       const chk = await api.get('bank.php', { run: run.id, check: 1 });
       busy(btn, false);
       const go = () => { location.href = '/payroll/api/bank.php?run=' + run.id; setTimeout(load, 1500); };
+      if (chk.changed.length) {
+        const ok = await dialog({ title: 'Bank details changed after approval', danger: true, confirm: 'Download as approved',
+          body: `${esc(chk.changed.join(', '))} ${chk.changed.length === 1 ? 'has' : 'have'} different bank details now than when this run was approved. The file pays into the account <b>as approved</b>. Check the change with ${chk.changed.length === 1 ? 'them' : 'each of them'} in person before paying — changed bank details are a common fraud.${B.admin ? ' If the new account is right, reopen the run and approve it again.' : ''}` });
+        if (!ok) return;
+      }
       if (!chk.missing.length) return go();
       const ok = await dialog({ title: 'Some people have no bank details', body: `${esc(chk.missing.join(', '))} ${chk.missing.length === 1 ? 'is' : 'are'} left out of the file — pay ${chk.missing.length === 1 ? 'them' : 'them'} another way. The file pays ${chk.people} ${chk.people === 1 ? 'person' : 'people'} ${money(chk.total)}.`, confirm: chk.people ? 'Download anyway' : 'OK', cancel: chk.people ? 'Cancel' : '' });
       if (ok && chk.people) go();
@@ -387,9 +392,9 @@
   function slip(P, open) {
     const t = P.totals;
     const L = (types) => P.lines.filter((l) => types.includes(l.type));
-    const line = (l, neg) => `<li class="fwp-line${l.adjustment ? ' is-adj' : ''}">
+    const line = (l) => `<li class="fwp-line${l.adjustment ? ' is-adj' : ''}">
       <span class="fwp-line__text"><span>${esc(l.description)}</span>${Math.abs(l.qty - 1) > 0.0001 ? `<small>${+l.qty.toFixed(2)} × ${money(Math.abs(l.rate))}</small>` : ''}${l.note ? `<small>${esc(l.note)}</small>` : ''}</span>
-      <span class="fwp-line__amt">${neg ? '−' : ''}${money(Math.abs(l.amount))}</span>
+      <span class="fwp-line__amt">${money(l.amount)}</span>
       ${open && l.adjustment ? `<button class="icon-btn" type="button" data-rm-line="${l.id}" aria-label="Remove ${esc(l.description)}">${icon('x', 'i--sm')}</button>` : ''}</li>`;
     const earnings = L(['earning', 'reimbursement']);
     const nonCash = L(['benefit', 'contribution']);
@@ -401,12 +406,12 @@
     const ageTxt = pa.age === null || pa.age === undefined ? 'age unknown — primary rebate only' : `aged ${pa.age} at the end of February`;
     return `${warn.length ? `<div class="fwp-banner ${warn.some((w) => WARN[w][1] === 'danger') ? 'fwp-banner--danger' : 'fwp-banner--warn'}">${icon('alert')}<div class="fwp-banner__body">${warn.map((w) => WARN[w][0]).join(' · ')}${warn.includes('no_hours') ? ' — add the hours they worked below.' : ''}</div></div>` : ''}
       <div class="fwp-slip">
-        <div><h4>Earnings</h4><ul class="fwp-lines">${earnings.length ? earnings.map((l) => line(l, false)).join('') : '<li class="fwp-line"><span class="fwp-line__text"><span class="fwp-muted">Nothing yet</span></span></li>'}
+        <div><h4>Earnings</h4><ul class="fwp-lines">${earnings.length ? earnings.map((l) => line(l)).join('') : '<li class="fwp-line"><span class="fwp-line__text"><span class="fwp-muted">Nothing yet</span></span></li>'}
           <li class="fwp-line is-total"><span class="fwp-line__text"><span>Total earnings</span></span><span class="fwp-line__amt">${money(t.gross + t.reimb)}</span></li></ul></div>
         <div><h4>Deductions</h4><ul class="fwp-lines">
           <li class="fwp-line"><span class="fwp-line__text"><span>Income tax (PAYE)</span></span><span class="fwp-line__amt">−${money(t.paye)}</span></li>
           <li class="fwp-line"><span class="fwp-line__text"><span>UIF (1%)</span></span><span class="fwp-line__amt">−${money(t.uif_ee)}</span></li>
-          ${deds.map((l) => line(l, true)).join('')}
+          ${deds.map((l) => line(l)).join('')}
           <li class="fwp-line is-total"><span class="fwp-line__text"><span>Total deductions</span></span><span class="fwp-line__amt">−${money(t.paye + t.uif_ee + t.deductions)}</span></li></ul></div>
       </div>
       <div class="fwp-netband"><span>Net pay</span>${t.variance !== null && t.variance !== 0 ? `<small style="color:var(--gold-bright)">${t.variance > 0 ? '▲' : '▼'} ${money(Math.abs(t.variance))} on last time</small>` : ''}<b>${money(t.net)}</b></div>

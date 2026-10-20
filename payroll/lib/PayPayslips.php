@@ -27,6 +27,8 @@ final class PayPayslips
         $st->execute([$run['id'], $companyId, $employeeId]);
         $emp = $st->fetch(PDO::FETCH_ASSOC);
         if (!$emp) throw new PayProblem('They are not in this pay run.');
+        $frozen = (json_decode((string)$emp['calc_debug_json'], true) ?: [])['bank'] ?? null; // as approved
+        if (is_array($frozen)) foreach (['bank_name', 'branch_code', 'bank_account_no'] as $k) $emp[$k] = $frozen[$k] ?? $emp[$k];
         $st = $db->prepare("SELECT l.qty, l.rate_cents, l.amount_cents, l.description, pi.name AS item_name, pi.type
                               FROM pay_run_lines l LEFT JOIN payitems pi ON pi.id = l.payitem_id
                              WHERE l.run_id = ? AND l.company_id = ? AND l.employee_id = ? ORDER BY l.is_adhoc, l.id");

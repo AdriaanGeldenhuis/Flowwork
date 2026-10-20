@@ -21,7 +21,7 @@ switch (pay_op()) {
         PaySettings::saveTaxTable($DB, $C, $PAY_USER_ID, $in);
         pay_json(['tax' => PaySettings::taxTables($DB, $C)]);
     case 'tax_delete':
-        PaySettings::deleteTaxTable($DB, $C, $PAY_USER_ID, (string)($in['from'] ?? ''));
+        PaySettings::deleteTaxTable($DB, $C, $PAY_USER_ID, PayKit::key($in['from'] ?? ''));
         pay_json(['tax' => PaySettings::taxTables($DB, $C)]);
 }
 pay_error('Unknown action');

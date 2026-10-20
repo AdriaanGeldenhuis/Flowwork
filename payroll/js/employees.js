@@ -339,7 +339,7 @@
         <button class="btn btn--primary" type="button" data-add-item>${icon('plus')}Add</button>
       </div>
       <p class="hint" style="margin-top:8px">A percentage is of the basic salary for the period — handy for pension.</p>
-      ${B.hasOwnItems ? '' : `<div class="fwp-banner" style="margin:12px 0 0">${icon('i-sparkle')}<div class="fwp-banner__body"><b>No pay items yet.</b> Add the usual South African ones — bonus, commission, allowance, pension, provident fund, retirement annuity, medical aid, staff loan — with their SARS codes.</div><button class="fwp-mini" type="button" data-defaults>${icon('plus')}Add them</button></div>`}`;
+      ${B.hasOwnItems || !FWP.boot.admin ? '' : `<div class="fwp-banner" style="margin:12px 0 0">${icon('i-sparkle')}<div class="fwp-banner__body"><b>No pay items yet.</b> Add the usual South African ones — bonus, commission, allowance, pension, provident fund, retirement annuity, medical aid, staff loan — with their SARS codes.</div><button class="fwp-mini" type="button" data-defaults>${icon('plus')}Add them</button></div>`}`;
     const def = $('[data-defaults]', box);
     if (def) def.addEventListener('click', async () => {
       busy(def, true);

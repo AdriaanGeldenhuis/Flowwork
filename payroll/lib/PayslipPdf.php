@@ -220,7 +220,8 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
         if (abs($qty - 1) > 0.0001 && $qty > 0) {
             $detail = rtrim(rtrim(number_format($qty, 2, '.', ''), '0'), '.') . ' × ' . $money(abs((int)$li['rate_cents']));
         }
-        $groups[$type][] = ['name' => $label, 'detail' => $detail, 'amt' => abs((int)$li['amount_cents']) * ((int)$li['amount_cents'] < 0 && $type !== 'deduction' ? -1 : 1)];
+        // deductions are stored negative: shown as positive amounts taken off (a refund shows negative)
+        $groups[$type][] = ['name' => $label, 'detail' => $detail, 'amt' => $type === 'deduction' ? -(int)$li['amount_cents'] : (int)$li['amount_cents']];
     }
 
     $gross = (int)($emp['gross_cents'] ?? 0);
@@ -316,7 +317,7 @@ function renderPayslipPdf(array $company, array $run, array $emp, array $lines, 
     $dy = $hy + 14;
     if ($paye > 0) $put($dx, $dy, 'Income tax (PAYE)', '', $paye);
     if ($uifEmp > 0) $put($dx, $dy, 'UIF (1%)', '', $uifEmp);
-    foreach ($groups['deduction'] as $r) $put($dx, $dy, $r['name'], $r['detail'], abs($r['amt']));
+    foreach ($groups['deduction'] as $r) $put($dx, $dy, $r['name'], $r['detail'], $r['amt']);
     if (!$groups['deduction'] && $otherDed > 0) $put($dx, $dy, 'Other deductions', '', $otherDed);
     if ($paye === 0 && $uifEmp === 0 && !$groups['deduction'] && $otherDed === 0) $put($dx, $dy, 'No deductions', '', 0);
     $pdf->line($dx, $dy - 2, $dx + $cw, $dy - 2, '#cbd5e1', 0.8);

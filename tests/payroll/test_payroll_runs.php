@@ -31,12 +31,13 @@ try {
     assert_true($bad, 'a PAYE reference must be 10 digits starting with 7');
 
     // Pay items
-    $added = PayItems::addDefaults($DB, $C, $U);
-    assert_true($added >= 1, 'the usual items are added');
+    $before = $DB->query("SELECT id FROM payitems WHERE company_id = $C")->fetchAll(PDO::FETCH_COLUMN);
+    PayItems::addDefaults($DB, $C, $U);
+    assert_eq(0, PayItems::addDefaults($DB, $C, $U), 'adding the usual items twice adds nothing the second time');
     $items = [];
     foreach (PayItems::list($DB, $C)['rows'] as $r) $items[$r['code']] = $r;
     foreach (['BASIC_SALARY', 'OVERTIME', 'BONUS', 'PENSION', 'MEDICAL'] as $code) assert_true(isset($items[$code]), "item $code exists");
-    $made['items'] = array_column(array_filter($items, fn($i) => !$i['system']), 'id');
+    $made['items'] = array_values(array_diff(array_column(array_filter($items, fn($i) => !$i['system']), 'id'), $before));
 
     // People
     $base = ['employment_type' => 'permanent', 'pay_frequency' => 'monthly', 'uif_included' => 1, 'sdl_included' => 1, 'bank_name' => 'FNB', 'branch_code' => '250655', 'bank_account_no' => '62000000001'];
@@ -110,6 +111,16 @@ try {
     assert_eq(3000000 + $ot, PayRuns::person($DB, $C, $runId, $anna)['totals']['gross'], 'the bonus is gone');
     PayRuns::addAdjustment($DB, $C, $U, $runId, $anna, ['kind' => 'item', 'payitem_id' => $items['BONUS']['id'], 'amount' => '5000']);
 
+    // A once-off loan deduction (its pay item has no account of its own) and a refund of R300 over-deducted
+    $dedBefore = PayRuns::person($DB, $C, $runId, $anna)['totals']['deductions'];
+    PayRuns::addAdjustment($DB, $C, $U, $runId, $anna, ['kind' => 'item', 'payitem_id' => $items['LOAN']['id'], 'amount' => '1000']);
+    PayRuns::addAdjustment($DB, $C, $U, $runId, $anna, ['kind' => 'item', 'payitem_id' => $items['LOAN']['id'], 'amount' => '-300', 'description' => 'Loan refund']);
+    assert_eq($dedBefore + 70000, PayRuns::person($DB, $C, $runId, $anna)['totals']['deductions'], 'R1 000 loan less a R300 refund deducts R700');
+    // A commission and a correction to it
+    PayRuns::addAdjustment($DB, $C, $U, $runId, $ben, ['kind' => 'item', 'payitem_id' => $items['COMMISSION']['id'], 'amount' => '2000']);
+    PayRuns::addAdjustment($DB, $C, $U, $runId, $ben, ['kind' => 'item', 'payitem_id' => $items['COMMISSION']['id'], 'amount' => '-500', 'description' => 'Commission correction']);
+    assert_eq(1280000 + 150000, PayRuns::person($DB, $C, $runId, $ben)['totals']['gross'], 'hours + R2 000 commission − R500 correction');
+
     // Approve → frozen
     PayRuns::approve($DB, $C, $U, $runId);
     assert_eq('approved', PayRuns::row($DB, $C, $runId)['status'], 'approved');
@@ -124,6 +135,7 @@ try {
     assert_eq('calculated', PayRuns::row($DB, $C, $runId)['status'], 'sent back to preparation');
     PayRuns::approve($DB, $C, $U, $runId);
 
+
     // Finalise: payslips (no email in tests)
     $fin = PayRuns::finalise($DB, $C, $U, $runId, false);
     $peopleInRun = count(PayRuns::get($DB, $C, $runId)['people']);
@@ -136,11 +148,30 @@ try {
     $gone = false;
     try { PayRuns::delete($DB, $C, $U, $runId); } catch (PayProblem $e) { $gone = true; }
     assert_true($gone, 'a finalised run cannot be deleted');
+    $renamed = false;
+    try { PayRuns::rename($DB, $C, $U, $runId, 'Other name', ''); } catch (PayProblem $e) { $renamed = true; }
+    assert_true($renamed, 'a finalised run keeps its name');
+
+    // Reopening a finalised run resets its payslips so the corrected ones are emailed again
+    $DB->prepare("UPDATE pay_run_employees SET payslip_emailed_at = NOW() WHERE run_id = ?")->execute([$runId]);
+    PayRuns::reopen($DB, $C, $U, 'admin', $runId);
+    assert_eq(0, (int)$DB->query("SELECT COUNT(*) FROM pay_run_employees WHERE run_id = $runId AND (payslip_emailed_at IS NOT NULL OR payslip_path IS NOT NULL)")->fetchColumn(), 'emailed and stored payslips are reset');
+    assert_true(!is_file(PayPayslips::path($C, $runId, $anna)), 'the old payslip file is removed');
+    PayRuns::approve($DB, $C, $U, $runId);
+    PayRuns::finalise($DB, $C, $U, $runId, false);
+    assert_true(is_file(PayPayslips::path($C, $runId, $anna)), 'finalising again creates a new payslip');
+
+    // Bank details are frozen at approval: a change afterwards does not reach the bank file
+    PayEmployees::save($DB, $C, $U, array_merge($base, ['id' => $anna, 'first_name' => 'Anna', 'last_name' => 'Test', 'employee_no' => 'PTEST-A', 'id_number' => '8001015009087',
+        'tax_number' => '0123456789', 'hire_date' => '2024-01-15', 'basis' => 'salary', 'monthly' => '30000', 'medical_members' => 2, 'bank_account_no' => '99999999999']));
 
     // Bank file: Cara has no bank details
     $bank = PayRuns::bankRows($DB, $C, $runId);
     assert_eq($peopleInRun - 1, count($bank['rows']), 'everyone with bank details is in the bank file');
     assert_eq(['Cara New'], $bank['missing'], 'the one without bank details is named');
+    $annaRow = array_values(array_filter($bank['rows'], fn($r) => $r['employee_no'] === 'PTEST-A'))[0] ?? null;
+    assert_true(in_array('Anna Test', $bank['changed'], true), 'a bank account changed after approval is named');
+    assert_eq('62000000001', $annaRow['bank_account_no'] ?? '', 'and the file pays into the account as approved');
 
     // Post to the books
     $before = (int)$DB->query("SELECT COUNT(*) FROM journal_entries WHERE company_id = $C")->fetchColumn();
@@ -154,6 +185,9 @@ try {
     assert_eq($tot['gross'] + $tot['reimb'], (int)round($wages * 100), 'wages expense = gross pay (deductions are not netted off)');
     $dedCredit = (float)$DB->query("SELECT SUM(credit) FROM journal_lines WHERE journal_id = {$r['journal_id']} AND description LIKE '%payable%' AND description NOT IN ('PAYE Payable','UIF Payable','SDL Payable')")->fetchColumn();
     assert_eq($tot['deductions'], (int)round($dedCredit * 100), 'deductions credited to what is owed to the fund / scheme');
+    $loanTo = $DB->query("SELECT ga.account_name FROM journal_lines jl JOIN gl_accounts ga ON ga.account_code = jl.account_code AND ga.company_id = $C
+                           WHERE jl.journal_id = {$r['journal_id']} AND jl.description = 'Payroll deductions payable'")->fetchColumn();
+    assert_true($loanTo && stripos($loanTo, 'wages payable') !== false, 'a deduction without its own account goes to Salaries & Wages Payable (' . $loanTo . '), never to whatever is numbered 2210');
     $twice = false;
     try { PayRuns::post($DB, $C, $U, $runId); } catch (PayProblem $e) { $twice = true; }
     assert_true($twice, 'posting twice is refused');
@@ -175,6 +209,8 @@ try {
     assert_eq(6, count($interim['months']), 'interim covers six months');
     $annaRow = array_values(array_filter($annual['people'], fn($x) => $x['id'] === $anna))[0];
     assert_true(isset($annaRow['codes']['3605']) && $annaRow['codes']['3605'] === 500000, 'the bonus is reported under source code 3605');
+    $benRow = array_values(array_filter($annual['people'], fn($x) => $x['id'] === $ben))[0];
+    assert_eq(150000, $benRow['codes']['3606'] ?? null, 'a commission correction reduces code 3606 (R2 000 − R500)');
     $sum = PayReports::summary($DB, $C, '2026-10-01', '2026-10-31');
     assert_eq($tot['net'], $sum['totals']['net'], 'summary net pay');
 

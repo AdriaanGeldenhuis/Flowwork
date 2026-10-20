@@ -80,7 +80,7 @@ function pay_int($v): int
 function pay_require_admin(): void
 {
     global $PAY_ROLE;
-    if (!PayKit::canConfigure($PAY_ROLE)) pay_error('Only an admin can change payroll settings.', 403);
+    if (!PayKit::canConfigure($PAY_ROLE)) pay_error(str_contains($_SERVER['SCRIPT_NAME'] ?? '', 'items.php') ? 'Only an admin can change pay items.' : 'Only an admin can change payroll settings.', 403);
 }
 
 function pay_rate_limit(string $bucket, int $max, int $window): void

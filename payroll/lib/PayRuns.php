@@ -31,11 +31,11 @@ final class PayRuns
     {
         $where = ['r.company_id = ?'];
         $args = [$companyId];
-        $stage = (string)($f['stage'] ?? 'all');
+        $stage = PayKit::key($f['stage'] ?? 'all');
         if ($stage === 'open') $where[] = "r.status IN ('draft','calculated','review','approved')";
         elseif ($stage === 'final') $where[] = "r.status = 'locked'";
         elseif ($stage === 'booked') $where[] = "r.status = 'posted'";
-        if (isset(PayKit::FREQ[$f['frequency'] ?? ''])) { $where[] = 'r.frequency = ?'; $args[] = $f['frequency']; }
+        if (isset(PayKit::FREQ[PayKit::key($f['frequency'] ?? '')])) { $where[] = 'r.frequency = ?'; $args[] = $f['frequency']; }
         $st = $db->prepare("SELECT r.*, COUNT(x.id) people, COALESCE(SUM(x.gross_cents),0) gross, COALESCE(SUM(x.paye_cents),0) paye,
                                    COALESCE(SUM(x.uif_employee_cents + x.uif_employer_cents),0) uif, COALESCE(SUM(x.sdl_cents),0) sdl,
                                    COALESCE(SUM(x.net_cents),0) net, COALESCE(SUM(x.employer_cost_cents),0) cost
@@ -150,12 +150,12 @@ final class PayRuns
     /** Start a run: create it, add everyone it should pay and work them out. */
     public static function create(PDO $db, int $companyId, int $userId, array $in): array
     {
-        $freq = isset(PayKit::FREQ[$in['frequency'] ?? '']) ? $in['frequency'] : null;
-        $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 120);
-        $start = trim((string)($in['period_start'] ?? ''));
-        $end = trim((string)($in['period_end'] ?? ''));
-        $pay = trim((string)($in['pay_date'] ?? ''));
-        $notes = mb_substr(trim((string)($in['notes'] ?? '')), 0, 1000);
+        $freq = isset(PayKit::FREQ[PayKit::key($in['frequency'] ?? '')]) ? $in['frequency'] : null;
+        $name = mb_substr(trim(PayKit::key($in['name'] ?? '')), 0, 120);
+        $start = trim(PayKit::key($in['period_start'] ?? ''));
+        $end = trim(PayKit::key($in['period_end'] ?? ''));
+        $pay = trim(PayKit::key($in['pay_date'] ?? ''));
+        $notes = mb_substr(trim(PayKit::key($in['notes'] ?? '')), 0, 1000);
         $errors = [];
         if (!$freq) $errors['frequency'] = 'Choose how often this run pays.';
         if (!PayEmployees::isDate($start)) $errors['period_start'] = 'Enter the first day of the period.';
@@ -174,15 +174,19 @@ final class PayRuns
         if ($name === '') $name = $freq === 'monthly' && !$errors ? date('F Y', strtotime($start)) : 'Pay run';
         if ($errors) throw new PayInvalid($errors);
 
-        $st = $db->prepare("SELECT run_number, name FROM pay_runs WHERE company_id = ? AND frequency = ? AND period_start <= ? AND period_end >= ? LIMIT 1");
-        $st->execute([$companyId, $freq, $end, $start]);
-        if ($o = $st->fetch(PDO::FETCH_ASSOC)) {
-            throw new PayInvalid(['period_start' => 'Run ' . $o['run_number'] . ' (' . $o['name'] . ') already pays ' . strtolower(PayKit::FREQ[$freq]) . ' staff for these dates. Add bonuses or extra hours to that run instead.']);
-        }
         $table = PayEngine::table($db, $companyId, $pay); // fail early when the tax year has no table
+        PayKit::settings($db, $companyId); // the row locked below exists
 
         $db->beginTransaction();
         try {
+            // One run is started at a time per company, so two people pressing
+            // "Start" together cannot both pass the overlap check.
+            $db->prepare("SELECT id FROM payroll_settings WHERE company_id = ? FOR UPDATE")->execute([$companyId]);
+            $st = $db->prepare("SELECT run_number, name FROM pay_runs WHERE company_id = ? AND frequency = ? AND period_start <= ? AND period_end >= ? LIMIT 1");
+            $st->execute([$companyId, $freq, $end, $start]);
+            if ($o = $st->fetch(PDO::FETCH_ASSOC)) {
+                throw new PayInvalid(['period_start' => 'Run ' . $o['run_number'] . ' (' . $o['name'] . ') already pays ' . strtolower(PayKit::FREQ[$freq]) . ' staff for these dates. Add bonuses or extra hours to that run instead.']);
+            }
             $number = PayKit::nextRunNumber($db, $companyId, $pay);
             $db->prepare("INSERT INTO pay_runs (company_id, run_number, name, frequency, period_start, period_end, pay_date, anchor_ref, status, notes, created_by, created_at)
                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, NOW())")
@@ -259,10 +263,10 @@ final class PayRuns
             self::mustBeOpen($run);
             $emp = self::member($db, $companyId, $run, $employeeId);
             $settings = PayKit::settings($db, $companyId);
-            $kind = (string)($in['kind'] ?? 'item');
-            $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 255) ?: null;
+            $kind = PayKit::key($in['kind'] ?? 'item');
+            $note = mb_substr(trim(PayKit::key($in['note'] ?? '')), 0, 255) ?: null;
             $errors = [];
-            $qty = str_replace(',', '.', trim((string)($in['qty'] ?? '')));
+            $qty = str_replace(',', '.', trim(PayKit::key($in['qty'] ?? '')));
             if ($kind === 'hours' || $kind === 'overtime') {
                 if (!is_numeric($qty) || (float)$qty <= 0 || (float)$qty > 744) $errors['qty'] = 'Enter the number of hours (up to 744).';
                 if ($errors) throw new PayInvalid($errors);
@@ -274,7 +278,7 @@ final class PayRuns
                     $desc = 'Hours worked';
                 } else {
                     $item = PayEngine::systemItem($db, $companyId, PayEngine::OVERTIME);
-                    $when = in_array($in['when'] ?? '', ['weekday', 'sunday', 'holiday'], true) ? $in['when'] : 'weekday';
+                    $when = in_array(PayKit::key($in['when'] ?? ''), ['weekday', 'sunday', 'holiday'], true) ? $in['when'] : 'weekday';
                     $mult = $settings['overtime'][$when];
                     $rate = (int)round(PayEngine::hourlyRate($emp, $settings['hours_per_week']) * $mult);
                     $desc = ['weekday' => 'Overtime', 'sunday' => 'Sunday work', 'holiday' => 'Public holiday work'][$when] . ' (' . rtrim(rtrim(number_format($mult, 2, '.', ''), '0'), '.') . '×)';
@@ -286,7 +290,7 @@ final class PayRuns
                 $st->execute([(int)($in['payitem_id'] ?? 0), $companyId]);
                 $item = $st->fetch(PDO::FETCH_ASSOC);
                 if (!$item) throw new PayInvalid(['payitem_id' => 'Choose what to add.']);
-                $desc = mb_substr(trim((string)($in['description'] ?? '')), 0, 120) ?: $item['name'];
+                $desc = mb_substr(trim(PayKit::key($in['description'] ?? '')), 0, 120) ?: $item['name'];
                 $useQty = $qty !== '' && is_numeric($qty) && (float)$qty !== 1.0;
                 if ($useQty) {
                     if ((float)$qty <= 0 || (float)$qty > 10000) $errors['qty'] = 'Enter a quantity above 0.';
@@ -302,9 +306,10 @@ final class PayRuns
                     $hours = 1;
                     $rate = $amount;
                 }
+                // Deductions are stored negative; what was typed keeps its sign, so a
+                // negative deduction refunds and a negative earning takes money back.
                 $sign = $item['type'] === 'deduction' ? -1 : 1;
-                $line = [$item['id'], $desc, $hours, $sign * abs($rate), $sign * abs($amount)];
-                if ($item['type'] !== 'deduction' && $amount < 0) $line = [$item['id'], $desc, $hours, $rate, $amount]; // a correction to an earning
+                $line = [$item['id'], $desc, $hours, $sign * $rate, $sign * $amount];
             }
             $db->prepare("INSERT INTO pay_run_lines (company_id, run_id, employee_id, payitem_id, description, qty, rate_cents, amount_cents, project_id, is_adhoc, adhoc_reason)
                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
@@ -337,6 +342,7 @@ final class PayRuns
         $name = mb_substr(trim($name), 0, 120);
         if ($name === '') throw new PayInvalid(['name' => 'Give the run a name.']);
         self::atomic($db, $companyId, $runId, function (array $run) use ($db, $name, $notes) {
+            if (in_array($run['status'], ['locked', 'posted'], true)) throw new PayProblem('A finalised run keeps its name — it is on the payslips.');
             $db->prepare("UPDATE pay_runs SET name = ?, notes = ?, updated_at = NOW() WHERE id = ?")->execute([$name, mb_substr(trim($notes), 0, 1000) ?: null, $run['id']]);
         });
     }
@@ -350,6 +356,7 @@ final class PayRuns
             if ($n === 0) throw new PayProblem('There is nobody in this run yet.');
             $problems = self::blockers($db, $companyId, (int)$run['id']);
             if ($problems) throw new PayProblem(implode(' ', $problems));
+            self::freezeBankDetails($db, $companyId, (int)$run['id']);
             $db->prepare("UPDATE pay_runs SET status = 'approved', approved_by = ?, approved_at = NOW(), updated_at = NOW() WHERE id = ?")->execute([$userId, $run['id']]);
         });
         PayKit::audit($db, $companyId, $userId, 'payrun_approved', ['run' => self::label($db, $companyId, $runId)], 'pay_run', $runId);
@@ -363,6 +370,13 @@ final class PayRuns
             if ($run['status'] === 'locked' && strtolower($role) !== 'admin') throw new PayProblem('Only an admin can reopen a finalised run.');
             if (!in_array($run['status'], ['approved', 'locked'], true)) throw new PayProblem('This run is already being prepared.');
             $db->prepare("UPDATE pay_runs SET status = 'calculated', approved_by = NULL, approved_at = NULL, locked_by = NULL, locked_at = NULL, updated_at = NOW() WHERE id = ?")->execute([$run['id']]);
+            if ($run['status'] === 'locked') {
+                // The payslips were for figures that may now change: finalising again
+                // creates new ones and emails everyone, including those emailed before.
+                $db->prepare("UPDATE pay_run_employees SET payslip_path = NULL, payslip_generated_at = NULL, payslip_emailed_at = NULL, payslip_email_error = NULL
+                               WHERE run_id = ? AND company_id = ?")->execute([$run['id'], $run['company_id']]);
+                foreach (glob(dirname(PayPayslips::path((int)$run['company_id'], (int)$run['id'], 0)) . '/payslip_*.pdf') ?: [] as $f) @unlink($f);
+            }
             return $run['status'];
         });
         PayKit::audit($db, $companyId, $userId, 'payrun_reopened', ['run' => self::label($db, $companyId, $runId), 'was' => PayKit::STAGE_LABEL[PayKit::stage($from)]], 'pay_run', $runId);
@@ -429,17 +443,41 @@ final class PayRuns
     {
         $run = self::row($db, $companyId, $runId);
         if (!in_array($run['status'], ['locked', 'posted'], true)) throw new PayProblem('Finalise the run first — the bank file pays the final figures.');
-        $st = $db->prepare("SELECT e.employee_no, e.first_name, e.last_name, e.bank_name, e.branch_code, e.bank_account_no, e.bank_account_type, x.bank_amount_cents
+        $st = $db->prepare("SELECT e.employee_no, e.first_name, e.last_name, e.bank_name, e.branch_code, e.bank_account_no, e.bank_account_type, x.bank_amount_cents, x.calc_debug_json
                               FROM pay_run_employees x JOIN employees e ON e.id = x.employee_id AND e.company_id = x.company_id
                              WHERE x.run_id = ? AND x.company_id = ? AND x.bank_amount_cents > 0 ORDER BY e.first_name, e.last_name");
         $st->execute([$runId, $companyId]);
         $ok = [];
         $missing = [];
+        $changed = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            if (trim((string)$r['bank_account_no']) === '' || trim((string)$r['branch_code']) === '') $missing[] = trim($r['first_name'] . ' ' . $r['last_name']);
+            $name = trim($r['first_name'] . ' ' . $r['last_name']);
+            // Pay into the account as it was when the run was approved.
+            $frozen = (json_decode((string)$r['calc_debug_json'], true) ?: [])['bank'] ?? null;
+            if (is_array($frozen)) {
+                $now = [(string)$r['bank_name'], (string)$r['branch_code'], (string)$r['bank_account_no'], (string)$r['bank_account_type']];
+                if ($now !== [(string)$frozen['bank_name'], (string)$frozen['branch_code'], (string)$frozen['bank_account_no'], (string)$frozen['bank_account_type']]) $changed[] = $name;
+                foreach (['bank_name', 'branch_code', 'bank_account_no', 'bank_account_type'] as $k) $r[$k] = $frozen[$k];
+            }
+            unset($r['calc_debug_json']);
+            if (trim((string)$r['bank_account_no']) === '' || trim((string)$r['branch_code']) === '') $missing[] = $name;
             else $ok[] = $r;
         }
-        return ['run' => $run, 'rows' => $ok, 'missing' => $missing];
+        return ['run' => $run, 'rows' => $ok, 'missing' => $missing, 'changed' => $changed];
+    }
+
+    /** Keep each person's bank details as they are at approval; the bank file pays into these. */
+    private static function freezeBankDetails(PDO $db, int $companyId, int $runId): void
+    {
+        $st = $db->prepare("SELECT x.id, x.calc_debug_json, e.bank_name, e.branch_code, e.bank_account_no, e.bank_account_type
+                              FROM pay_run_employees x JOIN employees e ON e.id = x.employee_id AND e.company_id = x.company_id WHERE x.run_id = ? AND x.company_id = ?");
+        $st->execute([$runId, $companyId]);
+        $upd = $db->prepare("UPDATE pay_run_employees SET calc_debug_json = ? WHERE id = ?");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $d = json_decode((string)$r['calc_debug_json'], true) ?: [];
+            $d['bank'] = ['bank_name' => $r['bank_name'], 'branch_code' => $r['branch_code'], 'bank_account_no' => $r['bank_account_no'], 'bank_account_type' => $r['bank_account_type']];
+            $upd->execute([json_encode($d, JSON_UNESCAPED_UNICODE), $r['id']]);
+        }
     }
 
     // -------------------------------------------------- keeping runs current

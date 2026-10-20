@@ -86,6 +86,10 @@ assert_eq(422, $r['code'], 'bad values are a 422');
 assert_true(isset($r['json']['errors']['first_name'], $r['json']['errors']['hire_date'], $r['json']['errors']['monthly']), 'with a message for each field');
 $r = $post('runs.php', ['op' => 'hack']);
 assert_eq(400, $r['code'], 'unknown actions are refused');
+$r = $post('runs.php', ['op' => 'create', 'frequency' => ['monthly'], 'period_start' => ['x'], 'pay_date' => '2026-01-01']);
+assert_eq(422, $r['code'], 'lists where a value belongs are refused, not a server error');
+$r = http('GET', "$base/payroll/api/employees.php?op=list&frequency[]=monthly&q[]=x", $jar);
+assert_eq(200, $r['code'], 'odd query strings are ignored, not a server error');
 
 // Reports: JSON and a spreadsheet
 $r = http('GET', "$base/payroll/api/reports.php?op=emp201&month=" . date('Y-m'), $jar);
@@ -101,6 +105,8 @@ $r = http('GET', "$base/payroll/api/employees.php?op=list", $jar);
 assert_true($r['json']['ok'] ?? false, 'a bookkeeper uses Payroll');
 $r = $post('settings.php', ['op' => 'save', 'hours_per_week' => '40']);
 assert_eq(403, $r['code'], 'but cannot change payroll settings');
+$r = $post('items.php', ['op' => 'save', 'name' => 'Sneaky', 'type' => 'earning', 'taxable' => 0]);
+assert_eq(403, $r['code'], 'nor pay items, which decide how pay is taxed');
 $r = http('GET', "$base/payroll/settings.php", $jar);
 assert_true(str_contains($r['body'], 'Only an admin can change these'), 'and the settings page says so');
 

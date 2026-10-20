@@ -88,14 +88,14 @@ final class PayReports
                              WHERE r.company_id = ? AND " . self::FINAL . " AND r.pay_date BETWEEN ? AND ? GROUP BY e.id ORDER BY e.last_name, e.first_name");
         $st->execute([$companyId, $from, $to]);
         $people = $st->fetchAll(PDO::FETCH_ASSOC);
-        $st = $db->prepare("SELECT l.employee_id, COALESCE(NULLIF(pi.paye_code,''), CASE pi.type WHEN 'earning' THEN '3601' WHEN 'benefit' THEN '3801' ELSE '' END) code, SUM(ABS(l.amount_cents)) amt
+        $st = $db->prepare("SELECT l.employee_id, COALESCE(NULLIF(pi.paye_code,''), CASE pi.type WHEN 'earning' THEN '3601' WHEN 'benefit' THEN '3801' ELSE '' END) code, SUM(CASE WHEN pi.type = 'deduction' THEN -l.amount_cents ELSE l.amount_cents END) amt
                               FROM pay_run_lines l JOIN pay_runs r ON r.id = l.run_id AND r.company_id = l.company_id JOIN payitems pi ON pi.id = l.payitem_id
                              WHERE r.company_id = ? AND " . self::FINAL . " AND r.pay_date BETWEEN ? AND ? GROUP BY l.employee_id, code");
         $st->execute([$companyId, $from, $to]);
         $codes = [];
         $byEmp = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            if ($r['code'] === '') continue;
+            if ($r['code'] === '' || (int)$r['amt'] === 0) continue;
             $codes[$r['code']] = true;
             $byEmp[(int)$r['employee_id']][$r['code']] = (int)$r['amt'];
         }

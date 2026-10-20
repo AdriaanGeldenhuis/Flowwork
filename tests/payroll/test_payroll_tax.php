@@ -151,6 +151,27 @@ $r = PayEngine::calculate($emp, $run, ['sdl_liable' => true], $y27, $items, $bas
 assert_true(in_array('negative_net', $r['debug']['warnings'], true), 'negative net pay is flagged');
 assert_eq(0, $r['bank_amount_cents'], 'nothing is paid into the bank when net is negative');
 
+// Corrections keep their sign: taking back a reimbursement lowers net pay, refunding a deduction raises it
+$base = PayEngine::calculate($emp, $run, ['sdl_liable' => true], $y27, $items, $basic, [], []);
+$r = PayEngine::calculate($emp, $run, ['sdl_liable' => true], $y27, $items, $basic, [], [
+    ['payitem_id' => 4, 'description' => 'Petrol taken back', 'qty' => 1, 'rate_cents' => -50000, 'amount_cents' => -50000]]);
+assert_eq($base['net_cents'] - 50000, $r['net_cents'], 'a negative reimbursement takes R500 back');
+$r = PayEngine::calculate($emp, $run, ['sdl_liable' => true], $y27, $items, $basic, [], [
+    ['payitem_id' => 6, 'description' => 'Loan', 'qty' => 1, 'rate_cents' => -100000, 'amount_cents' => -100000],
+    ['payitem_id' => 6, 'description' => 'Loan over-deducted last month', 'qty' => 1, 'rate_cents' => 30000, 'amount_cents' => 30000]]);
+assert_eq(70000, $r['other_deductions_cents'], 'a positive deduction line refunds: R1 000 − R300');
+assert_eq($base['net_cents'] - 70000, $r['net_cents'], 'net pay follows');
+
+// The company's pension contribution: a taxable fringe benefit that also counts as their own contribution
+$items[7] = ['id' => 7, 'name' => 'Pension (company share)', 'type' => 'contribution', 'taxable' => 1, 'uif_subject' => 0, 'sdl_subject' => 1, 'pre_tax' => 1, 'irregular' => 0];
+$r = PayEngine::calculate($emp, $run, ['sdl_liable' => true], $y27, $items, $basic, [], [
+    ['payitem_id' => 7, 'description' => 'Pension (company share)', 'qty' => 1, 'rate_cents' => 300000, 'amount_cents' => 300000]]);
+assert_eq(468100, $r['paye_cents'], 'taxed as a benefit and deducted as a contribution: PAYE stays R4 681.00');
+assert_eq(300000, $r['debug']['retirement']['deductible'], 'the R3 000 counts towards the retirement limit');
+assert_eq((int)round(3300000 / 100), $r['sdl_cents'], 'SDL includes the taxable contribution');
+assert_eq($base['net_cents'], $r['net_cents'], 'net pay is unchanged — the company pays it on top');
+assert_eq($base['employer_cost_cents'] + 300000 + 3000, $r['employer_cost_cents'], 'cost to company includes it (and its SDL)');
+
 // Overtime rate from salary: R30 000 ÷ (45 × 52 ÷ 12) = R153.85 an hour
 assert_eq(15385, PayEngine::hourlyRate($emp, 45), 'hourly rate from a monthly salary');
 

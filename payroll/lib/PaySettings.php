@@ -66,12 +66,12 @@ final class PaySettings
         $set = [];
         $words = [];
         $num = function (string $k, float $min, float $max, string $msg) use ($in, &$errors) {
-            $v = str_replace(',', '.', trim((string)($in[$k] ?? '')));
+            $v = str_replace(',', '.', trim(PayKit::key($in[$k] ?? '')));
             if (!is_numeric($v) || (float)$v < $min || (float)$v > $max) { $errors[$k] = $msg; return null; }
             return (float)$v;
         };
         if (array_key_exists('default_frequency', $in)) {
-            if (!isset(PayKit::FREQ[$in['default_frequency']])) $errors['default_frequency'] = 'Choose a pay frequency.';
+            if (!isset(PayKit::FREQ[PayKit::key($in['default_frequency'])])) $errors['default_frequency'] = 'Choose a pay frequency.';
             else $set['default_frequency'] = $in['default_frequency'];
         }
         if (array_key_exists('monthly_anchor_day', $in) && ($v = $num('monthly_anchor_day', 1, 31, 'A day from 1 to 31.')) !== null) $set['monthly_anchor_day'] = (int)$v;
@@ -164,7 +164,7 @@ final class PaySettings
     /** Save the company's own table for a tax year (rand amounts and percentages as typed). */
     public static function saveTaxTable(PDO $db, int $companyId, int $userId, array $in): void
     {
-        $from = (string)($in['from'] ?? '');
+        $from = PayKit::key($in['from'] ?? '');
         $errors = [];
         if (!preg_match('/^\d{4}-03-01$/', $from)) throw new PayProblem('Choose the tax year.');
         $rows = is_array($in['brackets'] ?? null) ? $in['brackets'] : [];

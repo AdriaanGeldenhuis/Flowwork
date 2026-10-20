@@ -15,9 +15,13 @@
 //                  retirement annuity) also reduce taxable income, up to the
 //                  27.5% / R350 000 limit
 //   contribution   paid by the employer on top of pay (cost to company);
-//                  taxable as a fringe benefit when the item says so
+//                  taxable as a fringe benefit when the item says so; an
+//                  employer retirement contribution marked "before tax" also
+//                  counts as the employee's own contribution for the limit
 //
-// Amounts on lines are positive, except deductions, which are negative.
+// Amounts on lines are positive, except deductions, which are negative. A
+// line of the opposite sign corrects: a negative earning or reimbursement
+// takes money back, a positive deduction line refunds an over-deduction.
 
 require_once __DIR__ . '/PayTax.php';
 
@@ -74,7 +78,7 @@ final class PayEngine
         if ($row) return $row;
         $def = [self::BASIC => ['Basic salary', '3601'], self::OVERTIME => ['Overtime', '3601']][$code] ?? null;
         if (!$def) throw new InvalidArgumentException("Unknown system pay item $code");
-        $db->prepare("INSERT INTO payitems (company_id, code, name, type, taxable, uif_subject, sdl_subject, paye_code, basis, active, created_at)
+        $db->prepare("INSERT IGNORE INTO payitems (company_id, code, name, type, taxable, uif_subject, sdl_subject, paye_code, basis, active, created_at)
                       VALUES (?, ?, ?, 'earning', 1, 1, 1, ?, 'fixed', 1, NOW())")->execute([$companyId, $code, $def[0], $def[1]]);
         $st->execute([$companyId, $code]);
         return $st->fetch(PDO::FETCH_ASSOC);
@@ -180,7 +184,6 @@ final class PayEngine
             $it = (int)$l['payitem_id'] === (int)$basic['id'] ? $basic : ($items[(int)$l['payitem_id']] ?? null);
             if (!$it) continue;
             $amt = (int)$l['amount_cents'];
-            $abs = abs($amt);
             $taxable = (int)$it['taxable'] === 1;
             switch ($it['type']) {
                 case 'earning':
@@ -190,23 +193,23 @@ final class PayEngine
                     elseif ($it['type'] === 'benefit') $benefits += $amt;
                     else $contrib += $amt;
                     if ($taxable) { if ((int)($it['irregular'] ?? 0) === 1) $taxOnceOff += $amt; else $taxRegular += $amt; }
-                    if ($it['type'] !== 'contribution') {
-                        if ((int)$it['uif_subject'] === 1) $uifPay += $amt;
-                        if ((int)$it['sdl_subject'] === 1) $sdlPay += $amt;
-                    }
+                    if ((int)$it['uif_subject'] === 1) $uifPay += $amt;
+                    if ((int)$it['sdl_subject'] === 1) $sdlPay += $amt;
+                    // an employer retirement contribution is also a deemed employee contribution
+                    if ($it['type'] === 'contribution' && (int)($it['pre_tax'] ?? 0) === 1) $retirement += $amt;
                     break;
                 case 'reimbursement':
-                    $reimb += $abs;
+                    $reimb += $amt; // a negative line takes back an earlier over-payment
                     break;
                 case 'deduction':
-                    $deductions += $abs;
-                    if ((int)($it['pre_tax'] ?? 0) === 1) $retirement += $abs;
+                    $deductions -= $amt; // lines are negative; a positive line refunds an over-deduction
+                    if ((int)($it['pre_tax'] ?? 0) === 1) $retirement -= $amt;
                     break;
             }
         }
 
         // Tax
-        $deductible = PayTax::retirementDeductible($freq, $retirement, $taxRegular + $taxOnceOff);
+        $deductible = PayTax::retirementDeductible($freq, max(0, $retirement), $taxRegular + $taxOnceOff);
         $regularAfter = max(0, $taxRegular - $deductible);
         $onceOffAfter = $taxOnceOff - max(0, $deductible - $taxRegular);
         $age = PayTax::ageAtYearEnd($emp['birth_date'] ?? null, $run['pay_date']);

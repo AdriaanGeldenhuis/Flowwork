@@ -24,7 +24,7 @@ if (!pay_is_post()) {
         case 'person': pay_json(['person' => PayRuns::person($DB, $C, $id, pay_int($_GET['employee'] ?? 0))]);
         case 'suggest':
             $s = PayKit::settings($DB, $C);
-            $f = isset(PayKit::FREQ[$_GET['frequency'] ?? '']) ? $_GET['frequency'] : $s['default_frequency'];
+            $f = isset(PayKit::FREQ[PayKit::key($_GET['frequency'] ?? '')]) ? $_GET['frequency'] : $s['default_frequency'];
             pay_json(['suggest' => PayKit::suggest($DB, $C, $f, $s)]);
     }
     pay_error('Unknown action');
@@ -54,7 +54,7 @@ switch (pay_op()) {
         PayRuns::removeAdjustment($DB, $C, $U, $id, pay_int($in['line_id'] ?? 0));
         pay_json($eid ? ['person' => PayRuns::person($DB, $C, $id, $eid)] : []);
     case 'rename':
-        PayRuns::rename($DB, $C, $U, $id, (string)($in['name'] ?? ''), (string)($in['notes'] ?? ''));
+        PayRuns::rename($DB, $C, $U, $id, PayKit::key($in['name'] ?? ''), PayKit::key($in['notes'] ?? ''));
         pay_json();
     case 'approve':
         PayRuns::approve($DB, $C, $U, $id);

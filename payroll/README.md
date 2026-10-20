@@ -36,7 +36,7 @@ payroll/
 | Stage | Status in `pay_runs` | What can happen |
 |---|---|---|
 | Being prepared | `draft` / `calculated` / `review` | add or remove people, hours, overtime, bonuses, once-off deductions; recalculate |
-| Approved | `approved` | figures frozen after a final recalculation; send back to change |
+| Approved | `approved` | figures and bank details frozen after a final recalculation; send back to change |
 | Finalised | `locked` | payslips stored under `storage/payroll/{company}/run_{id}/` (closed to the web, served by `api/payslip.php`), emailed when asked, bank file; an admin can reopen while it is not in the books |
 | In the books | `posted` | `PostingService::postPayrollRun` wrote the journal; nothing changes |
 
@@ -79,8 +79,14 @@ warns in February and March when next year's table is missing.
 Posting (finances/lib/PostingService.php `postPayrollRun`): Dr wages (gross +
 reimbursements + employer contributions), Dr employer UIF / SDL expense;
 Cr bank (net pay), PAYE, UIF (both shares), SDL, and each deduction / employer
-contribution to its pay item's account — else Salaries & Wages Payable (2210).
+contribution to its pay item's account — else Salaries & Wages Payable (found
+by name; created at the first free code from 2210 when the chart has none).
 Earnings and reimbursements with their own expense account are debited there.
+
+Controls: bank details are frozen when a run is approved — the bank file and
+payslips use them, and the bank file names anyone whose details changed since.
+Reopening a finalised run (admins) resets its payslips so corrected ones are
+created and emailed again. Pay items and settings are admin-only.
 
 ## Tests
 

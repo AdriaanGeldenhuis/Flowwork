@@ -17,8 +17,11 @@ include __DIR__ . '/partials/head.php';
         <p>Everything besides the basic salary that can go on a payslip — allowances, bonuses, deductions and benefits. Each one knows how SARS taxes it and where it goes in the books.</p>
     </div>
     <div class="fwp-head__actions">
-        <button class="btn btn--primary" type="button" data-new-item><svg class="i"><use href="#i-plus"/></svg>New pay item</button>
+        <?php if (PayKit::canConfigure($PAY_ROLE)): ?><button class="btn btn--primary" type="button" data-new-item><svg class="i"><use href="#i-plus"/></svg>New pay item</button><?php endif; ?>
     </div>
 </header>
+<?php if (!PayKit::canConfigure($PAY_ROLE)): ?>
+<div class="fwp-banner"><svg class="i"><use href="#i-lock"/></svg><div class="fwp-banner__body">Only an admin can add or change pay items — they decide how everyone’s pay is taxed. You can add them to people’s pay and to pay runs.</div></div>
+<?php endif; ?>
 <div id="itemsApp"><div class="fwp-loading"><span class="fwp-spin"></span>Loading pay items…</div></div>
 <?php include __DIR__ . '/partials/foot.php'; ?>

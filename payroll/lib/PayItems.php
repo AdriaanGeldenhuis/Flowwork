@@ -27,7 +27,7 @@ final class PayItems
         ['RA', 'Retirement annuity', 'deduction', 0, 0, 0, 1, 0, '4006', null],
         ['MEDICAL', 'Medical aid', 'deduction', 0, 0, 0, 0, 0, '4005', '2230'],
         ['LOAN', 'Staff loan repayment', 'deduction', 0, 0, 0, 0, 0, null, null],
-        ['ER_MEDICAL', 'Medical aid (company share)', 'contribution', 1, 0, 0, 0, 0, '3810', '2230'],
+        ['ER_MEDICAL', 'Medical aid (company share)', 'contribution', 1, 0, 1, 0, 0, '3810', '2230'],
     ];
 
     public static function list(PDO $db, int $companyId): array
@@ -79,23 +79,23 @@ final class PayItems
         }
         $system = $old && in_array($old['code'], self::SYSTEM, true);
         $errors = [];
-        $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 120);
+        $name = mb_substr(trim(PayKit::key($in['name'] ?? '')), 0, 120);
         if ($name === '') $errors['name'] = 'Give it a name people will recognise on a payslip.';
-        $code = strtoupper(preg_replace('/[^A-Za-z0-9_]/', '_', trim((string)($in['code'] ?? ''))));
+        $code = strtoupper(preg_replace('/[^A-Za-z0-9_]/', '_', trim(PayKit::key($in['code'] ?? ''))));
         if ($system) $code = $old['code'];
         if ($code === '') $code = strtoupper(substr(preg_replace('/[^A-Za-z0-9]+/', '_', $name), 0, 24)) ?: 'ITEM';
         $code = substr(trim($code, '_'), 0, 32);
         $dup = $db->prepare("SELECT 1 FROM payitems WHERE company_id = ? AND code = ? AND id <> ?");
         $dup->execute([$companyId, $code, $id]);
         if ($dup->fetchColumn()) $errors['code'] = 'Another item already uses the code ' . $code . '.';
-        $type = $system ? $old['type'] : (string)($in['type'] ?? '');
+        $type = $system ? $old['type'] : PayKit::key($in['type'] ?? '');
         if (!isset(PayKit::ITEM_TYPES[$type])) $errors['type'] = 'Choose what kind of item it is.';
         if ($old && $old['type'] !== $type && (int)$db->query("SELECT COUNT(*) FROM pay_run_lines WHERE payitem_id = " . (int)$id)->fetchColumn() > 0) {
             $errors['type'] = 'It is already on payslips, so its kind cannot change. Make a new item instead.';
         }
-        $src = preg_replace('/\D/', '', (string)($in['source_code'] ?? ''));
+        $src = preg_replace('/\D/', '', PayKit::key($in['source_code'] ?? ''));
         if ($src !== '' && strlen($src) !== 4) $errors['source_code'] = 'SARS source codes have 4 digits, e.g. 3601.';
-        $gl = trim((string)($in['gl'] ?? ''));
+        $gl = trim(PayKit::key($in['gl'] ?? ''));
         if ($gl !== '') {
             $chart = self::chartCodes($db, $companyId);
             if ($chart && !isset($chart[$gl])) $errors['gl'] = 'There is no active account ' . $gl . ' in Finance.';
@@ -106,10 +106,9 @@ final class PayItems
         $taxable = $flag('taxable');
         $uif = $flag('uif');
         $sdl = $flag('sdl');
-        $pre = $type === 'deduction' ? $flag('pre_tax') : 0;
+        $pre = in_array($type, ['deduction', 'contribution'], true) ? $flag('pre_tax') : 0;
         $once = $type === 'earning' ? $flag('irregular') : 0;
         if ($type === 'deduction' || $type === 'reimbursement') { $taxable = 0; $uif = 0; $sdl = 0; }
-        if ($type === 'contribution') { $uif = 0; $sdl = 0; }
         if ($system) { $taxable = 1; $uif = 1; $sdl = 1; $once = 0; }
         $active = $system ? 1 : $flag('active');
         $vals = [$code, $name, $type, $taxable, $uif, $sdl, $pre, $once, $src ?: null, $gl ?: null, $active];
