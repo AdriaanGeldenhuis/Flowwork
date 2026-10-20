@@ -128,8 +128,8 @@
       }
       function showCreated(r, data) {
         const login = location.origin + '/login.php';
-        if (r.linked) {
-          result(`<div class="fwa-banner fwa-banner--ok">${icon('check')}<div class="fwa-banner__body"><b>${esc(data.email)} already had a Flowwork account,</b> so it is now linked to this company as ${esc((ROLES[data.role] || [data.role])[0])}. They sign in with their own password and switch company from the menu.</div></div>`, true);
+        if (r.reactivated) {
+          result(`<div class="fwa-banner fwa-banner--ok">${icon('check')}<div class="fwa-banner__body"><b>${esc(data.first_name)} is back.</b> Their earlier account is active again as ${esc((ROLES[data.role] || [data.role])[0])}. They sign in with their old password, or choose a new one with “Forgot password?” at ${esc(login)}.</div></div>`, true);
           return;
         }
         result(`<div class="fwa-banner fwa-banner--ok">${icon('check')}<div class="fwa-banner__body"><b>${esc(data.first_name)}’s account is ready.</b> Pass these on privately — in person or by phone is best.</div></div>

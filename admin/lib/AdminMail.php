@@ -22,7 +22,7 @@ final class AdminMail
     public static function mailbox(PDO $db, int $companyId, int $userId): ?array
     {
         try {
-            $st = $db->prepare("SELECT account_id, email_address, display_name, smtp_server, smtp_port, smtp_encryption, username, password_encrypted
+            $st = $db->prepare("SELECT account_id, email_address, display_name, smtp_server, smtp_port, smtp_encryption, username, password_encrypted, tls_verify
                                   FROM email_accounts
                                  WHERE company_id = ? AND user_id = ? AND is_active = 1 AND smtp_server IS NOT NULL AND smtp_server <> ''
                               ORDER BY account_id LIMIT 1");
@@ -59,6 +59,7 @@ final class AdminMail
         if ($box) {
             $res = SmtpSender::send([
                 'host' => $box['smtp_server'], 'port' => (int)$box['smtp_port'], 'encryption' => $box['smtp_encryption'],
+                'tls_verify' => (int)($box['tls_verify'] ?? 1) === 1, 'public_only' => true, // the same guards as every other Mail send
                 'username' => $box['username'] ?: $box['email_address'], 'password' => SecureVault::decrypt($box['password_encrypted'] ?? ''),
                 'from' => $box['email_address'], 'from_name' => $box['display_name'] ?: $from,
                 'to' => [$inv['email']], 'subject' => $subject, 'html' => $html, 'text' => $text,

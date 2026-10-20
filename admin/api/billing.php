@@ -26,7 +26,7 @@ switch ($action) {
         if ((int)$company['plan_id'] === (int)$plan['id']) admin_error('You are already on the ' . $plan['name'] . ' plan.');
         $seats = AdminKit::seats($DB, $ADMIN_COMPANY_ID);
         if ($seats['used'] > (int)$plan['max_users']) {
-            admin_error('The ' . $plan['name'] . ' plan has ' . (int)$plan['max_users'] . ' paid seat' . ((int)$plan['max_users'] === 1 ? '' : 's') . ', and ' . $seats['used'] . ' are in use. Suspend or remove people (or make outside bookkeepers seat-free) first.', 409);
+            admin_error('The ' . $plan['name'] . ' plan has ' . (int)$plan['max_users'] . ' paid seat' . ((int)$plan['max_users'] === 1 ? '' : 's') . ', and ' . $seats['used'] . ' are in use. Suspend or remove people — or make outside accountants Bookkeepers, who use no seat — first.', 409);
         }
         $companies = fw_user_company_count($ADMIN_USER_ID);
         if ($companies > (int)$plan['max_companies']) {

@@ -411,6 +411,7 @@
     document.body.appendChild(bar);
 
     const fieldValue = (f) => (f.type === 'checkbox' ? (f.checked ? '1' : '0') : f.value);
+    const isSecret = (f) => f.dataset.secret === '1' || f.type === 'password';
     const fieldsOf = (form) => $$('[name]', form).filter((f) => !f.disabled && f.name && !f.dataset.ignore);
     forms.forEach((form) => {
       fieldsOf(form).forEach((f) => { f.dataset.saved = fieldValue(f); });
@@ -421,7 +422,7 @@
     function changed() {
       const out = [];
       forms.forEach((form) => fieldsOf(form).forEach((f) => {
-        if (f.type === 'password' && f.value === '') return; // blank secret = keep the stored one
+        if (isSecret(f) && f.value === '') return; // blank secret = keep the stored one
         if (fieldValue(f) !== f.dataset.saved) out.push({ form, f });
       }));
       return out;
@@ -490,10 +491,10 @@
             const f = document.querySelector(`form[data-settings="${area}"] [name="${k}"]`);
             if (!f) return;
             if (f.type === 'checkbox') f.checked = v === '1';
-            else if (f.type === 'password') f.value = '';
+            else if (isSecret(f)) { f.value = ''; f.type = 'password'; }
             else f.value = v;
-            f.dataset.saved = f.type === 'password' ? '' : fieldValue(f);
-            if (f.type === 'password') {
+            f.dataset.saved = isSecret(f) ? '' : fieldValue(f);
+            if (isSecret(f)) {
               const row = f.closest('.fwa-set');
               const st = row && $('[data-secret-state]', row);
               if (st && v === '__set__') st.textContent = 'Saved — hidden for safety';
@@ -519,7 +520,7 @@
     function discard() {
       changed().forEach(({ f }) => {
         if (f.type === 'checkbox') f.checked = f.dataset.saved === '1';
-        else if (f.type === 'password') f.value = '';
+        else if (isSecret(f)) f.value = '';
         else f.value = f.dataset.saved;
       });
       clearErrors();

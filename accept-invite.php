@@ -36,8 +36,9 @@ if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
 $existing = null;
 $signedInAs = null;
 $policy = fw_password_policy($DB, $invite ? (int)$invite['company_id'] : null);
+$restore = false; // their own account, removed from this company earlier: a new password brings it back
 if ($invite && !$error) {
-    $st = $DB->prepare("SELECT id, email, first_name, last_name, status, company_id, is_seat FROM users WHERE email = ? LIMIT 1");
+    $st = $DB->prepare("SELECT id, email, first_name, last_name, status, company_id FROM users WHERE email = ? LIMIT 1");
     $st->execute([mb_strtolower($invite['email'])]);
     $existing = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!empty($_SESSION['user_id'])) {
@@ -45,8 +46,11 @@ if ($invite && !$error) {
         $st->execute([(int)$_SESSION['user_id']]);
         $signedInAs = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
-    if ($existing && $existing['status'] !== 'active') $error = 'The Flowwork account for ' . $invite['email'] . ' is suspended, so it cannot join. Ask the company that manages it.';
-    if ($existing && !$error) {
+    if ($existing && $existing['status'] !== 'active') {
+        if ((int)$existing['company_id'] === (int)$invite['company_id']) $restore = true;
+        else $error = 'The Flowwork account for ' . $invite['email'] . ' is suspended by the company that manages it, so it cannot join.';
+    }
+    if ($existing && !$error && !$restore) {
         $st = $DB->prepare("SELECT 1 FROM user_companies WHERE user_id = ? AND company_id = ?");
         $st->execute([$existing['id'], $invite['company_id']]);
         if ($st->fetchColumn()) {
@@ -56,16 +60,32 @@ if ($invite && !$error) {
     }
 }
 
-/** A paid seat is free for this invitation (bookkeepers never need one). */
-function invite_has_seat(PDO $db, array $invite, bool $usesSeat): bool
+/**
+ * Take a paid seat for this invitation (Bookkeepers never need one). Locks the
+ * company row so two people cannot take the last seat at once; call inside the
+ * transaction that adds the person. A seat is any active member who is not a
+ * Bookkeeper (the same rule as Admin › People).
+ */
+function invite_claim_seat(PDO $db, array $invite): void
 {
-    if (!$usesSeat) return true;
-    $st = $db->prepare("SELECT COUNT(*) FROM user_companies uc JOIN users u ON u.id = uc.user_id WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1");
+    if ($invite['role'] === 'bookkeeper') return;
+    $db->prepare("SELECT id FROM companies WHERE id = ? FOR UPDATE")->execute([$invite['company_id']]);
+    $st = $db->prepare("SELECT COUNT(*) FROM user_companies uc JOIN users u ON u.id = uc.user_id WHERE uc.company_id = ? AND u.status = 'active' AND uc.role <> 'bookkeeper'");
     $st->execute([$invite['company_id']]);
     $used = (int)$st->fetchColumn();
     $st = $db->prepare("SELECT COALESCE(p.max_users, c.max_users, 1) FROM companies c LEFT JOIN plans p ON p.id = c.plan_id WHERE c.id = ?");
     $st->execute([$invite['company_id']]);
-    return $used < max(1, (int)$st->fetchColumn());
+    if ($used >= max(1, (int)$st->fetchColumn())) {
+        throw new InviteProblem($invite['company_name'] . ' has no free seat right now. Ask ' . (trim((string)$invite['inviter']) ?: 'an admin') . ' to free one or add seats, then open this link again.');
+    }
+}
+
+/** Mark the invitation used by $userId; fails when someone used it a moment ago. */
+function invite_mark_used(PDO $db, array $invite, int $userId): void
+{
+    $st = $db->prepare("UPDATE invites SET used = 1, used_by = ?, used_at = NOW() WHERE id = ? AND used = 0");
+    $st->execute([$userId, $invite['id']]);
+    if ($st->rowCount() !== 1) throw new InviteProblem('This invitation was used a moment ago. Sign in instead.');
 }
 
 function invite_audit(PDO $db, array $invite, int $userId, string $how): void
@@ -85,43 +105,56 @@ $form = ['first_name' => '', 'last_name' => ''];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $invite && !$error) {
     Csrf::validate();
     $step = (string)($_POST['step'] ?? '');
+    $isSeat = $invite['role'] === 'bookkeeper' ? 0 : 1;
+    $password = (string)($_POST['password'] ?? '');
+    $checkPassword = function () use ($password, $policy, &$fieldErrors) {
+        if ($problems = fw_password_problems($password, $policy)) $fieldErrors['password'] = fw_password_error($problems);
+        elseif ($password !== (string)($_POST['password_confirm'] ?? '')) $fieldErrors['password_confirm'] = 'The two passwords are not the same.';
+    };
     try {
         if ($step === 'create' && !$existing) {
             $form['first_name'] = mb_substr(trim((string)($_POST['first_name'] ?? '')), 0, 100);
             $form['last_name'] = mb_substr(trim((string)($_POST['last_name'] ?? '')), 0, 100);
-            $password = (string)($_POST['password'] ?? '');
             if ($form['first_name'] === '') $fieldErrors['first_name'] = 'Enter your first name.';
             if ($form['last_name'] === '') $fieldErrors['last_name'] = 'Enter your surname.';
-            if ($problems = fw_password_problems($password, $policy)) $fieldErrors['password'] = fw_password_error($problems);
-            elseif ($password !== (string)($_POST['password_confirm'] ?? '')) $fieldErrors['password_confirm'] = 'The two passwords are not the same.';
-            $isSeat = $invite['role'] === 'bookkeeper' ? 0 : 1;
-            if (!$fieldErrors && !invite_has_seat($DB, $invite, (bool)$isSeat)) {
-                throw new InviteProblem($invite['company_name'] . ' has no free seat right now. Ask ' . (trim((string)$invite['inviter']) ?: 'an admin') . ' to free one or add seats, then open this link again.');
-            }
+            $checkPassword();
             if (!$fieldErrors) {
                 $DB->beginTransaction();
+                invite_claim_seat($DB, $invite);
                 $DB->prepare("INSERT INTO users (company_id, email, password_hash, first_name, last_name, role, is_seat, status, created_at, updated_at)
                               VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())")
                    ->execute([$invite['company_id'], mb_strtolower($invite['email']), password_hash($password, PASSWORD_DEFAULT), $form['first_name'], $form['last_name'], $invite['role'], $isSeat]);
                 $newId = (int)$DB->lastInsertId();
                 $DB->prepare("INSERT INTO user_companies (user_id, company_id, role, created_at) VALUES (?, ?, ?, NOW())")->execute([$newId, $invite['company_id'], $invite['role']]);
-                $st = $DB->prepare("UPDATE invites SET used = 1, used_by = ?, used_at = NOW() WHERE id = ? AND used = 0");
-                $st->execute([$newId, $invite['id']]);
-                if ($st->rowCount() !== 1) throw new InviteProblem('This invitation was used a moment ago. Sign in instead.');
+                invite_mark_used($DB, $invite, $newId);
                 $DB->commit();
                 invite_audit($DB, $invite, $newId, 'new account');
                 fw_auth_begin($DB, ['id' => $newId, 'company_id' => (int)$invite['company_id'], 'first_name' => $form['first_name'], 'last_name' => $form['last_name']], false);
                 redirect('/home.php');
             }
-        } elseif ($step === 'join' && $existing && $signedInAs && (int)$signedInAs['id'] === (int)$existing['id']) {
-            if (!invite_has_seat($DB, $invite, (int)$existing['is_seat'] === 1)) {
-                throw new InviteProblem($invite['company_name'] . ' has no free seat right now. Ask ' . (trim((string)$invite['inviter']) ?: 'an admin') . ' to free one or add seats, then open this link again.');
+        } elseif ($step === 'restore' && $restore) {
+            // The invitation was emailed to this address by an admin of the
+            // account's own company, so it may set a new password and come back.
+            $checkPassword();
+            if (!$fieldErrors) {
+                $uid = (int)$existing['id'];
+                $DB->beginTransaction();
+                invite_claim_seat($DB, $invite);
+                $DB->prepare("UPDATE users SET password_hash = ?, status = 'active', role = ?, is_seat = ?, updated_at = NOW() WHERE id = ?")
+                   ->execute([password_hash($password, PASSWORD_DEFAULT), $invite['role'], $isSeat, $uid]);
+                $DB->prepare("INSERT INTO user_companies (user_id, company_id, role, created_at) VALUES (?, ?, ?, NOW())
+                              ON DUPLICATE KEY UPDATE role = VALUES(role)")->execute([$uid, $invite['company_id'], $invite['role']]);
+                invite_mark_used($DB, $invite, $uid);
+                $DB->commit();
+                invite_audit($DB, $invite, $uid, 'their earlier account, brought back');
+                fw_auth_begin($DB, ['id' => $uid, 'company_id' => (int)$invite['company_id'], 'first_name' => $existing['first_name'], 'last_name' => $existing['last_name']], false);
+                redirect('/home.php');
             }
+        } elseif ($step === 'join' && $existing && !$restore && $signedInAs && (int)$signedInAs['id'] === (int)$existing['id']) {
             $DB->beginTransaction();
+            invite_claim_seat($DB, $invite);
             $DB->prepare("INSERT IGNORE INTO user_companies (user_id, company_id, role, created_at) VALUES (?, ?, ?, NOW())")->execute([$existing['id'], $invite['company_id'], $invite['role']]);
-            $st = $DB->prepare("UPDATE invites SET used = 1, used_by = ?, used_at = NOW() WHERE id = ? AND used = 0");
-            $st->execute([$existing['id'], $invite['id']]);
-            if ($st->rowCount() !== 1) throw new InviteProblem('This invitation was used a moment ago.');
+            invite_mark_used($DB, $invite, (int)$existing['id']);
             $DB->commit();
             invite_audit($DB, $invite, (int)$existing['id'], 'existing account');
             fw_set_active_company((int)$existing['id'], (int)$invite['company_id']);
@@ -197,7 +230,24 @@ $here = '/accept-invite.php?token=' . rawurlencode($token);
             <?php if (trim((string)($invite['custom_message'] ?? '')) !== ''): ?><p class="inv__note"><?= $e($invite['custom_message']) ?></p><?php endif; ?>
             <?php if ($formError): ?><div class="inv__err" role="alert"><svg class="i"><use href="#i-alert"/></svg><span><?= $e($formError) ?></span></div><?php endif; ?>
 
-            <?php if (!$existing): ?>
+            <?php if ($restore): ?>
+                <p class="inv__lede" style="margin-top:0">Welcome back, <?= $e($existing['first_name']) ?>. Choose a new password and your account opens again.</p>
+                <form method="post" action="<?= $e($here) ?>" novalidate id="joinForm">
+                    <input type="hidden" name="csrf_token" value="<?= $e(Csrf::token()) ?>">
+                    <input type="hidden" name="step" value="restore">
+                    <div class="field<?= isset($fieldErrors['password']) ? ' is-invalid' : '' ?>"><label class="label" for="pw">New password</label><input class="input" id="pw" name="password" type="password" autocomplete="new-password" minlength="<?= (int)$policy['min'] ?>" required autofocus>
+                        <span class="inv__rules" id="rules" aria-live="polite">
+                            <span data-r="min"><?= (int)$policy['min'] ?>+ characters</span>
+                            <?php if ($policy['case']): ?><span data-r="case">Aa</span><?php endif; ?>
+                            <?php if ($policy['number']): ?><span data-r="number">0–9</span><?php endif; ?>
+                            <?php if ($policy['symbol']): ?><span data-r="symbol">! @ #</span><?php endif; ?>
+                        </span>
+                        <?php if (isset($fieldErrors['password'])): ?><span class="field__error"><?= $e($fieldErrors['password']) ?></span><?php endif; ?></div>
+                    <div class="field<?= isset($fieldErrors['password_confirm']) ? ' is-invalid' : '' ?>"><label class="label" for="pw2">Type it again</label><input class="input" id="pw2" name="password_confirm" type="password" autocomplete="new-password" required><?php if (isset($fieldErrors['password_confirm'])): ?><span class="field__error"><?= $e($fieldErrors['password_confirm']) ?></span><?php endif; ?></div>
+                    <button class="btn btn--primary btn--lg btn--block" type="submit"><svg class="i"><use href="#i-check"/></svg>Rejoin <?= $e($invite['company_name']) ?></button>
+                </form>
+                <p class="inv__foot"><?= $e(fw_password_rules_text($policy)) ?></p>
+            <?php elseif (!$existing): ?>
                 <form method="post" action="<?= $e($here) ?>" novalidate id="joinForm">
                     <input type="hidden" name="csrf_token" value="<?= $e(Csrf::token()) ?>">
                     <input type="hidden" name="step" value="create">

@@ -2,7 +2,7 @@
 // /admin/api/export.php — company data as CSV files that open in Excel.
 //   GET ?type=people | projects | customers | suppliers | audit | summary
 //   audit also takes the audit trail's filters: user_id, kind, q, from, to
-// Cells that start with = + - @ are prefixed with ' so spreadsheets never run
+// Cells that start with = + - @ (or a tab / carriage return) are prefixed with ' so spreadsheets never run
 // them. Every export is rate limited and written to the audit trail.
 require_once __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../lib/AdminAudit.php';
@@ -62,7 +62,7 @@ AdminKit::audit($DB, $cid, $ADMIN_USER_ID, 'data_exported', ['export' => $types[
 
 $safe = function ($v): string {
     $v = (string)($v ?? '');
-    if ($v !== '' && strpos('=+-@', $v[0]) !== false && !is_numeric($v)) $v = "'" . $v;
+    if ($v !== '' && strpos("=+-@\t\r", $v[0]) !== false && !is_numeric($v)) $v = "'" . $v;
     return $v;
 };
 $company = preg_replace('/[^A-Za-z0-9]+/', '-', (string)($DB->query("SELECT name FROM companies WHERE id = " . (int)$cid)->fetchColumn() ?: 'company'));

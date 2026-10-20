@@ -21,7 +21,7 @@ $cal = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'calendar');
 $sup = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'suppliers');
 $data = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'data');
 $reminderLabel = AdminSettings::area('calendar')['fields'][3]['options'][$cal['calendar_default_reminder']] ?? $cal['calendar_default_reminder'] . ' minutes before';
-$retention = AdminSettings::area('data')['fields'][0]['options'][$data['audit_retention_days']] ?? 'Forever';
+$retention = AdminSettings::area('data')['fields'][0]['options'][$data['signin_retention_days']] ?? 'Forever';
 
 $recurring = 0;
 try {
@@ -40,7 +40,7 @@ $automations = [
     ['i-flag', 'Follow-up reminders', 'CRM', 'CRM tasks remind the person they are assigned to when they fall due.', ['crm_tasks'], '/crm/#tasks', 'Open CRM tasks'],
     ['i-shield', 'Compliance document reminders', 'Suppliers', 'Owners are reminded ' . str_replace(',', ', ', $sup['crm_reminder_days']) . ' days before a supplier’s document expires' . ($sup['crm_block_expired_suppliers'] === '1' ? '; expired suppliers are blocked.' : '.'), ['crm_compliance'], '/admin/suppliers.php#sup-compliance', 'Change'],
     ['i-mail', 'Mail sync & scheduled sending', 'Mail', 'New mail is fetched every minute, scheduled mail goes out on time, and you are nudged about mail waiting too long for a reply.', ['mail', 'reply_reminders'], '/mail/settings.php', 'Mail settings'],
-    ['ia-database', 'Housekeeping', 'Data', 'Old sign-in records are cleared, and the audit trail is kept for: ' . mb_strtolower($retention) . '.', ['cleanup'], '/admin/data.php#data-retention', 'Change'],
+    ['ia-database', 'Housekeeping', 'Data', 'Expired devices and old failed sign-ins are cleared; sign-in records are kept for: ' . mb_strtolower($retention) . '.', ['cleanup'], '/admin/data.php#data-retention', 'Change'],
 ];
 
 $page = 'automations';

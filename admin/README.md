@@ -24,7 +24,7 @@ admin/
   automations.php    What runs on its own, and whether the background runner is alive
   integrations.php   Yoco card payments
   security.php       Sign-in protection, password rules, signed-in devices, sign-in activity
-  data.php           Exports and audit-trail retention
+  data.php           Exports and how long sign-in records are kept
   billing.php        Plan, seats, companies, change plan, cancel/resume
   audit.php          Audit trail (filters, paging, CSV export of the same filter)
   lib/               AdminBoot (page bootstrap), AdminKit (helpers, nav, labels), AdminSettings (the registry),
@@ -46,7 +46,7 @@ control, default, limits and **where the module reads it**:
 |---|---|---|
 | calendar | `company_settings` `calendar_*` | `calendar/lib/CalendarSettings.php`, `CalendarRepo::companyTz` |
 | security | `company_settings` `security_*` | `fw_login_limits`, `fw_auth_single_device` (includes/auth_sessions.php), `includes/password_policy.php` |
-| data | `company_settings` `audit_retention_days` | `includes/audit_retention.php` (hourly, from notifications/api/tick.php) |
+| data | `company_settings` `signin_retention_days` | `includes/audit_retention.php` (hourly, from notifications/api/tick.php; sign-in records only) |
 | payroll | `payroll_settings` columns | `payroll/run_new.php`, `payroll/ajax/run_update_status.php` |
 | suppliers | `ai_settings` columns + `crm_block_expired_suppliers`, `crm_reminder_days` | `suppliers_ai/ajax/search.php`, RFQ generators, `CrmCompliance::policy` |
 | finance | via `FinSettings::saveEngine` (its guards apply) | `Fin::engineSettings` |
@@ -73,5 +73,5 @@ in) and existing Flowwork accounts (sign in, then join with one click).
 
 `php tests/run.php admin` — `tests/admin/test_admin.php` saves every area and
 checks the module that uses it reads the new value, refuses bad values field by
-field, keeps secrets hidden, and covers password rules, retention and the audit
-filters.
+field, keeps secrets hidden, and covers password rules, sign-in record
+retention (nothing else is pruned) and the audit filters.

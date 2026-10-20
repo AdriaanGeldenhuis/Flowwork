@@ -1,7 +1,9 @@
 <?php
 // /admin/api/security.php — sign a single device of a company member out.
 //   POST {action:'signout_device', session_id}
-// (Signing a person out everywhere is /admin/api/people.php action=signout.)
+// Only devices of accounts that belong to this company (a guest's devices are
+// their own company's business). Signing a person out everywhere is
+// /admin/api/people.php action=signout.
 require_once __DIR__ . '/_bootstrap.php';
 
 admin_require_post();
@@ -11,7 +13,7 @@ admin_rate_limit('admin-security', 120, 600);
 
 $sid = admin_int($in, 'session_id');
 $st = $DB->prepare("SELECT s.id, s.user_id, s.device_label, CONCAT_WS(' ', u.first_name, u.last_name) AS name
-                      FROM user_sessions s JOIN user_companies uc ON uc.user_id = s.user_id AND uc.company_id = ? JOIN users u ON u.id = s.user_id
+                      FROM user_sessions s JOIN users u ON u.id = s.user_id AND u.company_id = ?
                      WHERE s.id = ? AND s.revoked_at IS NULL");
 $st->execute([$ADMIN_COMPANY_ID, $sid]);
 $dev = $st->fetch(PDO::FETCH_ASSOC);

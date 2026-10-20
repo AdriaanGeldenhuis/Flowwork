@@ -3,6 +3,8 @@
 // fw_login_limits / fw_auth_single_device), password rules (read by
 // includes/password_policy.php wherever a password is chosen), every
 // signed-in device in the company with sign-out, and recent sign-in activity.
+// Devices and failed sign-ins are shown for accounts that belong to this
+// company only: a guest from another company is that company's to look after.
 require_once __DIR__ . '/lib/AdminBoot.php';
 
 $values = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'security');
@@ -12,8 +14,7 @@ try {
     $st = $DB->prepare("SELECT s.id, s.user_id, s.device_label, s.ip, s.is_app, s.remember_hash IS NOT NULL AS remembered, s.last_seen_at, s.created_at,
                                CONCAT_WS(' ', u.first_name, u.last_name) AS name, u.email
                           FROM user_sessions s
-                          JOIN user_companies uc ON uc.user_id = s.user_id AND uc.company_id = ?
-                          JOIN users u ON u.id = s.user_id
+                          JOIN users u ON u.id = s.user_id AND u.company_id = ?
                          WHERE s.revoked_at IS NULL AND s.expires_at > NOW()
                       ORDER BY s.last_seen_at DESC LIMIT 300");
     $st->execute([$ADMIN_COMPANY_ID]);
@@ -24,7 +25,7 @@ $failed = [];
 try {
     $st = $DB->prepare("SELECT a.email, a.ip, COUNT(*) AS tries, MAX(a.attempted_at) AS last_at
                           FROM auth_login_attempts a
-                         WHERE a.email IN (SELECT u.email FROM user_companies uc JOIN users u ON u.id = uc.user_id WHERE uc.company_id = ?)
+                         WHERE a.email IN (SELECT u.email FROM users u WHERE u.company_id = ?)
                       GROUP BY a.email, a.ip ORDER BY last_at DESC LIMIT 50");
     $st->execute([$ADMIN_COMPANY_ID]);
     $failed = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -57,7 +58,7 @@ include __DIR__ . '/partials/head.php';
 
 <section class="fwa-card" id="card-devices" style="margin-top:16px">
     <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#ih-devices"/></svg></span>
-        <div class="fwa-card__title"><h3>Signed-in devices</h3><p>Every phone, tablet and computer signed in to this company. Sign one out if it is lost, or if you don’t recognise it.</p></div></header>
+        <div class="fwa-card__title"><h3>Signed-in devices</h3><p>Every phone, tablet and computer your people are signed in on. Sign one out if it is lost, or if you don’t recognise it.</p></div></header>
     <?php if (!$devices): ?>
         <div class="fwa-card__body fwa-muted">No devices are signed in.</div>
     <?php else: ?>

@@ -59,6 +59,12 @@ switch ($action) {
         $st = $DB->prepare("SELECT 1 FROM user_companies uc JOIN users u ON u.id = uc.user_id WHERE uc.company_id = ? AND u.email = ?");
         $st->execute([$ADMIN_COMPANY_ID, $email]);
         if ($st->fetchColumn()) throw new AdminInvalid(['email' => 'They are already part of this company.']);
+        $st = $DB->prepare("SELECT status, company_id FROM users WHERE email = ? LIMIT 1");
+        $st->execute([$email]);
+        $acct = $st->fetch(PDO::FETCH_ASSOC);
+        if ($acct && $acct['status'] !== 'active' && (int)$acct['company_id'] !== $ADMIN_COMPANY_ID) {
+            throw new AdminInvalid(['email' => 'That Flowwork account is suspended by the company that manages it, so it cannot join.']);
+        }
         $st = $DB->prepare("SELECT id FROM invites WHERE company_id = ? AND email = ? AND used = 0 AND expires_at > NOW() LIMIT 1");
         $st->execute([$ADMIN_COMPANY_ID, $email]);
         if ($st->fetchColumn()) throw new AdminInvalid(['email' => 'They already have an open invitation. Resend it from Invitations instead.']);

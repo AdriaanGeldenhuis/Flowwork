@@ -1,15 +1,16 @@
 <?php
 // /admin/data.php — Data & privacy: what the company holds, CSV exports
-// (/admin/api/export.php) and how long the audit trail is kept (applied
+// (/admin/api/export.php) and how long sign-in records are kept (applied
 // hourly by includes/audit_retention.php from the background runner).
 require_once __DIR__ . '/lib/AdminBoot.php';
 require_once __DIR__ . '/lib/AdminAudit.php';
+require_once __DIR__ . '/../includes/audit_retention.php';
 
 $values = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'data');
 $counts = AdminAudit::counts($DB, $ADMIN_COMPANY_ID);
 $oldest = null;
 try {
-    $st = $DB->prepare("SELECT MIN(COALESCE(timestamp, created_at)) FROM audit_log WHERE company_id = ?");
+    $st = $DB->prepare("SELECT MIN(COALESCE(timestamp, created_at)) FROM audit_log WHERE company_id = ? AND action IN ('" . implode("','", FW_SIGNIN_ACTIONS) . "')");
     $st->execute([$ADMIN_COMPANY_ID]);
     $oldest = $st->fetchColumn() ?: null;
 } catch (Throwable $ex) {
@@ -31,7 +32,7 @@ include __DIR__ . '/partials/head.php';
     <div class="fwa-head__text">
         <p class="fwa-eyebrow">Workspace <i>◆</i> Data &amp; privacy</p>
         <h1>Data &amp; <em>privacy</em></h1>
-        <p>Your data is yours. Take a copy whenever you like, and decide how long the record of who-did-what is kept (POPIA asks you not to keep personal information longer than you need).</p>
+        <p>Your data is yours. Take a copy whenever you like, and decide how long records of who signed in, and from where, are kept (POPIA asks you not to keep personal information longer than you need).</p>
     </div>
 </header>
 
@@ -51,7 +52,7 @@ include __DIR__ . '/partials/head.php';
 <form data-settings="data" novalidate style="margin-top:16px">
     <?= AdminSettings::render('data', $values) ?>
 </form>
-<?php if ($oldest): ?><p class="hint" style="margin:8px 4px 0">The oldest entry in your audit trail is from <?= $e(AdminKit::date($oldest)) ?>.</p><?php endif; ?>
+<?php if ($oldest): ?><p class="hint" style="margin:8px 4px 0">The oldest sign-in record kept is from <?= $e(AdminKit::date($oldest)) ?>.</p><?php endif; ?>
 
 <div class="fwa-section"><h2>What you hold</h2><span class="fwa-section__rule"></span></div>
 <div class="fwa-stats">

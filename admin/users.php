@@ -16,10 +16,11 @@ $st = $DB->prepare("
 $st->execute([$ADMIN_COMPANY_ID]);
 $people = $st->fetchAll(PDO::FETCH_ASSOC);
 
-// Signed-in devices per person (best effort: the table appears on first sign-in)
+// Signed-in devices of the people whose account belongs to this company
+// (a guest's devices are their own company's business)
 $devices = [];
 try {
-    $st = $DB->prepare("SELECT s.user_id, COUNT(*) FROM user_sessions s JOIN user_companies uc ON uc.user_id = s.user_id AND uc.company_id = ?
+    $st = $DB->prepare("SELECT s.user_id, COUNT(*) FROM user_sessions s JOIN users u ON u.id = s.user_id AND u.company_id = ?
                          WHERE s.revoked_at IS NULL AND s.expires_at > NOW() GROUP BY s.user_id");
     $st->execute([$ADMIN_COMPANY_ID]);
     $devices = array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
@@ -39,7 +40,7 @@ $pendingInvites = (int)$st->fetchColumn();
 
 $rows = array_map(fn($p) => [
     'id' => (int)$p['id'], 'first_name' => $p['first_name'], 'last_name' => $p['last_name'], 'email' => $p['email'], 'role' => $p['role'],
-    'status' => $p['status'], 'is_seat' => (int)$p['is_seat'], 'primary' => (int)$p['primary_company_id'] === $ADMIN_COMPANY_ID,
+    'status' => $p['status'], 'is_seat' => $p['role'] !== 'bookkeeper' ? 1 : 0, 'primary' => (int)$p['primary_company_id'] === $ADMIN_COMPANY_ID,
     'projects' => (int)$p['projects'], 'devices' => $devices[(int)$p['id']] ?? 0, 'last_login' => $p['last_login_at'], 'created' => $p['created_at'],
 ], $people);
 
@@ -51,7 +52,7 @@ include __DIR__ . '/partials/head.php';
     <div class="fwa-head__text">
         <p class="fwa-eyebrow">People <i>◆</i> <?= count($people) ?> in <?= $e($companyName) ?></p>
         <h1>People &amp; <em>roles</em></h1>
-        <p>Everyone who can open <?= $e($companyName) ?>, and what they may do. Bookkeepers don’t use a paid seat.</p>
+        <p>Everyone who can open <?= $e($companyName) ?>, and what they may do. Everyone uses a paid seat except Bookkeepers.</p>
     </div>
     <div class="fwa-head__actions">
         <a class="btn" href="/admin/invites.php"><svg class="i"><use href="#i-send"/></svg>Invitations<?= $pendingInvites ? ' · ' . $pendingInvites : '' ?></a>

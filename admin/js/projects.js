@@ -62,8 +62,11 @@
           <div class="fwa-member" data-uid="${x.id}">
             <span class="fwa-ava fwa-ava--sm fwa-ava--round" style="--h:${hue(x.name)}">${esc(initials(x.name))}</span>
             <span class="fwa-who__text fwa-grow"><b>${esc(x.name)}${x.active ? '' : ' <span class="fwa-muted">(no longer here)</span>'}</b><small>${esc(x.email)}${x.implicit ? ' · ' + (x.role === 'owner' ? 'created the project' : 'project manager') : ''}</small></span>
-            <select class="select" data-role aria-label="Role for ${esc(x.name)}">${Object.entries(PROJECT_ROLES).map(([k, l]) => `<option value="${k}"${k === x.role ? ' selected' : ''}>${l}</option>`).join('')}</select>
-            <button class="icon-btn icon-btn--sm" type="button" data-remove aria-label="Take ${esc(x.name)} off the project">${icon('x')}</button>
+            ${x.implicit
+              ? `<span class="fwa-pill fwa-pill--plain" title="${x.role === 'owner' ? 'Created the project' : 'Set as the project manager in the project'}">${esc(PROJECT_ROLES[x.role] || x.role)}</span>
+                 ${x.role === 'owner' ? '<span style="width:30px"></span>' : `<button class="icon-btn icon-btn--sm" type="button" data-remove aria-label="Take ${esc(x.name)} off as project manager">${icon('x')}</button>`}`
+              : `<select class="select" data-role aria-label="Role for ${esc(x.name)}">${Object.entries(PROJECT_ROLES).map(([k, l]) => `<option value="${k}"${k === x.role ? ' selected' : ''}>${l}</option>`).join('')}</select>
+                 <button class="icon-btn icon-btn--sm" type="button" data-remove aria-label="Take ${esc(x.name)} off the project">${icon('x')}</button>`}
           </div>`).join('') || '<p class="fwa-muted">Nobody yet.</p>'}</div>
         <div class="fwa-add"><select class="select" id="addWho" aria-label="Person to add">${personOptions(d.members.map((x) => x.id))}</select>
           <select class="select" id="addRole" aria-label="Their role">${Object.entries(PROJECT_ROLES).map(([k, l]) => `<option value="${k}"${k === 'member' ? ' selected' : ''} title="${esc(ROLE_HINT[k])}">${l}</option>`).join('')}</select>

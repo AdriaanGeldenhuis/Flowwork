@@ -79,16 +79,30 @@ admin_rate_limit('admin-projects', 300, 600);
 $id = admin_int($in, 'id');
 $uid = admin_int($in, 'user_id');
 
+/** The member entry when $uid is on the project only as its creator or its manager (no row of their own). */
+function proj_implicit(ProjectRepo $PR, int $id, int $uid): ?array
+{
+    foreach ($PR->members($id) as $m) if ($m['id'] === $uid && !empty($m['implicit'])) return $m;
+    return null;
+}
+
 switch ($action) {
     case 'member_set':
         $role = admin_str($in, 'role', 20);
         $p = $PR->requireProject($id, 1);
+        if ($imp = proj_implicit($PR, $id, $uid)) {
+            admin_error($imp['role'] === 'owner'
+                ? $imp['name'] . ' created this project, so they always own it.'
+                : $imp['name'] . ' is the project manager. Choose another manager in the project’s settings to change that.');
+        }
         $PR->setMember($id, $uid, $role);
         AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, 'project_member_set', ['project' => $p['name'], 'person' => $PR->personName($uid), 'role' => $role], 'project', $id);
         admin_json(proj_detail($PR, $DB, $ADMIN_COMPANY_ID, $id));
 
     case 'member_remove':
         $p = $PR->requireProject($id, 1);
+        $imp = proj_implicit($PR, $id, $uid);
+        if ($imp && $imp['role'] === 'owner') admin_error($imp['name'] . ' created this project, so they cannot be taken off it.');
         $PR->removeMember($id, $uid);
         AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, 'project_member_removed', ['project' => $p['name'], 'person' => $PR->personName($uid)], 'project', $id);
         admin_json(proj_detail($PR, $DB, $ADMIN_COMPANY_ID, $id));

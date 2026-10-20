@@ -29,11 +29,15 @@ final class AdminKit
         return $st->fetch(PDO::FETCH_ASSOC) ?: ['id' => $companyId, 'name' => 'Your company'];
     }
 
-    /** Paid seats in use (active members that count as a seat) and the plan's limit. */
+    /**
+     * Paid seats in use and the plan's limit. A seat is any active member whose
+     * role in this company is not Bookkeeper — whatever company their account
+     * belongs to — so the limit cannot be stepped around.
+     */
     public static function seats(PDO $db, int $companyId): array
     {
         $st = $db->prepare("SELECT COUNT(*) FROM user_companies uc JOIN users u ON u.id = uc.user_id
-                             WHERE uc.company_id = ? AND u.status = 'active' AND u.is_seat = 1");
+                             WHERE uc.company_id = ? AND u.status = 'active' AND uc.role <> 'bookkeeper'");
         $st->execute([$companyId]);
         $used = (int)$st->fetchColumn();
         $st = $db->prepare("SELECT COALESCE(p.max_users, c.max_users, 1) FROM companies c LEFT JOIN plans p ON p.id = c.plan_id WHERE c.id = ?");

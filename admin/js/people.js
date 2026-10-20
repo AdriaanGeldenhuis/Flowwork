@@ -32,7 +32,7 @@
         <span class="fwa-who__text"><b>${esc(name(p))}${you ? '<span class="fwa-you">You</span>' : ''}</b><small>${esc(p.email)}</small></span></div></td>
       <td><span class="fwa-pill" data-tone="${ROLE_TONE[p.role] || 'muted'}">${esc((ROLES[p.role] || [p.role])[0])}</span></td>
       <td class="hide-narrow">${status}${p.devices ? `<small class="fwa-muted" style="display:block;margin-top:3px">${p.devices} device${p.devices === 1 ? '' : 's'} signed in</small>` : ''}</td>
-      <td class="hide-narrow">${p.is_seat ? 'Paid seat' : '<span class="fwa-muted">No seat</span>'}${p.primary ? '' : `<small class="fwa-muted" style="display:block;margin-top:3px" title="Their account belongs to another company first">Guest from another company</small>`}</td>
+      <td class="hide-narrow">${p.role !== 'bookkeeper' ? 'Paid seat' : '<span class="fwa-muted">No seat</span>'}${p.primary ? '' : `<small class="fwa-muted" style="display:block;margin-top:3px" title="Their account belongs to another company first">Guest from another company</small>`}</td>
       <td class="hide-narrow t-num">${p.projects || '<span class="fwa-muted">—</span>'}</td>
       <td class="hide-narrow">${p.last_login ? esc(ago(p.last_login)) : '<span class="fwa-muted">Never</span>'}</td>
       <td class="t-actions"><button class="fwa-mini" type="button" data-edit>${icon('i-pen')}Edit</button>
@@ -61,13 +61,12 @@
       <div class="fwm-dialog__head"><span class="fwa-ava fwa-ava--round" style="--h:${hue(name(p))}">${esc(initials(name(p)))}</span><h2>${esc(name(p))}</h2><button class="icon-btn" type="button" data-close aria-label="Close">${icon('x')}</button></div>
       <form class="fwm-dialog__body" novalidate id="editForm">
         <div class="fwa-form">
-          <div class="field"><label class="label" for="edFirst">First name</label><input class="input" id="edFirst" name="first_name" maxlength="100" value="${esc(p.first_name)}"></div>
-          <div class="field"><label class="label" for="edLast">Surname</label><input class="input" id="edLast" name="last_name" maxlength="100" value="${esc(p.last_name)}"></div>
+          <div class="field"><label class="label" for="edFirst">First name</label><input class="input" id="edFirst" name="first_name" maxlength="100" value="${esc(p.first_name)}"${p.primary ? '' : ' disabled'}></div>
+          <div class="field"><label class="label" for="edLast">Surname</label><input class="input" id="edLast" name="last_name" maxlength="100" value="${esc(p.last_name)}"${p.primary ? '' : ' disabled'}></div>
           <div class="field is-full"><span class="label">Email</span><div class="fwa-secret"><code>${esc(p.email)}</code></div>
-            <span class="hint">People change their own email address. ${p.primary ? '' : 'Their account belongs to another company first.'}</span></div>
-          <div class="field is-full"><span class="label">Role${you ? ' — yours' : ''}</span>${FWA.roleCards('role', p.role)}</div>
-          ${p.primary ? `<label class="fwa-set fwa-set--toggle is-full" style="padding:6px 0"><span class="fwa-set__text"><span class="fwa-set__label">Uses a paid seat</span><span class="fwa-set__hint">Usually off only for outside bookkeepers.</span></span>
-            <span class="fwa-set__control"><span class="switch"><input type="checkbox" name="is_seat" value="1"${p.is_seat ? ' checked' : ''}><span class="switch__track"></span></span></span></label>` : ''}
+            <span class="hint">${p.primary ? 'People change their own email address.' : 'Their account belongs to another company, which looks after their name and email. You choose their role here.'}</span></div>
+          <div class="field is-full"><span class="label">Role${you ? ' — yours' : ''}</span>${FWA.roleCards('role', p.role)}
+            <span class="hint">Everyone uses a paid seat except Bookkeepers.</span></div>
         </div>
       </form>
       <div class="fwm-dialog__foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn--primary" type="button" id="edSave">${icon('check', 'i--sm')}Save changes</button></div>`, { width: 620 });
@@ -75,7 +74,6 @@
       const f = $('#editForm', m);
       $$('.field__error', m).forEach((x) => x.remove());
       const body = { action: 'update', id: p.id, first_name: f.first_name.value.trim(), last_name: f.last_name.value.trim(), role: ($('input[name=role]:checked', m) || {}).value };
-      if (f.is_seat) body.is_seat = f.is_seat.checked ? '1' : '0';
       const btn = $('#edSave', m);
       busy(btn, true);
       try {
@@ -123,7 +121,7 @@
     const you = p.id === ME;
     const el = popover(btn, `
       <button class="fwm-pop__item" type="button" data-v="edit">${icon('i-pen')}Edit name and role</button>
-      <button class="fwm-pop__item" type="button" data-v="signout">${icon('ia-logout-all')}Sign out everywhere</button>
+      <button class="fwm-pop__item" type="button" data-v="signout"${!p.primary && !you ? ' disabled title="Their own company looks after their devices"' : ''}>${icon('ia-logout-all')}Sign out everywhere</button>
       <div class="fwm-pop__sep"></div>
       ${p.status === 'active'
         ? `<button class="fwm-pop__item is-danger" type="button" data-v="suspend"${you || !p.primary ? ' disabled title="' + (you ? 'You cannot suspend yourself' : 'Their own company manages this — remove them instead') + '"' : ''}>${icon('ia-pause')}Suspend</button>`

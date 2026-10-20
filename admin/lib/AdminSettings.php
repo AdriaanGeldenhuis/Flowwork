@@ -88,11 +88,11 @@ final class AdminSettings
 
             'data' => [
                 'cards' => [
-                    'data-retention' => ['Keeping records', 'How long the audit trail is kept. Older entries are removed automatically once an hour.', 'i-history'],
+                    'data-retention' => ['Sign-in records', 'Who signed in or out, when, from which address and on which device — personal information POPIA asks you not to keep longer than you need. Older records are removed automatically once an hour.', 'i-history'],
                 ],
                 'fields' => [
-                    ['key' => 'audit_retention_days', 'label' => 'Keep the audit trail for', 'hint' => 'Financial records (invoices, receipts, journals) are never removed by this — SARS expects five years.', 'type' => 'select', 'default' => '0',
-                     'options' => ['0' => 'Forever', '365' => '1 year', '730' => '2 years', '1095' => '3 years', '1825' => '5 years', '2555' => '7 years'], 'card' => 'data-retention', 'kw' => 'retention delete popia history cleanup'],
+                    ['key' => 'signin_retention_days', 'label' => 'Keep sign-in records for', 'hint' => 'Only sign-ins, sign-outs and company switches are removed. Everything else in the audit trail — settings, people, invoices, the books — is always kept.', 'type' => 'select', 'default' => '0',
+                     'options' => ['0' => 'Forever', '90' => '3 months', '180' => '6 months', '365' => '1 year', '730' => '2 years'], 'card' => 'data-retention', 'kw' => 'retention delete popia history cleanup audit login'],
                 ],
             ],
 
@@ -425,7 +425,7 @@ final class AdminSettings
                 $control = '<input class="input" type="time" id="' . $ctlId . '" name="' . $name . '" value="' . $e($value) . '" required>';
                 break;
             case 'secret':
-                $control = '<span class="fwa-affix"><input class="input" type="password" id="' . $ctlId . '" name="' . $name . '" value="" autocomplete="off" spellcheck="false" placeholder="'
+                $control = '<span class="fwa-affix"><input class="input" type="password" data-secret="1" id="' . $ctlId . '" name="' . $name . '" value="" autocomplete="off" spellcheck="false" placeholder="'
                          . $e($value === '__set__' ? '•••••••• saved' : ($f['placeholder'] ?? '')) . '"><button type="button" data-reveal aria-label="Show"><svg class="i i--sm"><use href="#i-eye"/></svg></button></span>';
                 break;
             default:

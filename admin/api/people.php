@@ -1,11 +1,15 @@
 <?php
 // /admin/api/people.php — the company's people.
 //   GET  ?id=5                                         → {person}
-//   POST {action:'create', email, first_name, last_name, role}  → {person, temp_password|null, linked}
-//   POST {action:'update', id, first_name, last_name, role, is_seat}
+//   POST {action:'create', email, first_name, last_name, role}  → {person, temp_password|null, reactivated}
+//   POST {action:'update', id, first_name, last_name, role}
 //   POST {action:'suspend' | 'reactivate' | 'signout' | 'remove', id}
 // Rules: a company always keeps at least one active admin; you cannot
-// suspend or remove yourself; seats are checked whenever one gets used.
+// suspend or remove yourself; a paid seat is any active member who is not a
+// Bookkeeper, checked under a lock whenever one gets used. Someone whose
+// account belongs to another company ("guest") joins only by accepting an
+// invitation, and this company never changes their account itself (name,
+// status, devices) — only their role here, or their membership.
 require_once __DIR__ . '/_bootstrap.php';
 
 /** Active admins of the company other than $exceptId. */
@@ -19,24 +23,44 @@ function people_other_admins(PDO $db, int $companyId, int $exceptId): int
 
 function people_row(PDO $db, int $companyId, int $userId): array
 {
-    $st = $db->prepare("SELECT u.id, u.first_name, u.last_name, u.email, u.status, u.is_seat, u.last_login_at, u.created_at,
+    $st = $db->prepare("SELECT u.id, u.first_name, u.last_name, u.email, u.status, u.last_login_at, u.created_at,
                                u.company_id AS primary_company_id, uc.role
                           FROM user_companies uc JOIN users u ON u.id = uc.user_id WHERE uc.user_id = ? AND uc.company_id = ?");
     $st->execute([$userId, $companyId]);
     $p = $st->fetch(PDO::FETCH_ASSOC);
     if (!$p) admin_error('That person is not part of this company.', 404);
     $p['id'] = (int)$p['id'];
-    $p['is_seat'] = (int)$p['is_seat'];
+    $p['is_seat'] = $p['role'] !== 'bookkeeper' ? 1 : 0;
     $p['primary'] = (int)$p['primary_company_id'] === $companyId;
     unset($p['primary_company_id']);
     return $p;
 }
 
+/**
+ * Lock the company row (so two people cannot take the last seat at once) and
+ * refuse when every paid seat is in use. Call inside a transaction.
+ */
 function people_seat_check(PDO $db, int $companyId): void
 {
+    $db->prepare("SELECT id FROM companies WHERE id = ? FOR UPDATE")->execute([$companyId]);
     $s = AdminKit::seats($db, $companyId);
     if ($s['used'] >= $s['max']) {
+        if ($db->inTransaction()) $db->rollBack();
         admin_error('All ' . $s['max'] . ' paid seats are in use. Free a seat or move to a bigger plan under Subscription.', 409, ['reason' => 'seats']);
+    }
+}
+
+/** Run $fn in a transaction (rolled back on any error). */
+function people_tx(PDO $db, callable $fn)
+{
+    $db->beginTransaction();
+    try {
+        $r = $fn();
+        $db->commit();
+        return $r;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        throw $e;
     }
 }
 
@@ -60,50 +84,55 @@ if ($action === 'create') {
     if (!isset(AdminKit::ROLES[$role])) $errors['role'] = 'Choose a role.';
     if ($errors) throw new AdminInvalid($errors);
 
-    $st = $DB->prepare("SELECT id, status, is_seat FROM users WHERE email = ? LIMIT 1");
+    $st = $DB->prepare("SELECT id, status, company_id FROM users WHERE email = ? LIMIT 1");
     $st->execute([$email]);
-    $existing = $st->fetch(PDO::FETCH_ASSOC);
+    $existing = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($existing) {
         $st = $DB->prepare("SELECT 1 FROM user_companies WHERE user_id = ? AND company_id = ?");
         $st->execute([$existing['id'], $ADMIN_COMPANY_ID]);
         if ($st->fetchColumn()) throw new AdminInvalid(['email' => 'They are already part of this company.']);
-        if ($existing['status'] !== 'active') throw new AdminInvalid(['email' => 'That Flowwork account is suspended by its own company, so it cannot be added.']);
-        if ((int)$existing['is_seat'] === 1) people_seat_check($DB, $ADMIN_COMPANY_ID);
-    } elseif ($role !== 'bookkeeper') {
-        people_seat_check($DB, $ADMIN_COMPANY_ID);
+        if ((int)$existing['company_id'] !== $ADMIN_COMPANY_ID) {
+            // Their account belongs to another company: they must agree to join.
+            throw new AdminInvalid(['email' => 'They already have a Flowwork account with another company. Send them an invitation instead — they join by accepting it.']);
+        }
     }
 
     $temp = null;
-    $DB->beginTransaction();
-    try {
+    $reactivated = false;
+    $newId = people_tx($DB, function () use ($DB, $ADMIN_COMPANY_ID, $existing, $email, $first, $last, $role, &$temp, &$reactivated) {
+        if ($role !== 'bookkeeper') people_seat_check($DB, $ADMIN_COMPANY_ID);
         if ($existing) {
-            $newId = (int)$existing['id'];
-            $DB->prepare("INSERT INTO user_companies (user_id, company_id, role, created_at) VALUES (?, ?, ?, NOW())")->execute([$newId, $ADMIN_COMPANY_ID, $role]);
+            // Their own account, removed from the company earlier: bring it back as it was.
+            $id = (int)$existing['id'];
+            $DB->prepare("UPDATE users SET first_name = ?, last_name = ?, role = ?, is_seat = ?, status = 'active', updated_at = NOW() WHERE id = ?")
+               ->execute([$first, $last, $role, $role === 'bookkeeper' ? 0 : 1, $id]);
+            $reactivated = true;
         } else {
-            // A readable one-time password: four groups of four, no look-alike characters.
+            // A readable one-time password: groups of four without look-alike characters,
+            // long enough for the company's password rules.
+            require_once __DIR__ . '/../../includes/password_policy.php';
+            $min = fw_password_policy($DB, $ADMIN_COMPANY_ID)['min'];
             $alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
             $groups = [];
-            for ($g = 0; $g < 4; $g++) {
+            do {
                 $chunk = '';
                 for ($i = 0; $i < 4; $i++) $chunk .= $alphabet[random_int(0, strlen($alphabet) - 1)];
                 $groups[] = $chunk;
-            }
-            $temp = implode('-', $groups) . '-' . random_int(10, 99) . '!';
+                $temp = implode('-', $groups) . '-' . random_int(10, 99) . '!';
+            } while (count($groups) < 4 || strlen($temp) < $min);
             $DB->prepare("INSERT INTO users (company_id, email, password_hash, first_name, last_name, role, is_seat, status, created_at, updated_at)
                           VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())")
                ->execute([$ADMIN_COMPANY_ID, $email, password_hash($temp, PASSWORD_DEFAULT), $first, $last, $role, $role === 'bookkeeper' ? 0 : 1]);
-            $newId = (int)$DB->lastInsertId();
-            $DB->prepare("INSERT INTO user_companies (user_id, company_id, role, created_at) VALUES (?, ?, ?, NOW())")->execute([$newId, $ADMIN_COMPANY_ID, $role]);
+            $id = (int)$DB->lastInsertId();
         }
+        $DB->prepare("INSERT INTO user_companies (user_id, company_id, role, created_at) VALUES (?, ?, ?, NOW())")->execute([$id, $ADMIN_COMPANY_ID, $role]);
         // Any open invitation for this address is now answered.
-        $DB->prepare("UPDATE invites SET used = 1, used_by = ?, used_at = NOW() WHERE company_id = ? AND email = ? AND used = 0")->execute([$newId, $ADMIN_COMPANY_ID, $email]);
-        $DB->commit();
-    } catch (Throwable $e) {
-        if ($DB->inTransaction()) $DB->rollBack();
-        throw $e;
-    }
-    AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, 'user_created', ['email' => $email, 'role' => $role, 'account' => $existing ? 'existing Flowwork account linked' : 'new account'], 'user', $newId);
-    admin_json(['person' => people_row($DB, $ADMIN_COMPANY_ID, $newId), 'temp_password' => $temp, 'linked' => (bool)$existing]);
+        $DB->prepare("UPDATE invites SET used = 1, used_by = ?, used_at = NOW() WHERE company_id = ? AND email = ? AND used = 0")->execute([$id, $ADMIN_COMPANY_ID, $email]);
+        return $id;
+    });
+    AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, $reactivated ? 'user_reactivated' : 'user_created',
+        ['email' => $email, 'role' => AdminKit::ROLES[$role][0], 'account' => $reactivated ? 'their earlier account, brought back' : 'new account'], 'user', $newId);
+    admin_json(['person' => people_row($DB, $ADMIN_COMPANY_ID, $newId), 'temp_password' => $temp, 'reactivated' => $reactivated]);
 }
 
 $id = admin_int($in, 'id');
@@ -113,9 +142,9 @@ $name = trim($p['first_name'] . ' ' . $p['last_name']) ?: $p['email'];
 
 switch ($action) {
     case 'update':
-        $first = admin_str($in, 'first_name', 100);
-        $last = admin_str($in, 'last_name', 100);
         $role = admin_str($in, 'role', 20);
+        $first = $p['primary'] ? admin_str($in, 'first_name', 100) : $p['first_name'];
+        $last = $p['primary'] ? admin_str($in, 'last_name', 100) : $p['last_name'];
         $errors = [];
         if ($first === '') $errors['first_name'] = 'Enter a first name.';
         if ($last === '') $errors['last_name'] = 'Enter a surname.';
@@ -124,27 +153,19 @@ switch ($action) {
         if ($p['role'] === 'admin' && $role !== 'admin' && !people_other_admins($DB, $ADMIN_COMPANY_ID, $id)) {
             throw new AdminInvalid(['role' => 'The company needs at least one admin. Make someone else an admin first.']);
         }
-        $seat = array_key_exists('is_seat', $in) ? (!empty($in['is_seat']) && $in['is_seat'] !== '0' ? 1 : 0) : $p['is_seat'];
-        if (!$p['primary']) $seat = $p['is_seat']; // seat and status belong to the person's own company
-        if ($seat === 1 && $p['is_seat'] === 0 && $p['status'] === 'active') people_seat_check($DB, $ADMIN_COMPANY_ID);
-
-        $DB->beginTransaction();
-        try {
+        people_tx($DB, function () use ($DB, $ADMIN_COMPANY_ID, $p, $id, $role, $first, $last) {
+            // A bookkeeper who becomes anything else starts using a seat.
+            if ($p['role'] === 'bookkeeper' && $role !== 'bookkeeper' && $p['status'] === 'active') people_seat_check($DB, $ADMIN_COMPANY_ID);
             $DB->prepare("UPDATE user_companies SET role = ? WHERE user_id = ? AND company_id = ?")->execute([$role, $id, $ADMIN_COMPANY_ID]);
             if ($p['primary']) {
-                $DB->prepare("UPDATE users SET first_name = ?, last_name = ?, role = ?, is_seat = ?, updated_at = NOW() WHERE id = ?")->execute([$first, $last, $role, $seat, $id]);
-            } else {
-                $DB->prepare("UPDATE users SET first_name = ?, last_name = ?, updated_at = NOW() WHERE id = ?")->execute([$first, $last, $id]);
+                // Their account belongs to this company: name and the account-wide role/seat follow.
+                $DB->prepare("UPDATE users SET first_name = ?, last_name = ?, role = ?, is_seat = ?, updated_at = NOW() WHERE id = ?")
+                   ->execute([$first, $last, $role, $role === 'bookkeeper' ? 0 : 1, $id]);
             }
-            $DB->commit();
-        } catch (Throwable $e) {
-            if ($DB->inTransaction()) $DB->rollBack();
-            throw $e;
-        }
+        });
         $changes = [];
         if ($p['role'] !== $role) $changes['role'] = (AdminKit::ROLES[$p['role']][0] ?? $p['role']) . ' → ' . AdminKit::ROLES[$role][0];
         if ($p['first_name'] !== $first || $p['last_name'] !== $last) $changes['name'] = trim($first . ' ' . $last);
-        if ($seat !== $p['is_seat']) $changes['seat'] = $seat ? 'paid seat' : 'no seat';
         AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, 'user_updated', ['person' => $name] + $changes, 'user', $id);
         admin_json(['person' => people_row($DB, $ADMIN_COMPANY_ID, $id)]);
 
@@ -159,12 +180,16 @@ switch ($action) {
 
     case 'reactivate':
         if (!$p['primary']) admin_error($name . '’s own company manages whether their account is active.');
-        if ($p['is_seat'] === 1) people_seat_check($DB, $ADMIN_COMPANY_ID);
-        $DB->prepare("UPDATE users SET status = 'active', updated_at = NOW() WHERE id = ?")->execute([$id]);
+        people_tx($DB, function () use ($DB, $ADMIN_COMPANY_ID, $p, $id) {
+            if ($p['role'] !== 'bookkeeper') people_seat_check($DB, $ADMIN_COMPANY_ID);
+            $DB->prepare("UPDATE users SET status = 'active', updated_at = NOW() WHERE id = ?")->execute([$id]);
+        });
         AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, 'user_reactivated', ['person' => $name], 'user', $id);
         admin_json(['person' => people_row($DB, $ADMIN_COMPANY_ID, $id)]);
 
     case 'signout':
+        // A guest's devices belong to their own company; you can only remove them from this one.
+        if (!$p['primary'] && !$self) admin_error($name . '’s account belongs to another company, which looks after their devices. Remove them from this company if they should no longer have access.');
         $n = fw_auth_revoke_all($DB, $id, 'signed_out', $self ? (int)($_SESSION['auth_sid'] ?? 0) : null);
         AdminKit::audit($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID, 'user_signed_out', ['person' => $name, 'devices' => $n], 'user', $id);
         admin_json(['devices' => $n]);
@@ -173,10 +198,10 @@ switch ($action) {
         if ($self) admin_error('You cannot remove yourself. Ask another admin.');
         if ($p['role'] === 'admin' && !people_other_admins($DB, $ADMIN_COMPANY_ID, $id)) admin_error('The company needs at least one active admin.');
 
-        // Take them off this company's projects first (safe to repeat if a later
-        // step fails): memberships, board access and the people cells they are
-        // on. The items' assignee and people lists are recomputed from the cells
-        // by the Projects engine.
+        // Take them off this company's projects first (safe to repeat if
+        // a later step fails): memberships, board access and the people
+        // cells they are on. The items' assignee and people lists are
+        // recomputed from the cells by the Projects engine.
         require_once __DIR__ . '/../../projects/lib/autoload.php';
         ProjectSchema::ensure($DB);
         $DB->prepare("DELETE FROM project_members WHERE user_id = ? AND company_id = ?")->execute([$id, $ADMIN_COMPANY_ID]);
@@ -213,7 +238,8 @@ switch ($action) {
         $DB->prepare("DELETE FROM user_companies WHERE user_id = ? AND company_id = ?")->execute([$id, $ADMIN_COMPANY_ID]);
         if ($p['primary']) {
             // This was their own company: the account is switched off as well
-            // (kept, not deleted, so their history stays readable).
+            // (kept, not deleted, so their history stays readable; adding the
+            // same email again brings it back).
             $DB->prepare("UPDATE users SET status = 'suspended', session_token = NULL, updated_at = NOW() WHERE id = ?")->execute([$id]);
             fw_auth_revoke_all($DB, $id, 'suspended');
         }

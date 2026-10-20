@@ -3,8 +3,9 @@
  * Admin console: every setting the console shows is saved where the module
  * that uses it reads it (Calendar, sign-in limits, Payroll, Suppliers AI and
  * CRM compliance, Finance's engine, Yoco on the company), bad values are
- * refused field by field, secrets never come back, and the password rules,
- * audit-trail retention, audit filters and readable audit labels behave.
+ * refused field by field, secrets never come back, paid seats follow the
+ * role, and the password rules, sign-in record retention (nothing else is
+ * pruned), audit filters and readable audit labels behave.
  */
 require __DIR__ . '/../lib/bootstrap.php';
 require_once FLOWWORK_ROOT . '/includes/auth_sessions.php';
@@ -22,7 +23,7 @@ $C = TEST_COMPANY_ID;
 $U = TEST_USER_ID;
 $keys = ['calendar_timezone', 'calendar_work_hours_start', 'calendar_work_hours_end', 'calendar_sync_payroll_dates', 'calendar_default_view',
          'security_max_login_attempts', 'security_lockout_duration', 'security_min_password_length', 'security_require_uppercase', 'security_require_numbers', 'security_require_special',
-         'crm_block_expired_suppliers', 'crm_reminder_days', 'audit_retention_days', 'finance_vat_basis', 'finance_require_sod', 'finance_fiscal_year_start'];
+         'crm_block_expired_suppliers', 'crm_reminder_days', 'signin_retention_days', 'finance_vat_basis', 'finance_require_sod', 'finance_fiscal_year_start'];
 $saved = $DB->query("SELECT setting_key, setting_value FROM company_settings WHERE company_id = $C AND setting_key IN ('" . implode("','", $keys) . "')")->fetchAll(PDO::FETCH_KEY_PAIR);
 $savedPayroll = $DB->query("SELECT * FROM payroll_settings WHERE company_id = $C")->fetch(PDO::FETCH_ASSOC) ?: null;
 $savedAi = $DB->query("SELECT * FROM ai_settings WHERE company_id = $C")->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -109,18 +110,34 @@ try {
     AdminSettings::save($DB, $C, $U, 'admin', 'payments', ['yoco_sec_key' => '__clear__', 'yoco_webhook_secret' => '__clear__']);
     assert_eq(null, $DB->query("SELECT yoco_sec_key FROM companies WHERE id = $C")->fetchColumn(), 'disconnect clears the key');
 
-    // ------------------------------------------------------------------ audit trail: retention, labels, filters
-    $DB->prepare("INSERT INTO audit_log (company_id, user_id, action, details, timestamp, created_at) VALUES (?, ?, 'old_thing', 'x', '2020-01-01', '2020-01-01'), (?, ?, 'recent_thing', 'x', NOW(), NOW())")->execute([$C, $U, $C, $U]);
-    AdminSettings::save($DB, $C, $U, 'admin', 'data', ['audit_retention_days' => '0']);
+    // ------------------------------------------------------------------ sign-in records: retention (nothing else is pruned)
+    $DB->prepare("INSERT INTO audit_log (company_id, user_id, action, details, timestamp, created_at) VALUES
+                  (?, ?, 'user_login', 'old', '2020-01-01', '2020-01-01'), (?, ?, 'journal_posted', 'old money', '2020-01-01', '2020-01-01'),
+                  (?, ?, 'user_login', 'recent', NOW(), NOW())")->execute([$C, $U, $C, $U, $C, $U]);
+    $count = fn(string $action, string $details) => (int)$DB->query("SELECT COUNT(*) FROM audit_log WHERE company_id = $C AND action = " . $DB->quote($action) . " AND details = " . $DB->quote($details))->fetchColumn();
+    AdminSettings::save($DB, $C, $U, 'admin', 'data', ['signin_retention_days' => '0']);
     fw_audit_retention_cleanup($DB);
-    assert_eq(1, (int)$DB->query("SELECT COUNT(*) FROM audit_log WHERE company_id = $C AND action = 'old_thing'")->fetchColumn(), '"forever" keeps everything');
-    AdminSettings::save($DB, $C, $U, 'admin', 'data', ['audit_retention_days' => '365']);
-    assert_true(fw_audit_retention_cleanup($DB) >= 1, 'a one-year limit removes older entries');
-    assert_eq(0, (int)$DB->query("SELECT COUNT(*) FROM audit_log WHERE company_id = $C AND action = 'old_thing'")->fetchColumn(), 'the old entry is gone');
-    assert_eq(1, (int)$DB->query("SELECT COUNT(*) FROM audit_log WHERE company_id = $C AND action = 'recent_thing'")->fetchColumn(), 'recent entries stay');
+    assert_eq(1, $count('user_login', 'old'), '"forever" keeps old sign-ins');
+    AdminSettings::save($DB, $C, $U, 'admin', 'data', ['signin_retention_days' => '365']);
+    assert_true(fw_audit_retention_cleanup($DB) >= 1, 'a one-year limit removes older sign-ins');
+    assert_eq(0, $count('user_login', 'old'), 'the old sign-in is gone');
+    assert_eq(1, $count('journal_posted', 'old money'), 'old finance entries are never pruned');
+    assert_eq(1, $count('user_login', 'recent'), 'recent sign-ins stay');
     assert_eq(1, (int)$DB->query("SELECT COUNT(*) FROM audit_log WHERE company_id = $C AND action = 'audit_pruned'")->fetchColumn(), 'the pruning itself is recorded');
     $last = $DB->query("SELECT details FROM audit_log WHERE company_id = $C AND action = 'settings_updated' ORDER BY id DESC LIMIT 1")->fetchColumn();
-    assert_true(str_contains((string)$last, 'Keep the audit trail for') && str_contains((string)$last, 'Forever → 1 year'), 'settings changes are logged in words');
+    assert_true(str_contains((string)$last, 'Keep sign-in records for') && str_contains((string)$last, 'Forever → 1 year'), 'settings changes are logged in words');
+
+    // ------------------------------------------------------------------ paid seats follow the role, not the account flag
+    $before = AdminKit::seats($DB, $C)['used'];
+    $mk = $DB->prepare("INSERT INTO users (company_id, email, password_hash, first_name, last_name, role, is_seat, status) VALUES (?, ?, 'x', 'Seat', 'Test', ?, ?, 'active')");
+    $mk->execute([$C, 'seat-bk-' . uniqid() . '@example.com', 'bookkeeper', 1]);
+    $bk = (int)$DB->lastInsertId();
+    $mk->execute([$C, 'seat-m-' . uniqid() . '@example.com', 'member', 0]);
+    $mem = (int)$DB->lastInsertId();
+    $DB->prepare("INSERT INTO user_companies (user_id, company_id, role) VALUES (?, ?, 'bookkeeper'), (?, ?, 'member')")->execute([$bk, $C, $mem, $C]);
+    assert_eq($before + 1, AdminKit::seats($DB, $C)['used'], 'a member uses a seat even when flagged seat-free; a bookkeeper never does');
+    $DB->prepare("DELETE FROM user_companies WHERE user_id IN (?, ?)")->execute([$bk, $mem]);
+    $DB->prepare("DELETE FROM users WHERE id IN (?, ?)")->execute([$bk, $mem]);
 
     assert_eq(['Signed in', 'success'], AdminKit::actionLabel('user_login'), 'known actions read as words');
     assert_eq(['Crm account update', 'muted'], AdminKit::actionLabel('crm_account_update'), 'unknown actions are turned into words');
@@ -146,7 +163,7 @@ try {
     }
     $DB->prepare("UPDATE companies SET yoco_mode = ?, yoco_sec_key = ?, yoco_webhook_secret = ? WHERE id = ?")
        ->execute([$savedYoco['yoco_mode'], $savedYoco['yoco_sec_key'], $savedYoco['yoco_webhook_secret'], $C]);
-    $DB->exec("DELETE FROM audit_log WHERE company_id = $C AND action IN ('old_thing', 'recent_thing', 'audit_pruned', 'settings_updated', 'finance_settings_saved')");
+    $DB->exec("DELETE FROM audit_log WHERE company_id = $C AND (action IN ('audit_pruned', 'settings_updated', 'finance_settings_saved') OR details IN ('old', 'recent', 'old money'))");
 }
 
 echo "Admin: " . $GLOBALS['__assert_count'] . " assertions passed\n";
