@@ -100,3 +100,8 @@ storage/crm/
 # Finance runtime data (supporting documents, schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/finance/
+
+# ---------------------------------------------------------------------------
+# Admin runtime data (rate-limit buckets)
+# ---------------------------------------------------------------------------
+storage/admin/

@@ -1,180 +1,86 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /admin/mail.php — Mail: every mailbox connected in the company, whether it
+// is syncing, and which address Flowwork uses for what (documents, payslips,
+// invitations, system mail). Mailboxes are per person and are connected in
+// /mail/settings.php; there are no company-wide SMTP settings to keep here.
+require_once __DIR__ . '/lib/AdminBoot.php';
+require_once __DIR__ . '/lib/AdminMail.php';
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
-
-require_once __DIR__ . '/../includes/companies.php';
-fw_require_admin();
-
-// Handle form submission
-$success = $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_mail') {
-    try {
-        $settings = [
-            'mail_smtp_host' => trim($_POST['mail_smtp_host'] ?? ''),
-            'mail_smtp_port' => trim($_POST['mail_smtp_port'] ?? '587'),
-            'mail_smtp_encryption' => trim($_POST['mail_smtp_encryption'] ?? 'tls'),
-            'mail_smtp_username' => trim($_POST['mail_smtp_username'] ?? ''),
-            'mail_from_name' => trim($_POST['mail_from_name'] ?? ''),
-            'mail_from_email' => trim($_POST['mail_from_email'] ?? ''),
-            'mail_reply_to' => trim($_POST['mail_reply_to'] ?? ''),
-            'mail_signature' => trim($_POST['mail_signature'] ?? ''),
-            'mail_track_opens' => isset($_POST['mail_track_opens']) ? '1' : '0',
-            'mail_track_clicks' => isset($_POST['mail_track_clicks']) ? '1' : '0',
-        ];
-
-        // Only update password if provided
-        if (!empty($_POST['mail_smtp_password'])) {
-            $settings['mail_smtp_password'] = trim($_POST['mail_smtp_password']);
-        }
-
-        foreach ($settings as $key => $value) {
-            setCRMSetting($key, $value);
-        }
-
-        $stmt = $DB->prepare("
-            INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-            VALUES (?, ?, 'mail_settings_updated', 'Updated mail settings', NOW())
-        ");
-        $stmt->execute([$companyId, $userId]);
-
-        $success = 'Mail settings saved successfully';
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    }
+$boxes = [];
+try {
+    $st = $DB->prepare("SELECT a.account_id, a.email_address, a.display_name, a.is_active, a.last_sync_at, a.last_error, a.smtp_server, a.imap_server,
+                               CONCAT_WS(' ', u.first_name, u.last_name) AS owner, a.user_id
+                          FROM email_accounts a LEFT JOIN users u ON u.id = a.user_id
+                         WHERE a.company_id = ? ORDER BY a.is_active DESC, owner, a.email_address");
+    $st->execute([$ADMIN_COMPANY_ID]);
+    $boxes = $st->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $ex) {
 }
+// Payslips use the company's first mailbox that can send (payroll/lib/PayslipEmailer.php)
+$payslipBox = null;
+$byId = $boxes;
+usort($byId, fn($a, $b) => (int)$a['account_id'] <=> (int)$b['account_id']);
+foreach ($byId as $b) if (!empty($b['smtp_server'])) { $payslipBox = $b; break; }
+$mine = AdminMail::mailbox($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID);
+$system = AdminMail::systemReady();
+$broken = count(array_filter($boxes, fn($b) => (int)$b['is_active'] && trim((string)$b['last_error']) !== ''));
 
-// Load current settings
-$s = [
-    'mail_smtp_host' => getCRMSetting('mail_smtp_host', ''),
-    'mail_smtp_port' => getCRMSetting('mail_smtp_port', '587'),
-    'mail_smtp_encryption' => getCRMSetting('mail_smtp_encryption', 'tls'),
-    'mail_smtp_username' => getCRMSetting('mail_smtp_username', ''),
-    'mail_smtp_password' => getCRMSetting('mail_smtp_password', ''),
-    'mail_from_name' => getCRMSetting('mail_from_name', ''),
-    'mail_from_email' => getCRMSetting('mail_from_email', ''),
-    'mail_reply_to' => getCRMSetting('mail_reply_to', ''),
-    'mail_signature' => getCRMSetting('mail_signature', ''),
-    'mail_track_opens' => getCRMSetting('mail_track_opens', '0'),
-    'mail_track_clicks' => getCRMSetting('mail_track_clicks', '0'),
-];
+$page = 'mail';
+$pageTitle = 'Mail';
+include __DIR__ . '/partials/head.php';
 ?>
-<?php
-  $pageTitle = 'Mail Settings – Admin';
-  include __DIR__ . '/_layout_top.php';
-?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Mail Settings</h1>
-                    <p class="fw-admin__page-subtitle">Configure email sending, SMTP, and default templates</p>
-                </div>
-                <a href="/mail/settings.php" class="fw-admin__btn fw-admin__btn--secondary">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                        <polyline points="15 3 21 3 21 9"/>
-                        <line x1="10" y1="14" x2="21" y2="3"/>
-                    </svg>
-                    Email Accounts
-                </a>
-            </header>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">Modules <i>◆</i> Mail</p>
+        <h1>Mail</h1>
+        <p>Everyone connects their own mailbox, so mail goes out from the right person. Here you see them all, and which address Flowwork uses for what.</p>
+    </div>
+    <div class="fwa-head__actions">
+        <a class="btn" href="/mail/templates.php"><svg class="i"><use href="#i-template"/></svg>Templates</a>
+        <a class="btn btn--primary" href="/mail/settings.php"><svg class="i"><use href="#i-plus"/></svg><?= $mine ? 'My mailbox settings' : 'Connect my mailbox' ?></a>
+    </div>
+</header>
 
-            <?php if ($success): ?>
-                <div class="fw-admin__alert fw-admin__alert--success">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <?= htmlspecialchars($success) ?>
-                </div>
-            <?php endif; ?>
+<?php if ($broken): ?>
+    <div class="fwa-banner fwa-banner--warn"><svg class="i"><use href="#i-alert"/></svg><div class="fwa-banner__body"><b><?= $broken ?> mailbox<?= $broken === 1 ? ' is' : 'es are' ?> not syncing.</b> Usually a changed password — its owner can fix it under Mail › Settings.</div></div>
+<?php endif; ?>
 
-            <?php if ($error): ?>
-                <div class="fw-admin__alert fw-admin__alert--error">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                    <?= htmlspecialchars($error) ?>
-                </div>
-            <?php endif; ?>
+<section class="fwa-card" id="card-boxes">
+    <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#i-inbox"/></svg></span>
+        <div class="fwa-card__title"><h3>Connected mailboxes · <?= count($boxes) ?></h3><p>Each person’s own address. Passwords are stored encrypted and never shown.</p></div></header>
+    <?php if (!$boxes): ?>
+        <div class="fwa-card__body"><p class="fwa-muted" style="margin:0">Nobody has connected a mailbox yet. <a href="/mail/settings.php">Connect yours</a> to send quotes, invoices and invitations from your own address.</p></div>
+    <?php else: ?>
+        <div class="fwa-table-wrap"><table class="fwa-table">
+            <thead><tr><th>Mailbox</th><th>Belongs to</th><th>Status</th><th class="hide-narrow">Last checked</th></tr></thead>
+            <tbody>
+            <?php foreach ($boxes as $b): $err = trim((string)$b['last_error']); ?>
+                <tr<?= (int)$b['is_active'] ? '' : ' class="is-muted"' ?>>
+                    <td><div class="fwa-who"><span class="fwa-ava fwa-ava--sm fwa-ava--round" style="--h:<?= AdminKit::hue((string)$b['email_address']) ?>"><?= $e(AdminKit::initials((string)$b['email_address'])) ?></span>
+                        <span class="fwa-who__text"><b><?= $e($b['email_address']) ?></b><small><?= $e($b['display_name'] ?: '—') ?></small></span></div></td>
+                    <td><?= $e(trim((string)$b['owner']) ?: '—') ?><?= (int)$b['user_id'] === $ADMIN_USER_ID ? '<span class="fwa-you">You</span>' : '' ?></td>
+                    <td><?php if (!(int)$b['is_active']): ?><span class="fwa-pill" data-tone="muted">Switched off</span>
+                        <?php elseif ($err !== ''): ?><span class="fwa-pill" data-tone="danger" title="<?= $e(mb_strimwidth($err, 0, 300, '…')) ?>">Not syncing</span>
+                        <?php elseif (empty($b['smtp_server'])): ?><span class="fwa-pill" data-tone="warning">Can’t send</span>
+                        <?php else: ?><span class="fwa-pill" data-tone="success">Working</span><?php endif; ?></td>
+                    <td class="hide-narrow"><?= $b['last_sync_at'] ? $e(AdminKit::ago($b['last_sync_at'])) : '<span class="fwa-muted">Never</span>' ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+    <?php endif; ?>
+</section>
 
-            <form method="POST">
-                <input type="hidden" name="action" value="save_mail">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-
-                <!-- Sender Settings -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Sender Details</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">From Name</label>
-                            <input type="text" name="mail_from_name" class="fw-admin__input" value="<?= htmlspecialchars($s['mail_from_name']) ?>" placeholder="Your Company Name">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">From Email</label>
-                            <input type="email" name="mail_from_email" class="fw-admin__input" value="<?= htmlspecialchars($s['mail_from_email']) ?>" placeholder="noreply@yourcompany.co.za">
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__label">Reply-To Email</label>
-                            <input type="email" name="mail_reply_to" class="fw-admin__input" value="<?= htmlspecialchars($s['mail_reply_to']) ?>" placeholder="info@yourcompany.co.za">
-                            <small style="color: var(--fw-text-muted); font-size: 12px; margin-top: 4px; display: block;">Leave empty to use the From email</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SMTP -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">SMTP Configuration</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">SMTP Host</label>
-                            <input type="text" name="mail_smtp_host" class="fw-admin__input" value="<?= htmlspecialchars($s['mail_smtp_host']) ?>" placeholder="smtp.gmail.com">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">SMTP Port</label>
-                            <input type="number" name="mail_smtp_port" class="fw-admin__input" value="<?= htmlspecialchars($s['mail_smtp_port']) ?>" placeholder="587">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Encryption</label>
-                            <select name="mail_smtp_encryption" class="fw-admin__select">
-                                <option value="tls" <?= $s['mail_smtp_encryption'] === 'tls' ? 'selected' : '' ?>>TLS</option>
-                                <option value="ssl" <?= $s['mail_smtp_encryption'] === 'ssl' ? 'selected' : '' ?>>SSL</option>
-                                <option value="none" <?= $s['mail_smtp_encryption'] === 'none' ? 'selected' : '' ?>>None</option>
-                            </select>
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Username</label>
-                            <input type="text" name="mail_smtp_username" class="fw-admin__input" value="<?= htmlspecialchars($s['mail_smtp_username']) ?>" placeholder="your@email.com">
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__label">Password</label>
-                            <input type="password" name="mail_smtp_password" class="fw-admin__input" placeholder="<?= $s['mail_smtp_password'] ? '••••••••' : 'Enter SMTP password' ?>">
-                            <small style="color: var(--fw-text-muted); font-size: 12px; margin-top: 4px; display: block;">Leave empty to keep current password</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tracking & Signature -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Options</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="mail_track_opens" value="1" <?= $s['mail_track_opens'] === '1' ? 'checked' : '' ?>>
-                                <span>Track email opens</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="mail_track_clicks" value="1" <?= $s['mail_track_clicks'] === '1' ? 'checked' : '' ?>>
-                                <span>Track link clicks</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__label">Email Signature</label>
-                            <textarea name="mail_signature" class="fw-admin__textarea" rows="4" placeholder="Default email signature appended to outgoing emails..."><?= htmlspecialchars($s['mail_signature']) ?></textarea>
-                        </div>
-                    </div>
-
-                    <div class="fw-admin__form-actions">
-                        <button type="submit" class="fw-admin__btn fw-admin__btn--primary">Save Mail Settings</button>
-                    </div>
-                </div>
-            </form>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
+<section class="fwa-card" id="card-routes">
+    <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#i-send"/></svg></span>
+        <div class="fwa-card__title"><h3>Who sends what</h3><p>So you know where replies will land.</p></div></header>
+    <div class="fwa-actions">
+        <div class="fwa-action"><span class="fwa-action__icon"><svg class="i"><use href="#iq-invoice"/></svg></span><span class="fwa-action__text"><b>Quotes, invoices, statements and CRM email</b><small>From the mailbox of the person who sends them.</small></span></div>
+        <div class="fwa-action"><span class="fwa-action__icon"><svg class="i"><use href="#i-wallet"/></svg></span><span class="fwa-action__text"><b>Payslips</b><small><?= $payslipBox ? 'From ' . $e($payslipBox['email_address']) . ' — the company’s first mailbox that can send.' : 'No mailbox can send yet, so the server’s own mail is used — they may land in spam.' ?></small></span></div>
+        <div class="fwa-action"><span class="fwa-action__icon"><svg class="i"><use href="#ia-user-plus"/></svg></span><span class="fwa-action__text"><b>Invitations</b><small><?= $mine ? 'From your mailbox (' . $e($mine['email_address']) . ') when you invite someone.' : ($system ? 'From Flowwork’s mail, until you connect your own mailbox.' : 'Not emailed until you connect your mailbox — you get a link to share instead.') ?></small></span></div>
+        <div class="fwa-action"><span class="fwa-action__icon"><svg class="i"><use href="#i-lock"/></svg></span><span class="fwa-action__text"><b>Password resets</b><small><?= $system ? 'From Flowwork’s system mail.' : 'Flowwork’s system mail is not set up on this server — ask Flowwork support.' ?></small></span>
+            <span class="fwa-pill" data-tone="<?= $system ? 'success' : 'warning' ?>"><?= $system ? 'Ready' : 'Not set up' ?></span></div>
+    </div>
+    <div style="height:8px"></div>
+</section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

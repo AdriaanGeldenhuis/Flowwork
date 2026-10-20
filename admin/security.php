@@ -1,231 +1,119 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /admin/security.php — Security: sign-in protection (read by
+// fw_login_limits / fw_auth_single_device), password rules (read by
+// includes/password_policy.php wherever a password is chosen), every
+// signed-in device in the company with sign-out, and recent sign-in activity.
+// Devices and failed sign-ins are shown for accounts that belong to this
+// company only: a guest from another company is that company's to look after.
+require_once __DIR__ . '/lib/AdminBoot.php';
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
+$values = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'security');
 
-require_once __DIR__ . '/../includes/companies.php';
-fw_require_admin();
-
-// Handle form submission
-$success = $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_security') {
-    try {
-        $settings = [
-            'security_min_password_length' => trim($_POST['security_min_password_length'] ?? '8'),
-            'security_require_uppercase' => isset($_POST['security_require_uppercase']) ? '1' : '0',
-            'security_require_numbers' => isset($_POST['security_require_numbers']) ? '1' : '0',
-            'security_require_special' => isset($_POST['security_require_special']) ? '1' : '0',
-            'security_session_timeout' => trim($_POST['security_session_timeout'] ?? '480'),
-            'security_max_login_attempts' => trim($_POST['security_max_login_attempts'] ?? '5'),
-            'security_lockout_duration' => trim($_POST['security_lockout_duration'] ?? '15'),
-            // Replaces the old 'security_force_single_session' key (which was never enforced and
-            // defaulted to on): one device per user is now opt-in and actually applied at sign-in.
-            'security_single_device' => isset($_POST['security_single_device']) ? '1' : '0',
-            'security_ip_whitelist' => trim($_POST['security_ip_whitelist'] ?? ''),
-            'security_2fa_enabled' => isset($_POST['security_2fa_enabled']) ? '1' : '0',
-            'security_password_expiry_days' => trim($_POST['security_password_expiry_days'] ?? '0'),
-        ];
-
-        foreach ($settings as $key => $value) {
-            setCRMSetting($key, $value);
-        }
-
-        $stmt = $DB->prepare("
-            INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-            VALUES (?, ?, 'security_settings_updated', 'Updated security settings', NOW())
-        ");
-        $stmt->execute([$companyId, $userId]);
-
-        $success = 'Security settings saved successfully';
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    }
+$devices = [];
+try {
+    $st = $DB->prepare("SELECT s.id, s.user_id, s.device_label, s.ip, s.is_app, s.remember_hash IS NOT NULL AS remembered, s.last_seen_at, s.created_at,
+                               CONCAT_WS(' ', u.first_name, u.last_name) AS name, u.email
+                          FROM user_sessions s
+                          JOIN users u ON u.id = s.user_id AND u.company_id = ?
+                         WHERE s.revoked_at IS NULL AND s.expires_at > NOW()
+                      ORDER BY s.last_seen_at DESC LIMIT 300");
+    $st->execute([$ADMIN_COMPANY_ID]);
+    $devices = $st->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $ex) {
 }
+$failed = [];
+try {
+    $st = $DB->prepare("SELECT a.email, a.ip, COUNT(*) AS tries, MAX(a.attempted_at) AS last_at
+                          FROM auth_login_attempts a
+                         WHERE a.email IN (SELECT u.email FROM users u WHERE u.company_id = ?)
+                      GROUP BY a.email, a.ip ORDER BY last_at DESC LIMIT 50");
+    $st->execute([$ADMIN_COMPANY_ID]);
+    $failed = $st->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $ex) {
+}
+$st = $DB->prepare("SELECT al.action, COALESCE(al.timestamp, al.created_at) AS at, al.ip, al.details, CONCAT_WS(' ', u.first_name, u.last_name) AS name
+                      FROM audit_log al LEFT JOIN users u ON u.id = al.user_id
+                     WHERE al.company_id = ? AND al.action IN ('user_login', 'user_logout', 'password_reset', 'password_reset_requested', 'user_signed_out', 'device_signed_out', 'user_suspended')
+                  ORDER BY al.id DESC LIMIT 25");
+$st->execute([$ADMIN_COMPANY_ID]);
+$activity = $st->fetchAll(PDO::FETCH_ASSOC);
+$mySid = (int)($_SESSION['auth_sid'] ?? 0);
+$people = count(array_unique(array_column($devices, 'user_id')));
 
-// Load current settings
-$s = [
-    'security_min_password_length' => getCRMSetting('security_min_password_length', '8'),
-    'security_require_uppercase' => getCRMSetting('security_require_uppercase', '1'),
-    'security_require_numbers' => getCRMSetting('security_require_numbers', '1'),
-    'security_require_special' => getCRMSetting('security_require_special', '0'),
-    'security_session_timeout' => getCRMSetting('security_session_timeout', '480'),
-    'security_max_login_attempts' => getCRMSetting('security_max_login_attempts', '5'),
-    'security_lockout_duration' => getCRMSetting('security_lockout_duration', '15'),
-    'security_single_device' => getCRMSetting('security_single_device', '0'),
-    'security_ip_whitelist' => getCRMSetting('security_ip_whitelist', ''),
-    'security_2fa_enabled' => getCRMSetting('security_2fa_enabled', '0'),
-    'security_password_expiry_days' => getCRMSetting('security_password_expiry_days', '0'),
-];
-
-// Fetch recent login activity
-$stmt = $DB->prepare("
-    SELECT al.*, u.first_name, u.last_name, u.email
-    FROM audit_log al
-    LEFT JOIN users u ON u.id = al.user_id
-    WHERE al.company_id = ? AND al.action IN ('login', 'login_failed', 'logout', 'password_changed')
-    ORDER BY al.timestamp DESC
-    LIMIT 20
-");
-$stmt->execute([$companyId]);
-$loginActivity = $stmt->fetchAll();
+$page = 'security';
+$pageTitle = 'Security';
+include __DIR__ . '/partials/head.php';
 ?>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">Workspace <i>◆</i> Security</p>
+        <h1>Security</h1>
+        <p><?= count($devices) ?> device<?= count($devices) === 1 ? '' : 's' ?> signed in for <?= $people ?> <?= $people === 1 ? 'person' : 'people' ?><?= $failed ? ' · <b>' . array_sum(array_column($failed, 'tries')) . ' failed sign-in attempt' . (array_sum(array_column($failed, 'tries')) === 1 ? '' : 's') . '</b> in the last day' : ' · no failed sign-ins in the last day' ?>.</p>
+    </div>
+</header>
+
+<form data-settings="security" novalidate>
+    <?= AdminSettings::render('security', $values) ?>
+</form>
+
+<section class="fwa-card" id="card-devices" style="margin-top:16px">
+    <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#ih-devices"/></svg></span>
+        <div class="fwa-card__title"><h3>Signed-in devices</h3><p>Every phone, tablet and computer your people are signed in on. Sign one out if it is lost, or if you don’t recognise it.</p></div></header>
+    <?php if (!$devices): ?>
+        <div class="fwa-card__body fwa-muted">No devices are signed in.</div>
+    <?php else: ?>
+        <div class="fwa-table-wrap"><table class="fwa-table">
+            <thead><tr><th>Person</th><th>Device</th><th class="hide-narrow">Last used</th><th class="hide-narrow">Signed in</th><th class="t-right"><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="deviceBody">
+            <?php foreach ($devices as $d): $name = trim((string)$d['name']) ?: $d['email']; $mine = (int)$d['id'] === $mySid; ?>
+                <tr data-sid="<?= (int)$d['id'] ?>">
+                    <td><div class="fwa-who"><span class="fwa-ava fwa-ava--sm fwa-ava--round" style="--h:<?= AdminKit::hue($name) ?>"><?= $e(AdminKit::initials($name)) ?></span><span class="fwa-who__text"><b><?= $e($name) ?></b><small><?= $e($d['email']) ?></small></span></div></td>
+                    <td><?= $e($d['device_label'] ?: 'Unknown device') ?><?= $mine ? '<span class="fwa-you">This one</span>' : '' ?><small class="fwa-muted" style="display:block;margin-top:2px"><?= (int)$d['is_app'] ? 'Flowwork app' : 'Browser' ?><?= (int)$d['remembered'] ? ' · kept signed in' : '' ?><?= $d['ip'] ? ' · ' . $e($d['ip']) : '' ?></small></td>
+                    <td class="hide-narrow"><?= $e(AdminKit::ago($d['last_seen_at'])) ?></td>
+                    <td class="hide-narrow"><?= $e(AdminKit::date($d['created_at'])) ?></td>
+                    <td class="t-actions"><?php if (!$mine): ?><button class="fwa-mini" type="button" data-signout><svg class="i"><use href="#ia-logout-all"/></svg>Sign out</button><?php endif; ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+    <?php endif; ?>
+    <div class="fwa-table-foot"><svg class="i i--sm"><use href="#i-info"/></svg>To sign one person out everywhere, use <a href="/admin/users.php">People &amp; roles</a> › ⋯ › Sign out everywhere. Your own devices are also under <a href="/account/">Signed-in devices</a>.</div>
+</section>
+
+<div class="fwa-cols" style="margin-top:16px">
+    <section class="fwa-card" id="card-activity">
+        <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#ia-pulse"/></svg></span>
+            <div class="fwa-card__title"><h3>Sign-in activity</h3><p>The latest sign-ins, sign-outs and password resets.</p></div></header>
+        <?php if (!$activity): ?>
+            <div class="fwa-card__body fwa-muted">Nothing yet.</div>
+        <?php else: ?>
+            <ul class="fwa-feed">
+                <?php foreach ($activity as $a): [$label, $tone] = AdminKit::actionLabel((string)$a['action']); $who = trim((string)$a['name']) ?: 'Someone'; $det = json_decode((string)$a['details'], true); ?>
+                    <li><span class="fwa-dot" data-tone="<?= $tone ?>" style="margin-top:6px"></span>
+                        <span class="fwa-feed__body"><b><?= $e($who) ?></b> <span><?= $e(mb_strtolower(mb_substr($label, 0, 1)) . mb_substr($label, 1)) ?></span>
+                            <small><?= $e(AdminKit::ago($a['at'])) ?><?= is_array($det) && !empty($det['device']) ? ' · ' . $e($det['device']) : '' ?><?= $a['ip'] ? ' · ' . $e($a['ip']) : '' ?></small></span></li>
+                <?php endforeach; ?>
+            </ul>
+            <div class="fwa-feed__more"><a class="btn btn--sm btn--ghost" href="/admin/audit.php?kind=signin">Everything in the audit trail <svg class="i i--sm"><use href="#i-chev-right"/></svg></a></div>
+        <?php endif; ?>
+    </section>
+    <section class="fwa-card" id="card-failed">
+        <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#i-alert"/></svg></span>
+            <div class="fwa-card__title"><h3>Failed sign-ins</h3><p>Wrong passwords in the last 24 hours. A few are normal; many from one address are not.</p></div></header>
+        <?php if (!$failed): ?>
+            <div class="fwa-card__body"><div class="fwa-banner fwa-banner--ok" style="margin:0"><svg class="i"><use href="#i-check"/></svg><div class="fwa-banner__body">None. All quiet.</div></div></div>
+        <?php else: ?>
+            <ul class="fwa-feed">
+                <?php foreach ($failed as $f): $many = (int)$f['tries'] >= (int)$values['security_max_login_attempts']; ?>
+                    <li><span class="fwa-dot" data-tone="<?= $many ? 'danger' : 'warning' ?>" style="margin-top:6px"></span>
+                        <span class="fwa-feed__body"><b><?= $e($f['email']) ?></b> <span><?= (int)$f['tries'] ?> wrong password<?= (int)$f['tries'] === 1 ? '' : 's' ?><?= $many ? ' — paused' : '' ?></span>
+                            <small><?= $e(AdminKit::ago($f['last_at'])) ?> · from <?= $e($f['ip']) ?></small></span></li>
+                <?php endforeach; ?>
+            </ul>
+            <div style="height:8px"></div>
+        <?php endif; ?>
+    </section>
+</div>
 <?php
-  $pageTitle = 'Security – Admin';
-  include __DIR__ . '/_layout_top.php';
-?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Security</h1>
-                    <p class="fw-admin__page-subtitle">Password policies, session management, and access control</p>
-                </div>
-            </header>
-
-            <?php if ($success): ?>
-                <div class="fw-admin__alert fw-admin__alert--success">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <?= htmlspecialchars($success) ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($error): ?>
-                <div class="fw-admin__alert fw-admin__alert--error">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                    <?= htmlspecialchars($error) ?>
-                </div>
-            <?php endif; ?>
-
-            <form method="POST">
-                <input type="hidden" name="action" value="save_security">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-
-                <!-- Password Policy -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Password Policy</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Minimum Password Length</label>
-                            <input type="number" name="security_min_password_length" class="fw-admin__input" value="<?= htmlspecialchars($s['security_min_password_length']) ?>" min="6" max="32">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Password Expiry (days)</label>
-                            <input type="number" name="security_password_expiry_days" class="fw-admin__input" value="<?= htmlspecialchars($s['security_password_expiry_days']) ?>" min="0" max="365">
-                            <small style="color: var(--fw-text-muted); font-size: 12px; margin-top: 4px; display: block;">Set to 0 to disable password expiry</small>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="security_require_uppercase" value="1" <?= $s['security_require_uppercase'] === '1' ? 'checked' : '' ?>>
-                                <span>Require at least one uppercase letter</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="security_require_numbers" value="1" <?= $s['security_require_numbers'] === '1' ? 'checked' : '' ?>>
-                                <span>Require at least one number</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="security_require_special" value="1" <?= $s['security_require_special'] === '1' ? 'checked' : '' ?>>
-                                <span>Require at least one special character (!@#$%^&*)</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Session & Login -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Session & Login</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Session Timeout (minutes)</label>
-                            <select name="security_session_timeout" class="fw-admin__select">
-                                <option value="30" <?= $s['security_session_timeout'] === '30' ? 'selected' : '' ?>>30 minutes</option>
-                                <option value="60" <?= $s['security_session_timeout'] === '60' ? 'selected' : '' ?>>1 hour</option>
-                                <option value="120" <?= $s['security_session_timeout'] === '120' ? 'selected' : '' ?>>2 hours</option>
-                                <option value="240" <?= $s['security_session_timeout'] === '240' ? 'selected' : '' ?>>4 hours</option>
-                                <option value="480" <?= $s['security_session_timeout'] === '480' ? 'selected' : '' ?>>8 hours</option>
-                                <option value="1440" <?= $s['security_session_timeout'] === '1440' ? 'selected' : '' ?>>24 hours</option>
-                            </select>
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Max Login Attempts</label>
-                            <input type="number" name="security_max_login_attempts" class="fw-admin__input" value="<?= htmlspecialchars($s['security_max_login_attempts']) ?>" min="3" max="20">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Lockout Duration (minutes)</label>
-                            <input type="number" name="security_lockout_duration" class="fw-admin__input" value="<?= htmlspecialchars($s['security_lockout_duration']) ?>" min="1" max="60">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">&nbsp;</label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="security_single_device" value="1" <?= $s['security_single_device'] === '1' ? 'checked' : '' ?>>
-                                <span>Allow only one signed-in device per user (signing in on a phone signs the computer out). Off: people stay signed in on phone, tablet and computer at the same time.</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="security_2fa_enabled" value="1" <?= $s['security_2fa_enabled'] === '1' ? 'checked' : '' ?>>
-                                <span>Enable two-factor authentication (2FA)</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- IP Whitelist -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">IP Whitelist</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__label">Allowed IP Addresses</label>
-                            <textarea name="security_ip_whitelist" class="fw-admin__textarea" rows="4" placeholder="Enter one IP address per line. Leave empty to allow all IPs."><?= htmlspecialchars($s['security_ip_whitelist']) ?></textarea>
-                            <small style="color: var(--fw-text-muted); font-size: 12px; margin-top: 4px; display: block;">One IP per line. Leave empty to allow access from any IP address.</small>
-                        </div>
-                    </div>
-
-                    <div class="fw-admin__form-actions">
-                        <button type="submit" class="fw-admin__btn fw-admin__btn--primary">Save Security Settings</button>
-                    </div>
-                </div>
-            </form>
-
-            <!-- Recent Login Activity -->
-            <div class="fw-admin__section">
-                <h2 class="fw-admin__section-title">Recent Login Activity</h2>
-                <div class="fw-admin__card">
-                    <div class="fw-admin__table-wrapper">
-                        <table class="fw-admin__table">
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>User</th>
-                                    <th>Action</th>
-                                    <th>IP Address</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($loginActivity)): ?>
-                                <tr><td colspan="4" class="fw-admin__empty-state">No recent login activity</td></tr>
-                                <?php else: ?>
-                                <?php foreach ($loginActivity as $log): ?>
-                                <tr>
-                                    <td><?= date('M j, g:i A', strtotime($log['timestamp'])) ?></td>
-                                    <td><?= htmlspecialchars(($log['first_name'] ?? '') . ' ' . ($log['last_name'] ?? '')) ?></td>
-                                    <td>
-                                        <span class="fw-admin__badge fw-admin__badge--<?= $log['action'] === 'login' ? 'success' : ($log['action'] === 'login_failed' ? 'danger' : 'muted') ?>">
-                                            <?= htmlspecialchars($log['action']) ?>
-                                        </span>
-                                    </td>
-                                    <td><code style="font-size: 12px;"><?= htmlspecialchars($log['ip'] ?? '—') ?></code></td>
-                                </tr>
-                                <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
+$pageScripts = ['security'];
+include __DIR__ . '/partials/foot.php';

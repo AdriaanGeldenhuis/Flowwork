@@ -1,177 +1,81 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /admin/automations.php — Automations: everything Flowwork does on its own
+// (reminders, recurring invoices, mail sync, housekeeping), whether the
+// background runner is alive, and where each one is set. The runner is
+// notifications/api/tick.php; its last run is kept in storage/cron/tick.json.
+// Only health is shown here, never counts (the runner serves every company).
+require_once __DIR__ . '/lib/AdminBoot.php';
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
+$state = json_decode((string)@file_get_contents(__DIR__ . '/../storage/cron/tick.json'), true);
+$last = is_array($state) ? ($state['last'] ?? null) : null;
+$lastAt = $last && !empty($last['at']) ? strtotime((string)$last['at']) : 0;
+$age = $lastAt ? time() - $lastAt : null;
+$jobs = is_array($last['jobs'] ?? null) ? $last['jobs'] : [];
+$health = $age === null ? 'unknown' : ($age < 600 ? 'ok' : ($age < 3 * 3600 ? 'slow' : 'down'));
+$jobState = function (array $keys) use ($jobs, $health): string {
+    if ($health === 'unknown') return 'unknown';
+    foreach ($keys as $k) if (($jobs[$k] ?? null) === 'error') return 'error';
+    return 'ok';
+};
+$cal = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'calendar');
+$sup = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'suppliers');
+$data = AdminSettings::load($DB, $ADMIN_COMPANY_ID, 'data');
+$reminderLabel = AdminSettings::area('calendar')['fields'][3]['options'][$cal['calendar_default_reminder']] ?? $cal['calendar_default_reminder'] . ' minutes before';
+$retention = AdminSettings::area('data')['fields'][0]['options'][$data['signin_retention_days']] ?? 'Forever';
 
-require_once __DIR__ . '/../includes/companies.php';
-fw_require_admin();
-
-// Handle form submission
-$success = $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_automations') {
-    try {
-        $settings = [
-            'auto_invoice_reminders' => isset($_POST['auto_invoice_reminders']) ? '1' : '0',
-            'auto_reminder_days_before' => trim($_POST['auto_reminder_days_before'] ?? '3'),
-            'auto_reminder_days_after' => trim($_POST['auto_reminder_days_after'] ?? '7'),
-            'auto_overdue_notifications' => isset($_POST['auto_overdue_notifications']) ? '1' : '0',
-            'auto_welcome_email' => isset($_POST['auto_welcome_email']) ? '1' : '0',
-            'auto_task_assignment_notify' => isset($_POST['auto_task_assignment_notify']) ? '1' : '0',
-            'auto_project_deadline_warn' => isset($_POST['auto_project_deadline_warn']) ? '1' : '0',
-            'auto_deadline_warn_days' => trim($_POST['auto_deadline_warn_days'] ?? '3'),
-            'auto_compliance_expiry_warn' => isset($_POST['auto_compliance_expiry_warn']) ? '1' : '0',
-            'auto_compliance_warn_days' => trim($_POST['auto_compliance_warn_days'] ?? '30'),
-            'auto_daily_digest' => isset($_POST['auto_daily_digest']) ? '1' : '0',
-        ];
-
-        foreach ($settings as $key => $value) {
-            setCRMSetting($key, $value);
-        }
-
-        $stmt = $DB->prepare("
-            INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-            VALUES (?, ?, 'automations_settings_updated', 'Updated automation settings', NOW())
-        ");
-        $stmt->execute([$companyId, $userId]);
-
-        $success = 'Automation settings saved successfully';
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    }
+$recurring = 0;
+try {
+    $st = $DB->prepare("SELECT COUNT(*) FROM recurring_invoices WHERE company_id = ? AND active = 1");
+    $st->execute([$ADMIN_COMPANY_ID]);
+    $recurring = (int)$st->fetchColumn();
+} catch (Throwable $ex) {
+    $recurring = null;
 }
 
-// Load current settings
-$s = [
-    'auto_invoice_reminders' => getCRMSetting('auto_invoice_reminders', '0'),
-    'auto_reminder_days_before' => getCRMSetting('auto_reminder_days_before', '3'),
-    'auto_reminder_days_after' => getCRMSetting('auto_reminder_days_after', '7'),
-    'auto_overdue_notifications' => getCRMSetting('auto_overdue_notifications', '1'),
-    'auto_welcome_email' => getCRMSetting('auto_welcome_email', '1'),
-    'auto_task_assignment_notify' => getCRMSetting('auto_task_assignment_notify', '1'),
-    'auto_project_deadline_warn' => getCRMSetting('auto_project_deadline_warn', '1'),
-    'auto_deadline_warn_days' => getCRMSetting('auto_deadline_warn_days', '3'),
-    'auto_compliance_expiry_warn' => getCRMSetting('auto_compliance_expiry_warn', '1'),
-    'auto_compliance_warn_days' => getCRMSetting('auto_compliance_warn_days', '30'),
-    'auto_daily_digest' => getCRMSetting('auto_daily_digest', '0'),
+$automations = [
+    ['i-bell', 'Event reminders', 'Calendar', 'Before each event, to everyone invited — by phone notification and in Flowwork. New events start with “' . mb_strtolower($reminderLabel) . '”.', ['reminders'], '/admin/calendar.php#set-calendar_default_reminder', 'Change the default'],
+    ['i-check-square', 'Due-date reminders', 'Projects', 'Every morning from 07:00, people hear about board items assigned to them that are due today or overdue.', ['project_reminders'], '/projects/', 'Open Projects'],
+    ['i-users', 'Assignment notices', 'Projects', 'Whenever someone is assigned an item or added to a project, they are told at once.', [], '/projects/', 'Open Projects'],
+    ['iq-recurring', 'Recurring invoices', 'Quotes & Invoices', ($recurring === null ? 'Invoices on a schedule are created and sent by themselves.' : ($recurring ? $recurring . ' recurring invoice' . ($recurring === 1 ? ' is' : 's are') . ' active; each is created (and sent, if you chose that) on its day.' : 'None set up yet. Turn any invoice into a recurring one and it is created on its day.')), ['qi_recurring'], '/qi/recurring.php', 'Recurring invoices'],
+    ['i-flag', 'Follow-up reminders', 'CRM', 'CRM tasks remind the person they are assigned to when they fall due.', ['crm_tasks'], '/crm/#tasks', 'Open CRM tasks'],
+    ['i-shield', 'Compliance document reminders', 'Suppliers', 'Owners are reminded ' . str_replace(',', ', ', $sup['crm_reminder_days']) . ' days before a supplier’s document expires' . ($sup['crm_block_expired_suppliers'] === '1' ? '; expired suppliers are blocked.' : '.'), ['crm_compliance'], '/admin/suppliers.php#sup-compliance', 'Change'],
+    ['i-mail', 'Mail sync & scheduled sending', 'Mail', 'New mail is fetched every minute, scheduled mail goes out on time, and you are nudged about mail waiting too long for a reply.', ['mail', 'reply_reminders'], '/mail/settings.php', 'Mail settings'],
+    ['ia-database', 'Housekeeping', 'Data', 'Expired devices and old failed sign-ins are cleared; sign-in records are kept for: ' . mb_strtolower($retention) . '.', ['cleanup'], '/admin/data.php#data-retention', 'Change'],
 ];
+
+$page = 'automations';
+$pageTitle = 'Automations';
+include __DIR__ . '/partials/head.php';
 ?>
-<?php
-  $pageTitle = 'Automations – Admin';
-  include __DIR__ . '/_layout_top.php';
-?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Automations</h1>
-                    <p class="fw-admin__page-subtitle">Configure automated notifications, reminders, and workflows</p>
-                </div>
-            </header>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">Workspace <i>◆</i> Automations</p>
+        <h1>Automations</h1>
+        <p>What Flowwork does for you without being asked, and where each one is set.</p>
+    </div>
+</header>
 
-            <?php if ($success): ?>
-                <div class="fw-admin__alert fw-admin__alert--success">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <?= htmlspecialchars($success) ?>
-                </div>
-            <?php endif; ?>
+<?php if ($health === 'ok'): ?>
+    <div class="fwa-banner fwa-banner--ok"><svg class="i"><use href="#i-check"/></svg><div class="fwa-banner__body"><b>Running smoothly.</b> Background jobs last ran <?= $age < 90 ? 'a moment ago' : $e(AdminKit::ago(date('Y-m-d H:i:s', $lastAt))) ?>.</div></div>
+<?php elseif ($health === 'slow'): ?>
+    <div class="fwa-banner fwa-banner--warn"><svg class="i"><use href="#i-clock"/></svg><div class="fwa-banner__body"><b>Running behind.</b> Background jobs last ran <?= $e(AdminKit::ago(date('Y-m-d H:i:s', $lastAt))) ?>, so reminders may arrive late. It usually catches up by itself.</div></div>
+<?php elseif ($health === 'down'): ?>
+    <div class="fwa-banner fwa-banner--danger"><svg class="i"><use href="#i-alert"/></svg><div class="fwa-banner__body"><b>Background jobs have stopped.</b> They last ran <?= $e(AdminKit::ago(date('Y-m-d H:i:s', $lastAt))) ?>. Reminders and recurring invoices wait until they run again — please let Flowwork support know.</div></div>
+<?php else: ?>
+    <div class="fwa-banner"><svg class="i"><use href="#i-info"/></svg><div class="fwa-banner__body">The background runner has not reported in on this server yet, so its health cannot be shown.</div></div>
+<?php endif; ?>
 
-            <?php if ($error): ?>
-                <div class="fw-admin__alert fw-admin__alert--error">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                    <?= htmlspecialchars($error) ?>
-                </div>
-            <?php endif; ?>
+<div class="fwa-grid">
+    <?php foreach ($automations as $i => [$icon, $title, $module, $text, $keys, $href, $cta]): $s = $keys ? $jobState($keys) : 'ok'; ?>
+        <section class="fwa-card" style="animation:fwm-rise .4s var(--ease) both;animation-delay:<?= $i * 35 ?>ms">
+            <header class="fwa-card__head"><span class="fwa-card__icon"><svg class="i"><use href="#<?= $icon ?>"/></svg></span>
+                <div class="fwa-card__title"><h3><?= $e($title) ?></h3><p><?= $e($module) ?></p></div>
+                <span class="fwm-status <?= $s === 'error' ? 'fwm-status--err' : ($s === 'ok' && $health === 'ok' ? 'fwm-status--ok' : 'fwm-status--off') ?>"><?= $s === 'error' ? 'Last run failed' : ($health === 'ok' || !$keys ? 'On' : 'Waiting') ?></span></header>
+            <div class="fwa-card__body"><p style="margin:0;color:var(--ink-2);line-height:1.6"><?= $e($text) ?></p></div>
+            <footer class="fwa-card__foot"><a class="fwa-mini" href="<?= $e($href) ?>"><?= $e($cta) ?> <svg class="i"><use href="#i-chev-right"/></svg></a></footer>
+        </section>
+    <?php endforeach; ?>
+</div>
 
-            <form method="POST">
-                <input type="hidden" name="action" value="save_automations">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-
-                <!-- Invoice Automations -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Invoice & Payment Reminders</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_invoice_reminders" value="1" <?= $s['auto_invoice_reminders'] === '1' ? 'checked' : '' ?>>
-                                <span>Send automatic payment reminders before due date</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Days Before Due Date</label>
-                            <input type="number" name="auto_reminder_days_before" class="fw-admin__input" value="<?= htmlspecialchars($s['auto_reminder_days_before']) ?>" min="1" max="30">
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Days After Due Date (follow-up)</label>
-                            <input type="number" name="auto_reminder_days_after" class="fw-admin__input" value="<?= htmlspecialchars($s['auto_reminder_days_after']) ?>" min="1" max="90">
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_overdue_notifications" value="1" <?= $s['auto_overdue_notifications'] === '1' ? 'checked' : '' ?>>
-                                <span>Notify admin when invoices become overdue</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Team Automations -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Team Notifications</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_welcome_email" value="1" <?= $s['auto_welcome_email'] === '1' ? 'checked' : '' ?>>
-                                <span>Send welcome email when new users are added</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_task_assignment_notify" value="1" <?= $s['auto_task_assignment_notify'] === '1' ? 'checked' : '' ?>>
-                                <span>Notify users when assigned to tasks</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_daily_digest" value="1" <?= $s['auto_daily_digest'] === '1' ? 'checked' : '' ?>>
-                                <span>Send daily activity digest to admins</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Deadline & Compliance -->
-                <div class="fw-admin__card">
-                    <h2 class="fw-admin__card-title">Deadlines & Compliance</h2>
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_project_deadline_warn" value="1" <?= $s['auto_project_deadline_warn'] === '1' ? 'checked' : '' ?>>
-                                <span>Warn when project deadlines are approaching</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Deadline Warning (days before)</label>
-                            <input type="number" name="auto_deadline_warn_days" class="fw-admin__input" value="<?= htmlspecialchars($s['auto_deadline_warn_days']) ?>" min="1" max="30">
-                        </div>
-
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">&nbsp;</label>
-                        </div>
-
-                        <div class="fw-admin__form-group fw-admin__form-group--full">
-                            <label class="fw-admin__checkbox">
-                                <input type="checkbox" name="auto_compliance_expiry_warn" value="1" <?= $s['auto_compliance_expiry_warn'] === '1' ? 'checked' : '' ?>>
-                                <span>Warn when supplier compliance documents are expiring</span>
-                            </label>
-                        </div>
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Compliance Warning (days before expiry)</label>
-                            <input type="number" name="auto_compliance_warn_days" class="fw-admin__input" value="<?= htmlspecialchars($s['auto_compliance_warn_days']) ?>" min="1" max="90">
-                        </div>
-                    </div>
-
-                    <div class="fw-admin__form-actions">
-                        <button type="submit" class="fw-admin__btn fw-admin__btn--primary">Save Automation Settings</button>
-                    </div>
-                </div>
-            </form>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
+<div class="fwa-banner" style="margin-top:16px"><svg class="i"><use href="#i-info"/></svg><div class="fwa-banner__body">Payment reminders to customers are sent by you, from the overdue invoice (<b>Send a reminder</b>), so nobody gets chased by surprise.</div></div>
+<?php include __DIR__ . '/partials/foot.php'; ?>

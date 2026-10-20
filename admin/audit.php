@@ -1,191 +1,104 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /admin/audit.php — Audit trail: everything that changed in the company and
+// who did it, in plain words, grouped by day. Filter by person, kind, words
+// and dates; the CSV export takes the same filters (AdminAudit::where).
+require_once __DIR__ . '/lib/AdminBoot.php';
+require_once __DIR__ . '/lib/AdminAudit.php';
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
+$f = AdminAudit::filters($_GET);
+[$where, $params] = AdminAudit::where($ADMIN_COMPANY_ID, $f);
+$perPage = 60;
+$pageNo = max(1, (int)($_GET['page'] ?? 1));
+$st = $DB->prepare("SELECT COUNT(*) FROM audit_log al LEFT JOIN users u ON u.id = al.user_id WHERE $where");
+$st->execute($params);
+$total = (int)$st->fetchColumn();
+$pages = max(1, (int)ceil($total / $perPage));
+$pageNo = min($pageNo, $pages);
+$st = $DB->prepare("SELECT al.id, al.action, al.details, al.ip, al.entity_type, COALESCE(al.timestamp, al.created_at) AS at, al.user_id,
+                           CONCAT_WS(' ', u.first_name, u.last_name) AS who, u.email
+                      FROM audit_log al LEFT JOIN users u ON u.id = al.user_id
+                     WHERE $where ORDER BY al.id DESC LIMIT $perPage OFFSET " . (($pageNo - 1) * $perPage));
+$st->execute($params);
+$logs = $st->fetchAll(PDO::FETCH_ASSOC);
 
-require_once __DIR__ . '/../includes/companies.php';
-fw_require_admin();
+$st = $DB->prepare("SELECT u.id, CONCAT_WS(' ', u.first_name, u.last_name) AS name FROM user_companies uc JOIN users u ON u.id = uc.user_id WHERE uc.company_id = ? ORDER BY u.first_name, u.last_name");
+$st->execute([$ADMIN_COMPANY_ID]);
+$users = $st->fetchAll(PDO::FETCH_ASSOC);
 
-// Filters
-$filterUser = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
-$filterAction = isset($_GET['action']) ? trim($_GET['action']) : null;
-$filterDateFrom = isset($_GET['date_from']) ? trim($_GET['date_from']) : null;
-$filterDateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : null;
+$qs = fn(array $over = []) => http_build_query(array_filter(array_merge(['user_id' => $f['user'] ?: null, 'kind' => $f['kind'] ?: null, 'q' => $f['q'] ?: null, 'from' => $f['from'] ?: null, 'to' => $f['to'] ?: null], $over), fn($v) => $v !== null && $v !== ''));
+$filtered = $f['user'] || $f['kind'] || $f['q'] !== '' || $f['from'] || $f['to'];
+$dayLabel = function (string $at): string {
+    $d = date('Y-m-d', strtotime($at));
+    if ($d === date('Y-m-d')) return 'Today';
+    if ($d === date('Y-m-d', strtotime('-1 day'))) return 'Yesterday';
+    return date(date('Y', strtotime($at)) === date('Y') ? 'l j F' : 'l j F Y', strtotime($at));
+};
 
-// Build query
-$sql = "
-    SELECT al.*, u.first_name, u.last_name, u.email
-    FROM audit_log al
-    LEFT JOIN users u ON u.id = al.user_id
-    WHERE al.company_id = ?
-";
-$params = [$companyId];
-
-if ($filterUser) {
-    $sql .= " AND al.user_id = ?";
-    $params[] = $filterUser;
-}
-
-if ($filterAction) {
-    $sql .= " AND al.action LIKE ?";
-    $params[] = "%$filterAction%";
-}
-
-if ($filterDateFrom) {
-    $sql .= " AND DATE(al.timestamp) >= ?";
-    $params[] = $filterDateFrom;
-}
-
-if ($filterDateTo) {
-    $sql .= " AND DATE(al.timestamp) <= ?";
-    $params[] = $filterDateTo;
-}
-
-$sql .= " ORDER BY al.timestamp DESC LIMIT 500";
-
-$stmt = $DB->prepare($sql);
-$stmt->execute($params);
-$logs = $stmt->fetchAll();
-
-// Fetch all users for filter (anyone with access to this company)
-$stmt = $DB->prepare("
-    SELECT u.id, u.first_name, u.last_name
-    FROM user_companies uc
-    JOIN users u ON u.id = uc.user_id
-    WHERE uc.company_id = ?
-    ORDER BY u.first_name
-");
-$stmt->execute([$companyId]);
-$users = $stmt->fetchAll();
+$page = 'audit';
+$pageTitle = 'Audit trail';
+include __DIR__ . '/partials/head.php';
 ?>
-<?php
-  $pageTitle = 'Audit Log – Admin';
-  include __DIR__ . '/_layout_top.php';
-?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Audit Log</h1>
-                    <p class="fw-admin__page-subtitle">Track all actions and changes across the system</p>
-                </div>
-                <button class="fw-admin__btn fw-admin__btn--secondary" onclick="exportAuditLog()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Export CSV
-                </button>
-            </header>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">Account <i>◆</i> Audit trail</p>
+        <h1>Audit <em>trail</em></h1>
+        <p>Every change in <?= $e($companyName) ?> — settings, people, money and more — with who made it and when.</p>
+    </div>
+    <div class="fwa-head__actions">
+        <a class="btn" href="/admin/api/export.php?<?= $e($qs(['type' => 'audit'])) ?>" download><svg class="i"><use href="#i-download"/></svg>Export<?= $filtered ? ' these' : '' ?> to CSV</a>
+    </div>
+</header>
 
-            <!-- Filters -->
-            <div class="fw-admin__card" style="margin-bottom: var(--fw-spacing-lg);">
-                <form method="GET" class="fw-admin__form">
-                    <div class="fw-admin__form-grid">
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">User</label>
-                            <select name="user_id" class="fw-admin__select">
-                                <option value="">All Users</option>
-                                <?php foreach ($users as $u): ?>
-                                <option value="<?= $u['id'] ?>" <?= $filterUser == $u['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($u['first_name'] . ' ' . $u['last_name']) ?>
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+<section class="fwa-card">
+    <div class="fwa-tools" style="padding-bottom:4px">
+        <div class="fwa-chips">
+            <a class="fwa-chip<?= $f['kind'] === '' ? ' is-on' : '' ?>" href="?<?= $e($qs(['kind' => null, 'page' => null])) ?>">Everything</a>
+            <?php foreach (AdminAudit::KINDS as $k => [$label]): ?>
+                <a class="fwa-chip<?= $f['kind'] === $k ? ' is-on' : '' ?>" href="?<?= $e($qs(['kind' => $k, 'page' => null])) ?>"><?= $e($label) ?></a>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <form class="fwa-filters" method="get" action="/admin/audit.php">
+        <?php if ($f['kind']): ?><input type="hidden" name="kind" value="<?= $e($f['kind']) ?>"><?php endif; ?>
+        <div class="field"><label class="label" for="aq">Words</label><input class="input" id="aq" type="search" name="q" value="<?= $e($f['q']) ?>" placeholder="e.g. invoice, VAT, an IP address"></div>
+        <div class="field"><label class="label" for="au">Person</label><select class="select" id="au" name="user_id"><option value="">Anyone</option>
+            <?php foreach ($users as $u): ?><option value="<?= (int)$u['id'] ?>"<?= $f['user'] === (int)$u['id'] ? ' selected' : '' ?>><?= $e(trim((string)$u['name'])) ?></option><?php endforeach; ?></select></div>
+        <div class="field"><label class="label" for="af">From</label><input class="input" id="af" type="date" name="from" value="<?= $e($f['from']) ?>"></div>
+        <div class="field"><label class="label" for="at">To</label><input class="input" id="at" type="date" name="to" value="<?= $e($f['to']) ?>"></div>
+        <div class="field" style="flex-direction:row;gap:8px"><button class="btn btn--primary" type="submit"><svg class="i"><use href="#i-filter"/></svg>Filter</button>
+            <?php if ($filtered): ?><a class="btn btn--ghost" href="/admin/audit.php">Clear</a><?php endif; ?></div>
+    </form>
 
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">Action</label>
-                            <input type="text" name="action" class="fw-admin__input" 
-                                   value="<?= htmlspecialchars($filterAction ?? '') ?>" 
-                                   placeholder="e.g., user_created">
-                        </div>
-
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">From Date</label>
-                            <input type="date" name="date_from" class="fw-admin__input" 
-                                   value="<?= htmlspecialchars($filterDateFrom ?? '') ?>">
-                        </div>
-
-                        <div class="fw-admin__form-group">
-                            <label class="fw-admin__label">To Date</label>
-                            <input type="date" name="date_to" class="fw-admin__input" 
-                                   value="<?= htmlspecialchars($filterDateTo ?? '') ?>">
-                        </div>
-
-                        <div class="fw-admin__form-group" style="grid-column: 1 / -1;">
-                            <button type="submit" class="fw-admin__btn fw-admin__btn--primary">
-                                Apply Filters
-                            </button>
-                            <a href="/admin/audit.php" class="fw-admin__btn fw-admin__btn--secondary">
-                                Clear Filters
-                            </a>
-                        </div>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Audit Log Table -->
-            <div class="fw-admin__card">
-                <div class="fw-admin__table-wrapper">
-                    <table class="fw-admin__table">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>User</th>
-                                <th>Action</th>
-                                <th>Details</th>
-                                <th>IP</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($logs)): ?>
-                            <tr>
-                                <td colspan="5" class="fw-admin__empty-state">No audit logs found</td>
-                            </tr>
-                            <?php else: ?>
-                            <?php foreach ($logs as $log): ?>
-                            <tr>
-                                <td style="white-space: nowrap;">
-                                    <?= date('M j, Y', strtotime($log['timestamp'])) ?><br>
-                                    <small style="color: var(--fw-text-muted);"><?= date('g:i:s A', strtotime($log['timestamp'])) ?></small>
-                                </td>
-                                <td>
-                                    <?= htmlspecialchars($log['first_name'] . ' ' . $log['last_name']) ?><br>
-                                    <small style="color: var(--fw-text-muted);"><?= htmlspecialchars($log['email']) ?></small>
-                                </td>
-                                <td>
-                                    <code style="font-size: 12px; padding: 2px 6px; background: var(--fw-hover-bg); border-radius: 4px;">
-                                        <?= htmlspecialchars($log['action']) ?>
-                                    </code>
-                                </td>
-                                <td style="max-width: 400px; word-break: break-word;">
-                                    <?= htmlspecialchars($log['details'] ?? '—') ?>
-                                </td>
-                                <td>
-                                    <code style="font-size: 11px; color: var(--fw-text-muted);">
-                                        <?= htmlspecialchars($log['ip'] ?? '—') ?>
-                                    </code>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <?php if (count($logs) === 500): ?>
-                <div style="padding: var(--fw-spacing-md); text-align: center; color: var(--fw-text-muted); font-size: 12px; border-top: 1px solid var(--fw-border);">
-                    Showing first 500 results. Use filters to narrow down.
-                </div>
-                <?php endif; ?>
-            </div>
-<script>
-function exportAuditLog() {
-    const params = new URLSearchParams(window.location.search);
-    params.set('action', 'export_audit');
-    window.location.href = '/admin/api.php?' + params.toString();
-}
-</script>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
+    <?php if (!$logs): ?>
+        <div class="fwa-table__empty"><b><?= $filtered ? 'Nothing matches' : 'Nothing recorded yet' ?></b><?= $filtered ? 'Try fewer filters.' : 'Changes appear here as people work.' ?></div>
+    <?php else: ?>
+        <div class="fwa-table-wrap"><table class="fwa-table">
+            <thead><tr><th style="width:84px">Time</th><th>Who</th><th>What happened</th><th class="hide-narrow">From</th></tr></thead>
+            <tbody>
+            <?php $day = null; foreach ($logs as $l):
+                $d = $dayLabel((string)$l['at']);
+                [$label, $tone] = AdminKit::actionLabel((string)$l['action']);
+                $who = trim((string)$l['who']) ?: ($l['user_id'] ? 'Former member' : 'Flowwork');
+                $detail = AdminKit::detailText($l['details']); ?>
+                <?php if ($d !== $day): $day = $d; ?><tr class="fwa-day"><td colspan="4"><?= $e($d) ?></td></tr><?php endif; ?>
+                <tr>
+                    <td class="fwa-num" title="<?= $e(AdminKit::date($l['at'], true)) ?>"><?= $e(date('H:i', strtotime((string)$l['at']))) ?></td>
+                    <td><div class="fwa-who"><span class="fwa-ava fwa-ava--sm fwa-ava--round" style="--h:<?= AdminKit::hue($who) ?>"><?= $e(AdminKit::initials($who)) ?></span>
+                        <span class="fwa-who__text"><b><?= $e($who) ?></b><?php if ($l['email']): ?><small><?= $e($l['email']) ?></small><?php endif; ?></span></div></td>
+                    <td><span class="fwa-act" style="--c:var(--<?= ['success' => 'success', 'danger' => 'danger', 'warning' => 'warning', 'info' => 'info', 'gold' => 'gold'][$tone] ?? 'ink-4' ?>)"><span class="fwa-act__dot"></span><?= $e($label) ?></span>
+                        <?php if ($detail !== ''): ?><div class="fwa-details"><?= $e($detail) ?></div><?php endif; ?>
+                        <?php if (AdminKit::actionLabel((string)$l['action'])[1] === 'muted' && !in_array($l['action'], ['user_logout', 'password_reset_requested', 'company_switch', 'audit_pruned'], true)): ?><small class="fwa-muted fwa-mono"><?= $e($l['action']) ?></small><?php endif; ?></td>
+                    <td class="hide-narrow"><span class="fwa-mono fwa-muted"><?= $e($l['ip'] ?: '—') ?></span></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+        <div class="fwa-table-foot">
+            <span><?= number_format($total, 0, '.', ' ') ?> entr<?= $total === 1 ? 'y' : 'ies' ?><?= $pages > 1 ? ' · page ' . $pageNo . ' of ' . $pages : '' ?></span>
+            <span class="fwa-grow"></span>
+            <?php if ($pageNo > 1): ?><a class="btn btn--sm" href="?<?= $e($qs(['page' => $pageNo - 1])) ?>"><svg class="i"><use href="#i-chev-left"/></svg>Newer</a><?php endif; ?>
+            <?php if ($pageNo < $pages): ?><a class="btn btn--sm" href="?<?= $e($qs(['page' => $pageNo + 1])) ?>">Older<svg class="i"><use href="#i-chev-right"/></svg></a><?php endif; ?>
+        </div>
+    <?php endif; ?>
+</section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

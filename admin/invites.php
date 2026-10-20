@@ -1,324 +1,77 @@
 <?php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /admin/invites.php — Invitations: who has been invited, whether they joined,
+// and resend / copy link / withdraw. New invitations come from "Add someone"
+// (admin/js/invite.js → /admin/api/invites.php).
+require_once __DIR__ . '/lib/AdminBoot.php';
+require_once __DIR__ . '/lib/AdminSchema.php';
+require_once __DIR__ . '/lib/AdminMail.php';
+AdminSchema::ensure($DB);
 
-$companyId = (int)$_SESSION['company_id'];
-$userId = (int)$_SESSION['user_id'];
-
-require_once __DIR__ . '/../includes/companies.php';
-fw_require_admin();
-
-// Fetch invites
-$stmt = $DB->prepare("
-    SELECT i.*, 
-           u.first_name as created_by_name, 
-           u.last_name as created_by_surname,
-           uu.first_name as used_by_name,
-           uu.last_name as used_by_surname
-    FROM invites i
-    LEFT JOIN users u ON u.id = i.created_by
-    LEFT JOIN users uu ON uu.id = i.used_by
-    WHERE i.company_id = ?
-    ORDER BY i.created_at DESC
-");
-$stmt->execute([$companyId]);
-$invites = $stmt->fetchAll();
-
-// Handle form submission
-$success = $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'send_invite') {
-    try {
-        $email = trim($_POST['email'] ?? '');
-        $role = trim($_POST['role'] ?? 'member');
-        $expiryDays = (int)($_POST['expiry_days'] ?? 7);
-        $message = trim($_POST['message'] ?? '');
-        
-        if (empty($email)) {
-            throw new Exception('Email is required');
-        }
-        
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            throw new Exception('Invalid email address');
-        }
-        
-        // Check if user already exists
-        $stmt = $DB->prepare("SELECT id FROM users WHERE email = ? AND company_id = ?");
-        $stmt->execute([$email, $companyId]);
-        if ($stmt->fetch()) {
-            throw new Exception('User already exists with this email');
-        }
-        
-        // Generate token
-        $token = bin2hex(random_bytes(32));
-        $expiresAt = date('Y-m-d H:i:s', strtotime("+$expiryDays days"));
-        
-        // Create invite
-        $stmt = $DB->prepare("
-            INSERT INTO invites (company_id, email, token, role, expires_at, created_by, created_at, custom_message)
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
-        ");
-        $stmt->execute([$companyId, $email, $token, $role, $expiresAt, $userId, $message]);
-        
-        // Log audit
-        $stmt = $DB->prepare("
-            INSERT INTO audit_log (company_id, user_id, action, details, timestamp)
-            VALUES (?, ?, 'invite_sent', ?, NOW())
-        ");
-        $stmt->execute([$companyId, $userId, "Invited $email as $role"]);
-        
-        // TODO: Send email with invite link
-        $inviteLink = "https://" . $_SERVER['HTTP_HOST'] . "/accept-invite.php?token=" . $token;
-
-        $success = "Invite sent to " . htmlspecialchars($email) . ". Link copied below.";
-        $inviteLinkHtml = htmlspecialchars($inviteLink);
-        
-        // Refresh invites
-        $stmt = $DB->prepare("
-            SELECT i.*, 
-                   u.first_name as created_by_name, 
-                   u.last_name as created_by_surname,
-                   uu.first_name as used_by_name,
-                   uu.last_name as used_by_surname
-            FROM invites i
-            LEFT JOIN users u ON u.id = i.created_by
-            LEFT JOIN users uu ON uu.id = i.used_by
-            WHERE i.company_id = ?
-            ORDER BY i.created_at DESC
-        ");
-        $stmt->execute([$companyId]);
-        $invites = $stmt->fetchAll();
-        
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    }
+$st = $DB->prepare("
+    SELECT i.id, i.email, i.role, i.expires_at, i.created_at, i.used, i.used_at, i.last_sent_at, i.send_count,
+           CONCAT_WS(' ', u.first_name, u.last_name) AS sent_by, CONCAT_WS(' ', uu.first_name, uu.last_name) AS joined_as
+      FROM invites i
+      LEFT JOIN users u ON u.id = i.created_by
+      LEFT JOIN users uu ON uu.id = i.used_by
+     WHERE i.company_id = ?
+  ORDER BY i.used ASC, i.created_at DESC
+     LIMIT 500");
+$st->execute([$ADMIN_COMPANY_ID]);
+$invites = [];
+$counts = ['open' => 0, 'expired' => 0, 'joined' => 0];
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $state = (int)$r['used'] ? 'joined' : (strtotime($r['expires_at']) < time() ? 'expired' : 'open');
+    $counts[$state]++;
+    $invites[] = [
+        'id' => (int)$r['id'], 'email' => $r['email'], 'role' => $r['role'], 'state' => $state, 'expires_at' => $r['expires_at'],
+        'created_at' => $r['created_at'], 'used_at' => $r['used_at'], 'sent_by' => trim((string)$r['sent_by']), 'joined_as' => trim((string)$r['joined_as']),
+        'emailed' => (int)$r['send_count'] > 0, 'last_sent_at' => $r['last_sent_at'],
+    ];
 }
+$mailbox = AdminMail::mailbox($DB, $ADMIN_COMPANY_ID, $ADMIN_USER_ID);
+$systemMail = AdminMail::systemReady();
+
+$page = 'invites';
+$pageTitle = 'Invitations';
+include __DIR__ . '/partials/head.php';
 ?>
-<?php
-  $pageTitle = 'Invites – Admin';
-  include __DIR__ . '/_layout_top.php';
-?>
-            <header class="fw-admin__page-header">
-                <div>
-                    <h1 class="fw-admin__page-title">Invites & Access Links</h1>
-                    <p class="fw-admin__page-subtitle">Send email invitations to new team members</p>
-                </div>
-                <button class="fw-admin__btn fw-admin__btn--primary" id="btnSendInvite">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                        <polyline points="22,6 12,13 2,6"/>
-                    </svg>
-                    Send Invite
-                </button>
-            </header>
-
-            <?php if ($success): ?>
-                <div class="fw-admin__alert fw-admin__alert--success">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                        <polyline points="22 4 12 14.01 9 11.01"/>
-                    </svg>
-                    <?= htmlspecialchars($success) ?>
-                    <?php if (!empty($inviteLinkHtml)): ?>
-                        <br><a href="<?= $inviteLinkHtml ?>" target="_blank" style="word-break: break-all;"><?= $inviteLinkHtml ?></a>
-                    <?php endif; ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($error): ?>
-                <div class="fw-admin__alert fw-admin__alert--error">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="15" y1="9" x2="9" y2="15"/>
-                        <line x1="9" y1="9" x2="15" y2="15"/>
-                    </svg>
-                    <?= htmlspecialchars($error) ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- Invites Table -->
-            <div class="fw-admin__card">
-                <div class="fw-admin__table-wrapper">
-                    <table class="fw-admin__table">
-                        <thead>
-                            <tr>
-                                <th>Email</th>
-                                <th>Role</th>
-                                <th>Status</th>
-                                <th>Sent By</th>
-                                <th>Sent At</th>
-                                <th>Expires</th>
-                                <th>Used By</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($invites)): ?>
-                            <tr>
-                                <td colspan="8" class="fw-admin__empty-state">No invites sent yet</td>
-                            </tr>
-                            <?php else: ?>
-                            <?php foreach ($invites as $invite): 
-                                $isExpired = strtotime($invite['expires_at']) < time();
-                                $status = $invite['used'] ? 'accepted' : ($isExpired ? 'expired' : 'pending');
-                            ?>
-                            <tr>
-                                <td><?= htmlspecialchars($invite['email']) ?></td>
-                                <td>
-                                    <span class="fw-admin__badge fw-admin__badge--<?= strtolower($invite['role']) ?>">
-                                        <?= ucfirst($invite['role']) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <span class="fw-admin__badge fw-admin__badge--<?= $status === 'accepted' ? 'success' : ($status === 'expired' ? 'muted' : 'warning') ?>">
-                                        <?= ucfirst($status) ?>
-                                    </span>
-                                </td>
-                                <td><?= htmlspecialchars($invite['created_by_name'] . ' ' . $invite['created_by_surname']) ?></td>
-                                <td><?= date('M j, Y g:i A', strtotime($invite['created_at'])) ?></td>
-                                <td><?= date('M j, Y', strtotime($invite['expires_at'])) ?></td>
-                                <td>
-                                    <?php if ($invite['used']): ?>
-                                        <?= htmlspecialchars($invite['used_by_name'] . ' ' . $invite['used_by_surname']) ?>
-                                        <br><small><?= date('M j, Y', strtotime($invite['used_at'])) ?></small>
-                                    <?php else: ?>
-                                        —
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <div class="fw-admin__table-actions">
-                                        <?php if (!$invite['used'] && !$isExpired): ?>
-                                        <button class="fw-admin__btn-icon" 
-                                                onclick="copyInviteLink('<?= htmlspecialchars($invite['token']) ?>')" 
-                                                title="Copy Link">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                            </svg>
-                                        </button>
-                                        <button class="fw-admin__btn-icon fw-admin__btn-icon--danger" 
-                                                onclick="revokeInvite(<?= $invite['id'] ?>)" 
-                                                title="Revoke">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <line x1="18" y1="6" x2="6" y2="18"/>
-                                                <line x1="6" y1="6" x2="18" y2="18"/>
-                                            </svg>
-                                        </button>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-<!-- Send Invite Modal -->
-<div class="fw-admin__modal" id="modalInvite" aria-hidden="true">
-    <div class="fw-admin__modal-backdrop"></div>
-    <div class="fw-admin__modal-content">
-        <header class="fw-admin__modal-header">
-            <h2>Send Invite</h2>
-            <button class="fw-admin__modal-close" aria-label="Close">&times;</button>
-        </header>
-        <form method="POST" class="fw-admin__form">
-            <input type="hidden" name="action" value="send_invite">
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-
-            <div class="fw-admin__form-grid">
-                <div class="fw-admin__form-group fw-admin__form-group--full">
-                    <label class="fw-admin__label">Email Address <span class="fw-admin__required">*</span></label>
-                    <input type="email" name="email" class="fw-admin__input" required>
-                </div>
-
-                <div class="fw-admin__form-group">
-                    <label class="fw-admin__label">Role <span class="fw-admin__required">*</span></label>
-                    <select name="role" class="fw-admin__select" required>
-                        <option value="member" selected>Member</option>
-                        <option value="viewer">Viewer</option>
-                        <option value="pos">POS Only</option>
-                        <option value="bookkeeper">Bookkeeper</option>
-                    </select>
-                </div>
-
-                <div class="fw-admin__form-group">
-                    <label class="fw-admin__label">Expires In</label>
-                    <select name="expiry_days" class="fw-admin__select">
-                        <option value="7" selected>7 days</option>
-                        <option value="14">14 days</option>
-                        <option value="30">30 days</option>
-                    </select>
-                </div>
-
-                <div class="fw-admin__form-group fw-admin__form-group--full">
-                    <label class="fw-admin__label">Custom Message (optional)</label>
-                    <textarea name="message" class="fw-admin__textarea" rows="3" placeholder="Add a personal welcome message..."></textarea>
-                </div>
-            </div>
-
-            <footer class="fw-admin__modal-footer">
-                <button type="button" class="fw-admin__btn fw-admin__btn--secondary" id="btnCancelInvite">Cancel</button>
-                <button type="submit" class="fw-admin__btn fw-admin__btn--primary">Send Invite</button>
-            </footer>
-        </form>
+<header class="fwa-head">
+    <div class="fwa-head__text">
+        <p class="fwa-eyebrow">People <i>◆</i> Invitations</p>
+        <h1>Invitations</h1>
+        <p>Invite colleagues by email. They choose their own password when they accept, and only then use a seat.</p>
     </div>
-</div>
-<script>
-// Open modal
-document.getElementById('btnSendInvite')?.addEventListener('click', () => {
-    const modal = document.getElementById('modalInvite');
-    modal.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
-});
+    <div class="fwa-head__actions">
+        <button class="btn btn--primary" type="button" data-add-person><svg class="i"><use href="#i-send"/></svg>Invite someone</button>
+    </div>
+</header>
 
-// Close modal
-document.getElementById('btnCancelInvite')?.addEventListener('click', () => {
-    const modal = document.getElementById('modalInvite');
-    modal.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-});
+<?php if ($mailbox): ?>
+    <div class="fwa-banner"><svg class="i"><use href="#i-mail"/></svg><div class="fwa-banner__body">Invitations are emailed from <b>your mailbox, <?= $e($mailbox['email_address']) ?></b>, so they come from someone the invitee knows.</div></div>
+<?php elseif ($systemMail): ?>
+    <div class="fwa-banner"><svg class="i"><use href="#i-mail"/></svg><div class="fwa-banner__body">Invitations are emailed by Flowwork. <a href="/mail/settings.php">Connect your own mailbox</a> to send them from your address instead.</div></div>
+<?php else: ?>
+    <div class="fwa-banner fwa-banner--warn"><svg class="i"><use href="#i-alert"/></svg><div class="fwa-banner__body"><b>Invitations can’t be emailed yet.</b> <a href="/mail/settings.php">Connect your mailbox in Mail</a> and Flowwork sends them for you — until then you get a link to copy and send yourself.</div></div>
+<?php endif; ?>
 
-document.querySelector('#modalInvite .fw-admin__modal-close')?.addEventListener('click', () => {
-    const modal = document.getElementById('modalInvite');
-    modal.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-});
-
-document.querySelector('#modalInvite .fw-admin__modal-backdrop')?.addEventListener('click', () => {
-    const modal = document.getElementById('modalInvite');
-    modal.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-});
-
-function copyInviteLink(token) {
-    const link = `${window.location.origin}/accept-invite.php?token=${token}`;
-    navigator.clipboard.writeText(link).then(() => {
-        alert('Invite link copied to clipboard!');
-    });
-}
-
-async function revokeInvite(inviteId) {
-    if (!confirm('Are you sure you want to revoke this invite?')) return;
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-    try {
-        const res = await fetch('/admin/api.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken },
-            body: new URLSearchParams({ action: 'revoke_invite', invite_id: inviteId })
-        });
-        
-        const data = await res.json();
-        
-        if (data.success) {
-            alert('Invite revoked');
-            location.reload();
-        } else {
-            alert(data.error || 'Failed to revoke invite');
-        }
-    } catch (err) {
-        console.error(err);
-        alert('Network error');
-    }
-}
-</script>
-<?php include __DIR__ . '/_layout_bottom.php'; ?>
+<section class="fwa-card">
+    <div class="fwa-tools">
+        <div class="fwa-chips" id="inviteChips">
+            <button class="fwa-chip is-on" type="button" data-filter="open">Waiting <small><?= $counts['open'] ?></small></button>
+            <button class="fwa-chip" type="button" data-filter="expired">Expired <small><?= $counts['expired'] ?></small></button>
+            <button class="fwa-chip" type="button" data-filter="joined">Joined <small><?= $counts['joined'] ?></small></button>
+            <button class="fwa-chip" type="button" data-filter="all">All <small><?= count($invites) ?></small></button>
+        </div>
+    </div>
+    <div class="fwa-table-wrap">
+        <table class="fwa-table">
+            <thead><tr><th>Invited</th><th>Role</th><th>Status</th><th class="hide-narrow">Sent</th><th class="t-right"><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="inviteBody"></tbody>
+        </table>
+        <div class="fwa-table__empty" id="inviteEmpty" hidden><b>Nothing here</b><span id="inviteEmptyText">No invitations are waiting.</span></div>
+    </div>
+</section>
+<?php
+$pageScripts = ['invite', 'invites'];
+$pageBoot = ['invites' => $invites, 'roles' => AdminKit::ROLES, 'seats' => AdminKit::seats($DB, $ADMIN_COMPANY_ID)];
+include __DIR__ . '/partials/foot.php';
