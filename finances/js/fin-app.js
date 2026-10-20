@@ -289,7 +289,7 @@
       const tones = ['var(--success)', 'var(--gold)', 'var(--warning)', '#c0662a', 'var(--danger)'];
       const block = (title, data, route, top, kind) => data ? `<div><h4>${esc(title)}<span>${esc(money(data.reduce((s, b) => s + b.value, 0)))}</span></h4>
         ${F.agingBars(data.map((b, i) => ({ ...b, tone: tones[i] })), (b, i) => `#${route}?status=${i === 0 ? 'open' : 'overdue'}`)}
-        ${top.length ? `<div class="fwf-rows" style="margin-top:8px">${top.map((x) => `<a href="${kind === 'ar' ? `#receivables?invoice=${x.id}` : `#payables?bill=${x.id}`}">${F.avatar(x.name, 'fwf-ava--sm')}<span class="fwf-rows__text"><b>${esc(x.name)}</b><small>${esc(x.number || '')} · ${x.days} days late</small></span><span class="fwf-rows__side">${esc(money(x.balance))}</span></a>`).join('')}</div>` : ''}</div>` : '';
+        ${top.length ? `<div class="fwf-rows" style="margin-top:8px">${top.map((x) => `<a href="${kind === 'ar' ? `#receivables?id=${x.id}` : `#payables?id=${x.id}`}">${F.avatar(x.name, 'fwf-ava--sm')}<span class="fwf-rows__text"><b>${esc(x.name)}</b><small>${esc(x.number || '')} · ${x.days} days late</small></span><span class="fwf-rows__side">${esc(money(x.balance))}</span></a>`).join('')}</div>` : ''}</div>` : '';
       return box(k, 'Who owes whom', `<a href="#reports?r=ar_aging">Aged reports</a>`, `<div class="fwf-aging2">${block('Customers owe you', a.ar, 'receivables', a.top_ar, 'ar')}${block('You owe suppliers', a.ap, 'payables', a.top_ap, 'ap')}</div>`);
     }
     if (k === 'profit') {
