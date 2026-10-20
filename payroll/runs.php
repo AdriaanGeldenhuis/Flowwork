@@ -1,158 +1,52 @@
 <?php
-// /payroll/runs.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /payroll/runs.php — every pay run, and starting a new one. The new-run
+// dialog fills in the next period and pay day from the settings (the period
+// after the last run of that frequency) and says who will be paid.
+require_once __DIR__ . '/lib/PayBoot.php';
 
-define('ASSET_VERSION', '2026-07-09-PAYROLL-UI-3D');
+$C = $PAY_COMPANY_ID;
+$st = $DB->prepare("SELECT pay_frequency, COUNT(*) FROM employees WHERE company_id = ? AND (termination_date IS NULL OR termination_date >= CURDATE()) GROUP BY pay_frequency");
+$st->execute([$C]);
+$byFreq = array_map('intval', $st->fetchAll(PDO::FETCH_KEY_PAIR));
+$suggest = [];
+foreach (array_keys(PayKit::FREQ) as $f) $suggest[$f] = PayKit::suggest($DB, $C, $f, $PAY_SETTINGS);
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Stats
-$stmt = $DB->prepare("
-    SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN status IN ('draft','calculated','review') THEN 1 ELSE 0 END) as open_count
-    FROM pay_runs WHERE company_id = ?
-");
-$stmt->execute([$companyId]);
-$stats = $stmt->fetch();
-$totalRuns = $stats['total'] ?? 0;
-$openRuns = $stats['open_count'] ?? 0;
+$page = 'runs';
+$pageTitle = 'Pay runs';
+$pageScripts = ['runs'];
+$pageBoot = ['freq' => PayKit::FREQ, 'byFreq' => $byFreq, 'suggest' => $suggest, 'defaultFrequency' => $PAY_SETTINGS['default_frequency']];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pay Runs – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body>
-    <main class="fw-payroll">
-        <div class="fw-payroll__container">
-            
-            <!-- Header -->
-            <header class="fw-payroll__header">
-                <div class="fw-payroll__brand">
-                    <div class="fw-payroll__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                        </svg>
-                    </div>
-                    <div class="fw-payroll__brand-text">
-                        <div class="fw-payroll__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-payroll__app-name">Payroll</div>
-                    </div>
-                </div>
+<header class="fwp-head">
+    <div class="fwp-head__text">
+        <p class="fwp-eyebrow">Payroll <i>◆</i> Pay runs</p>
+        <h1>Pay runs</h1>
+        <p>A run pays everyone on one frequency for one period. Prepare it, approve it, finalise it for payslips and the bank file, then put it in the books.</p>
+    </div>
+    <div class="fwp-head__actions">
+        <button class="btn btn--primary" type="button" data-new-run><svg class="i"><use href="#i-plus"/></svg>New pay run</button>
+    </div>
+</header>
 
-                <div class="fw-payroll__greeting">
-                    Hello, <span class="fw-payroll__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-
-                <div class="fw-payroll__controls">
-                    <a href="/" class="fw-payroll__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-payroll__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-payroll__theme-icon fw-payroll__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-payroll__theme-icon fw-payroll__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-payroll__menu-wrapper">
-                        <button class="fw-payroll__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-payroll__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/payroll/" class="fw-payroll__kebab-item">Dashboard</a>
-                            <a href="/payroll/employees.php" class="fw-payroll__kebab-item">Employees</a>
-                            <a href="/payroll/payitems.php" class="fw-payroll__kebab-item">Pay Items</a>
-                            <a href="/payroll/reports.php" class="fw-payroll__kebab-item">Reports</a>
-                            <a href="/payroll/settings.php" class="fw-payroll__kebab-item">Settings</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <div class="fw-payroll__main">
-                
-                <div class="fw-payroll__page-header">
-                    <h1 class="fw-payroll__page-title">Pay Runs</h1>
-                    <p class="fw-payroll__page-subtitle">
-                        <?= $totalRuns ?> total, <?= $openRuns ?> open
-                    </p>
-                </div>
-
-                <div class="fw-payroll__toolbar">
-                    <select class="fw-payroll__filter" id="filterStatus">
-                        <option value="">All Statuses</option>
-                        <option value="draft,calculated,review" selected>Open</option>
-                        <option value="approved">Approved</option>
-                        <option value="locked">Locked</option>
-                        <option value="posted">Posted</option>
-                    </select>
-
-                    <select class="fw-payroll__filter" id="filterFrequency">
-                        <option value="">All Frequencies</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="fortnight">Fortnight</option>
-                        <option value="weekly">Weekly</option>
-                    </select>
-
-                    <a href="/payroll/run_new.php" class="fw-payroll__btn fw-payroll__btn--primary">
-                        + New Pay Run
-                    </a>
-                </div>
-
-                <div class="fw-payroll__list" id="runsList">
-                    <div class="fw-payroll__loading">Loading pay runs...</div>
-                </div>
-
-            </div>
-
-            <footer class="fw-payroll__footer">
-                <span>Payroll v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Light</span>
-            </footer>
-
+<section class="fwp-card fwp-card--flush">
+    <div class="fwp-tools">
+        <div class="fwp-chips" role="group" aria-label="Show">
+            <button class="fwp-chip" type="button" data-stage="open">Open <small id="cOpen">·</small></button>
+            <button class="fwp-chip" type="button" data-stage="final">Finalised <small id="cFinal">·</small></button>
+            <button class="fwp-chip" type="button" data-stage="booked">In the books <small id="cBooked">·</small></button>
+            <button class="fwp-chip is-on" type="button" data-stage="all">All <small id="cAll">·</small></button>
         </div>
-    </main>
-
-    <script src="/payroll/assets/payroll.js?v=<?= ASSET_VERSION ?>"></script>
-    <script src="/payroll/assets/runs.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+        <span class="fwp-grow"></span>
+        <select class="select" id="runFreq" style="width:auto;height:34px" aria-label="Pay frequency">
+            <option value="">Every frequency</option>
+            <?php foreach (PayKit::FREQ as $k => $v): ?><option value="<?= $e($k) ?>"><?= $e($v) ?></option><?php endforeach; ?>
+        </select>
+    </div>
+    <div class="fwp-table-wrap">
+        <table class="fwp-table">
+            <thead><tr><th>Run</th><th class="hide-narrow">Period</th><th>Pay day</th><th class="t-num hide-narrow">People</th><th class="t-num">Net pay</th><th class="t-num hide-narrow">Cost to company</th><th>Stage</th></tr></thead>
+            <tbody id="runRows"><tr><td colspan="7"><div class="fwp-loading"><span class="fwp-spin"></span>Loading pay runs…</div></td></tr></tbody>
+        </table>
+    </div>
+</section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

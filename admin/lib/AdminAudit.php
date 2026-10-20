@@ -11,7 +11,8 @@ final class AdminAudit
         'people' => ['People & invitations', ['user_created', 'user_updated', 'user_deleted', 'user_suspended', 'user_reactivated', 'user_registered', 'invite_%']],
         'settings' => ['Settings & billing', ['settings_updated', 'company_updated', 'company_create', 'plan_changed', 'subscription_%', 'finance_settings_%', 'yoco_%', 'qi_bank_details_changed', 'data_exported', 'audit_pruned']],
         'projects' => ['Projects & boards', ['project_%', 'board_%', 'item_%', 'create', 'update']],
-        'money' => ['Quotes, invoices & finance', ['quote_%', 'invoice_%', 'credit_%', 'payment_%', 'qi_%', 'ar_%', 'ap_%', 'journal_%', 'finance_%', 'payrun_%', 'employee_%', 'receipt_%']],
+        'money' => ['Quotes, invoices & finance', ['quote_%', 'invoice_%', 'credit_%', 'payment_%', 'qi_%', 'ar_%', 'ap_%', 'journal_%', 'finance_%', 'receipt_%']],
+        'payroll' => ['Payroll', ['payrun_%', 'payslips_%', 'employee_%', 'payitem%', 'payroll_%', 'tax_table_%']],
         'crm' => ['CRM & suppliers', ['crm_%', 'ai_%', 'supplier_%']],
     ];
 

@@ -1,345 +1,101 @@
 <?php
-// /payroll/settings.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /payroll/settings.php — how payroll runs for this company: the pay
+// schedule, overtime, SARS details, posting to Finance, the variance check
+// and the SARS tax tables. Admins change them; bookkeepers can look.
+// Saved through /payroll/api/settings.php (the same payroll_settings row
+// Admin → Payroll edits).
+require_once __DIR__ . '/lib/PayBoot.php';
 
-define('ASSET_VERSION', '2026-07-09-PAYROLL-UI-3D');
+$S = PaySettings::load($DB, $PAY_COMPANY_ID);
+$tax = PaySettings::taxTables($DB, $PAY_COMPANY_ID);
+$canEdit = PayKit::canConfigure($PAY_ROLE);
+$dis = $canEdit ? '' : ' disabled';
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
+$row = function (string $key, string $label, string $hint, string $control, string $cls = '') use ($e) {
+    return '<div class="fwp-set ' . $cls . '" id="set-' . $e($key) . '"><div class="fwp-set__text"><label class="fwp-set__label" for="s-' . $e($key) . '">' . $e($label) . '</label>'
+         . ($hint !== '' ? '<span class="fwp-set__hint">' . $hint . '</span>' : '') . '</div><div class="fwp-set__control">' . $control . '</div></div>';
+};
+$toggle = function (string $key, string $label, string $hint, bool $on) use ($e, $dis) {
+    return '<div class="fwp-set fwp-set--toggle" id="set-' . $e($key) . '"><div class="fwp-set__text"><label class="fwp-set__label" for="s-' . $e($key) . '">' . $e($label) . '</label><span class="fwp-set__hint">' . $hint . '</span></div>'
+         . '<div class="fwp-set__control"><label class="switch"><input type="checkbox" id="s-' . $e($key) . '" name="' . $e($key) . '"' . ($on ? ' checked' : '') . $dis . '><span class="switch__track"></span></label></div></div>';
+};
+$num = fn(string $key, $value, string $unit, string $attrs = '') => '<div class="fwp-affix"><input class="input" id="s-' . $e($key) . '" name="' . $e($key) . '" type="number" value="' . $e($value) . '" ' . $attrs . $dis . '><span>' . $e($unit) . '</span></div>';
+$sel = function (string $key, array $opts, $value) use ($e, $dis) {
+    $h = '<select class="select" id="s-' . $e($key) . '" name="' . $e($key) . '"' . $dis . '>';
+    foreach ($opts as $k => $v) $h .= '<option value="' . $e($k) . '"' . ((string)$k === (string)$value ? ' selected' : '') . '>' . $e($v) . '</option>';
+    return $h . '</select>';
+};
+$fmtMult = fn(float $m) => rtrim(rtrim(number_format($m, 2, '.', ''), '0'), '.');
 
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Get settings
-$stmt = $DB->prepare("SELECT * FROM payroll_settings WHERE company_id = ?");
-$stmt->execute([$companyId]);
-$settings = $stmt->fetch();
-
-if (!$settings) {
-    // Create default
-    $stmt = $DB->prepare("INSERT INTO payroll_settings (company_id) VALUES (?)");
-    $stmt->execute([$companyId]);
-    $settings = [
-        'monthly_anchor_day' => 25,
-        'fortnight_anchor_day' => 15,
-        'weekly_anchor_day' => 5,
-        'default_frequency' => 'monthly',
-        'bank_file_format' => 'standard_bank_csv',
-        'rounding_cents' => 'nearest',
-        'auto_post_to_finance' => 0,
-        'require_approval_for_variance_pct' => 10.00,
-        'default_wage_gl_code' => '6000',
-        'default_paye_gl_code' => '2100',
-        'default_uif_gl_code' => '2101',
-        'default_sdl_gl_code' => '2102'
-    ];
-}
-
-// Get tax tables
-$stmt = $DB->query("
-    SELECT * FROM tax_tables_za 
-    WHERE company_id IS NULL OR company_id = $companyId
-    ORDER BY effective_from DESC
-");
-$taxTables = $stmt->fetchAll();
+$page = 'settings';
+$pageTitle = 'Settings';
+$pageScripts = ['settings'];
+$pageBoot = ['tax' => $tax, 'canEdit' => $canEdit];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payroll Settings – <?= htmlspecialchars($companyName) ?></title>
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <link rel="stylesheet" href="/payroll/assets/payroll.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body>
-    <main class="fw-payroll">
-        <div class="fw-payroll__container">
-            
-            <!-- Header -->
-            <header class="fw-payroll__header">
-                <div class="fw-payroll__brand">
-                    <div class="fw-payroll__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                        </svg>
-                    </div>
-                    <div class="fw-payroll__brand-text">
-                        <div class="fw-payroll__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-payroll__app-name">Payroll</div>
-                    </div>
-                </div>
+<header class="fwp-head">
+    <div class="fwp-head__text">
+        <p class="fwp-eyebrow">Payroll <i>◆</i> Settings</p>
+        <h1>Settings</h1>
+        <p>How payroll works for <?= $e($PAY_COMPANY['name']) ?>. Changes apply to runs started — or worked out again — after you save.</p>
+    </div>
+</header>
+<?php if (!$canEdit): ?>
+<div class="fwp-banner"><svg class="i"><use href="#i-lock"/></svg><div class="fwp-banner__body">Only an admin can change these. You can see how payroll is set up.</div></div>
+<?php endif; ?>
 
-                <div class="fw-payroll__greeting">
-                    Hello, <span class="fw-payroll__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
+<form data-settings="payroll" novalidate>
+    <section class="fwp-card fwp-card--flush">
+        <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#i-calendar"/></svg></span>
+            <div class="fwp-card__title"><h3>Pay schedule</h3><p>What a new pay run starts with. You can change the dates on any run.</p></div></div>
+        <?= $row('default_frequency', 'Usual pay frequency', 'The frequency a new run starts on.', $sel('default_frequency', PayKit::FREQ, $S['default_frequency'])) ?>
+        <?= $row('monthly_anchor_day', 'Monthly pay day', 'Short months use their last day; a weekend moves to the Friday before.', $num('monthly_anchor_day', $S['monthly_anchor_day'], 'of the month', 'min="1" max="31" step="1"')) ?>
+        <?= $row('weekly_anchor_day', 'Weekly and two-weekly pay day', 'Weekly and two-weekly periods end on this day, and are paid on it.', $sel('weekly_anchor_day', PayKit::WEEKDAYS, $S['weekly_anchor_day'])) ?>
+    </section>
 
-                <div class="fw-payroll__controls">
-                    <a href="/" class="fw-payroll__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-payroll__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-payroll__theme-icon fw-payroll__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-payroll__theme-icon fw-payroll__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
+    <section class="fwp-card fwp-card--flush">
+        <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#i-clock"/></svg></span>
+            <div class="fwp-card__title"><h3>Hours &amp; overtime</h3><p>The Basic Conditions of Employment Act sets 1.5× for overtime and, for most people, 2× for Sundays and public holidays.</p></div></div>
+        <?= $row('hours_per_week', 'Normal hours a week', 'Turns a salary into an hourly rate for overtime: salary ÷ (hours × 52 ÷ 12). Someone with their own hourly rate uses that.', $num('hours_per_week', $S['hours_per_week'], 'hours', 'min="1" max="80" step="0.5"')) ?>
+        <?= $row('ot_weekday', 'Overtime', '', $num('ot_weekday', $fmtMult($S['overtime']['weekday']), '× the hourly rate', 'min="1" max="3" step="0.05"')) ?>
+        <?= $row('ot_sunday', 'Sunday work', '', $num('ot_sunday', $fmtMult($S['overtime']['sunday']), '× the hourly rate', 'min="1" max="3" step="0.05"')) ?>
+        <?= $row('ot_holiday', 'Public holiday work', '', $num('ot_holiday', $fmtMult($S['overtime']['holiday']), '× the hourly rate', 'min="1" max="3" step="0.05"')) ?>
+    </section>
 
-                    <div class="fw-payroll__menu-wrapper">
-                        <button class="fw-payroll__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-payroll__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/payroll/" class="fw-payroll__kebab-item">Dashboard</a>
-                            <a href="/payroll/employees.php" class="fw-payroll__kebab-item">Employees</a>
-                            <a href="/payroll/payitems.php" class="fw-payroll__kebab-item">Pay Items</a>
-                            <a href="/payroll/runs.php" class="fw-payroll__kebab-item">Pay Runs</a>
-                            <a href="/payroll/reports.php" class="fw-payroll__kebab-item">Reports</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
+    <section class="fwp-card fwp-card--flush">
+        <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#ip-sars"/></svg></span>
+            <div class="fwp-card__title"><h3>SARS</h3><p>Your registration as an employer.</p></div></div>
+        <?= $row('paye_reference', 'PAYE reference number', 'Starts with 7 and has 10 digits. Printed on payslips and used for EMP201 and EMP501.', '<input class="input fwp-mono" id="s-paye_reference" name="paye_reference" value="' . $e($S['paye_reference']) . '" maxlength="12" inputmode="numeric" placeholder="7…"' . $dis . '>') ?>
+        <?= $toggle('sdl_liable', 'We pay the Skills Development Levy', 'Employers whose total pay is more than R500 000 a year pay 1% SDL. Switch off if you are below that.', $S['sdl_liable']) ?>
+    </section>
 
-            <!-- Main Content -->
-            <div class="fw-payroll__main">
-                
-                <div class="fw-payroll__page-header">
-                    <h1 class="fw-payroll__page-title">Payroll Settings</h1>
-                    <p class="fw-payroll__page-subtitle">Configure pay periods, tax tables, and integrations</p>
-                </div>
+    <section class="fwp-card fwp-card--flush" id="finance">
+        <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#if-ledger"/></svg></span>
+            <div class="fwp-card__title"><h3>Finance</h3><p>How a finalised run goes into the books.</p></div></div>
+        <?php
+        $bankOpts = ['' => $S['bank_accounts'] ? 'Choose an account' : 'No bank accounts in Finance yet'];
+        foreach ($S['bank_accounts'] as $b) $bankOpts[$b['id']] = $b['name'] . ' (' . $b['code'] . ')';
+        echo $row('bank_account_id', 'Salaries are paid from', $S['bank_accounts'] ? 'Net pay is credited to this bank account in the books.' : 'Add your bank account under <a href="/finances/#bank">Finance → Bank</a> first.', $sel('bank_account_id', $bankOpts, $S['bank_account_id'] ?? ''));
+        echo $toggle('auto_post_to_finance', 'Put runs in the books when they are finalised', 'Saves a step. Off: post each run yourself from the run.', $S['auto_post_to_finance']);
+        ?>
+        <div class="fwp-set fwp-set--wide"><div class="fwp-set__text"><span class="fwp-set__label">Posts to</span>
+            <span class="fwp-set__hint">Set in <a href="/finances/settings.php">Finance settings</a>. Deductions go to the account on each pay item, else Salaries &amp; Wages Payable.</span></div>
+            <div class="fwp-set__control"><dl class="fwp-kv" style="width:100%">
+                <?php foreach ($S['posts_to'] as $p): ?><dt><?= $e($p['label']) ?></dt><dd><span class="fwp-mono"><?= $e($p['code']) ?></span> <?= $e($p['name']) ?></dd><?php endforeach; ?>
+            </dl></div></div>
+    </section>
 
-                <div class="fw-payroll__settings-container">
-                    
-                    <!-- General Settings -->
-                    <form id="settingsForm" class="fw-payroll__settings-card">
-                        <h3 class="fw-payroll__settings-card-title">General Settings</h3>
-                        
-                        <div class="fw-payroll__form-section">
-                            <h4 class="fw-payroll__form-section-title">Pay Periods</h4>
-                            
-                            <div class="fw-payroll__form-row">
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Monthly Anchor Day</label>
-                                    <input type="number" name="monthly_anchor_day" class="fw-payroll__input" 
-                                           value="<?= $settings['monthly_anchor_day'] ?>" min="1" max="31">
-                                    <small class="fw-payroll__help-text">Day of month for monthly pay date (e.g., 25th)</small>
-                                </div>
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Default Frequency</label>
-                                    <select name="default_frequency" class="fw-payroll__input">
-                                        <option value="monthly" <?= $settings['default_frequency'] === 'monthly' ? 'selected' : '' ?>>Monthly</option>
-                                        <option value="fortnight" <?= $settings['default_frequency'] === 'fortnight' ? 'selected' : '' ?>>Fortnight</option>
-                                        <option value="weekly" <?= $settings['default_frequency'] === 'weekly' ? 'selected' : '' ?>>Weekly</option>
-                                    </select>
-                                </div>
-                            </div>
+    <section class="fwp-card fwp-card--flush">
+        <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#if-scale"/></svg></span>
+            <div class="fwp-card__title"><h3>Checks</h3><p>Help with spotting mistakes before anyone is paid.</p></div></div>
+        <?= $row('variance_pct', 'Flag a change in net pay of more than', 'Compared with each person’s last finalised pay. Shown on the run so you can check it.', $num('variance_pct', rtrim(rtrim(number_format($S['variance_pct'], 2, '.', ''), '0'), '.'), '%', 'min="0" max="100" step="1"')) ?>
+    </section>
+</form>
 
-                            <div class="fw-payroll__form-row">
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Fortnight Anchor Day</label>
-                                    <input type="number" name="fortnight_anchor_day" class="fw-payroll__input" 
-                                           value="<?= $settings['fortnight_anchor_day'] ?>" min="1" max="31">
-                                </div>
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Weekly Anchor Day</label>
-                                    <select name="weekly_anchor_day" class="fw-payroll__input">
-                                        <option value="1" <?= $settings['weekly_anchor_day'] == 1 ? 'selected' : '' ?>>Monday</option>
-                                        <option value="2" <?= $settings['weekly_anchor_day'] == 2 ? 'selected' : '' ?>>Tuesday</option>
-                                        <option value="3" <?= $settings['weekly_anchor_day'] == 3 ? 'selected' : '' ?>>Wednesday</option>
-                                        <option value="4" <?= $settings['weekly_anchor_day'] == 4 ? 'selected' : '' ?>>Thursday</option>
-                                        <option value="5" <?= $settings['weekly_anchor_day'] == 5 ? 'selected' : '' ?>>Friday</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="fw-payroll__form-section">
-                            <h4 class="fw-payroll__form-section-title">Calculation Settings</h4>
-                            
-                            <div class="fw-payroll__form-row">
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Rounding</label>
-                                    <select name="rounding_cents" class="fw-payroll__input">
-                                        <option value="nearest" <?= $settings['rounding_cents'] === 'nearest' ? 'selected' : '' ?>>Nearest Cent</option>
-                                        <option value="down" <?= $settings['rounding_cents'] === 'down' ? 'selected' : '' ?>>Round Down</option>
-                                        <option value="up" <?= $settings['rounding_cents'] === 'up' ? 'selected' : '' ?>>Round Up</option>
-                                    </select>
-                                </div>
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Variance Approval Threshold (%)</label>
-                                    <input type="number" name="require_approval_for_variance_pct" class="fw-payroll__input" 
-                                           value="<?= $settings['require_approval_for_variance_pct'] ?>" step="0.01" min="0">
-                                    <small class="fw-payroll__help-text">Require manager approval if net pay changes by more than this %</small>
-                                </div>
-                            </div>
-
-                            <div class="fw-payroll__form-group">
-                                <label class="fw-payroll__checkbox-wrapper">
-                                    <input type="checkbox" name="auto_post_to_finance" class="fw-payroll__checkbox" 
-                                           <?= $settings['auto_post_to_finance'] ? 'checked' : '' ?>>
-                                    Auto-post to Finance when run is locked
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="fw-payroll__form-section">
-                            <h4 class="fw-payroll__form-section-title">GL Account Mapping</h4>
-                            
-                            <div class="fw-payroll__form-row">
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">Wage Expense GL Code</label>
-                                    <input type="text" name="default_wage_gl_code" class="fw-payroll__input" 
-                                           value="<?= $settings['default_wage_gl_code'] ?>">
-                                </div>
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">PAYE Liability GL Code</label>
-                                    <input type="text" name="default_paye_gl_code" class="fw-payroll__input" 
-                                           value="<?= $settings['default_paye_gl_code'] ?>">
-                                </div>
-                            </div>
-
-                            <div class="fw-payroll__form-row">
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">UIF Liability GL Code</label>
-                                    <input type="text" name="default_uif_gl_code" class="fw-payroll__input" 
-                                           value="<?= $settings['default_uif_gl_code'] ?>">
-                                </div>
-                                <div class="fw-payroll__form-group">
-                                    <label class="fw-payroll__label">SDL Liability GL Code</label>
-                                    <input type="text" name="default_sdl_gl_code" class="fw-payroll__input" 
-                                           value="<?= $settings['default_sdl_gl_code'] ?>">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="fw-payroll__form-section">
-                            <h4 class="fw-payroll__form-section-title">Bank File Export</h4>
-                            
-                            <div class="fw-payroll__form-group">
-                                <label class="fw-payroll__label">Bank File Format</label>
-                                <select name="bank_file_format" class="fw-payroll__input">
-                                    <option value="standard_bank_csv" <?= $settings['bank_file_format'] === 'standard_bank_csv' ? 'selected' : '' ?>>Standard Bank CSV</option>
-                                    <option value="absa_npf" <?= $settings['bank_file_format'] === 'absa_npf' ? 'selected' : '' ?>>ABSA NPF</option>
-                                    <option value="nedbank_naedo" <?= $settings['bank_file_format'] === 'nedbank_naedo' ? 'selected' : '' ?>>Nedbank NAEDO</option>
-                                    <option value="generic_csv" <?= $settings['bank_file_format'] === 'generic_csv' ? 'selected' : '' ?>>Generic CSV</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div id="settingsMessage"></div>
-
-                        <div class="fw-payroll__settings-actions">
-                            <button type="button" class="fw-payroll__btn fw-payroll__btn--primary" onclick="PayrollSettings.saveSettings()">
-                                Save Settings
-                            </button>
-                        </div>
-                    </form>
-
-                    <!-- Tax Tables -->
-                    <div class="fw-payroll__settings-card">
-                        <h3 class="fw-payroll__settings-card-title">Tax Tables (ZA SARS)</h3>
-                        
-                        <div class="fw-payroll__tax-tables-list">
-                            <?php foreach ($taxTables as $table): ?>
-                            <div class="fw-payroll__tax-table-card">
-                                <div class="fw-payroll__tax-table-header">
-                                    <div>
-                                        <div class="fw-payroll__tax-table-period">
-                                            <?= date('d M Y', strtotime($table['effective_from'])) ?>
-                                            <?php if ($table['effective_to']): ?>
-                                                - <?= date('d M Y', strtotime($table['effective_to'])) ?>
-                                            <?php else: ?>
-                                                - Current
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="fw-payroll__tax-table-scope">
-                                            <?= $table['company_id'] ? 'Company Specific' : 'System Default' ?>
-                                        </div>
-                                    </div>
-                                    <?php
-                                    $rebatePrimary = $table['rebate_primary_cents'] / 100;
-                                    $uifCap = $table['uif_cap_annual_cents'] / 100;
-                                    ?>
-                                    <div class="fw-payroll__tax-table-stats">
-                                        <div class="fw-payroll__tax-table-stat">
-                                            <span class="fw-payroll__tax-table-stat-label">Primary Rebate</span>
-                                            <span class="fw-payroll__tax-table-stat-value">R <?= number_format($rebatePrimary, 2) ?></span>
-                                        </div>
-                                        <div class="fw-payroll__tax-table-stat">
-                                            <span class="fw-payroll__tax-table-stat-label">UIF Cap (Annual)</span>
-                                            <span class="fw-payroll__tax-table-stat-value">R <?= number_format($uifCap, 2) ?></span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <details class="fw-payroll__tax-table-details">
-                                    <summary>View Tax Brackets</summary>
-                                    <div class="fw-payroll__tax-brackets">
-                                        <?php
-                                        $brackets = json_decode($table['bracket_json'], true);
-                                        foreach ($brackets as $bracket):
-                                            $threshold = $bracket['threshold_cents'] / 100;
-                                            $rate = $bracket['rate_bp'] / 100;
-                                            $cumulative = $bracket['cumulative_cents'] / 100;
-                                        ?>
-                                        <div class="fw-payroll__tax-bracket">
-                                            <span>R <?= number_format($threshold, 0) ?>+</span>
-                                            <span><?= $rate ?>%</span>
-                                            <span>Cumulative: R <?= number_format($cumulative, 2) ?></span>
-                                        </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </details>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-
-                        <p class="fw-payroll__help-text" style="margin-top: 16px;">
-                            Tax tables are managed by system admin. Contact support to update for new tax year.
-                        </p>
-                    </div>
-
-                </div>
-
-            </div>
-
-            <footer class="fw-payroll__footer">
-                <span>Payroll v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Light</span>
-            </footer>
-
-        </div>
-    </main>
-
-    <script src="/payroll/assets/payroll.js?v=<?= ASSET_VERSION ?>"></script>
-    <script src="/payroll/assets/settings.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+<section class="fwp-card" id="tax" style="margin-top:16px">
+    <div class="fwp-card__head"><span class="fwp-card__icon"><svg class="i"><use href="#ip-calc"/></svg></span>
+        <div class="fwp-card__title"><h3>Tax tables</h3><p>The SARS brackets, rebates, medical credits and UIF ceiling PAYE is worked out with. Flowwork keeps them up to date from sars.gov.za.</p></div>
+        <?php if ($canEdit): ?><button class="fwp-mini" type="button" data-tax-new<?= $tax['has_next'] ? ' hidden' : '' ?>><svg class="i"><use href="#i-plus"/></svg>Add <?= $e($tax['next_label']) ?></button><?php endif; ?></div>
+    <div class="fwp-card__body" id="taxBox"></div>
+</section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

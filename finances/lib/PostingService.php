@@ -292,6 +292,47 @@ class PostingService
     }
 
     /** Resolve a gl_bank_accounts row to its GL account code (with fallback). */
+    /** True when the account code exists and is active on this company's chart. */
+    private function accountIsActive(string $code): bool
+    {
+        $stmt = $this->db->prepare("SELECT 1 FROM gl_accounts WHERE company_id = ? AND account_code = ? AND is_active = 1 LIMIT 1");
+        $stmt->execute([$this->companyId, $code]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /**
+     * A liability named for salaries / wages payable (the seed's 2210 "Salaries &
+     * Wages Payable" first), or null when the chart has none. Chosen by name, not
+     * by code: older charts use 2210 for something else (e.g. Loans Payable).
+     */
+    private function payrollPayableCode(bool $create = false): ?string
+    {
+        $stmt = $this->db->prepare(
+            "SELECT account_code FROM gl_accounts
+              WHERE company_id = ? AND is_active = 1 AND account_type = 'liability'
+                AND LOWER(account_name) LIKE '%payable%' AND (LOWER(account_name) LIKE '%wage%' OR LOWER(account_name) LIKE '%salar%')
+              ORDER BY account_code = '2210' DESC, account_code LIMIT 1"
+        );
+        $stmt->execute([$this->companyId]);
+        $code = $stmt->fetchColumn();
+        if ($code !== false) return (string)$code;
+        if (!$create || !($def = CoaSeed::definition('2210'))) return null;
+        // None on this chart: add the seed account at the first free code from 2210.
+        $taken = $this->db->prepare("SELECT 1 FROM gl_accounts WHERE company_id = ? AND account_code = ?");
+        foreach (array_merge(range(2210, 2299), range(2201, 2209)) as $n) {
+            $taken->execute([$this->companyId, (string)$n]);
+            if ($taken->fetchColumn()) continue;
+            $parent = $this->db->prepare("SELECT account_id FROM gl_accounts WHERE company_id = ? AND account_code = ? AND account_type = 'liability'");
+            $parent->execute([$this->companyId, (string)$def['parent_code']]);
+            $pid = $parent->fetchColumn();
+            if (CoaSeed::insertAccount($this->db, $this->companyId, $def, (string)$n, $pid ? (int)$pid : null) === null) continue;
+            Audit::log('finance_account_created', ['account_code' => (string)$n, 'account_name' => $def['account_name'], 'why' => 'payroll deductions'],
+                'company', $this->companyId, $this->companyId, $this->userId);
+            return (string)$n;
+        }
+        return null;
+    }
+
     private function bankCodeFor($bankAccountId): string
     {
         if ($bankAccountId) {
@@ -1120,12 +1161,73 @@ class PostingService
             }
             $bankCode = $this->bankCodeFor((int)$run['default_bank_account_id']);
 
+            // Pay items that name their own account: earnings and reimbursements
+            // expensed elsewhere, deductions owed to a fund / creditor, employer
+            // contributions owed on top of pay. Deductions with no account of
+            // their own go to Salaries & Wages Payable; only when the chart has
+            // neither are they netted off wages (the old behaviour).
+            $byItem = $this->db->prepare(
+                "SELECT pi.type, TRIM(COALESCE(pi.gl_account_code, '')) gl, pi.name, SUM(l.amount_cents) amt
+                   FROM pay_run_lines l JOIN payitems pi ON pi.id = l.payitem_id AND pi.company_id = l.company_id
+                  WHERE l.run_id = ? AND l.company_id = ? AND pi.type IN ('earning', 'reimbursement', 'deduction', 'contribution')
+                  GROUP BY pi.type, gl, pi.name"
+            );
+            $byItem->execute([$runId, $this->companyId]);
+            $groups = $byItem->fetchAll(PDO::FETCH_ASSOC);
+            $needsPayable = false;
+            foreach ($groups as $g) {
+                if (in_array($g['type'], ['deduction', 'contribution'], true) && (int)$g['amt'] !== 0
+                    && ($g['gl'] === '' || !$this->accountIsActive($g['gl']))) {
+                    $needsPayable = true;
+                }
+            }
+            $payable = $needsPayable ? $this->payrollPayableCode(true) : null;
+            $ownDebits = [];   // code => [cents, label]
+            $ownCredits = [];
+            $ownEarnC = 0;
+            $placedDedC = 0;
+            $contribC = 0;
+            foreach ($groups as $g) {
+                $amt = (int)$g['amt'];
+                $own = $g['gl'] !== '' && $this->accountIsActive($g['gl']) ? $g['gl'] : null;
+                if ($g['type'] === 'deduction') {
+                    $to = $own ?? $payable;
+                    if ($to !== null && $amt < 0) {
+                        $ownCredits[$to][0] = ($ownCredits[$to][0] ?? 0) - $amt;
+                        $ownCredits[$to][1][] = $own ? $g['name'] . ' payable' : 'Payroll deductions payable';
+                        $placedDedC -= $amt;
+                    }
+                } elseif ($g['type'] === 'contribution') {
+                    $to = $own ?? $payable;
+                    if ($to !== null && $amt > 0) {
+                        $ownCredits[$to][0] = ($ownCredits[$to][0] ?? 0) + $amt;
+                        $ownCredits[$to][1][] = $own ? $g['name'] . ' payable' : 'Employer contributions payable';
+                        $contribC += $amt;
+                    }
+                } elseif ($own !== null && $own !== $wageCode && $amt > 0) {
+                    $ownDebits[$own][0] = ($ownDebits[$own][0] ?? 0) + $amt;
+                    $ownDebits[$own][1] = $g['name'];
+                    $ownEarnC += $amt;
+                }
+            }
+            $placedDedC = min($placedDedC, $otherDedC);
+
             $reference = $run['run_number'] ?: ('PR' . $runId);
             $lines = [];
-            $wageDebitC = $grossC + $reimburseC - $otherDedC;
-            if ($wageDebitC > 0) {
+            $wageDebitC = $grossC + $reimburseC - $ownEarnC - ($otherDedC - $placedDedC) + $contribC;
+            if ($wageDebitC !== 0) {
+                // Negative only when every earning has its own account and a deduction had
+                // nowhere else to go: it then reduces wages as a credit, keeping the journal balanced.
                 $lines[] = ['account_code' => $wageCode, 'description' => 'Payroll Wages Expense',
-                    'debit' => $wageDebitC / 100, 'credit' => 0];
+                    'debit' => max(0, $wageDebitC) / 100, 'credit' => max(0, -$wageDebitC) / 100];
+            }
+            foreach ($ownDebits as $code => [$c, $label]) {
+                $lines[] = ['account_code' => (string)$code, 'description' => 'Payroll — ' . $label, 'debit' => $c / 100, 'credit' => 0];
+            }
+            foreach ($ownCredits as $code => [$c, $labels]) {
+                $labels = array_values(array_unique($labels));
+                $label = count($labels) === 1 ? $labels[0] : 'Payroll deductions & contributions payable';
+                if ($c > 0) $lines[] = ['account_code' => (string)$code, 'description' => $label, 'debit' => 0, 'credit' => $c / 100];
             }
             if ($uifEmprC > 0) {
                 $lines[] = ['account_code' => $uifExpCode, 'description' => 'UIF — Employer Contribution',

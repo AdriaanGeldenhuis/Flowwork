@@ -81,6 +81,11 @@ try {
     assert_eq(['default_frequency' => 'fortnight', 'monthly_anchor_day' => 28, 'auto_post_to_finance' => 1], $row, 'Payroll reads the new schedule from payroll_settings');
     $invalid(fn() => AdminSettings::save($DB, $C, $U, 'admin', 'payroll', ['default_frequency' => 'fortnightly']), 'default_frequency', 'a frequency Payroll does not know is refused');
     $invalid(fn() => AdminSettings::save($DB, $C, $U, 'admin', 'payroll', ['monthly_anchor_day' => '32']), 'monthly_anchor_day', 'day 32 is refused');
+    AdminSettings::save($DB, $C, $U, 'admin', 'payroll', ['weekly_anchor_day' => '4']);
+    require_once FLOWWORK_ROOT . '/payroll/lib/PayKit.php';
+    $ps = PayKit::settings($DB, $C);
+    assert_eq([4, 'fortnight', 28, true], [$ps['weekly_anchor_day'], $ps['default_frequency'], $ps['monthly_anchor_day'], $ps['auto_post_to_finance']], 'Payroll reads the same schedule Admin saved');
+    $invalid(fn() => AdminSettings::save($DB, $C, $U, 'admin', 'payroll', ['weekly_anchor_day' => '8']), 'weekly_anchor_day', 'a weekday that does not exist is refused');
 
     // ------------------------------------------------------------------ suppliers
     AdminSettings::save($DB, $C, $U, 'admin', 'suppliers', ['default_radius_km' => '40', 'min_score_threshold' => '0.6', 'crm_block_expired_suppliers' => '1', 'crm_reminder_days' => '7; 30,14 7']);
@@ -151,8 +156,8 @@ try {
     $ins = $DB->prepare("INSERT INTO company_settings (company_id, setting_key, setting_value) VALUES (?, ?, ?)");
     foreach ($saved as $k => $v) $ins->execute([$C, $k, $v]);
     if ($savedPayroll) {
-        $DB->prepare("UPDATE payroll_settings SET default_frequency = ?, monthly_anchor_day = ?, auto_post_to_finance = ? WHERE company_id = ?")
-           ->execute([$savedPayroll['default_frequency'], $savedPayroll['monthly_anchor_day'], $savedPayroll['auto_post_to_finance'], $C]);
+        $DB->prepare("UPDATE payroll_settings SET default_frequency = ?, monthly_anchor_day = ?, weekly_anchor_day = ?, auto_post_to_finance = ? WHERE company_id = ?")
+           ->execute([$savedPayroll['default_frequency'], $savedPayroll['monthly_anchor_day'], $savedPayroll['weekly_anchor_day'], $savedPayroll['auto_post_to_finance'], $C]);
     } else {
         $DB->exec("DELETE FROM payroll_settings WHERE company_id = $C");
     }
