@@ -134,6 +134,18 @@ if ($cal['ok']) {
     $calendarLive = $cal['count'] ? $cal['count'] . ' today' : 'Nothing scheduled today';
     if ($cal['next']) $calendarLive .= ' · ' . ($cal['next']['live'] ? 'now' : 'next ' . $cal['next']['time']);
 }
+$receiptsLive = '';
+$receiptsAlert = false;
+try {
+    require_once __DIR__ . '/receipts/lib/RcKit.php';
+    require_once __DIR__ . '/receipts/lib/RcReceipts.php';
+    $rc = RcReceipts::navCounts($DB, $activeCompanyId, $userId, RcKit::role($role));
+    if ($rc['todo']) $receiptsLive = $rc['todo'] . (RcKit::canCapture($role) ? ' to review' : ' waiting') . ($rc['blocked'] ? ' · ' . $rc['blocked'] . ' held' : '');
+    elseif ($rc['all']) $receiptsLive = 'All reviewed';
+    $receiptsAlert = $rc['blocked'] > 0;
+} catch (Throwable $ex) {
+    error_log('[home] receipts: ' . $ex->getMessage());
+}
 $mailLive = '';
 if ($mail['ok']) {
     $mailLive = $mail['accounts'] === 0 ? 'Connect your mailbox' : ($mail['unread'] ? $mail['unread'] . ' unread' : 'Inbox at rest');
@@ -144,7 +156,7 @@ $modules = [
     ['key' => 'crm', 'name' => 'Suppliers & CRM', 'tag' => '', 'desc' => 'Customer and supplier relationships', 'href' => '/crm/', 'icon' => 'i-users', 'c' => '#2f6b6a', 'live' => '', 'kw' => 'customers clients accounts contacts'],
     ['key' => 'qi', 'name' => 'Quotes & Invoices', 'tag' => '', 'desc' => 'Create, send and track quotes and invoices', 'href' => '/qi/', 'icon' => 'i-file-text', 'c' => '#9a7136', 'live' => '', 'kw' => 'quote invoice billing credit note'],
     ['key' => 'finances', 'name' => 'Finance', 'tag' => 'Accounting', 'desc' => 'Ledgers, banking, VAT and reports', 'href' => '/finances/', 'icon' => 'ih-coins', 'c' => '#2f7457', 'live' => '', 'kw' => 'accounting ledger bank vat reports money'],
-    ['key' => 'receipts', 'name' => 'Receipts', 'tag' => 'AI', 'desc' => 'Scan, read and file every receipt', 'href' => '/receipts/', 'icon' => 'i-receipt', 'c' => '#6b3a6e', 'live' => '', 'kw' => 'expenses scan slips ai'],
+    ['key' => 'receipts', 'name' => 'Receipts', 'tag' => 'AI', 'desc' => 'Scan, read and file every receipt', 'href' => '/receipts/', 'icon' => 'i-receipt', 'c' => '#6b3a6e', 'live' => $receiptsLive, 'alert' => $receiptsAlert, 'kw' => 'expenses scan slips ai'],
     ['key' => 'payroll', 'name' => 'Payroll', 'tag' => '', 'desc' => 'Employees, wages and pay runs', 'href' => '/payroll/', 'icon' => 'i-wallet', 'c' => '#a4552c', 'live' => '', 'kw' => 'wages salaries employees timesheets'],
     ['key' => 'suppliers_ai', 'name' => 'Suppliers AI', 'tag' => 'AI', 'desc' => 'AI-powered supplier insights', 'href' => '/suppliers_ai/', 'icon' => 'i-sparkle', 'c' => '#3d5a8a', 'live' => '', 'kw' => 'ai insights suppliers'],
     ['key' => 'shopping', 'name' => 'Shopping List', 'tag' => '', 'desc' => 'Procurement and supplies', 'href' => '/shopping/', 'icon' => 'ih-cart', 'c' => '#6f7a35', 'live' => '', 'kw' => 'procurement supplies buy order'],

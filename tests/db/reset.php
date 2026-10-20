@@ -31,6 +31,8 @@ $tables = [
     // Finance: bank workflow, saved settings and supporting documents
     'gl_bank_accounts', 'gl_bank_rules', 'bank_import_batches', 'bank_reconciliations',
     'fin_prefs', 'fin_attachments',
+    // Receipts: slips, their readings, check log and the learning memory
+    'receipt_policy_log', 'receipt_ocr', 'receipt_file', 'ai_hints',
 ];
 
 $DB->exec('SET FOREIGN_KEY_CHECKS = 0');

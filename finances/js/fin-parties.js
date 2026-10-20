@@ -463,7 +463,7 @@
       if (a === 'more') popover(btn, `${can('write') && ['posted', 'overdue', 'paid'].includes(b.status) ? `<button class="fwm-pop__item" type="button" data-v="credit">${icon('if-credit')}Record a credit note for this</button>` : ''}
         <a class="fwm-pop__item" href="#payables?view=statement&supplier=${b.supplier_id}">${icon('if-statement')}${esc(L('supplier'))} statement</a>
         <a class="fwm-pop__item" href="#payables?supplier=${b.supplier_id}&status=all">${icon('list')}All their ${esc(lower('bills'))}</a>
-        ${b.receipt_url ? `<a class="fwm-pop__item" href="${esc(b.receipt_url)}">${icon('external')}Open Receipts</a>` : ''}
+        ${b.receipt_url ? `<a class="fwm-pop__item" href="${esc(b.receipt_url)}">${icon('i-receipt')}Open the receipt</a>` : ''}
         <button class="fwm-pop__item" type="button" data-v="print">${icon('print')}Print</button>
         ${can('write') && b.editable ? `<div class="fwm-pop__sep"></div><button class="fwm-pop__item is-danger" type="button" data-v="delete">${icon('trash')}Delete draft</button>` : ''}`, {
         align: 'end',

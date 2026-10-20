@@ -1,0 +1,11 @@
+# Receipts (supplier slips and invoices) are private per company. They are
+# only served through /receipts/api/file.php, which checks the session's
+# company and who may see the receipt. Deny all direct web access (both
+# Apache 2.2 and 2.4 syntax). New slips are kept under storage/receipts/.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+</IfModule>

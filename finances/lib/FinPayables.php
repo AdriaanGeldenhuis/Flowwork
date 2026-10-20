@@ -135,7 +135,7 @@ final class FinPayables
                        'raw_status' => (string)$b['status'], 'notes' => (string)($b['notes'] ?? ''), 'subtotal' => round((float)$b['subtotal'], 2), 'tax' => round((float)$b['tax'], 2),
                        'total' => round((float)$b['total'], 2), 'paid' => round((float)$b['paid'], 2), 'credited' => round((float)$b['credited'], 2), 'balance' => $balance,
                        'journal_id' => $b['journal_id'] ? (int)$b['journal_id'] : null, 'from_receipts' => $b['status'] === 'review' || !empty($b['ocr_id']),
-                       'receipt_url' => !empty($b['ocr_id']) || !empty($b['file_id']) ? '/receipts/' : null,
+                       'receipt_url' => !empty($b['file_id']) ? '/receipts/review.php?id=' . (int)$b['file_id'] : (!empty($b['ocr_id']) ? '/receipts/' : null),
                        'editable' => in_array($b['status'], ['draft', 'review', 'approved'], true), 'postable' => in_array($b['status'], ['draft', 'review', 'approved'], true)],
             'lines' => $lines, 'payments' => $pays, 'credits' => $credits, 'files' => FinFiles::list($db, $companyId, 'bill', $id),
         ];
