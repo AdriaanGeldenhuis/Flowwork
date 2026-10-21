@@ -12,7 +12,7 @@ foreach (SaParse::TRADES as $k => $t) $trades[$k] = ['label' => $t[0], 'icon' =>
 // Only what the pages need: not the company's word lists, and not even the masked keys.
 $bootSettings = array_intersect_key($SA_SETTINGS, array_flip(['radius_km', 'min_score', 'max_recipients', 'compliant_only', 'ai_ready', 'google_ready']));
 $saBoot = ($pageBoot ?? []) + [
-    'companies' => $companies, 'role' => $SA_ROLE, 'caps' => $SA_CAPS, 'user' => $SA_USER_ID, 'settings' => $bootSettings, 'counts' => $SA_COUNTS,
+    'companies' => $companies, 'company' => $SA_COMPANY_ID, 'role' => $SA_ROLE, 'caps' => $SA_CAPS, 'user' => $SA_USER_ID, 'settings' => $bootSettings, 'counts' => $SA_COUNTS,
     'town' => (string)($SA_COMPANY['town'] ?? ''), 'trades' => $trades,
     'pages' => array_values(array_filter([
         ['name' => 'Find suppliers', 'href' => '/suppliers_ai/', 'icon' => 'isa-seal', 'hint' => 'Say what you need — your suppliers, Google and AI'],

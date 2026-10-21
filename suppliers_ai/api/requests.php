@@ -53,8 +53,9 @@ switch (sa_op()) {
     case 'draft':
         sa_json(SaRequests::draft($DB, $SA_COMPANY_ID, $SA_USER_ID, $SA_ROLE, $id));
     case 'refresh':
-        SaRequests::row($DB, $SA_COMPANY_ID, $id);
+        $row = SaRequests::row($DB, $SA_COMPANY_ID, $id);
         $found = SaRequests::refresh($DB, $SA_COMPANY_ID, $id);
+        SaRequests::seen($DB, $row, $SA_USER_ID, $found);
         sa_json(['found' => count($found)] + $get($id));
 }
 sa_error('Unknown request.', 404);

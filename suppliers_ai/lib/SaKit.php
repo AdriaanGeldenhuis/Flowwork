@@ -281,15 +281,13 @@ final class SaKit
     {
         $hour = $day = 0;
         try {
-            $st = $db->prepare("SELECT SUM(created_at >= NOW() - INTERVAL 1 HOUR), COUNT(*) FROM ai_queries WHERE company_id = ? AND external = 1 AND created_at >= CURDATE()");
-            $st->execute([$companyId]);
+            // Searches that reached Google or OpenAI, and emails written by AI; the hour can reach back into yesterday
+            $st = $db->prepare("SELECT COALESCE(SUM(t >= NOW() - INTERVAL 1 HOUR), 0), COALESCE(SUM(t >= CURDATE()), 0) FROM (
+                                    SELECT created_at AS t FROM ai_queries WHERE company_id = ? AND external = 1 AND created_at >= LEAST(CURDATE(), NOW() - INTERVAL 1 HOUR)
+                                    UNION ALL
+                                    SELECT created_at FROM ai_actions WHERE company_id = ? AND action = 'ai_draft' AND created_at >= LEAST(CURDATE(), NOW() - INTERVAL 1 HOUR)) x");
+            $st->execute([$companyId, $companyId]);
             [$hour, $day] = array_map('intval', $st->fetch(PDO::FETCH_NUM) ?: [0, 0]);
-            // An hour can reach back into yesterday
-            if ((int)date('G') === 0) {
-                $st = $db->prepare("SELECT COUNT(*) FROM ai_queries WHERE company_id = ? AND external = 1 AND created_at >= NOW() - INTERVAL 1 HOUR");
-                $st->execute([$companyId]);
-                $hour = (int)$st->fetchColumn();
-            }
         } catch (Throwable $e) {
             error_log('[suppliers_ai] quota: ' . $e->getMessage());
         }

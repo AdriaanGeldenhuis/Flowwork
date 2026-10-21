@@ -13,6 +13,7 @@ $SA_USER_ID = (int)$_SESSION['user_id'];
 $SA_ROLE = SaKit::role((string)($_SESSION['role'] ?? 'viewer'));
 $SA_CAPS = SaKit::caps($SA_ROLE);
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+$DB->exec("SET time_zone = '" . date('P') . "'"); // as Mail does: reply times are compared with Mail's
 SaSchema::ensure($DB);
 $SA_COMPANY = SaKit::company($DB, $SA_COMPANY_ID);
 $SA_SETTINGS = SaKit::publicSettings(SaKit::settings($DB, $SA_COMPANY_ID));

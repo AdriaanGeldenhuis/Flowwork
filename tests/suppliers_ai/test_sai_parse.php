@@ -149,4 +149,14 @@ assert_eq(['geyser' => ['water heater']], $rl['synonyms'], 'synonyms lower case,
 $l1 = SaKit::latin1('Brick & block 🧱 quote — m³');
 assert_true(!preg_match('/[^\x{20}-\x{FF}\x{2014}]/u', $l1) && str_starts_with($l1, 'Brick & block') && str_contains($l1, 'm³'), 'a character the order line cannot hold is replaced; m³ and the dash stay (' . $l1 . ')');
 
+// ---------------------------------------------------------------- the purchase order line (SaPo::line)
+assert_eq([800000, 15.0], SaPo::line(800000, 'excl', true), '"plus VAT": the quote is the line, VAT added on it');
+assert_eq([100000, 15.0], SaPo::line(100000, 'excl', false), '"plus VAT" without a VAT number in the CRM is still ordered with VAT, as it was compared');
+assert_eq([1043, 15.0], SaPo::line(1200, 'incl', true), '"VAT included" from a registered supplier: VAT taken out to the cent that adds back (R 10.43 + 15% = R 12.00)');
+assert_eq([1000, 0.0], SaPo::line(1000, 'incl', false), '"VAT included" without a VAT number: ordered as quoted, no VAT line');
+assert_eq([5000, 0.0], SaPo::line(5000, 'none', true), 'no VAT: as quoted');
+$off = 0;
+for ($c = 100; $c <= 1000000; $c += 100) { [$u] = SaPo::line($c, 'incl', true); if (abs((int)round($u * 1.15) - $c) > 1) $off++; }
+assert_eq(0, $off, 'every whole-rand quote up to R 10 000 comes back within a cent');
+
 test_done('sai_parse');

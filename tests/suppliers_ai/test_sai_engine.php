@@ -102,6 +102,8 @@ assert_true($b !== null, 'a supplier who billed you for a geyser is found withou
 assert_true(str_contains(implode(' ', array_column($b['reasons'], 't')), 'Billed you for “Geyser 150L supply and fit”') && str_contains(implode(' ', array_column($b['reasons'], 't')), "R 4\u{00A0}830.00"), 'the books see the line and its price with VAT');
 assert_true($row($s, 'Shady Plumbing') === null, 'the never-suggest list leaves a supplier out');
 assert_true((bool)array_filter($s['notes'], fn($n) => str_contains($n['text'], 'never-suggest')), 'and says how many it left out');
+$bg = $row(SaSearch::get($DB, $C, $M, 'member', $s['query_id']), 'Bill Supplies');
+assert_true($bg !== null && !str_contains(json_encode($bg['reasons'], JSON_UNESCAPED_UNICODE), '830') && str_contains(json_encode($bg['reasons'], JSON_UNESCAPED_UNICODE), 'bought from them before'), 'a member opening a bookkeeper\'s search does not see what was paid either');
 $sm = SaSearch::run($DB, $C, $M, 'member', 'geyser replacement', ['sources' => ['crm' => true, 'google' => false, 'ai' => false]]);
 $bm = $row($sm, 'Bill Supplies');
 assert_true($bm !== null && !str_contains(implode(' ', array_column($bm['reasons'], 't')), 'R 4') && str_contains(implode(' ', array_column($bm['reasons'], 't')), 'bought from them before'), 'a member sees "bought from them before", not what was paid');
@@ -220,8 +222,13 @@ assert_eq(920000, $by[$pipes]['quote_incl'], 'R 8 000 plus VAT is R 9 200 with V
 assert_true($by[(int)$add['account_id']]['best'] && !$by[$pipes]['best'], 'R 9 000 with VAT is the best — not the R 8 000 that is before VAT');
 assert_eq((int)$add['account_id'], $d['suppliers'][0]['account_id'], 'quotes are listed cheapest first, with VAT');
 assert_true(!$by[$pipes]['over_budget'] && $d['summary']['quoted'] === 2 && $d['summary']['best'] === 900000, 'the summary compares them with the budget');
+SaRequests::quote($DB, $C, $A, 'admin', $r[$billed]['id'], ['amount' => '1 000', 'vat' => 'incl']);
 SaRequests::mark($DB, $C, $A, 'admin', $r[$billed]['id'], 'declined');
+$d = SaRequests::get($DB, $C, $A, 'admin', $rid);
+$by = array_column($d['suppliers'], null, 'account_id');
+assert_true($d['summary']['best'] === 900000 && $d['summary']['quoted'] === 2 && !$by[$billed]['best'], 'a quote from someone who then declined is not compared (' . json_encode($d['summary']) . ')');
 $throws(fn() => SaRequests::award($DB, $C, $A, 'admin', $r[$billed]['id']), SaProblem::class, 'someone who declined cannot be chosen', 409);
+$throws(fn() => SaRequests::draft($DB, $C, $M, 'viewer', $rid), SaForbidden::class, 'a viewer cannot have AI write the email (it costs a look-up)');
 $d = SaRequests::award($DB, $C, $A, 'admin', $r[$pipes]['id']);
 $by = array_column($d['suppliers'], null, 'account_id');
 assert_true($d['request']['status'] === 'awarded' && $by[$pipes]['status'] === 'awarded' && $by[(int)$add['account_id']]['status'] === 'not_chosen' && $by[$billed]['status'] === 'declined', 'chosen; the other quote is "not chosen"; the one who declined stays declined');
@@ -234,7 +241,16 @@ assert_true((float)$line['unit_price'] === 8000.0 && (float)$line['tax_rate'] ==
 assert_eq(920000, $po['total'], 'and the order is R 9 200 with VAT');
 assert_true(str_contains((string)$line['description'], 'Replace 2 geysers') && str_contains((string)$line['description'], 'Pipe Masters'), 'the line says what and from whom');
 $throws(fn() => SaPo::create($DB, $C, $A, 'admin', $rid), SaProblem::class, 'one order per request', 409);
-$throws(fn() => SaRequests::unaward($DB, $C, $A, 'admin', $rid), SaProblem::class, 'the choice cannot be undone once the order is made', 409);
+$throws(fn() => SaRequests::mark($DB, $C, $A, 'admin', $r[$pipes]['id'], 'declined'), SaProblem::class, 'the chosen supplier cannot be marked declined while chosen', 409);
+$DB->exec("UPDATE purchase_orders SET status = 'approved' WHERE id = {$po['po_id']}");
+$throws(fn() => SaRequests::unaward($DB, $C, $A, 'admin', $rid), SaProblem::class, 'the choice stays once its order is approved in Procurement', 409);
+$DB->exec("UPDATE purchase_orders SET status = 'draft' WHERE id = {$po['po_id']}");
+$d = SaRequests::unaward($DB, $C, $A, 'admin', $rid);
+assert_true($d['request']['status'] === 'open' && $d['request']['po'] === null && $DB->query("SELECT status FROM purchase_orders WHERE id = {$po['po_id']}")->fetchColumn() === 'cancelled', 'undoing the choice cancels the draft order with it');
+SaRequests::award($DB, $C, $A, 'admin', $r[$pipes]['id']);
+$po = SaPo::create($DB, $C, $A, 'admin', $rid);
+$made['po'][] = $po['po_id'];
+assert_eq(920000, $po['total'], 'chosen again, a new order can be made');
 assert_true(in_array('po', array_column(SaRequests::get($DB, $C, $A, 'admin', $rid)['events'], 'action'), true), 'the timeline has it all');
 
 // ---------------------------------------------------------------- replies, noticed in Mail
@@ -266,6 +282,11 @@ assert_true($rr[$pipes]['status'] === 'replied' && $rr[$glass]['status'] === 're
 assert_true($rr[$pipes]['reply_mail'] === '/mail/?open=e' . $inThread && $rr[$pipes]['mail'] === '/mail/?open=t' . $thread, 'with links to the conversation and the reply in Mail');
 assert_true($rr[$billed]['status'] === 'asked' && $rr[$billed]['channel'] === 'email', 'an email that went later from the Outbox counts as asking');
 assert_eq(0, count(SaRequests::refresh($DB, $C, $r2)), 'a reply is noticed once');
+$r4 = SaRequests::create($DB, $C, $A, 'admin', ['title' => 'Shopfront glass', 'suppliers' => [['account_id' => $glass]]])['id'];
+$g4 = SaRequests::get($DB, $C, $A, 'admin', $r4)['suppliers'][0]['id'];
+$DB->prepare("UPDATE sai_request_suppliers SET sent_at = ?, channel = 'phone', sent_by = ? WHERE id = ?")->execute([$sentAt, $A, $g4]);
+$DB->prepare("UPDATE sai_requests SET status = 'open' WHERE id = ?")->execute([$r4]);
+assert_eq(0, count(SaRequests::refresh($DB, $C, $r4)), 'the email that answered one request is not also a reply on another to the same supplier');
 
 // ---------------------------------------------------------------- the tick: replies and due quotes, told once
 $DB->prepare("UPDATE sai_request_suppliers SET replied_at = NULL, reply_email_id = NULL WHERE id = ?")->execute([$rr[$pipes]['id']]);

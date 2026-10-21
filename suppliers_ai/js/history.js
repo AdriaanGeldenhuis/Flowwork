@@ -32,11 +32,15 @@
       <button class="btn btn--sm" type="button" data-p="${d.page + 1}"${d.page >= d.pages ? ' disabled' : ''}>Older${icon('chev-right')}</button>` : (d.total ? `<span>${F.plural(d.total, 'search', 'searches')}</span>` : '');
     F.tickAgo();
   }
+  let seq = 0;
   async function load() {
+    const mine = ++seq; // typing on: only the answer to the latest filter is drawn
     try {
-      S.data = await api.get('search.php', { op: 'history', mine: S.mine ? 1 : '', q: S.q, page: S.page });
+      const data = await api.get('search.php', { op: 'history', mine: S.mine ? 1 : '', q: S.q, page: S.page });
+      if (mine !== seq) return;
+      S.data = data;
       draw();
-    } catch (e) { toastError(e); }
+    } catch (e) { if (mine === seq) toastError(e); }
   }
   $$('[data-mine]').forEach((b) => b.addEventListener('click', () => {
     S.mine = b.dataset.mine === '1';
@@ -45,6 +49,6 @@
     load();
   }));
   $('#histFilter').addEventListener('input', F.debounce((e) => { S.q = e.target.value.trim(); S.page = 1; load(); }, 250));
-  pager.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b && !b.disabled) { S.page = +b.dataset.p; load(); $('#main').scrollTo && $('#scroll').scrollTo({ top: 0, behavior: 'smooth' }); } });
+  pager.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b && !b.disabled) { S.page = +b.dataset.p; load(); const sc = $('#scroll'); if (sc && sc.scrollTo) sc.scrollTo({ top: 0, behavior: 'smooth' }); } });
   draw();
 })();

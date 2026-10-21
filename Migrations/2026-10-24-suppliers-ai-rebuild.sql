@@ -11,7 +11,8 @@
 --                              trade, requirements, needed by, quotes by, the budget
 --                              (kept inside the company, never sent), status
 --                              (draft | open | awarded | closed | cancelled), the
---                              search it came from, the chosen supplier and its order
+--                              search it came from, the chosen supplier and its order,
+--                              and when the background tick last looked for replies
 --      sai_request_suppliers   who was asked (a CRM supplier), how (email | whatsapp |
 --                              phone | other), the email and its conversation in Mail,
 --                              when they replied, declined, their quote (amount, VAT,
@@ -26,7 +27,7 @@
 --      ai_actions     request_id
 -- 3. Widened: ai_actions.action enum → varchar(30). The old bulk RFQ wrote
 --    'rfq_bulk', which the enum stored as ''.
--- 4. Indexes for the hourly ceiling and for opening a search.
+-- 4. Indexes for the hourly ceiling (searches and AI-written emails) and for opening a search.
 --
 -- Not SQL: Suppliers AI keeps rate-limit buckets, its schema marker and where
 -- places are (30 days) in storage/suppliers_ai, created on demand.
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS `sai_requests` (
   `closed_at` datetime DEFAULT NULL,
   `deleted_at` datetime DEFAULT NULL,
   `due_notified_at` datetime DEFAULT NULL,
+  `replies_checked_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_sai_req_company` (`company_id`, `deleted_at`, `status`),
   KEY `idx_sai_req_owner` (`company_id`, `created_by`)
@@ -108,7 +110,8 @@ CREATE TABLE IF NOT EXISTS `sai_events` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------- 2. columns
-ALTER TABLE `sai_requests`  ADD COLUMN IF NOT EXISTS `requirements` text DEFAULT NULL AFTER `category`;
+ALTER TABLE `sai_requests`  ADD COLUMN IF NOT EXISTS `requirements` text DEFAULT NULL AFTER `category`,
+                            ADD COLUMN IF NOT EXISTS `replies_checked_at` datetime DEFAULT NULL AFTER `due_notified_at`;
 ALTER TABLE `ai_queries`    ADD COLUMN IF NOT EXISTS `location` varchar(160) DEFAULT NULL AFTER `q_text`,
                             ADD COLUMN IF NOT EXISTS `filters_json` text DEFAULT NULL AFTER `parsed_json`,
                             ADD COLUMN IF NOT EXISTS `results` int(11) NOT NULL DEFAULT 0 AFTER `took_ms`,
@@ -131,3 +134,4 @@ ALTER TABLE `ai_actions` MODIFY `action` varchar(30) NOT NULL;
 -- ---------------------------------------------------------------- 4. indexes
 ALTER TABLE `ai_queries`    ADD INDEX IF NOT EXISTS `idx_sai_external` (`company_id`, `external`, `created_at`);
 ALTER TABLE `ai_candidates` ADD INDEX IF NOT EXISTS `idx_sai_query` (`query_id`);
+ALTER TABLE `ai_actions`    ADD INDEX IF NOT EXISTS `idx_sai_action` (`company_id`, `action`, `created_at`);

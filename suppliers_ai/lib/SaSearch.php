@@ -106,7 +106,8 @@ final class SaSearch
         $states = $ids ? CrmCompliance::states($db, $companyId, $ids) : [];
         $rules = $s['rules'];
         $hidden = 0;
-        $ctx = ['radius' => $radius, 'place' => $center['label'] ?? $place, 'books' => $caps['books']];
+        // Scored as the books see it and kept so; each person is shown what their role may see (reasonsFor)
+        $ctx = ['radius' => $radius, 'place' => $center['label'] ?? $place, 'books' => true];
         foreach ($cands as $k => &$c) {
             if (self::denied($c, $rules['deny_list'])) { unset($cands[$k]); $hidden++; continue; }
             $c['allowed'] = self::allowed($c, $rules['allow_list']);
@@ -595,6 +596,19 @@ final class SaSearch
         return ['status' => $status, 'label' => $labels[$status] ?? $status, 'blocking' => !empty($s['blocking']), 'detail' => $detail];
     }
 
+    /** Reasons as this person may see them: what was billed or ordered (and at what price) only for the books. */
+    public static function reasonsFor(array $reasons, bool $books): array
+    {
+        $out = [];
+        foreach ($reasons as $x) {
+            if (!is_array($x)) continue;
+            if (!$books && isset($x['o'])) $x['t'] = (string)$x['o'];
+            unset($x['o']);
+            $out[] = $x;
+        }
+        return $out;
+    }
+
     public static function mapsSearch(string $q): string
     {
         return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode(trim($q));
@@ -614,12 +628,12 @@ final class SaSearch
                  : (($c['address'] ?? '') !== '' ? 'https://www.google.com/maps/dir/?api=1&destination=' . rawurlencode((string)$c['address']) : '');
             $rows[] = [
                 'id' => (int)$c['id'], 'source' => $c['source'], 'account_id' => $c['account_id'] ? (int)$c['account_id'] : null,
-                'name' => (string)$c['name'], 'phone' => $phone, 'dial' => SaKit::dialable($phone), 'email' => $email, 'website' => (string)$c['website'],
+                'name' => (string)$c['name'], 'phone' => $phone, 'dial' => SaKit::dialable($phone), 'email' => $email, 'website' => preg_match('~^https?://~i', (string)$c['website']) ? (string)$c['website'] : '',
                 'address' => (string)$c['address'], 'city' => (string)($c['city'] ?? ''), 'industry' => (string)($c['industry'] ?? ''), 'tags' => array_slice((array)($c['tags'] ?? []), 0, 4),
                 'contact' => (string)($c['contact']['name'] ?? ''), 'preferred' => !empty($c['preferred']), 'prospect' => ($c['status'] ?? '') === 'prospect',
                 'distance_km' => $c['distance_km'], 'rating' => $c['google']['rating'] ?? null, 'rating_count' => $c['google']['rating_count'] ?? null,
                 'maps' => (string)($c['google']['maps_url'] ?? ''), 'directions' => $dir,
-                'score' => (int)round((float)$c['score'] * 100), 'below' => (float)$c['score'] < $min, 'reasons' => array_values((array)$c['reasons']),
+                'score' => (int)round((float)$c['score'] * 100), 'below' => (float)$c['score'] < $min, 'reasons' => self::reasonsFor((array)$c['reasons'], SaKit::canOrder($role)),
                 'compliance' => $comp, 'blocked' => !empty($comp['blocking']),
             ];
         }

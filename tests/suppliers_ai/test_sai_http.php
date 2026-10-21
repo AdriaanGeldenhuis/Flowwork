@@ -212,6 +212,7 @@ $setRole('member');
 $page = http('GET', "$base/suppliers_ai/settings.php", $jar);
 assert_true($page['code'] === 403 && str_contains($page['body'], 'Settings are for admins and bookkeepers') && !str_contains($page['body'], 'AbCd'), 'a member gets a friendly page instead of the settings');
 assert_eq(403, $api('settings.php', ['op' => 'save', 'radius_km' => 10])['code'], 'and cannot change them');
+assert_eq(403, $get('settings.php?op=get')['code'], 'nor read the company\'s lists through the API');
 assert_eq(403, $api('settings.php', ['op' => 'keys', 'openai_on' => 1])['code'], 'nor the keys');
 assert_eq(403, $api('requests.php', ['op' => 'po', 'id' => $rid])['code'], 'members do not make purchase orders');
 $r = $api('search.php', ['op' => 'run', 'text' => 'tiler', 'sources' => ['crm' => true, 'google' => false, 'ai' => false]]);

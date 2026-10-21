@@ -23,7 +23,8 @@
   let exampleAt = 0;
 
   // ------------------------------------------------------------ shortlist (this device)
-  const KEY = 'fsa-shortlist-v1:' + (BOOT.user || 0);
+  // Per person and per company: a shortlist made in one company is not offered in another
+  const KEY = 'fsa-shortlist-v1:' + (BOOT.user || 0) + ':' + (BOOT.company || 0);
   const store = {
     load() { try { const v = JSON.parse(localStorage.getItem(KEY) || '{}'); return v && typeof v === 'object' && v.items ? v : { items: {} }; } catch (e) { return { items: {} }; } },
     save(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -88,10 +89,13 @@
   }, 260);
 
   // ------------------------------------------------------------ search
+  let running = false;
   async function run() {
+    if (running) return; // Enter pressed again while it searches: one search (and one paid look-up), not two
     const t = text.value.trim();
     if (t.length < 2) { toast('Say what you need — a trade or a product, and where.'); text.focus(); return; }
     const go = $('#findGo');
+    running = true;
     busy(go, true);
     $('#find').classList.add('is-busy');
     resultsEl.hidden = false;
@@ -111,6 +115,7 @@
       home.hidden = false;
       toastError(e);
     } finally {
+      running = false;
       busy(go, false);
       $('#find').classList.remove('is-busy');
     }
@@ -155,7 +160,7 @@
           <label class="sr-only" for="sortBy">Sort</label>
           <select class="select" id="sortBy"><option value="match"${S.sort === 'match' ? ' selected' : ''}>Best match</option><option value="near"${S.sort === 'near' ? ' selected' : ''}>Closest</option><option value="rating"${S.sort === 'rating' ? ' selected' : ''}>Google rating</option></select>
           ${res.maps ? `<a class="btn" href="${esc(res.maps)}" target="_blank" rel="noopener">${icon('i-globe')}Google Maps</a>` : ''}
-          <button class="btn" type="button" data-act="new">${icon('isa-seal')}New search</button>
+          ${text ? `<button class="btn" type="button" data-act="new">${icon('isa-seal')}New search</button>` : ''}
         </div></div>`;
     const notes = (res.notes || []).map((nt) => `<div class="fsa-note ${nt.tone === 'warn' ? 'fsa-note--warn' : ''}">${icon(nt.tone === 'warn' ? 'alert' : 'i-info', 'i--sm')}<span>${esc(nt.text)}${nt.key === 'google' && BOOT.caps.keys ? ' <a href="/suppliers_ai/settings.php#sources">Add the key</a>' : ''}</span></div>`);
     if (res.legacy) notes.push(`<div class="fsa-note fsa-note--warn">${icon('alert', 'i--sm')}<span>This search was made by the old Suppliers AI, which asked the AI for phone numbers and emails — many were made up. Search again for checked results.</span></div>`);
@@ -204,7 +209,7 @@
     const acts = [];
     if (r.dial) acts.push(`<a class="fsa-mini fsa-mini--wa" href="https://wa.me/${esc(r.dial)}" target="_blank" rel="noopener" data-log="whatsapp" aria-label="WhatsApp ${esc(r.name)}">${icon('i-whatsapp')}WhatsApp</a>`);
     if (r.email) acts.push(`<a class="fsa-mini" href="mailto:${esc(r.email)}" data-log="email" aria-label="Email ${esc(r.name)}">${icon('mail')}Email</a>`);
-    if (r.website) acts.push(`<a class="fsa-mini" href="${esc(r.website)}" target="_blank" rel="noopener nofollow" data-log="website">${icon('external')}Website</a>`);
+    if (/^https?:\/\//i.test(r.website || '')) acts.push(`<a class="fsa-mini" href="${esc(r.website)}" target="_blank" rel="noopener nofollow" data-log="website">${icon('external')}Website</a>`);
     if (r.directions) acts.push(`<a class="fsa-mini" href="${esc(r.directions)}" target="_blank" rel="noopener" data-log="directions" aria-label="Directions">${icon('isa-route')}</a>`);
     if (r.account_id) acts.push(`<a class="fsa-mini" href="/crm/account_view.php?id=${r.account_id}">${icon('i-building')}CRM</a>`);
     else if (BOOT.caps.write) acts.push(`<button class="fsa-mini" type="button" data-act="crm">${icon('plus')}Add to CRM</button>`);
@@ -237,7 +242,7 @@
     if (!b) return;
     const act = b.dataset.act;
     if (act === 'below') { S.showBelow = !S.showBelow; render(); return; }
-    if (act === 'new') { text.focus(); text.select(); $('#find').scrollIntoView({ behavior: 'smooth' }); return; }
+    if (act === 'new' && text) { text.focus(); text.select(); $('#find').scrollIntoView({ behavior: 'smooth' }); return; }
     const row = rowOf(b);
     if (!row) return;
     if (act === 'pick') togglePick(row);

@@ -123,7 +123,7 @@
     const m = document.createElement('div');
     m.className = 'fwm-modal';
     m.hidden = true;
-    m.innerHTML = `<div class="fwm-dialog fsa-dlg ${opts.wide ? 'fwm-dialog--wide' : ''} ${opts.cls || ''}" role="dialog" aria-modal="true" style="${opts.width ? 'width:min(' + opts.width + 'px,100%)' : ''}">${html}</div>`;
+    m.innerHTML = `<div class="fwm-dialog fsa-dlg ${opts.wide ? 'fwm-dialog--wide' : ''} ${opts.cls || ''}" role="dialog" aria-modal="true" tabindex="-1" style="${opts.width ? 'width:min(' + opts.width + 'px,100%)' : ''}">${html}</div>`;
     const h = $('h2', m);
     if (h) { h.id = h.id || 'fsaDlg' + (++dlgSeq); $('[role=dialog]', m).setAttribute('aria-labelledby', h.id); }
     document.body.appendChild(m);
@@ -138,7 +138,9 @@
     m.hidden = false;
     openModals.push(m);
     document.body.style.overflow = 'hidden';
-    const f = $('[autofocus]', m) || $('input:not([type=hidden]):not([disabled]):not([type=radio]):not([type=checkbox]), select, textarea, button.btn--primary', m);
+    // The first field; else, for something that cannot be undone, "Cancel" (Enter must not delete); else the main button; else the dialog
+    const f = $('[autofocus]', m) || $('input:not([type=hidden]):not([disabled]):not([type=radio]):not([type=checkbox]), select, textarea', m)
+      || ($('.btn--danger-solid', m) && $('[data-act="no"], [data-close].btn', m)) || $('button.btn--primary:not([disabled]), [data-act="yes"]', m) || $('[role=dialog]', m);
     if (f) setTimeout(() => f.focus({ preventScroll: true }), 30);
   }
   function closeModal(m) {
@@ -163,6 +165,7 @@
     const f = $$('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])', m).filter((x) => x.offsetParent !== null);
     if (!f.length) return;
     const first = f[0], last = f[f.length - 1];
+    if (!m.contains(document.activeElement)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });

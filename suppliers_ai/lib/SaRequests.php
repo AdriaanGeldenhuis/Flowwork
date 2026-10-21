@@ -53,6 +53,20 @@ final class SaRequests
         return $r;
     }
 
+    /** The request's purchase order while it counts: one cancelled (or gone) in Procurement is as if none was made. */
+    public static function livePo(PDO $db, int $companyId, array $r, bool $lock = false): ?array
+    {
+        if (empty($r['po_id'])) return null;
+        try {
+            $st = $db->prepare("SELECT id, po_number, status, total FROM purchase_orders WHERE id = ? AND company_id = ?" . ($lock ? ' FOR UPDATE' : ''));
+            $st->execute([(int)$r['po_id'], $companyId]);
+            $p = $st->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            return null;
+        }
+        return $p && $p['status'] !== 'cancelled' ? $p : null;
+    }
+
     /** Where a supplier stands on a request, from what happened. */
     public static function status(array $r): string
     {
@@ -82,9 +96,10 @@ final class SaRequests
             $st->execute([$queryId, $companyId]);
             if (!$st->fetchColumn()) $queryId = 0;
         }
-        $pick = self::resolve($db, $companyId, $userId, $role, (array)($in['suppliers'] ?? []));
+        // The limit first: nothing is added to the CRM for a request that is refused
         $max = SaKit::settings($db, $companyId)['max_recipients'];
-        if (count($pick['ok']) > $max) throw new SaProblem('Ask at most ' . $max . ' suppliers on one request (Settings › Suppliers per request).', 422);
+        if (self::offered((array)($in['suppliers'] ?? [])) > $max) throw new SaProblem('Ask at most ' . $max . ' suppliers on one request (Settings › Suppliers per request).', 422);
+        $pick = self::resolve($db, $companyId, $userId, $role, (array)($in['suppliers'] ?? []));
 
         $db->beginTransaction();
         try {
@@ -147,6 +162,18 @@ final class SaRequests
      * added to the CRM as prospects; one you already have — same phone or email — is used).
      * @return array{ok: array, skipped: array, created: int}
      */
+    /** How many different suppliers are offered (a CRM supplier or a search result, each once). */
+    private static function offered(array $items): int
+    {
+        $keys = [];
+        foreach (array_slice($items, 0, 60) as $it) {
+            if (!is_array($it)) continue;
+            if ((int)($it['account_id'] ?? 0) > 0) $keys['a' . (int)$it['account_id']] = 1;
+            elseif ((int)($it['candidate_id'] ?? 0) > 0) $keys['c' . (int)$it['candidate_id']] = 1;
+        }
+        return count($keys);
+    }
+
     private static function resolve(PDO $db, int $companyId, int $userId, string $role, array $items): array
     {
         CrmSchema::ensure($db);
@@ -157,11 +184,19 @@ final class SaRequests
             $accountId = (int)($it['account_id'] ?? 0);
             $candidateId = (int)($it['candidate_id'] ?? 0);
             if ($accountId <= 0 && $candidateId > 0) {
-                $res = SaSearch::addToCrm($db, $companyId, $userId, $role, $candidateId);
-                if (!empty($res['duplicates'])) {
-                    $same = null;
-                    foreach ($res['duplicates'] as $d) if (array_intersect($d['why'], ['same email', 'same phone', 'same VAT number', 'same registration number'])) { $same = (int)$d['id']; break; }
-                    $res = SaSearch::addToCrm($db, $companyId, $userId, $role, $candidateId, $same ?? 0, $same === null);
+                // One listing that cannot become a supplier (a name clash in the CRM, gone from the search) is left out, not the request
+                try {
+                    $res = SaSearch::addToCrm($db, $companyId, $userId, $role, $candidateId);
+                    if (!empty($res['duplicates'])) {
+                        $same = null;
+                        foreach ($res['duplicates'] as $d) if (array_intersect($d['why'], ['same email', 'same phone', 'same VAT number', 'same registration number'])) { $same = (int)$d['id']; break; }
+                        $res = SaSearch::addToCrm($db, $companyId, $userId, $role, $candidateId, $same ?? 0, $same === null);
+                    }
+                } catch (SaProblem $e) {
+                    $n = $db->prepare("SELECT name FROM ai_candidates WHERE id = ? AND company_id = ?");
+                    $n->execute([$candidateId, $companyId]);
+                    $skipped[] = ['name' => (string)($n->fetchColumn() ?: 'A search result'), 'why' => $e->getMessage()];
+                    continue;
                 }
                 $accountId = (int)($res['account_id'] ?? 0);
                 if ($accountId && empty($res['existing']) && empty($res['linked'])) $created++;
@@ -221,8 +256,8 @@ final class SaRequests
         if ($q !== '') { $where[] = '(r.title LIKE ? OR r.details LIKE ?)'; $args[] = '%' . SaKit::likeEscape($q) . '%'; $args[] = '%' . SaKit::likeEscape($q) . '%'; }
         $st = $db->prepare("SELECT r.*, TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS who,
                                    COUNT(rs.id) AS suppliers, SUM(rs.sent_at IS NOT NULL) AS asked, SUM(rs.replied_at IS NOT NULL OR rs.quote_cents IS NOT NULL) AS replied,
-                                   SUM(rs.quote_cents IS NOT NULL) AS quoted, SUM(rs.declined_at IS NOT NULL) AS declined,
-                                   MIN(CASE WHEN rs.quote_vat = 'excl' THEN ROUND(rs.quote_cents * 1.15) ELSE rs.quote_cents END) AS best,
+                                   SUM(rs.quote_cents IS NOT NULL AND rs.declined_at IS NULL) AS quoted, SUM(rs.declined_at IS NOT NULL) AS declined,
+                                   MIN(CASE WHEN rs.declined_at IS NOT NULL THEN NULL WHEN rs.quote_vat = 'excl' THEN ROUND(rs.quote_cents * 1.15) ELSE rs.quote_cents END) AS best,
                                    MAX(CASE WHEN rs.decision = 'awarded' THEN rs.name END) AS winner,
                                    MAX(CASE WHEN rs.decision = 'awarded' THEN (CASE WHEN rs.quote_vat = 'excl' THEN ROUND(rs.quote_cents * 1.15) ELSE rs.quote_cents END) END) AS winning
                               FROM sai_requests r LEFT JOIN sai_request_suppliers rs ON rs.request_id = r.id AND rs.company_id = r.company_id
@@ -253,7 +288,11 @@ final class SaRequests
     {
         $r = self::row($db, $companyId, $id, true);
         if ($r['deleted_at'] === null && in_array($r['status'], ['draft', 'open'], true)) {
-            try { self::refresh($db, $companyId, $id); } catch (Throwable $e) { error_log('[suppliers_ai] refresh: ' . $e->getMessage()); }
+            try {
+                self::seen($db, $r, $userId, self::refresh($db, $companyId, $id));
+            } catch (Throwable $e) {
+                error_log('[suppliers_ai] refresh: ' . $e->getMessage());
+            }
             $r = self::row($db, $companyId, $id, true);
         }
         CrmSchema::ensure($db);
@@ -267,7 +306,8 @@ final class SaRequests
         $st->execute([$id, $companyId]);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         $states = $rows ? CrmCompliance::states($db, $companyId, array_fill_keys(array_map(fn($x) => (int)$x['account_id'], $rows), 'supplier')) : [];
-        $quotes = array_values(array_filter(array_map(fn($x) => $x['quote_cents'] !== null ? self::inclVat((int)$x['quote_cents'], (string)$x['quote_vat']) : null, $rows), fn($x) => $x !== null));
+        // Quotes that stand: one from a supplier who then declined is not compared
+        $quotes = array_values(array_filter(array_map(fn($x) => $x['quote_cents'] !== null && $x['declined_at'] === null ? self::inclVat((int)$x['quote_cents'], (string)$x['quote_vat']) : null, $rows), fn($x) => $x !== null));
         $best = $quotes ? min($quotes) : null;
         $sups = [];
         foreach ($rows as $x) {
@@ -286,7 +326,7 @@ final class SaRequests
                 'replied_at' => $x['replied_at'], 'declined_at' => $x['declined_at'], 'reminded_at' => $x['reminded_at'],
                 'quote' => $x['quote_cents'] !== null ? (int)$x['quote_cents'] : null, 'quote_vat' => $x['quote_vat'], 'quote_incl' => $x['quote_cents'] !== null ? self::inclVat((int)$x['quote_cents'], (string)$x['quote_vat']) : null,
                 'lead_days' => $x['lead_days'] !== null ? (int)$x['lead_days'] : null, 'valid_until' => $x['valid_until'], 'quote_notes' => (string)($x['quote_notes'] ?? ''), 'quoted_at' => $x['quoted_at'],
-                'best' => $best !== null && $x['quote_cents'] !== null && self::inclVat((int)$x['quote_cents'], (string)$x['quote_vat']) === $best && count($quotes) > 1,
+                'best' => $best !== null && $x['quote_cents'] !== null && $x['declined_at'] === null && self::inclVat((int)$x['quote_cents'], (string)$x['quote_vat']) === $best && count($quotes) > 1,
                 'over_budget' => $r['budget_cents'] !== null && $x['quote_cents'] !== null && self::inclVat((int)$x['quote_cents'], (string)$x['quote_vat']) > (int)$r['budget_cents'],
                 'expired_quote' => $x['valid_until'] && $x['valid_until'] < date('Y-m-d'),
                 'compliance' => SaSearch::compliance($states[(int)$x['account_id']] ?? null),
@@ -301,13 +341,8 @@ final class SaRequests
         $events = array_map(fn($e) => ['action' => (string)$e['action'], 'who' => (string)$e['who'], 'supplier' => (string)($e['supplier'] ?? ''), 'at' => (string)$e['created_at'],
                                        'data' => json_decode((string)$e['payload_json'], true) ?: []], $st->fetchAll(PDO::FETCH_ASSOC));
         $po = null;
-        if ($r['po_id']) {
-            try {
-                $s = $db->prepare("SELECT id, po_number, status, total FROM purchase_orders WHERE id = ? AND company_id = ?");
-                $s->execute([(int)$r['po_id'], $companyId]);
-                if ($p = $s->fetch(PDO::FETCH_ASSOC)) $po = ['id' => (int)$p['id'], 'number' => (string)$p['po_number'], 'status' => (string)$p['status'], 'total' => (int)round((float)$p['total'] * 100), 'url' => '/procurement/po_view.php?id=' . (int)$p['id']];
-            } catch (Throwable $e) {
-            }
+        if ($p = self::livePo($db, $companyId, $r)) {
+            $po = ['id' => (int)$p['id'], 'number' => (string)$p['po_number'], 'status' => (string)$p['status'], 'total' => (int)round((float)$p['total'] * 100), 'url' => '/procurement/po_view.php?id=' . (int)$p['id']];
         }
         $trade = $r['category'] ? SaParse::trade((string)$r['category']) : null;
         $settings = SaKit::settings($db, $companyId);
@@ -357,12 +392,14 @@ final class SaRequests
     {
         $r = self::manageable($db, $companyId, $userId, $role, $id);
         if (in_array($r['status'], ['closed', 'cancelled'], true)) throw new SaProblem('Open the request again first.', 409);
-        $pick = self::resolve($db, $companyId, $userId, $role, $items);
         $st = $db->prepare("SELECT COUNT(*) FROM sai_request_suppliers WHERE request_id = ?");
         $st->execute([$id]);
         $have = (int)$st->fetchColumn();
         $max = SaKit::settings($db, $companyId)['max_recipients'];
-        if ($have + count($pick['ok']) > $max) throw new SaProblem('A request can go to at most ' . $max . ' suppliers (Settings › Suppliers per request).', 422);
+        $tooMany = fn(int $n) => $have + $n > $max ? throw new SaProblem('A request can go to at most ' . $max . ' suppliers (Settings › Suppliers per request).', 422) : null;
+        $tooMany(self::offered($items));
+        $pick = self::resolve($db, $companyId, $userId, $role, $items);
+        $tooMany(count($pick['ok']));
         $added = self::insertSuppliers($db, $companyId, $userId, $id, $pick['ok']);
         if ($added) {
             self::event($db, $companyId, $id, null, $userId, 'suppliers_added', ['count' => $added, 'names' => array_slice(array_column($pick['ok'], 'name'), 0, 8)]);
@@ -409,12 +446,16 @@ final class SaRequests
     /** A request-for-quote email written by AI from the request (the budget is never given to it). */
     public static function draft(PDO $db, int $companyId, int $userId, string $role, int $id): array
     {
-        $r = self::row($db, $companyId, $id);
+        // Only those who may send it, and within the company's ceiling on paid look-ups (each draft counts as one)
+        $r = self::manageable($db, $companyId, $userId, $role, $id);
         $s = SaKit::settings($db, $companyId);
         if (!SaKit::aiReady($s)) throw new SaProblem('AI writing is switched off. An admin can switch it on under Settings.', 409);
+        if (SaKit::quota($db, $companyId, $s)['left'] <= 0) throw new SaProblem('The company’s AI limit for now is used up — use the email as it is, or try again later.', 429);
         if (($wait = SaKit::rateLimit('draft:' . $userId, 10, 600)) > 0) throw new SaProblem('Wait ' . ceil($wait / 60) . ' min before asking the AI again.', 429);
         $req = ['title' => $r['title'], 'details' => (string)$r['details'], 'quantity' => (string)$r['quantity'], 'location' => (string)$r['location'],
                 'needed_by' => $r['needed_by'], 'quote_by' => $r['quote_by'], 'requirements' => json_decode((string)($r['requirements'] ?? ''), true) ?: []];
+        $db->prepare("INSERT INTO ai_actions (company_id, query_id, candidate_id, request_id, action, details_json, user_id, created_at) VALUES (?, 0, 0, ?, 'ai_draft', NULL, ?, NOW())")
+           ->execute([$companyId, $id, $userId]);
         return SaAi::draft($s, $req, (string)SaKit::company($db, $companyId)['name'], SaKit::personName($db, $userId));
     }
 
@@ -438,8 +479,16 @@ final class SaRequests
         $to = is_array($in['to'] ?? null) ? $in['to'] : preg_split('/[,;\s]+/', (string)($in['to'] ?? ''));
         $to = array_slice(array_values(array_filter(array_map('trim', $to ?: []))), 0, 5);
         if (!$to) $to = self::emailsFor($db, $companyId, (int)$x['account_id']);
+        // A reminder or a thank-you goes from the mailbox the request went out from (when it is still yours), into that conversation
+        $mailbox = (int)($in['mailbox_id'] ?? 0);
+        if ($kind !== 'ask' && $x['email_id']) {
+            $st = $db->prepare("SELECT account_id FROM emails WHERE email_id = ? AND company_id = ?");
+            $st->execute([(int)$x['email_id'], $companyId]);
+            $from = (int)$st->fetchColumn();
+            if ($from && in_array($from, array_column(SaMail::mailboxes($db, $companyId, $userId), 'id'), true)) $mailbox = $from;
+        }
         $res = SaMail::send($db, $companyId, $userId, (int)$x['account_id'], (int)$r['id'], [
-            'mailbox_id' => (int)($in['mailbox_id'] ?? 0), 'to' => $to, 'subject' => $subject, 'body' => $body,
+            'mailbox_id' => $mailbox, 'to' => $to, 'subject' => $subject, 'body' => $body,
             'reply_to_email_id' => $kind === 'ask' ? 0 : (int)$x['email_id'],
         ]);
         if ($kind === 'ask') {
@@ -474,6 +523,7 @@ final class SaRequests
                 }
             }
         } elseif ($how === 'declined') {
+            if ($x['decision'] === 'awarded') throw new SaProblem('Undo the choice first — then mark ' . $x['name'] . ' as declined.', 409);
             $db->prepare("UPDATE sai_request_suppliers SET declined_at = NOW(), decision = NULL, updated_at = NOW() WHERE id = ?")->execute([$recipientId]);
             self::event($db, $companyId, (int)$r['id'], $recipientId, $userId, 'declined', []);
         } elseif ($how === 'undeclined') {
@@ -525,7 +575,7 @@ final class SaRequests
         try {
             $r = self::manageable($db, $companyId, $userId, $role, (int)$x['request_id'], true);
             if ($r['status'] === 'cancelled') throw new SaProblem('Open the request again first.', 409);
-            if ($r['po_id']) throw new SaProblem('A purchase order was made for this request already.', 409);
+            if ($po = self::livePo($db, $companyId, $r)) throw new SaProblem('Purchase order ' . $po['po_number'] . ' was made for this request already.', 409);
             if ($x['declined_at']) throw new SaProblem($x['name'] . ' declined this one.', 409);
             $state = CrmCompliance::states($db, $companyId, [(int)$x['account_id'] => 'supplier'])[(int)$x['account_id']] ?? null;
             if (!empty($state['blocking'])) throw new SaProblem($x['name'] . '’s documents are ' . $state['status'] . ' — your company’s policy blocks them until they are renewed in the CRM.', 409);
@@ -551,14 +601,38 @@ final class SaRequests
         return self::get($db, $companyId, $userId, $role, (int)$r['id']);
     }
 
+    /**
+     * Undo the choice. A purchase order still in draft (nothing received on it) is cancelled with it;
+     * one that was approved or received on stays, and so does the choice.
+     */
     public static function unaward(PDO $db, int $companyId, int $userId, string $role, int $id): array
     {
-        $r = self::manageable($db, $companyId, $userId, $role, $id);
-        if ($r['status'] !== 'awarded') return self::get($db, $companyId, $userId, $role, $id);
-        if ($r['po_id']) throw new SaProblem('A purchase order was made for this request — cancel it in Procurement first.', 409);
-        $db->prepare("UPDATE sai_request_suppliers SET decision = NULL, decided_at = NULL, updated_at = NOW() WHERE request_id = ?")->execute([$id]);
-        $db->prepare("UPDATE sai_requests SET status = 'open', awarded_id = NULL, closed_at = NULL, updated_at = NOW() WHERE id = ?")->execute([$id]);
-        self::event($db, $companyId, $id, null, $userId, 'unawarded', []);
+        $cancelled = null;
+        $db->beginTransaction();
+        try {
+            $r = self::manageable($db, $companyId, $userId, $role, $id, true);
+            if ($r['status'] !== 'awarded') {
+                $db->commit();
+                return self::get($db, $companyId, $userId, $role, $id);
+            }
+            if ($po = self::livePo($db, $companyId, $r, true)) {
+                $st = $db->prepare("SELECT COUNT(*) FROM goods_received_notes WHERE po_id = ? AND status <> 'cancelled'");
+                try { $st->execute([(int)$po['id']]); $received = (int)$st->fetchColumn(); } catch (Throwable $e) { $received = 0; }
+                if ($po['status'] !== 'draft' || $received > 0) {
+                    throw new SaProblem('Purchase order ' . $po['po_number'] . ' is ' . ($received > 0 ? 'being received' : $po['status']) . ' in Procurement, so the choice stays.', 409);
+                }
+                $db->prepare("UPDATE purchase_orders SET status = 'cancelled' WHERE id = ? AND company_id = ?")->execute([(int)$po['id'], $companyId]);
+                $cancelled = $po;
+            }
+            $db->prepare("UPDATE sai_request_suppliers SET decision = NULL, decided_at = NULL, updated_at = NOW() WHERE request_id = ?")->execute([$id]);
+            $db->prepare("UPDATE sai_requests SET status = 'open', awarded_id = NULL, po_id = NULL, closed_at = NULL, updated_at = NOW() WHERE id = ?")->execute([$id]);
+            self::event($db, $companyId, $id, null, $userId, 'unawarded', $cancelled ? ['po_cancelled' => (string)$cancelled['po_number']] : []);
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+        if ($cancelled) SaKit::audit($db, $companyId, $userId, 'sai_request_po_cancel', 'purchase_order', (int)$cancelled['id'], ['request_id' => $id, 'po_number' => $cancelled['po_number']]);
         return self::get($db, $companyId, $userId, $role, $id);
     }
 
@@ -638,12 +712,19 @@ final class SaRequests
                 $hit = $inThread->fetch(PDO::FETCH_ASSOC) ?: null;
             }
             if (!$hit) {
+                // A new email from the supplier's address — but not one that answers another request (its conversation, its
+                // link) or was already taken as the reply on another request: one email is one reply, on one request
                 $addrs = array_values(array_filter(array_map(fn($a) => strtolower(trim($a)), explode(',', (string)$x['sent_to'])), fn($a) => filter_var($a, FILTER_VALIDATE_EMAIL)));
                 if (!$addrs) $addrs = self::emailsFor($db, $companyId, (int)$x['account_id']);
                 if ($addrs) {
-                    $q = $db->prepare("SELECT email_id, COALESCE(sent_at, created_at) at FROM emails WHERE company_id = ? AND direction = 'incoming' AND LOWER(sender) IN (" . implode(',', array_fill(0, count($addrs), '?')) . ")
-                                         AND COALESCE(sent_at, created_at) >= ? ORDER BY at LIMIT 1");
-                    $q->execute(array_merge([$companyId], $addrs, [$x['sent_at']]));
+                    $q = $db->prepare("SELECT e.email_id, COALESCE(e.sent_at, e.created_at) at FROM emails e
+                                        WHERE e.company_id = ? AND e.direction = 'incoming' AND e.sender IN (" . implode(',', array_fill(0, count($addrs), '?')) . ")
+                                          AND COALESCE(e.sent_at, e.created_at) >= ?
+                                          AND (e.thread_id IS NULL OR NOT EXISTS (SELECT 1 FROM sai_request_suppliers o WHERE o.company_id = e.company_id AND o.thread_id = e.thread_id AND o.id <> ?))
+                                          AND NOT EXISTS (SELECT 1 FROM sai_request_suppliers o WHERE o.company_id = e.company_id AND o.reply_email_id = e.email_id AND o.id <> ?)
+                                          AND NOT EXISTS (SELECT 1 FROM email_links l WHERE l.email_id = e.email_id AND l.linked_type = 'rfq' AND l.linked_id <> ?)
+                                     ORDER BY at LIMIT 1");
+                    $q->execute(array_merge([$companyId], $addrs, [$x['sent_at'], (int)$x['id'], (int)$x['id'], $requestId]));
                     $hit = $q->fetch(PDO::FETCH_ASSOC) ?: null;
                 }
             }
@@ -658,27 +739,46 @@ final class SaRequests
         return $found;
     }
 
+    /** Replies just found while the owner looks at the request: the bell need not tell them again (anyone else's look leaves it to the tick). */
+    public static function seen(PDO $db, array $r, int $userId, array $found): void
+    {
+        if (!$found || (int)$r['created_by'] !== $userId) return;
+        $db->prepare("UPDATE sai_request_suppliers SET reply_notified_at = NOW() WHERE reply_notified_at IS NULL AND id IN (" . implode(',', array_map(fn($f) => (int)$f['id'], $found)) . ")")->execute();
+    }
+
     /**
-     * The background tick (notifications/api/tick.php): replies on open requests,
-     * and quotes that are due — each told to the person who made the request once.
+     * The background tick (notifications/api/tick.php): replies on open requests (and drafts whose email went
+     * later from the Outbox), and quotes that are due — each told to the person who made the request once.
+     * Requests are looked at in turn, the longest unchecked first, so every one is reached however many there are.
      */
     public static function tick(PDO $db, float $deadline): array
     {
         $out = ['replies' => 0, 'due' => 0];
-        $st = $db->query("SELECT DISTINCT r.id, r.company_id, r.created_by, r.title FROM sai_requests r JOIN sai_request_suppliers rs ON rs.request_id = r.id
-                           WHERE r.status = 'open' AND r.deleted_at IS NULL AND rs.sent_at IS NOT NULL AND rs.replied_at IS NULL AND rs.declined_at IS NULL
-                             AND rs.sent_at >= NOW() - INTERVAL 60 DAY ORDER BY r.id LIMIT 200");
-        $mark = $db->prepare("UPDATE sai_request_suppliers SET reply_notified_at = NOW() WHERE id = ? AND reply_notified_at IS NULL");
+        $st = $db->query("SELECT r.id, r.company_id FROM sai_requests r
+                           WHERE r.status IN ('draft', 'open') AND r.deleted_at IS NULL
+                             AND (EXISTS (SELECT 1 FROM sai_request_suppliers rs WHERE rs.request_id = r.id AND rs.sent_at IS NOT NULL AND rs.replied_at IS NULL
+                                                                                    AND rs.declined_at IS NULL AND rs.sent_at >= NOW() - INTERVAL 60 DAY)
+                                  OR EXISTS (SELECT 1 FROM sai_request_suppliers rs WHERE rs.request_id = r.id AND rs.sent_at IS NULL)
+                                     AND r.created_at >= NOW() - INTERVAL 60 DAY)
+                        ORDER BY r.replies_checked_at IS NOT NULL, r.replies_checked_at, r.id LIMIT 200");
+        $checked = $db->prepare("UPDATE sai_requests SET replies_checked_at = NOW() WHERE id = ?");
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
             if (microtime(true) > $deadline) break;
-            foreach (self::refresh($db, (int)$r['company_id'], (int)$r['id']) as $f) {
-                $mark->execute([$f['id']]);
-                if ($mark->rowCount() !== 1) continue;
-                $out['replies']++;
-                SaKit::notify($db, (int)$r['company_id'], (int)$r['created_by'], 0, $f['name'] . ' replied', 'To your request for quotes “' . $r['title'] . '”.', '/suppliers_ai/request.php?id=' . (int)$r['id']);
-            }
+            self::refresh($db, (int)$r['company_id'], (int)$r['id']);
+            $checked->execute([(int)$r['id']]);
         }
-        $st = $db->query("SELECT r.id, r.company_id, r.created_by, r.title, COUNT(rs.id) n, SUM(rs.replied_at IS NOT NULL OR rs.quote_cents IS NOT NULL) replied, SUM(rs.quote_cents IS NOT NULL) quoted
+        // Every reply noticed — here or by whoever opened the request — that its owner has not seen yet
+        $st = $db->query("SELECT rs.id, rs.name, r.id AS request_id, r.company_id, r.created_by, r.title FROM sai_request_suppliers rs JOIN sai_requests r ON r.id = rs.request_id
+                           WHERE rs.reply_email_id IS NOT NULL AND rs.reply_notified_at IS NULL AND rs.replied_at >= NOW() - INTERVAL 7 DAY
+                             AND r.deleted_at IS NULL AND r.status IN ('draft', 'open') ORDER BY rs.id LIMIT 200");
+        $mark = $db->prepare("UPDATE sai_request_suppliers SET reply_notified_at = NOW() WHERE id = ? AND reply_notified_at IS NULL");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $mark->execute([(int)$f['id']]);
+            if ($mark->rowCount() !== 1) continue;
+            $out['replies']++;
+            SaKit::notify($db, (int)$f['company_id'], (int)$f['created_by'], 0, $f['name'] . ' replied', 'To your request for quotes “' . $f['title'] . '”.', '/suppliers_ai/request.php?id=' . (int)$f['request_id']);
+        }
+        $st = $db->query("SELECT r.id, r.company_id, r.created_by, r.title, COUNT(rs.id) n, SUM(rs.replied_at IS NOT NULL OR rs.quote_cents IS NOT NULL) replied, SUM(rs.quote_cents IS NOT NULL AND rs.declined_at IS NULL) quoted
                             FROM sai_requests r LEFT JOIN sai_request_suppliers rs ON rs.request_id = r.id AND rs.sent_at IS NOT NULL
                            WHERE r.status = 'open' AND r.deleted_at IS NULL AND r.due_notified_at IS NULL AND r.quote_by IS NOT NULL AND r.quote_by <= CURDATE()
                         GROUP BY r.id LIMIT 200");
@@ -701,7 +801,7 @@ final class SaRequests
     {
         try {
             $st = $db->prepare("SELECT SUM(r.status IN ('draft', 'open')) active, SUM(r.status = 'draft') drafts, SUM(r.status = 'open') open,
-                                       SUM(r.status = 'open' AND EXISTS (SELECT 1 FROM sai_request_suppliers rs WHERE rs.request_id = r.id AND rs.quote_cents IS NOT NULL)) to_compare,
+                                       SUM(r.status = 'open' AND EXISTS (SELECT 1 FROM sai_request_suppliers rs WHERE rs.request_id = r.id AND rs.quote_cents IS NOT NULL AND rs.declined_at IS NULL)) to_compare,
                                        SUM(r.status = 'open' AND r.quote_by < CURDATE()) late,
                                        SUM(r.status IN ('draft', 'open') AND r.created_by = ?) mine
                                   FROM sai_requests r WHERE r.company_id = ? AND r.deleted_at IS NULL");

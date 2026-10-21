@@ -57,25 +57,36 @@ like the rest of Flowwork.
   person — or written by AI from the request (never the budget).
 * **Replies are noticed.** A reply in the conversation, or a new email from
   the supplier’s address, marks them as replied — on the page (it looks
-  every minute) and in the background tick every 15 minutes, which tells the
-  person who asked (bell and phone). When quotes are due, they are told how
-  many came in. An email that waited in the Outbox and went later still counts.
+  every minute) and in the background tick every 15 minutes (it takes the
+  requests in turn, so none is left out), which tells the person who asked
+  (bell and phone) — unless they were looking at it when it came in. One email
+  is one reply on one request: a reply in another request's conversation does
+  not count here. When quotes are due, they are told how many came in. An
+  email that waited in the Outbox and went later still counts.
 * **Quotes, compared.** Write each quote down (VAT included, plus VAT or no
   VAT; lead time; valid until; notes). They are compared **with VAT**, as
-  bars against the **budget**, best and over-budget marked. Remind the slow
-  ones (in the same conversation), mark who declined.
+  bars against the **budget**, best and over-budget marked (a quote from
+  someone who then declined is left out). Remind the slow ones (from the same
+  mailbox, in the same conversation), mark who declined.
 * **Choose.** The chosen supplier is awarded, the others “not chosen”, a
   prospect becomes an active supplier, the CRM notes it. **Thank the others**
   in one go. **Purchase order** (admins, bookkeepers): a draft in
-  Procurement, numbered `PO-2026-0001` from the company’s document sequence,
-  the price without VAT on the line when the supplier is VAT registered.
-  Suppliers your policy blocks cannot be asked, chosen or ordered from.
+  Procurement, numbered `PO-2026-0001` from the company’s document sequence.
+  The line is the price without VAT and Procurement adds VAT on it: a “plus
+  VAT” quote is ordered with VAT on top (as it was compared); a “VAT
+  included” quote from a VAT-registered supplier has the VAT taken out (to
+  the cent that adds back up where one exists); anything else is ordered as
+  quoted, without VAT. **Undo the choice** while the order is still a draft
+  (the draft is cancelled with it); once it is approved or being received in
+  Procurement, the choice stays. Suppliers your policy blocks cannot be
+  asked, chosen or ordered from.
 * **Searches** — every search the team ran: open it again (as it was found,
   documents as they are now) or search again; who, where, how many, what came of it.
 * **Settings** — the Google and OpenAI keys (write-only: the page shows
   `sk-…AbCd`, never the key; test buttons), search radius, minimum match,
   “documents in order only”, suppliers per request, the company’s hourly and
-  daily ceilings on Google/AI look-ups, the company’s **words** (synonyms,
+  daily ceilings on Google/AI look-ups (an email written by AI counts as one),
+  the company’s **words** (synonyms,
   its own trades), never-suggest and always-ask lists, and the request email
   with a live preview. The OpenAI key is the one Receipts and Shopping use.
 * **Home** — the tile says what is waiting (“2 requests have quotes to compare”).

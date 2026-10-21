@@ -26,6 +26,8 @@ set_exception_handler(function (Throwable $e) {
     sa_error('Something went wrong. Please try again.', 500);
 });
 
+// The database's clock in PHP's time zone, as Mail does: replies are found by comparing Mail's times with ours
+$DB->exec("SET time_zone = '" . date('P') . "'");
 SaSchema::ensure($DB);
 
 function sa_json(array $data = [], int $code = 200): void

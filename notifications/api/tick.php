@@ -170,6 +170,7 @@ if ($now - (int)($state['sai_at'] ?? 0) >= 900) {
     $state['sai_at'] = $now;
     $run('suppliers_ai', function () use ($DB, $deadline) {
         require_once __DIR__ . '/../../suppliers_ai/lib/Sa.php';
+        $DB->exec("SET time_zone = '" . date('P') . "'");
         SaSchema::ensure($DB);
         return SaRequests::tick($DB, min($deadline - 10, microtime(true) + 6));
     });

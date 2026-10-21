@@ -10,13 +10,14 @@
 //       the reasons it was ranked where it was, and whether policy blocks it
 //   ai_actions.action  enum → varchar(30) (the old bulk RFQ wrote 'rfq_bulk',
 //       which the enum turned into ''), plus request_id
-//   sai_requests            a request for quotes: what, where, when, requirements, budget (never sent), status
+//   sai_requests            a request for quotes: what, where, when, requirements, budget (never sent), status,
+//                           and when the background tick last looked for replies (it takes them in turn)
 //   sai_request_suppliers   who was asked, how, when they replied, their quote, the decision
 //   sai_events              what happened on a request, for its timeline
 
 final class SaSchema
 {
-    public const VERSION = '2026-10-24-1';
+    public const VERSION = '2026-10-24-2';
     private static bool $done = false;
 
     public static function ensure(PDO $db): void
@@ -47,6 +48,7 @@ final class SaSchema
             ]);
             self::columns($db, 'sai_requests', [
                 'requirements' => "ADD COLUMN `requirements` text DEFAULT NULL AFTER `category`",
+                'replies_checked_at' => "ADD COLUMN `replies_checked_at` datetime DEFAULT NULL AFTER `due_notified_at`",
             ]);
             self::columns($db, 'ai_actions', [
                 'request_id' => "ADD COLUMN `request_id` bigint(20) UNSIGNED DEFAULT NULL AFTER `candidate_id`",
@@ -57,6 +59,7 @@ final class SaSchema
             }
             self::index($db, 'ai_queries', 'idx_sai_external', '(`company_id`, `external`, `created_at`)');
             self::index($db, 'ai_candidates', 'idx_sai_query', '(`query_id`)');
+            self::index($db, 'ai_actions', 'idx_sai_action', '(`company_id`, `action`, `created_at`)');
             if ($marker !== null) @file_put_contents($marker, date('c'));
         } catch (Throwable $e) {
             error_log('[suppliers_ai] schema: ' . $e->getMessage());
@@ -89,6 +92,7 @@ final class SaSchema
               `closed_at` datetime DEFAULT NULL,
               `deleted_at` datetime DEFAULT NULL,
               `due_notified_at` datetime DEFAULT NULL,
+              `replies_checked_at` datetime DEFAULT NULL,
               PRIMARY KEY (`id`),
               KEY `idx_sai_req_company` (`company_id`, `deleted_at`, `status`),
               KEY `idx_sai_req_owner` (`company_id`, `created_by`)

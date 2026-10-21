@@ -28,6 +28,14 @@
     if (!compose) compose = await api.get('requests.php', { op: 'compose', id });
     return compose;
   }
+  // Who can be asked now: not asked yet, and not blocked by the company's document policy
+  const askable = () => sups().filter((x) => x.status === 'to_ask' && !(x.compliance && x.compliance.blocking));
+  // Asked another way from the Ask dialog: that row's email is no longer ticked (they must not be asked twice)
+  const askedElsewhere = (el) => {
+    const row = el && el.closest('.fsa-pickrow');
+    const cb = row && $('input[type=checkbox]', row);
+    if (cb) { cb.checked = false; cb.disabled = true; cb.dispatchEvent(new Event('change')); }
+  };
   const fill = (s, x) => String(s || '').replace(/\{first_name\}/g, x.first_name || 'there').replace(/\{supplier\}/g, x.name);
   const dialFor = (x) => x.dial ? x.dial : '';
 
@@ -42,7 +50,7 @@
     if (r.quote_by) meta.push(`<span class="fsa-tag${r.status === 'open' && F.isPast(r.quote_by) ? ' fsa-tag--danger' : ''}">${icon('clock')}Quotes ${F.isPast(r.quote_by) ? 'were due' : 'due'} ${esc(due(r.quote_by))}</span>`);
     if (r.budget != null) meta.push(`<span class="fsa-tag fsa-tag--lock" title="Only your team sees the budget">${icon('lock')}Budget ${money(r.budget, { round: true })}</span>`);
     (r.requirements || []).forEach((q) => meta.push(`<span class="fsa-tag">${icon('shield')}${esc(q)}</span>`));
-    const toAsk = sups().filter((x) => x.status === 'to_ask');
+    const toAsk = askable();
     const manage = can().manage;
     const live = !r.deleted && !['closed', 'cancelled'].includes(r.status);
     let primary = '';
@@ -84,7 +92,7 @@
   function nextStep() {
     const r = req();
     const s = D.summary;
-    const toAsk = sups().filter((x) => x.status === 'to_ask').length;
+    const toAsk = askable().length;
     const waiting = sups().filter((x) => x.status === 'asked').length;
     let ic = 'i-info', b = '', small = '', ok = false;
     if (r.status === 'awarded') {
@@ -108,7 +116,7 @@
   }
 
   function compareHtml() {
-    const q = sups().filter((x) => x.quote_incl != null);
+    const q = sups().filter((x) => x.quote_incl != null && x.status !== 'declined');
     if (!q.length) return '';
     const r = req();
     const max = Math.max(...q.map((x) => x.quote_incl), r.budget || 0);
@@ -160,10 +168,10 @@
       if (['asked', 'replied'].includes(x.status)) acts.push(`<button class="fsa-mini" type="button" data-act="declined">${icon('x')}Declined</button>`);
       if (x.status === 'declined') acts.push(`<button class="fsa-mini" type="button" data-act="undecline">${icon('undo')}Not declined</button>`);
       if (x.status === 'asked' && x.channel !== 'email') acts.push(`<button class="fsa-mini" type="button" data-act="unask">${icon('undo')}Not asked</button>`);
-      if (x.status === 'awarded' && !r.po) acts.push(`<button class="fsa-mini" type="button" data-act="unaward">${icon('undo')}Undo the choice</button>`);
+      if (x.status === 'awarded' && (!r.po || r.po.status === 'draft')) acts.push(`<button class="fsa-mini" type="button" data-act="unaward">${icon('undo')}Undo the choice</button>`);
       acts.push('<span class="fsa-grow"></span>');
       if (x.status !== 'awarded') acts.push(`<button class="icon-btn icon-btn--sm" type="button" data-act="remove" aria-label="Take ${esc(x.name)} off the request" data-tip="Take off">${icon('trash')}</button>`);
-    } else if (manage && x.status === 'awarded' && !r.po && r.status === 'awarded') {
+    } else if (manage && x.status === 'awarded' && (!r.po || r.po.status === 'draft') && r.status === 'awarded') {
       acts.push(`<button class="fsa-mini" type="button" data-act="unaward">${icon('undo')}Undo the choice</button>`);
     }
     const name = x.in_crm ? `<a href="/crm/account_view.php?id=${x.account_id}">${esc(x.name)}</a>` : esc(x.name);
@@ -204,7 +212,7 @@
     if (r.po) return `<section class="fsa-panel fsa-po"><small>Purchase order</small><b>${esc(r.po.number)} · ${money(r.po.total)}</b><small>A ${esc(r.po.status)} order in Procurement.</small><a class="btn" href="${esc(r.po.url)}">${icon('is-order')}Open the order</a></section>`;
     const w = sups().find((x) => x.status === 'awarded');
     if (!can().order) return `<section class="fsa-panel fsa-po"><b>Next: the order</b><small>An admin or bookkeeper makes the purchase order for ${esc(w ? w.name : 'the supplier')}.</small></section>`;
-    return `<section class="fsa-panel fsa-po"><b>Make the order</b><small>A draft purchase order for ${esc(w ? w.name : 'the supplier')}${w && w.quote_incl != null ? ' of ' + money(w.quote_incl) : ''}, numbered from your sequence. ${w && !w.vat ? 'They have no VAT number in the CRM, so no VAT is added.' : ''}</small>
+    return `<section class="fsa-panel fsa-po"><b>Make the order</b><small>A draft purchase order for ${esc(w ? w.name : 'the supplier')}${w && w.quote_incl != null ? ' of ' + money(w.quote_incl) : ''}, numbered from your sequence. ${w && !w.vat && w.quote_vat !== 'excl' ? 'They have no VAT number in the CRM, so it is ordered as quoted, without VAT.' : ''}</small>
       <button class="btn btn--primary" type="button" data-act="po"${w && w.quote == null ? ' disabled title="Write down their quote first"' : ''}>${icon('is-order')}Make the purchase order</button></section>`;
   }
 
@@ -216,7 +224,7 @@
     quote_cleared: ['x', (e) => `cleared <b>${esc(e.supplier)}</b>’s quote`],
     declined: ['x', (e) => `<b>${esc(e.supplier)}</b> declined`],
     awarded: ['isa-medal', (e) => `chose <b>${esc(e.supplier)}</b>`],
-    unawarded: ['undo', () => 'undid the choice'],
+    unawarded: ['undo', (e) => `undid the choice${e.data.po_cancelled ? ' and cancelled draft purchase order <b>' + esc(e.data.po_cancelled) + '</b>' : ''}`],
     reminded: ['bell', (e) => `reminded <b>${esc(e.supplier)}</b>`],
     thanked: ['isa-thanks', (e) => `thanked <b>${esc(e.supplier)}</b>`],
     po: ['is-order', (e) => `made purchase order <b>${esc(e.data.number)}</b> (${money(e.data.total)})`],
@@ -241,7 +249,7 @@
     const x = li ? sups().find((s) => s.id === +li.dataset.rid) : null;
     const act = b.dataset.act;
     try {
-      if (act === 'ask') return askDialog(sups().filter((s) => s.status === 'to_ask').map((s) => s.id));
+      if (act === 'ask') return askDialog(askable().map((s) => s.id));
       if (act === 'ask-one') return askDialog([x.id]);
       if (act === 'add') return addDialog();
       if (act === 'more') return moreMenu(b);
@@ -257,7 +265,9 @@
       if (act === 'quote') return quoteDialog(x);
       if (act === 'award') return award(x);
       if (act === 'unaward') {
-        if (!(await dialog({ title: 'Undo the choice?', body: `${esc(x.name)} will no longer be the chosen supplier, and the request opens again.`, confirm: 'Undo' }))) return;
+        const po = req().po;
+        const poNote = po ? ` Draft purchase order ${esc(po.number)} is cancelled with it.` : '';
+        if (!(await dialog({ title: 'Undo the choice?', body: `${esc(x.name)} will no longer be the chosen supplier, and the request opens again.${poNote}`, confirm: 'Undo', danger: !!po }))) return;
         return reload(await api.post('requests.php', { op: 'unaward', id }));
       }
       if (act === 'remind') return remind(x);
@@ -304,7 +314,7 @@
   async function askDialog(ids) {
     let c;
     try { c = await getCompose(); } catch (e) { return toastError(e); }
-    const list = sups().filter((x) => ids.includes(x.id));
+    const list = sups().filter((x) => ids.includes(x.id) && !(x.compliance && x.compliance.blocking));
     const boxes = c.mailboxes || [];
     const m = modal(`<div class="fwm-dialog__head"><h2>Ask for quotes</h2><button class="icon-btn" type="button" data-close aria-label="Close">${icon('x')}</button></div>
       <div class="fwm-dialog__body fsa-form">
@@ -349,7 +359,7 @@
         if (!x) return;
         location.href = `mailto:${encodeURIComponent(x.emails[0])}?subject=${encodeURIComponent(fill($('#akSubject', m).value, x))}&body=${encodeURIComponent(fill($('#akBody', m).value, x))}`;
         if (await dialog({ title: `Did you send it to ${x.name}?`, body: 'Then it is noted as asked.', confirm: 'Yes, sent', cancel: 'Not yet' })) {
-          try { D = await api.post('requests.php', { op: 'mark', recipient_id: x.id, how: 'other' }); render(); $('.fsa-pickrow__state', mt.closest('.fsa-pickrow')).innerHTML = `<span class="fsa-pickrow__state is-ok">${icon('check', 'i--sm')}Noted</span>`; } catch (err) { toastError(err); }
+          try { D = await api.post('requests.php', { op: 'mark', recipient_id: x.id, how: 'other' }); render(); $('.fsa-pickrow__state', mt.closest('.fsa-pickrow')).innerHTML = `<span class="fsa-pickrow__state is-ok">${icon('check', 'i--sm')}Noted</span>`; askedElsewhere(mt); } catch (err) { toastError(err); }
         }
       }
     });
@@ -396,7 +406,7 @@
     try {
       D = await api.post('requests.php', { op: 'mark', recipient_id: x.id, how: 'whatsapp' });
       render();
-      if (stateEl) { stateEl.className = 'fsa-pickrow__state is-ok'; stateEl.innerHTML = icon('check', 'i--sm') + 'Noted'; }
+      if (stateEl) { stateEl.className = 'fsa-pickrow__state is-ok'; stateEl.innerHTML = icon('check', 'i--sm') + 'Noted'; askedElsewhere(stateEl); }
     } catch (e) { toastError(e); }
   }
 
@@ -621,14 +631,16 @@
   } catch (e) { /* private mode */ }
   if (BOOT.ask) {
     history.replaceState(null, '', '/suppliers_ai/request.php?id=' + id);
-    const toAsk = sups().filter((x) => x.status === 'to_ask').map((x) => x.id);
+    const toAsk = askable().map((x) => x.id);
     if (toAsk.length && can().manage) askDialog(toAsk);
   }
   // Replies are noticed by themselves: look again every minute while the page is open
   setInterval(async () => {
     if (document.hidden || F.modalOpen || req().status !== 'open') return;
+    const seen = D;
     try {
       const fresh = await api.get('requests.php', { op: 'get', id });
+      if (D !== seen) return; // something was done meanwhile — its answer is newer than this one
       const before = D.summary.replied;
       if (fresh.summary.replied > before) toast(F.plural(fresh.summary.replied - before, 'new reply', 'new replies'));
       if (JSON.stringify(fresh.suppliers) !== JSON.stringify(D.suppliers)) { D = fresh; render(); }

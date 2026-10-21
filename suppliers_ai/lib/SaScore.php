@@ -9,12 +9,15 @@ final class SaScore
     /**
      * @param array $c a candidate (SaSearch): source crm|google, hits, bills, pos, past, perf, google, compliance, allowed, distance_km
      * @param array $ctx radius (km), place, books (may see what was billed)
-     * @return array{0: float, 1: array} score and reasons [{i, t, tone}]
+     * @return array{0: float, 1: array} score and reasons [{i, t, tone, o?}] — with books, a reason about money also
+     *         carries "o", what everyone else sees instead (SaSearch::reasonsFor picks per person)
      */
     public static function score(array $c, array $ctx): array
     {
         $r = [];
-        $add = function (string $icon, string $text, string $tone = '') use (&$r) { $r[] = ['i' => $icon, 't' => $text, 'tone' => $tone]; };
+        $add = function (string $icon, string $text, string $tone = '', ?string $others = null) use (&$r) {
+            $r[] = ['i' => $icon, 't' => $text, 'tone' => $tone] + ($others !== null ? ['o' => $others] : []);
+        };
         $s = 0.0;
         $g = $c['google'] ?? null;
 
@@ -33,14 +36,17 @@ final class SaScore
 
             if ($b = $c['bills'] ?? null) {
                 $s += min(0.20, 0.10 + 0.03 * (int)$b['n']);
+                $others = 'You have bought from them before (last on ' . SaKit::date((string)$b['last']) . ')';
                 if (!empty($ctx['books'])) {
-                    $add('i-receipt', 'Billed you for “' . mb_strimwidth((string)$b['desc'], 0, 60, '…') . '” on ' . SaKit::date((string)$b['last']) . ($b['price'] !== null ? ' · ' . SaKit::money((int)$b['price']) . ' each incl. VAT' : '') . ((int)$b['n'] > 1 ? ' · ' . (int)$b['n'] . ' bills' : ''), 'ok');
+                    $add('i-receipt', 'Billed you for “' . mb_strimwidth((string)$b['desc'], 0, 60, '…') . '” on ' . SaKit::date((string)$b['last']) . ($b['price'] !== null ? ' · ' . SaKit::money((int)$b['price']) . ' each incl. VAT' : '') . ((int)$b['n'] > 1 ? ' · ' . (int)$b['n'] . ' bills' : ''), 'ok', $others);
                 } else {
-                    $add('i-receipt', 'You have bought from them before (last on ' . SaKit::date((string)$b['last']) . ')', 'ok');
+                    $add('i-receipt', $others, 'ok');
                 }
             } elseif ($p = $c['pos'] ?? null) {
                 $s += 0.06;
-                $add('is-order', !empty($ctx['books']) ? 'On purchase order ' . $p['po'] . ' for “' . mb_strimwidth((string)$p['desc'], 0, 50, '…') . '”' : 'You have ordered from them before', 'ok');
+                $others = 'You have ordered from them before';
+                if (!empty($ctx['books'])) $add('is-order', 'On purchase order ' . $p['po'] . ' for “' . mb_strimwidth((string)$p['desc'], 0, 50, '…') . '”', 'ok', $others);
+                else $add('is-order', $others, 'ok');
             }
             if ($p = $c['past'] ?? null) {
                 if ((int)$p['won'] > 0) { $s += 0.10; $add('ic-trophy', 'Won your request “' . mb_strimwidth((string)$p['won_title'], 0, 50, '…') . '”', 'gold'); }

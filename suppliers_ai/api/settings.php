@@ -1,6 +1,6 @@
 <?php
 // /suppliers_ai/api/settings.php — the company's Suppliers AI settings.
-//   GET  op=get
+//   GET  op=get                                                                                    admins and bookkeepers
 //   POST op=save {radius_km, min_score (0–100), max_recipients, per_hour, per_day, compliant_only}   admins and bookkeepers
 //        op=rules {synonyms{}, categories{}, allow_list{phones,domains,names}, deny_list{…}}       admins and bookkeepers
 //        op=template {subject, body} | {reset: true}                                              admins and bookkeepers
@@ -16,6 +16,8 @@ $out = function () use ($DB, $SA_COMPANY_ID, $caps) {
             'trades' => array_map(fn($k, $t) => ['key' => $k, 'label' => $t[0], 'words' => array_map(fn($w) => rtrim($w, '$'), $t[4])], array_keys(SaParse::TRADES), SaParse::TRADES)];
 };
 
+// The company's lists and key hints are for those who look after them (pages get what they need from the boot data)
+if (!$caps['configure']) throw new SaForbidden('Only admins and bookkeepers can see and change these settings.');
 if (sa_op() === 'get') sa_json($out());
 sa_post_only();
 $in = sa_input();
