@@ -1,334 +1,88 @@
 <?php
-// /suppliers_ai/help.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /suppliers_ai/help.php — how Suppliers AI works: saying what you need, where
+// results come from and why they rank where they do, asking for quotes,
+// replies, comparing and awarding, and what leaves Flowwork (and what never does).
+require_once __DIR__ . '/lib/SaBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
-
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-$stmt = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
+$page = 'help';
+$pageTitle = 'How it works';
+include __DIR__ . '/partials/head.php';
+$examples = [
+    'Need 3 plumbers in Vanderbijlpark for geysers tomorrow under R5k',
+    '20 cubes river sand delivered to Sasolburg by Friday',
+    'Electrician with COC near Centurion, next week',
+    '19mm crushed stone, 10 tons, CIDB grade 5GB, B-BBEE level 1',
+    'Ons soek ’n loodgieter naby Meyerton môre, begroting R8000',
+];
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Help – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-suppliers-ai">
-    <div class="fw-suppliers-ai__container">
-            
-            <!-- Header -->
-            <header class="fw-suppliers-ai__header">
-                <div class="fw-suppliers-ai__brand">
-                    <div class="fw-suppliers-ai__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <line x1="12" y1="22.08" x2="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div class="fw-suppliers-ai__brand-text">
-                        <div class="fw-suppliers-ai__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-suppliers-ai__app-name">Suppliers AI – Help</div>
-                    </div>
-                </div>
-
-                <div class="fw-suppliers-ai__greeting">
-                    Hello, <span class="fw-suppliers-ai__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-
-                <div class="fw-suppliers-ai__controls">
-                    <a href="/suppliers_ai/" class="fw-suppliers-ai__home-btn" title="Back to Search">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <line x1="19" y1="12" x2="5" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <polyline points="12 19 5 12 12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <a href="/" class="fw-suppliers-ai__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-suppliers-ai__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-suppliers-ai__theme-icon fw-suppliers-ai__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-suppliers-ai__theme-icon fw-suppliers-ai__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-suppliers-ai__menu-wrapper">
-                        <button class="fw-suppliers-ai__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-suppliers-ai__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/suppliers_ai/" class="fw-suppliers-ai__kebab-item">New Search</a>
-                            <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__kebab-item">History</a>
-                            <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__kebab-item">Help</a>
-                            <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__kebab-item">Settings</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <main class="fw-suppliers-ai__main">
-            <div class="fw-suppliers-ai__content">
-
-            <div class="fw-suppliers-ai__page-header">
-                <h1 class="fw-suppliers-ai__page-title">Help & Documentation</h1>
-                <p class="fw-suppliers-ai__page-subtitle">
-                    Learn how to get the best results from Suppliers AI
-                </p>
-            </div>
-
-            <!-- View Tabs -->
-            <div class="fw-suppliers-ai__view-tabs">
-                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab">Search</a>
-                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab">History</a>
-                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">Help</a>
-                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab">Settings</a>
-            </div>
-
-            <!-- Help Content -->
-            <div class="fw-suppliers-ai__help-panel">
-                
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">🚀 Getting Started</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <p>Suppliers AI uses natural language processing to find the best suppliers for your needs. Simply describe what you're looking for in plain English.</p>
-                        
-                        <h3>Example Queries:</h3>
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li><code>"Need 3 plumbers in Vanderbijlpark for geyser installation tomorrow under R5000"</code></li>
-                            <li><code>"Find electricians in Johannesburg with valid COC certificates"</code></li>
-                            <li><code>"Roofing contractors near me with good track record"</code></li>
-                            <li><code>"Concrete suppliers within 50km, preferred vendors only"</code></li>
-                        </ul>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">🎯 How It Works</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <ol class="fw-suppliers-ai__help-list">
-                            <li><strong>Query Parsing:</strong> AI extracts keywords, location, budget, quantity, and required qualifications</li>
-                            <li><strong>Multi-Source Search:</strong> Searches your CRM, historical data, and external directories (if configured)</li>
-                            <li><strong>Smart Deduplication:</strong> Merges suppliers found across multiple sources</li>
-                            <li><strong>Intelligent Scoring:</strong> Ranks by category match, distance, compliance status, performance history, and preferences</li>
-                            <li><strong>Results:</strong> Shows top suppliers with AI-generated explanations</li>
-                        </ol>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">🏷️ Understanding Scores</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <p>Each supplier gets a score from 0-100 based on:</p>
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li><strong>Category Match (+20%):</strong> How well their services match your query</li>
-                            <li><strong>CRM Presence (+15%):</strong> Existing suppliers in your database</li>
-                            <li><strong>Compliance (+15%):</strong> Valid COC/Tax/BEE documents</li>
-                            <li><strong>Preferred Status (+10%):</strong> Marked as preferred supplier</li>
-                            <li><strong>Performance (+10%):</strong> On-time delivery, low defect rate, fast response</li>
-                            <li><strong>Distance:</strong> Proximity to specified location</li>
-                        </ul>
-                        <p><strong>Note:</strong> Suppliers with expired compliance docs get -30% penalty (or blocked entirely if settings require it)</p>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">📋 Compliance Badges</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <div class="fw-suppliers-ai__badge-examples">
-                            <div class="fw-suppliers-ai__badge-example">
-                                <span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--valid">✓ Compliant</span>
-                                <span>All required documents are valid</span>
-                            </div>
-                            <div class="fw-suppliers-ai__badge-example">
-                                <span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--expiring">⚠ Expiring Soon</span>
-                                <span>Documents expiring within 30 days</span>
-                            </div>
-                            <div class="fw-suppliers-ai__badge-example">
-                                <span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--expired">✗ Expired</span>
-                                <span>One or more documents expired</span>
-                            </div>
-                            <div class="fw-suppliers-ai__badge-example">
-                                <span class="fw-suppliers-ai__badge fw-suppliers-ai__badge--missing">? No Docs</span>
-                                <span>No compliance documents on file</span>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">⚡ Quick Actions</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li><strong>Call:</strong> Opens phone dialer (mobile) or shows number (desktop)</li>
-                            <li><strong>WhatsApp:</strong> Opens WhatsApp chat in new tab</li>
-                            <li><strong>Email:</strong> Opens email client with supplier's address</li>
-                            <li><strong>Add to CRM:</strong> Creates new supplier account (checks for duplicates first)</li>
-                            <li><strong>View in CRM:</strong> Opens existing supplier profile</li>
-                            <li><strong>Add to Shortlist:</strong> Builds RFQ recipient list</li>
-                        </ul>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">📨 Generating RFQs</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <ol class="fw-suppliers-ai__help-list">
-                            <li>Click "Add to Shortlist" on suppliers you want to invite</li>
-                            <li>Review shortlist (click "Shortlist" button top-right)</li>
-                            <li>Click "Generate RFQ"</li>
-                            <li>System creates RFQ/PO stub and logs all actions</li>
-                            <li>Redirects to Procurement module to complete scope/terms</li>
-                        </ol>
-                        <p><strong>Limit:</strong> Max <?= htmlspecialchars($settings['rfq_max_recipients'] ?? 8) ?> suppliers per RFQ (configurable in Settings)</p>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">🔧 Advanced Filters</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <p>Click "Advanced Filters" to refine your search:</p>
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li><strong>Radius (km):</strong> Distance from location (1-500km)</li>
-                            <li><strong>Min Score:</strong> Filter out low-scoring results (0.0-1.0)</li>
-                            <li><strong>Compliance:</strong> Valid/Expiring/Expired/Missing only</li>
-                            <li><strong>Source:</strong> CRM only, External APIs, or Past Winners</li>
-                        </ul>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">⚙️ Settings (Admin Only)</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <p>Admins and Bookkeepers can configure:</p>
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li><strong>Default Radius:</strong> Starting search radius</li>
-                            <li><strong>Min Score Threshold:</strong> Hide results below this score</li>
-                            <li><strong>Compliance Policy:</strong> Require/block expired docs</li>
-                            <li><strong>Rate Limits:</strong> Searches per hour/day</li>
-                            <li><strong>RFQ Max Recipients:</strong> Bulk email limit</li>
-                            <li><strong>AI Rules (JSON):</strong> Synonyms, category mappings, allow/deny lists</li>
-                            <li><strong>API Keys:</strong> External connector credentials (Google Places, Bing Local)</li>
-                        </ul>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">🛡️ Privacy & Security</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li>All searches are <strong>tenant-isolated</strong> (your company data only)</li>
-                            <li>Search history and actions are <strong>audit-logged</strong></li>
-                            <li>Rate limits prevent abuse</li>
-                            <li>Supplier contact details only stored when added to CRM</li>
-                            <li>External API calls respect TOS and rate limits</li>
-                            <li>No data shared between companies</li>
-                        </ul>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">❓ Troubleshooting</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <dl class="fw-suppliers-ai__help-faq">
-                            <dt><strong>Q: No results found?</strong></dt>
-                            <dd>
-                                <ul>
-                                    <li>Try broader keywords (e.g., "builder" instead of "brick layer")</li>
-                                    <li>Increase search radius in Advanced Filters</li>
-                                    <li>Lower Min Score threshold</li>
-                                    <li>Check if external APIs are configured (Settings)</li>
-                                </ul>
-                            </dd>
-
-                            <dt><strong>Q: Rate limit exceeded?</strong></dt>
-                            <dd>Wait for the next hour or contact admin to increase limits in Settings.</dd>
-
-                            <dt><strong>Q: Can't add supplier to CRM?</strong></dt>
-                            <dd>
-                                <ul>
-                                    <li>Check if duplicate already exists (phone/email match)</li>
-                                    <li>Verify you have Member or Admin role (Viewers are read-only)</li>
-                                    <li>Check network connection</li>
-                                </ul>
-                            </dd>
-
-                            <dt><strong>Q: RFQ generation failed?</strong></dt>
-                            <dd>
-                                <ul>
-                                    <li>Ensure Procurement module is installed</li>
-                                    <li>Check RFQ max recipients limit not exceeded</li>
-                                    <li>Verify at least one supplier in shortlist has valid contact info</li>
-                                </ul>
-                            </dd>
-
-                            <dt><strong>Q: Scores seem wrong?</strong></dt>
-                            <dd>Contact admin to review AI Rules (Settings). Category mappings and synonyms may need tuning.</dd>
-                        </dl>
-                    </div>
-                </section>
-
-                <section class="fw-suppliers-ai__help-section">
-                    <h2 class="fw-suppliers-ai__help-title">📞 Support</h2>
-                    <div class="fw-suppliers-ai__help-content">
-                        <p>Need help? Contact your system administrator or:</p>
-                        <ul class="fw-suppliers-ai__help-list">
-                            <li>Email: <a href="mailto:support@example.com">support@example.com</a></li>
-                            <li>View <a href="/suppliers_ai/history.php">Search History</a> to review past queries</li>
-                            <li>Check <a href="/suppliers_ai/settings.php">Settings</a> for configuration options</li>
-                        </ul>
-                    </div>
-                </section>
-
-            </div>
-
-            </div>
-            </main>
-
-            <!-- Footer -->
-            <footer class="fw-suppliers-ai__footer">
-                <span>Suppliers AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Dark</span>
-            </footer>
-
+<header class="fsa-head">
+    <div class="fsa-head__text">
+        <p class="fsa-eyebrow">Suppliers AI <i>◆</i> How it works</p>
+        <h1>From <em>“we need…”</em> to an order</h1>
+        <p>Say what you need, see who can do it and why, ask them all for quotes in one go, compare, choose — and the purchase order is ready.</p>
     </div>
+    <div class="fsa-head__actions"><?php if ($SA_CAPS['search']): ?><a class="btn btn--primary" href="/suppliers_ai/#find"><svg class="i"><use href="#isa-seal"/></svg>Find suppliers</a><?php endif; ?></div>
+</header>
 
-    <script src="/suppliers_ai/suppliers_ai.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+<ol class="fsa-steps">
+    <li class="fsa-panel">
+        <span class="fsa-steps__n">1</span>
+        <h3>Say what you need</h3>
+        <p>In your own words, in English or Afrikaans. As you type, Suppliers AI reads the trade, the place (also misspelt), how many or how much, when it is needed, a budget and requirements such as a COC, a B-BBEE level, a CIDB grade, insurance or delivery to site.</p>
+        <ul class="fsa-examples">
+            <?php foreach ($examples as $x): ?><li><a href="/suppliers_ai/?q=<?= rawurlencode($x) ?>">“<?= $e($x) ?>”</a></li><?php endforeach; ?>
+        </ul>
+    </li>
+    <li class="fsa-panel">
+        <span class="fsa-steps__n">2</span>
+        <h3>See who can do it — and why</h3>
+        <p><b>Your suppliers come first</b>: their industry, tags, name and your notes; whether they are preferred; what you bought from them before (bills in Finance, orders in Procurement); how they did on past requests (who quoted, who won, who never replied); delivery figures; and their compliance documents from the CRM.</p>
+        <p><b>Businesses near the site</b> come from Google with the company’s own key: phone, website, rating and how far. <b>AI ideas</b> are kinds of business and well-known chains to look at — names only, with a link to look them up.</p>
+        <p class="fsa-note"><svg class="i"><use href="#i-shield"/></svg> Nothing is made up. A phone number or email shows only when it is in your CRM or listed by Google. (The old Suppliers AI asked the AI for phone numbers, and stored the ones it invented. Those old searches are marked.)</p>
+    </li>
+    <li class="fsa-panel">
+        <span class="fsa-steps__n">3</span>
+        <h3>Shortlist and ask for quotes</h3>
+        <p>Add the right ones to the shortlist and choose <b>Ask for quotes</b>. Say what, where, by when and when you need the quotes. A Google find becomes a supplier in the CRM — a <b>prospect</b>, tagged with its trade — so its emails and replies are kept with it.</p>
+        <p>Each supplier gets their own email from your mailbox in Mail (they never see each other), filed in your Sent folder. No email address? Send it by WhatsApp in one tap, or note that you phoned.</p>
+    </li>
+    <li class="fsa-panel">
+        <span class="fsa-steps__n">4</span>
+        <h3>Replies, quotes and the winner</h3>
+        <p>Replies are noticed by themselves — in the conversation, or a new email from the supplier — and you are told. Write down each quote (with or without VAT, the lead time, until when it is valid) and they are compared like with like, against your budget. Remind those who have not answered.</p>
+        <p>Choose one: a prospect becomes an active supplier, and admins and bookkeepers make the <b>purchase order</b> in Procurement (numbered from your document sequence). Thank the others in one go.</p>
+    </li>
+</ol>
+
+<section class="fsa-section"><h2>What leaves Flowwork</h2><span class="fsa-section__rule"></span></section>
+<div class="fsa-cols">
+    <section class="fsa-panel"><div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-sparkle"/></svg></span><div class="fsa-panel__title"><h3>To OpenAI</h3><p>Only when an admin switched AI on.</p></div></div>
+        <p class="fsa-panel__body">The words of the request, today’s date and your town — to read it and suggest kinds of business. To write an email: the request’s title, details, quantity, place and dates. <b>Never</b> the budget, your suppliers or their details.</p></section>
+    <section class="fsa-panel"><div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-globe"/></svg></span><div class="fsa-panel__title"><h3>To Google</h3><p>Only with the company’s Google key.</p></div></div>
+        <p class="fsa-panel__body">The search words and the place (“plumber geyser in Vanderbijlpark”). Nothing about your company or your suppliers.</p></section>
+    <section class="fsa-panel"><div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-mail"/></svg></span><div class="fsa-panel__title"><h3>To suppliers</h3><p>What is in the email you send.</p></div></div>
+        <p class="fsa-panel__body">What you need, where, when, and when quotes are due — you see every word before it goes. The budget stays inside your company.</p></section>
+</div>
+
+<section class="fsa-section"><h2>Who may do what</h2><span class="fsa-section__rule"></span></section>
+<section class="fsa-panel fsa-panel--flush">
+    <table class="fsa-table">
+        <thead><tr><th></th><th>Viewer</th><th>Member</th><th>Bookkeeper</th><th>Admin</th></tr></thead>
+        <tbody>
+            <tr><td>Open searches and requests</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Search, shortlist, ask for quotes</td><td></td><td>✓</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Change a request (quotes, award)</td><td></td><td>their own</td><td>✓</td><td>✓</td></tr>
+            <tr><td>What was billed, and purchase orders</td><td></td><td></td><td>✓</td><td>✓</td></tr>
+            <tr><td>Settings and words</td><td></td><td></td><td>✓</td><td>✓</td></tr>
+            <tr><td>The OpenAI and Google keys</td><td></td><td></td><td></td><td>✓</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="fsa-section"><h2>Keys</h2><span class="fsa-section__rule"></span></section>
+<section class="fsa-panel"><div class="fwm-kbd-grid fsa-panel__body">
+    <?php foreach ([['/ or Ctrl K', 'Find a request, a supplier or a search'], ['Ctrl Enter', 'Search (in the box)'], ['n', 'New search'], ['g then r', 'Requests for quotes'], ['g then s', 'Searches'], ['?', 'All the keys']] as [$k, $l]): ?>
+        <div class="fwm-kbd-row"><span><?= $e($l) ?></span><span><?php foreach (explode(' then ', $k) as $i => $part): ?><?= $i ? ' then ' : '' ?><kbd class="fwm-kbd"><?= $e($part) ?></kbd><?php endforeach; ?></span></div>
+    <?php endforeach; ?>
+</div></section>
+<?php include __DIR__ . '/partials/foot.php'; ?>

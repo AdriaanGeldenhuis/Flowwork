@@ -1,6 +1,6 @@
 <?php
 // /admin/suppliers.php — Suppliers: how Suppliers AI searches (ai_settings,
-// read by suppliers_ai/ajax/search.php and the RFQ generators) and the
+// read by SaKit::settings in suppliers_ai/lib — searches and requests for quotes) and the
 // compliance-document rules the CRM enforces (crm_block_expired_suppliers,
 // crm_reminder_days via CrmCompliance::policy).
 require_once __DIR__ . '/lib/AdminBoot.php';

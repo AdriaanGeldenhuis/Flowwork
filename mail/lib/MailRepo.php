@@ -472,6 +472,16 @@ class MailRepo
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $names['crm' . $r['id']] = $r['name'];
             } catch (Throwable $e) { /* ignore */ }
         }
+        // Requests for quotes (Suppliers AI): their titles; a deleted one is left out
+        $rfqIds = [];
+        foreach ($rows as $r) if ($r['linked_type'] === 'rfq') $rfqIds[] = (int)$r['linked_id'];
+        if ($rfqIds) {
+            try {
+                $st = $db->prepare("SELECT id, title FROM sai_requests WHERE company_id = ? AND deleted_at IS NULL AND id IN (" . self::in($rfqIds) . ")");
+                $st->execute(array_merge([$companyId], $rfqIds));
+                foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $names['rfq' . $r['id']] = $r['title'];
+            } catch (Throwable $e) { /* Suppliers AI not set up */ }
+        }
         $out = [];
         $seen = [];
         foreach ($rows as $r) {
@@ -491,6 +501,10 @@ class MailRepo
             }
             $isCrm = in_array($type, ['customer', 'supplier'], true);
             if ($isCrm && !isset($names['crm' . $id])) continue; // other company / deleted
+            if ($type === 'rfq') {
+                if (isset($names['rfq' . $id])) $out[] = ['type' => $type, 'id' => $id, 'label' => 'Quotes: ' . $names['rfq' . $id], 'url' => '/suppliers_ai/request.php?id=' . $id];
+                continue;
+            }
             $url = match ($type) {
                 'customer', 'supplier' => '/crm/account_view.php?id=' . $id,
                 'invoice'     => '/qi/invoice_view.php?id=' . $id,

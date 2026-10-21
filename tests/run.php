@@ -1,8 +1,8 @@
 <?php
 /**
- * Finance, Quotes & Invoices, CRM, Receipts, FlowDrive, Admin, Payroll and Shopping test runner. Each tests/finance/test_*.php,
+ * Finance, Quotes & Invoices, CRM, Receipts, FlowDrive, Admin, Payroll, Shopping and Suppliers AI test runner. Each tests/finance/test_*.php,
  * tests/qi/test_*.php, tests/crm/test_*.php, tests/receipts/test_*.php, tests/flowdrive/test_*.php,
- * tests/admin/test_*.php, tests/payroll/test_*.php and tests/shopping/test_*.php runs in its own PHP
+ * tests/admin/test_*.php, tests/payroll/test_*.php, tests/shopping/test_*.php and tests/suppliers_ai/test_*.php runs in its own PHP
  * subprocess against the flowwork_test database (see tests/db/setup.sh).
  * Transactional tables are reset before every test via tests/db/reset.php.
  *
@@ -11,7 +11,7 @@
 
 $root = __DIR__;
 $filter = $argv[1] ?? '';
-$files = array_merge(glob($root . '/finance/test_*.php') ?: [], glob($root . '/qi/test_*.php') ?: [], glob($root . '/crm/test_*.php') ?: [], glob($root . '/receipts/test_*.php') ?: [], glob($root . '/flowdrive/test_*.php') ?: [], glob($root . '/admin/test_*.php') ?: [], glob($root . '/payroll/test_*.php') ?: [], glob($root . '/shopping/test_*.php') ?: []);
+$files = array_merge(glob($root . '/finance/test_*.php') ?: [], glob($root . '/qi/test_*.php') ?: [], glob($root . '/crm/test_*.php') ?: [], glob($root . '/receipts/test_*.php') ?: [], glob($root . '/flowdrive/test_*.php') ?: [], glob($root . '/admin/test_*.php') ?: [], glob($root . '/payroll/test_*.php') ?: [], glob($root . '/shopping/test_*.php') ?: [], glob($root . '/suppliers_ai/test_*.php') ?: []);
 sort($files);
 if ($filter !== '') {
     $files = array_values(array_filter($files, fn($f) => str_contains(basename($f), $filter)));

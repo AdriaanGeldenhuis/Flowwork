@@ -36,6 +36,8 @@ $tables = [
     // Shopping: lists, their items and trips, links, templates, stores and the price book
     'shopping_actions', 'shopping_candidates', 'shopping_items', 'shopping_sessions', 'shopping_share_tokens', 'shopping_lists',
     'shopping_price_history', 'shopping_templates', 'shopping_store_catalog', 'shopping_stores', 'shopping_preferences',
+    // Suppliers AI: searches, what was found and done, and requests for quotes
+    'ai_actions', 'ai_candidates', 'ai_queries', 'sai_events', 'sai_request_suppliers', 'sai_requests',
 ];
 
 $DB->exec('SET FOREIGN_KEY_CHECKS = 0');
