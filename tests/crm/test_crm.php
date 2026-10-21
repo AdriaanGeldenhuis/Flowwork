@@ -37,6 +37,21 @@ $DB->exec("DELETE FROM company_settings WHERE company_id = $C AND setting_key LI
 Crm::flush();
 CrmFields::flush();
 
+// Accounts are master data (tests/db/reset.php keeps them), so remove the ones this test makes or
+// every run leaves more duplicates behind for the next run's scan.
+$accountMark = (int)$DB->query("SELECT COALESCE(MAX(id), 0) FROM crm_accounts")->fetchColumn();
+register_shutdown_function(function () use ($DB, $C, $accountMark) {
+    $mine = "SELECT id FROM crm_accounts WHERE company_id = $C AND id > $accountMark";
+    try {
+        $DB->exec("DELETE FROM goods_received_notes WHERE po_id IN (SELECT id FROM purchase_orders WHERE supplier_id IN ($mine))");
+        $DB->exec("DELETE FROM purchase_orders WHERE supplier_id IN ($mine)");
+    } catch (PDOException $e) { /* purchasing not installed */ }
+    foreach (['crm_compliance_docs', 'crm_contacts', 'crm_addresses', 'crm_interactions', 'crm_tasks', 'crm_opportunities', 'crm_account_tags'] as $t) {
+        $DB->exec("DELETE FROM `$t` WHERE account_id IN ($mine)");
+    }
+    $DB->exec("DELETE FROM crm_accounts WHERE company_id = $C AND id > $accountMark");
+});
+
 // ------------------------------------------------------------------ schema
 $cols = CrmSchema::columns($DB, 'crm_opportunities');
 assert_true(isset($cols['sort_order'], $cols['contact_id'], $cols['notes']), 'deal columns provisioned');
