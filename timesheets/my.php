@@ -119,8 +119,8 @@ $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 Hello, <span class="fw-finance__greeting-name"><?php echo htmlspecialchars($userName); ?></span>
             </div>
             <div class="fw-finance__controls">
-                <a href="/" class="fw-finance__back-btn" title="Home">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                <a href="/home.php" class="fw-finance__back-btn" title="Flowwork home" aria-label="Flowwork home">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </a>
             </div>
         </header>
@@ -170,6 +170,7 @@ $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </form>
 
             <h2>My Timesheet Entries</h2>
+            <div class="fw-finance__table-wrapper">
             <table class="ts-table">
                 <thead>
                     <tr>
@@ -204,6 +205,7 @@ $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         </div>
         <footer class="fw-finance__footer">
             <span>Timesheets Module v<?php echo ASSET_VERSION; ?></span>

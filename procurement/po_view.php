@@ -120,6 +120,9 @@ $companyName = $company['name'] ?? 'Company';
                 Hello, <span class="fw-finance__greeting-name"><?php echo htmlspecialchars($firstName); ?></span>
             </div>
             <div class="fw-finance__controls">
+                <a href="/home.php" class="fw-finance__back-btn" title="Flowwork home" aria-label="Flowwork home">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
                 <a href="/procurement/po_list.php" class="fw-finance__back-btn" title="Back to PO List">
                     <svg viewBox="0 0 24 24" fill="none">
                         <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -132,6 +135,7 @@ $companyName = $company['name'] ?? 'Company';
         </header>
         <div class="fw-finance__main">
             <h2>Purchase Order: <?php echo htmlspecialchars($po['po_number']); ?></h2>
+            <div class="fw-finance__table-wrapper">
             <table class="po-summary">
                 <tr><th>Supplier:</th><td><?php echo htmlspecialchars($po['supplier_name']); ?></td></tr>
                 <tr><th>Email:</th><td><?php echo htmlspecialchars($po['supplier_email']); ?></td></tr>
@@ -140,7 +144,9 @@ $companyName = $company['name'] ?? 'Company';
                 <tr><th>Total:</th><td>R <?php echo number_format((float)$po['total'], 2); ?></td></tr>
                 <tr><th>Notes:</th><td><?php echo nl2br(htmlspecialchars($po['notes'] ?? '')); ?></td></tr>
             </table>
+            </div>
             <h3>Lines</h3>
+            <div class="fw-finance__table-wrapper">
             <table class="po-lines">
                 <thead>
                     <tr><th>Description</th><th>Qty Ordered</th><th>Qty Received</th><th>Qty Remaining</th><th>Unit</th><th>Unit Price</th><th>Tax %</th><th class="amount">Line Total</th></tr>
@@ -168,6 +174,7 @@ $companyName = $company['name'] ?? 'Company';
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
         </div>
         <footer class="fw-finance__footer">
             <span>Procurement PO View v<?php echo ASSET_VERSION; ?></span>

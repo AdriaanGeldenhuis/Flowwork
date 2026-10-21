@@ -20,6 +20,7 @@ if (isset($_GET['msg'])) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reset Password – Flowwork</title>
+  <?php include __DIR__ . '/../includes/favicon.php'; ?>
   <link rel="stylesheet" href="/shared/auth.css?v=<?= time() ?>">
 </head>
 <body class="fw-auth" data-theme="light">

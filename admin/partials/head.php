@@ -35,13 +35,14 @@ if (!$bare) {
     <meta name="theme-color" content="<?= $fwTheme === 'dark' ? '#0d0a09' : '#f2ece3' ?>">
     <meta name="robots" content="noindex">
     <title><?= $e($pageTitle) ?> · Admin · <?= $e($companyName) ?></title>
+    <?php include __DIR__ . '/../../includes/favicon.php'; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/mail/css/mail.css?v=<?= $adminV('mail/css/mail.css') ?>">
     <link rel="stylesheet" href="/admin/css/admin.css?v=<?= $adminV('admin/css/admin.css') ?>">
 </head>
-<body class="fwm fwa" data-theme="<?= $fwTheme ?>" data-page="<?= $e($page) ?>">
+<body class="fwm fwa" data-mod="admin" data-theme="<?= $fwTheme ?>" data-page="<?= $e($page) ?>">
 <?php include __DIR__ . '/../../mail/partials/icons.php'; ?>
 <?php include __DIR__ . '/../../calendar/partials/icons.php'; ?>
 <?php include __DIR__ . '/../../projects/partials/icons.php'; ?>
@@ -79,7 +80,7 @@ if (!$bare) {
             <button class="icon-btn" id="themeToggle" type="button" aria-label="Switch light or dark theme" data-tip="<?= $fwTheme === 'dark' ? 'Light theme' : 'Dark theme' ?>">
                 <svg class="i"><use href="#<?= $fwTheme === 'dark' ? 'i-sun' : 'i-moon' ?>"/></svg>
             </button>
-            <a class="icon-btn hide-narrow" href="/home.php" aria-label="Flowwork home" data-tip="Home"><svg class="i"><use href="#i-home"/></svg></a>
+            <a class="icon-btn" href="/home.php" aria-label="Flowwork home" data-tip="Home"><svg class="i"><use href="#i-home"/></svg></a>
             <button class="icon-btn" id="kebabBtn" type="button" aria-label="Menu" aria-haspopup="menu" aria-expanded="false" data-tip="Menu" data-tip-pos="left"><svg class="i"><use href="#i-more-v"/></svg></button>
         </div>
     </header>

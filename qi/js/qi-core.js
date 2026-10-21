@@ -294,6 +294,7 @@
     });
     const kebab = $('#kebabBtn');
     if (kebab) kebab.addEventListener('click', () => {
+      if (activePop && activePop.anchor === kebab) return closePop();
       popover(kebab, `
         <a class="fwm-pop__item" data-v="q" href="/qi/edit.php?type=quote">${icon('iq-quote')}New quote</a>
         <a class="fwm-pop__item" data-v="i" href="/qi/edit.php?type=invoice">${icon('iq-invoice')}New invoice</a>

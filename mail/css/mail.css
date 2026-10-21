@@ -36,6 +36,12 @@
   --ink-3: #85766b;
   --ink-4: #b3a597;
 
+  /* Wax seal (logo tile) and the colour accents derive from; see "Module colours" */
+  --mod: #7a1f30;
+  --seal-hi: #b24660;
+  --seal: #7a1f30;
+  --seal-lo: #470f1d;
+
   --accent: #7a1f30;
   --accent-hover: #63182a;
   --accent-ink: #7a1f30;
@@ -147,6 +153,60 @@
   color-scheme: dark;
 }
 
+/* ---------- Module colours -------------------------------------------------
+   Every module wears its own colour, the same one as its tile on the home
+   page (home.php $modules): <body class="fwm" data-mod="receipts">. The
+   accents, buttons, ambient light and the wax seal all follow --mod. Pages
+   without data-mod (home, sign-in hand-overs) keep Flowwork's bordeaux. */
+.fwm[data-mod="projects"]     { --mod: #7a1f30; }
+.fwm[data-mod="crm"]          { --mod: #2f6b6a; }
+.fwm[data-mod="qi"]           { --mod: #9a7136; }
+.fwm[data-mod="finances"]     { --mod: #2f7457; }
+.fwm[data-mod="receipts"]     { --mod: #6b3a6e; }
+.fwm[data-mod="payroll"]      { --mod: #a4552c; }
+.fwm[data-mod="suppliers_ai"] { --mod: #3d5a8a; }
+.fwm[data-mod="shopping"]     { --mod: #6f7a35; }
+.fwm[data-mod="mail"]         { --mod: #9b3048; }
+.fwm[data-mod="calendar"]     { --mod: #2f5c84; }
+.fwm[data-mod="drive"]        { --mod: #4f5d6b; }
+.fwm[data-mod="admin"]        { --mod: #5a4636; }
+
+.fwm[data-mod] {
+  --seal-hi: color-mix(in srgb, var(--mod) 62%, #fff);
+  --seal: var(--mod);
+  --seal-lo: color-mix(in srgb, var(--mod) 58%, #000);
+
+  --accent: var(--mod);
+  --accent-hover: color-mix(in srgb, var(--mod) 84%, #000);
+  --accent-ink: var(--mod);
+  --accent-solid: var(--mod);
+  --accent-grad: linear-gradient(140deg, color-mix(in srgb, var(--mod) 78%, #fff) 0%, var(--mod) 46%, color-mix(in srgb, var(--mod) 62%, #000) 100%);
+  --accent-soft: color-mix(in srgb, var(--mod) 7.5%, transparent);
+  --accent-softer: color-mix(in srgb, var(--mod) 4.2%, transparent);
+  --accent-ring: color-mix(in srgb, var(--mod) 30%, transparent);
+
+  --bloom-2: color-mix(in srgb, var(--mod) 12%, transparent);
+  --bloom-3: color-mix(in srgb, color-mix(in srgb, var(--mod) 18%, #fff) 55%, transparent);
+  --hover: color-mix(in srgb, var(--mod) 5%, transparent);
+  --press: color-mix(in srgb, var(--mod) 9.5%, transparent);
+}
+.fwm[data-mod][data-theme="dark"] {
+  --accent: color-mix(in srgb, var(--mod) 42%, #fff);
+  --accent-hover: color-mix(in srgb, var(--mod) 32%, #fff);
+  --accent-ink: color-mix(in srgb, var(--mod) 38%, #fff);
+  --accent-solid: color-mix(in srgb, var(--mod) 94%, #fff);
+  --accent-grad: linear-gradient(140deg, color-mix(in srgb, var(--mod) 80%, #fff) 0%, color-mix(in srgb, var(--mod) 94%, #fff) 46%, color-mix(in srgb, var(--mod) 62%, #000) 100%);
+  --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 6%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 38%, transparent);
+
+  --bloom-1: color-mix(in srgb, var(--mod) 34%, transparent);
+  --bloom-2: rgba(176, 141, 87, 0.12);
+  --bloom-3: color-mix(in srgb, color-mix(in srgb, var(--mod) 60%, #000) 30%, transparent);
+  --hover: rgba(240, 210, 170, 0.05);
+  --press: rgba(240, 210, 170, 0.09);
+}
+
 /* ---------- Base ----------------------------------------------------------- */
 html, body.fwm { height: 100%; }
 body.fwm {
@@ -220,7 +280,7 @@ body.fwm::after {
 .fwm .btn svg.i { color: var(--gold-ink); }
 .fwm .btn--primary {
   position: relative; overflow: hidden; border-color: transparent; color: var(--on-accent); background: var(--accent-grad);
-  box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.24), inset 0 0 0 1px rgba(216, 189, 138, 0.28), 0 8px 20px -10px rgba(78, 17, 32, 0.75);
+  box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.24), inset 0 0 0 1px rgba(216, 189, 138, 0.28), 0 8px 20px -10px color-mix(in srgb, var(--seal-lo) 75%, transparent);
 }
 .fwm .btn--primary svg.i { color: var(--gold-bright); }
 .fwm .btn--primary::after {
@@ -228,7 +288,7 @@ body.fwm::after {
   background: linear-gradient(90deg, transparent, rgba(255, 240, 220, 0.28), transparent); transition: left 0.6s var(--ease); pointer-events: none;
 }
 .fwm .btn--primary:hover { color: var(--on-accent); border-color: transparent; background: var(--accent-grad); filter: brightness(1.06);
-  box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.26), inset 0 0 0 1px rgba(216, 189, 138, 0.42), 0 12px 26px -12px rgba(78, 17, 32, 0.85); }
+  box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.26), inset 0 0 0 1px rgba(216, 189, 138, 0.42), 0 12px 26px -12px color-mix(in srgb, var(--seal-lo) 85%, transparent); }
 .fwm .btn--primary:hover::after { left: 120%; }
 .fwm .btn--ghost { background: transparent; border-color: transparent; box-shadow: none; }
 .fwm .btn--ghost:hover { background: var(--hover); border-color: transparent; box-shadow: none; }
@@ -309,8 +369,8 @@ body.fwm::after {
 /* Wax seal */
 .fwm-brand__tile {
   width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--gold-bright); position: relative;
-  background: radial-gradient(circle at 34% 28%, #b24660 0%, #7a1f30 46%, #470f1d 100%);
-  box-shadow: inset 0 1px 1px rgba(255, 220, 200, 0.35), inset 0 -2px 4px rgba(30, 0, 8, 0.45), 0 0 0 1px rgba(71, 15, 29, 0.35), 0 8px 18px -8px rgba(71, 15, 29, 0.8);
+  background: radial-gradient(circle at 34% 28%, var(--seal-hi) 0%, var(--seal) 46%, var(--seal-lo) 100%);
+  box-shadow: inset 0 1px 1px rgba(255, 220, 200, 0.35), inset 0 -2px 4px rgba(30, 0, 8, 0.45), 0 0 0 1px color-mix(in srgb, var(--seal-lo) 35%, transparent), 0 8px 18px -8px color-mix(in srgb, var(--seal-lo) 80%, transparent);
   transition: transform var(--t);
 }
 .fwm-brand__tile::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; border: 1px solid rgba(234, 210, 162, 0.42); }
@@ -374,7 +434,7 @@ body.fwm::after {
   position: relative; overflow: hidden; display: flex; align-items: center; gap: 11px; height: 50px; padding: 0 26px 0 18px; margin: 4px 0 18px;
   border-radius: 16px; border: 0; cursor: pointer; font-weight: 600; font-size: 14px; letter-spacing: 0.02em;
   background: var(--accent-grad); color: var(--on-accent); align-self: flex-start;
-  box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.26), inset 0 0 0 1px rgba(216, 189, 138, 0.35), 0 14px 30px -14px rgba(78, 17, 32, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.26), inset 0 0 0 1px rgba(216, 189, 138, 0.35), 0 14px 30px -14px color-mix(in srgb, var(--seal-lo) 90%, transparent);
   transition: transform var(--t-fast), box-shadow var(--t), filter var(--t-fast);
 }
 .fwm-compose-btn svg.i { color: var(--gold-bright); }
@@ -382,7 +442,7 @@ body.fwm::after {
   content: ''; position: absolute; top: -30%; bottom: -30%; left: -60%; width: 42%; transform: skewX(-22deg);
   background: linear-gradient(90deg, transparent, rgba(255, 240, 220, 0.32), transparent); transition: left 0.7s var(--ease); pointer-events: none;
 }
-.fwm-compose-btn:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.3), inset 0 0 0 1px rgba(216, 189, 138, 0.5), 0 18px 34px -14px rgba(78, 17, 32, 0.95); }
+.fwm-compose-btn:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.3), inset 0 0 0 1px rgba(216, 189, 138, 0.5), 0 18px 34px -14px color-mix(in srgb, var(--seal-lo) 95%, transparent); }
 .fwm-compose-btn:hover::after { left: 130%; }
 .fwm-compose-btn:active { transform: translateY(0); }
 .fwm-side__scroll { flex: 1; min-height: 0; margin: 0 -6px 0 -4px; padding: 0 6px 0 4px; }
@@ -495,7 +555,7 @@ body.fwm::after {
   box-shadow: inset 0 0 0 1px rgba(255, 240, 225, 0.08), 0 4px 12px -6px rgba(0, 0, 0, 0.8);
 }
 .fwm-avatar--lg { width: 42px; height: 42px; font-size: 14px; }
-.fwm-avatar--me, .fwm[data-theme="dark"] .fwm-avatar--me { color: var(--gold-bright); background: var(--accent-grad); box-shadow: inset 0 0 0 1px rgba(216, 189, 138, 0.4), 0 4px 10px -6px rgba(78, 17, 32, 0.8); }
+.fwm-avatar--me, .fwm[data-theme="dark"] .fwm-avatar--me { color: var(--gold-bright); background: var(--accent-grad); box-shadow: inset 0 0 0 1px rgba(216, 189, 138, 0.4), 0 4px 10px -6px color-mix(in srgb, var(--seal-lo) 80%, transparent); }
 .fwm-row__lead .fwm-check { position: absolute; inset: 10px; opacity: 0; transition: opacity var(--t-fast); }
 .fwm-row:hover .fwm-row__lead .fwm-avatar, .fwm-row.is-selected .fwm-row__lead .fwm-avatar, .fwm-threads.is-selecting .fwm-row__lead .fwm-avatar { opacity: 0; }
 .fwm-row:hover .fwm-row__lead .fwm-check, .fwm-row.is-selected .fwm-row__lead .fwm-check, .fwm-threads.is-selecting .fwm-row__lead .fwm-check { opacity: 1; }
@@ -529,11 +589,11 @@ body.fwm::after {
 }
 .fwm-tag {
   display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 9px; border-radius: var(--r-pill); font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
-  color: color-mix(in srgb, var(--c, #7a1f30) 78%, var(--ink)); background: color-mix(in srgb, var(--c, #7a1f30) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #7a1f30) 22%, transparent);
+  color: color-mix(in srgb, var(--c, var(--seal)) 78%, var(--ink)); background: color-mix(in srgb, var(--c, var(--seal)) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--seal)) 22%, transparent);
   white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
 }
-.fwm[data-theme="dark"] .fwm-tag { color: color-mix(in srgb, var(--c, #e3a3ae) 58%, #fff); background: color-mix(in srgb, var(--c, #e3a3ae) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #e3a3ae) 28%, transparent); }
+.fwm[data-theme="dark"] .fwm-tag { color: color-mix(in srgb, var(--c, var(--accent)) 58%, #fff); background: color-mix(in srgb, var(--c, var(--accent)) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--accent)) 28%, transparent); }
 .fwm-tag--plain { --c: #85766b; }
 .fwm-tag--warn, .fwm[data-theme="dark"] .fwm-tag--warn { color: var(--warning); background: var(--warning-soft); box-shadow: none; }
 .fwm-tag--danger, .fwm[data-theme="dark"] .fwm-tag--danger { color: var(--danger); background: var(--danger-soft); box-shadow: none; }
@@ -578,8 +638,8 @@ body.fwm::after {
 .fwm[data-theme="dark"] .fwm-art .a-paper-2 { fill: #241d1a; }
 .fwm-art .a-fold { fill: none; stroke: var(--gold-line); stroke-width: 1; }
 .fwm-art .a-lines { fill: none; stroke: var(--line-strong); stroke-width: 2; stroke-linecap: round; }
-.fwm-art .a-seal { fill: #7a1f30; }
-.fwm[data-theme="dark"] .fwm-art .a-seal { fill: #8e2840; }
+.fwm-art .a-seal { fill: var(--seal); }
+.fwm[data-theme="dark"] .fwm-art .a-seal { fill: var(--accent-solid); }
 .fwm-art .a-seal-hi { fill: rgba(255, 220, 200, 0.22); }
 .fwm-art .a-seal-ring { fill: none; stroke: rgba(234, 210, 162, 0.55); stroke-width: 0.9; }
 .fwm-art .a-gold { fill: var(--gold); }
@@ -739,7 +799,7 @@ body.fwm::after {
 .fwm-att__bar { position: absolute; left: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, var(--gold), var(--accent)); transition: width 0.2s; }
 .fwm-composer__foot { display: flex; align-items: center; gap: 4px; padding: 11px 14px 13px 16px; flex: 0 0 auto; position: relative; background: var(--glass-strong); }
 .fwm-composer__foot::before { content: ''; position: absolute; left: 14px; right: 14px; top: 0; height: 1px; background: var(--hairline); }
-.fwm-sendgroup { display: inline-flex; filter: drop-shadow(0 8px 14px rgba(78, 17, 32, 0.32)); }
+.fwm-sendgroup { display: inline-flex; filter: drop-shadow(0 8px 14px color-mix(in srgb, var(--seal-lo) 32%, transparent)); }
 .fwm-sendgroup .btn--primary { box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.24), inset 0 0 0 1px rgba(216, 189, 138, 0.3); }
 .fwm-sendgroup .btn--primary:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill); padding: 0 20px 0 22px; letter-spacing: 0.03em; }
 .fwm-sendgroup .btn--primary:last-child { border-radius: 0 var(--r-pill) var(--r-pill) 0; padding: 0 10px; border-left: 1px solid rgba(234, 210, 162, 0.3); }
@@ -988,7 +1048,7 @@ body.fwm::after {
   .fwm-fab {
     position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 80; height: 56px; padding: 0 24px 0 20px; border-radius: 20px;
     display: inline-flex; align-items: center; gap: 10px; border: 0; background: var(--accent-grad); color: var(--on-accent); font-weight: 600; font-size: 14.5px; letter-spacing: 0.02em;
-    box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.26), inset 0 0 0 1px rgba(216, 189, 138, 0.38), 0 16px 32px -12px rgba(78, 17, 32, 0.85);
+    box-shadow: inset 0 1px 0 rgba(255, 235, 215, 0.26), inset 0 0 0 1px rgba(216, 189, 138, 0.38), 0 16px 32px -12px color-mix(in srgb, var(--seal-lo) 85%, transparent);
   }
   .fwm-fab svg.i { color: var(--gold-bright); }
   .fwm.is-reading .fwm-fab { display: none; }
@@ -1016,6 +1076,9 @@ body.fwm::after {
 @media (min-width: 821px) { .fwm-fab { display: none; } .fwm-scrim { display: none; } }
 @media (max-width: 420px) {
   .fwm-reader__bar .icon-btn { width: 32px; }
+  /* Small phones: the top bar keeps the drawer, seal, search, Home and menu in one row */
+  .fwm-top { gap: 4px; }
+  .fwm-top .icon-btn { width: 34px; }
 }
 
 @media print {
