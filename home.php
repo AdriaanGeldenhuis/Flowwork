@@ -159,6 +159,21 @@ try {
 } catch (Throwable $ex) {
     error_log('[home] shopping: ' . $ex->getMessage());
 }
+$suppliersLive = '';
+$suppliersAlert = false;
+try {
+    require_once __DIR__ . '/suppliers_ai/lib/SaKit.php';
+    require_once __DIR__ . '/suppliers_ai/lib/SaSchema.php';
+    require_once __DIR__ . '/suppliers_ai/lib/SaRequests.php';
+    SaSchema::ensure($DB);
+    $sa = SaRequests::counts($DB, $activeCompanyId, $userId);
+    if ($sa['to_compare']) $suppliersLive = $sa['to_compare'] . ($sa['to_compare'] === 1 ? ' request has' : ' requests have') . ' quotes to compare';
+    elseif ($sa['open']) $suppliersLive = $sa['open'] . ' waiting for quotes';
+    elseif ($sa['drafts']) $suppliersLive = $sa['drafts'] . ' not sent yet';
+    $suppliersAlert = $sa['late'] > 0;
+} catch (Throwable $ex) {
+    error_log('[home] suppliers ai: ' . $ex->getMessage());
+}
 $mailLive = '';
 if ($mail['ok']) {
     $mailLive = $mail['accounts'] === 0 ? 'Connect your mailbox' : ($mail['unread'] ? $mail['unread'] . ' unread' : 'Inbox at rest');
@@ -171,7 +186,7 @@ $modules = [
     ['key' => 'finances', 'name' => 'Finance', 'tag' => 'Accounting', 'desc' => 'Ledgers, banking, VAT and reports', 'href' => '/finances/', 'icon' => 'ih-coins', 'c' => '#2f7457', 'live' => '', 'kw' => 'accounting ledger bank vat reports money'],
     ['key' => 'receipts', 'name' => 'Receipts', 'tag' => 'AI', 'desc' => 'Scan, read and file every receipt', 'href' => '/receipts/', 'icon' => 'i-receipt', 'c' => '#6b3a6e', 'live' => $receiptsLive, 'alert' => $receiptsAlert, 'kw' => 'expenses scan slips ai'],
     ['key' => 'payroll', 'name' => 'Payroll', 'tag' => '', 'desc' => 'Employees, wages and pay runs', 'href' => '/payroll/', 'icon' => 'i-wallet', 'c' => '#a4552c', 'live' => '', 'kw' => 'wages salaries employees timesheets'],
-    ['key' => 'suppliers_ai', 'name' => 'Suppliers AI', 'tag' => 'AI', 'desc' => 'AI-powered supplier insights', 'href' => '/suppliers_ai/', 'icon' => 'i-sparkle', 'c' => '#3d5a8a', 'live' => '', 'kw' => 'ai insights suppliers'],
+    ['key' => 'suppliers_ai', 'name' => 'Suppliers AI', 'tag' => 'AI', 'desc' => 'Find suppliers, ask for quotes, choose the best', 'href' => '/suppliers_ai/', 'icon' => 'i-sparkle', 'c' => '#3d5a8a', 'live' => $suppliersLive, 'alert' => $suppliersAlert, 'kw' => 'ai suppliers contractors quotes rfq request for quotation find'],
     ['key' => 'shopping', 'name' => 'Shopping', 'tag' => '', 'desc' => 'Lists, the trolley and the price book', 'href' => '/shopping/', 'icon' => 'ih-cart', 'c' => '#6f7a35', 'live' => $shoppingLive, 'alert' => false, 'kw' => 'shopping list procurement supplies buy order groceries prices'],
     ['key' => 'mail', 'name' => 'Mail', 'tag' => '', 'desc' => 'Your business correspondence', 'href' => '/mail/', 'icon' => 'i-mail', 'c' => '#9b3048', 'live' => $mailLive, 'alert' => false, 'kw' => 'email inbox messages'],
     ['key' => 'calendar', 'name' => 'Calendar', 'tag' => '', 'desc' => 'Schedule, meetings and reminders', 'href' => '/calendar/', 'icon' => 'i-calendar', 'c' => '#2f5c84', 'live' => $calendarLive, 'alert' => false, 'kw' => 'events schedule meetings agenda'],
@@ -185,6 +200,7 @@ $actions = [
     ['name' => 'New quote', 'href' => '/qi/quote_new.php', 'icon' => 'i-file-text', 'kw' => 'quotation estimate'],
     ['name' => 'New invoice', 'href' => '/qi/invoice_new.php', 'icon' => 'i-receipt', 'kw' => 'bill charge'],
     ['name' => 'Scan receipt', 'href' => '/receipts/upload.php', 'icon' => 'i-upload', 'kw' => 'upload expense slip'],
+    ['name' => 'Find a supplier', 'href' => '/suppliers_ai/#find', 'icon' => 'i-sparkle', 'kw' => 'supplier contractor plumber electrician quote rfq'],
 ];
 
 // Everything the "Where to?" box can jump to

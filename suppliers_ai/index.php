@@ -1,343 +1,170 @@
 <?php
-// /suppliers_ai/index.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /suppliers_ai/index.php — Find suppliers: say what you need in plain words
+// (it is read as you type: the trade, where, how many, when, the budget and
+// requirements), and Suppliers AI finds who can do it — your own suppliers
+// first (with why), businesses near the site on Google, and ideas from AI.
+// Shortlist the right ones and ask them all for quotes in one go.
+// ?search=ID opens a past search; ?q=…&go=1 searches straight away.
+require_once __DIR__ . '/lib/SaBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
+$st = $DB->prepare("SELECT first_name FROM users WHERE id = ?");
+$st->execute([$SA_USER_ID]);
+$first = trim((string)$st->fetchColumn());
+$h = (int)date('G');
+$greet = $h < 12 ? 'Good morning' : ($h < 18 ? 'Good afternoon' : 'Good evening');
+$counts = SaRequests::counts($DB, $SA_COMPANY_ID, $SA_USER_ID);
+$st = $DB->prepare("SELECT COUNT(*) FROM crm_accounts WHERE company_id = ? AND type = 'supplier' AND deleted_at IS NULL AND status IN ('active', 'prospect')");
+$st->execute([$SA_COMPANY_ID]);
+$supplierCount = (int)$st->fetchColumn();
+$st = $DB->prepare("SELECT COUNT(*) FROM ai_queries WHERE company_id = ? AND created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
+$st->execute([$SA_COMPANY_ID]);
+$monthSearches = (int)$st->fetchColumn();
+$recent = SaSearch::history($DB, $SA_COMPANY_ID, $SA_USER_ID, ['mine' => true])['rows'];
+$recent = array_slice($recent, 0, 6);
+$waiting = array_slice(SaRequests::list($DB, $SA_COMPANY_ID, $SA_USER_ID, ['status' => 'active']), 0, 4);
+$s = $SA_SETTINGS;
 
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-// Fetch user info
-$stmt = $DB->prepare("SELECT first_name, role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-$firstName = $user['first_name'] ?? 'User';
-$userRole = $user['role'] ?? 'member';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch AI settings
-$stmt = $DB->prepare("SELECT * FROM ai_settings WHERE company_id = ?");
-$stmt->execute([$companyId]);
-$aiSettings = $stmt->fetch();
-if (!$aiSettings) {
-    // Create default settings with API key
-    $defaultApiKeys = json_encode([
-        'openai_api_key' => 'OPENAI_KEY_REMOVED',
-        'openai_model' => 'gpt-4o-mini',
-        'openai_max_tokens' => 500,
-        'openai_enabled' => 1
-    ]);
-    
-    $stmt = $DB->prepare("
-        INSERT INTO ai_settings (company_id, default_radius_km, min_score_threshold, require_compliance, block_expired_compliance, rfq_max_recipients, daily_search_cap, per_hour_cap, api_keys_json, created_at)
-        VALUES (?, 25.00, 0.55, 1, 1, 8, 100, 20, ?, NOW())
-    ");
-    $stmt->execute([$companyId, $defaultApiKeys]);
-    $aiSettings = [
-        'default_radius_km' => 25.00,
-        'min_score_threshold' => 0.55,
-        'require_compliance' => 1,
-        'block_expired_compliance' => 1,
-        'rfq_max_recipients' => 8,
-        'per_hour_cap' => 20
-    ];
-}
-
-// Get recent search count
-$stmt = $DB->prepare("
-    SELECT COUNT(*) as cnt 
-    FROM ai_queries 
-    WHERE company_id = ? 
-    AND user_id = ? 
-    AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
-");
-$stmt->execute([$companyId, $userId]);
-$recentSearches = $stmt->fetch()['cnt'] ?? 0;
-$searchesRemaining = max(0, ($aiSettings['per_hour_cap'] ?? 20) - $recentSearches);
-
-// Get stats
-$stmt = $DB->prepare("
-    SELECT 
-        COUNT(DISTINCT query_id) as total_searches,
-        COUNT(*) as total_results,
-        COUNT(DISTINCT CASE WHEN account_id IS NOT NULL THEN account_id END) as linked_to_crm
-    FROM ai_candidates 
-    WHERE company_id = ? 
-    AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-");
-$stmt->execute([$companyId]);
-$stats = $stmt->fetch();
+$page = 'index';
+$pageTitle = 'Find suppliers';
+$pageScripts = ['find'];
+$pageBoot = ['open_search' => (int)($_GET['search'] ?? 0), 'q' => SaKit::text($_GET['q'] ?? '', 500), 'go' => !empty($_GET['go'])];
+include __DIR__ . '/partials/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Suppliers AI – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-suppliers-ai">
-    <div class="fw-suppliers-ai__container">
-            
-            <!-- Header -->
-            <header class="fw-suppliers-ai__header">
-                <div class="fw-suppliers-ai__brand">
-                    <div class="fw-suppliers-ai__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <line x1="12" y1="22.08" x2="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div class="fw-suppliers-ai__brand-text">
-                        <div class="fw-suppliers-ai__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-suppliers-ai__app-name">Suppliers AI</div>
-                    </div>
-                </div>
+<header class="fsa-head">
+    <div class="fsa-head__text">
+        <p class="fsa-eyebrow">Suppliers AI <i>◆</i> <?= $e(date('l j F')) ?></p>
+        <h1><?= $e($greet) ?><?= $first !== '' ? ', <em>' . $e($first) . '</em>' : '' ?></h1>
+        <p><?php if ($counts['to_compare']): ?>
+            <b><?= (int)$counts['to_compare'] ?></b> <?= $counts['to_compare'] === 1 ? 'request has' : 'requests have' ?> quotes in to <a href="/suppliers_ai/requests.php">compare</a><?= $counts['late'] ? ' — <b class="fsa-late">' . (int)$counts['late'] . ' past the date</b>' : '' ?>.
+        <?php elseif ($counts['open']): ?>
+            <b><?= (int)$counts['open'] ?></b> <?= $counts['open'] === 1 ? 'request is' : 'requests are' ?> <a href="/suppliers_ai/requests.php">waiting for quotes</a>.
+        <?php endif; ?>
+        Say what you need in your own words — your own suppliers come first, with the reasons they fit.</p>
+    </div>
+    <div class="fsa-head__actions">
+        <a class="btn" href="/suppliers_ai/requests.php"><svg class="i"><use href="#isa-quote"/></svg>Requests for quotes</a>
+    </div>
+</header>
 
-                <div class="fw-suppliers-ai__greeting">
-                    Hello, <span class="fw-suppliers-ai__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-
-                <div class="fw-suppliers-ai__controls">
-                    <a href="/" class="fw-suppliers-ai__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-suppliers-ai__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-suppliers-ai__theme-icon fw-suppliers-ai__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-suppliers-ai__theme-icon fw-suppliers-ai__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-suppliers-ai__menu-wrapper">
-                        <button class="fw-suppliers-ai__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-suppliers-ai__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__kebab-item">Search History</a>
-                            <?php if (in_array($userRole, ['admin', 'bookkeeper'])): ?>
-                            <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__kebab-item">Settings</a>
-                            <?php endif; ?>
-                            <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__kebab-item">Help</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <main class="fw-suppliers-ai__main">
-            <div class="fw-suppliers-ai__content">
-
-            <div class="fw-suppliers-ai__page-header">
-                <h1 class="fw-suppliers-ai__page-title">AI Supplier Search</h1>
-                <p class="fw-suppliers-ai__page-subtitle">
-                    Natural language search: "Need 3 plumbers in Vanderbijlpark for geysers tomorrow under R5k"
-                </p>
+<?php if ($SA_CAPS['search']): ?>
+<section class="fsa-composer" id="find" aria-labelledby="findTitle">
+    <span class="fsa-composer__art" aria-hidden="true"><svg class="i"><use href="#isa-seal"/></svg></span>
+    <div class="fsa-composer__body">
+        <div class="fsa-composer__head">
+            <h2 id="findTitle">What do you need?</h2>
+            <button class="fsa-link" type="button" id="exampleBtn">Try an example</button>
+        </div>
+        <label class="sr-only" for="findText">What you need, in your own words</label>
+        <textarea class="fsa-composer__text" id="findText" rows="2" maxlength="500" spellcheck="true"
+                  placeholder="Need 3 plumbers in Vanderbijlpark for geysers tomorrow, under R5k, with COC"></textarea>
+        <div class="fsa-reading" id="reading" aria-live="polite" hidden></div>
+        <div class="fsa-composer__foot">
+            <div class="fsa-where">
+                <label class="fsa-where__field" title="Where the work or delivery is">
+                    <svg class="i i--sm"><use href="#i-pin"/></svg>
+                    <span class="sr-only">Where</span>
+                    <input id="findWhere" maxlength="160" autocomplete="off" placeholder="<?= $e($SA_COMPANY['town'] ?: 'Town or area') ?>">
+                </label>
+                <label class="fsa-where__radius">
+                    <span class="sr-only">Within</span>
+                    <select class="select" id="findRadius">
+                        <?php foreach ([5, 10, 25, 50, 100, 250] as $km): ?>
+                            <option value="<?= $km ?>"<?= (int)round($s['radius_km']) === $km ? ' selected' : '' ?>>within <?= $km ?> km</option>
+                        <?php endforeach; ?>
+                        <?php if (!in_array((int)round($s['radius_km']), [5, 10, 25, 50, 100, 250], true)): ?>
+                            <option value="<?= $e($s['radius_km']) ?>" selected>within <?= $e(rtrim(rtrim(number_format($s['radius_km'], 1), '0'), '.')) ?> km</option>
+                        <?php endif; ?>
+                    </select>
+                </label>
             </div>
-
-            <!-- View Tabs -->
-            <div class="fw-suppliers-ai__view-tabs">
-                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">Search</a>
-                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab">History</a>
-                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab">Help</a>
-                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab">Settings</a>
+            <div class="fsa-sources" role="group" aria-label="Look in">
+                <label class="fsa-source"><input type="checkbox" id="srcCrm" checked><span><svg class="i i--sm"><use href="#i-building"/></svg>Your suppliers</span></label>
+                <label class="fsa-source<?= $s['google_ready'] ? '' : ' is-off' ?>" title="<?= $s['google_ready'] ? 'Businesses near the place, from Google' : 'Needs a Google key — Settings' ?>">
+                    <input type="checkbox" id="srcGoogle"<?= $s['google_ready'] ? ' checked' : ' disabled' ?>><span><svg class="i i--sm"><use href="#i-globe"/></svg>Google</span></label>
+                <label class="fsa-source<?= $s['ai_ready'] ? '' : ' is-off' ?>" title="<?= $s['ai_ready'] ? 'AI reads the request and suggests kinds of business to look at' : 'Needs the OpenAI key switched on — Settings' ?>">
+                    <input type="checkbox" id="srcAi"<?= $s['ai_ready'] ? ' checked' : ' disabled' ?>><span><svg class="i i--sm"><use href="#i-sparkle"/></svg>AI ideas</span></label>
+                <label class="fsa-source" title="Only suppliers whose compliance documents are in order"><input type="checkbox" id="srcCompliant"<?= $s['compliant_only'] ? ' checked' : '' ?>><span><svg class="i i--sm"><use href="#i-shield"/></svg>Documents in order</span></label>
             </div>
+            <button class="btn btn--primary" type="button" id="findGo"><svg class="i"><use href="#i-search"/></svg><span>Find suppliers</span></button>
+        </div>
+    </div>
+</section>
+<?php else: ?>
+<div class="fwm-banner"><svg class="i"><use href="#i-eye"/></svg><div class="fwm-banner__body">You can open past searches and requests. Searching for new suppliers is for members, bookkeepers and admins.</div></div>
+<?php endif; ?>
 
-            <!-- Stats Bar -->
-            <div class="fw-suppliers-ai__stats">
-                <div class="fw-suppliers-ai__stat-card">
-                    <div class="fw-suppliers-ai__stat-value"><?= number_format($stats['total_searches'] ?? 0) ?></div>
-                    <div class="fw-suppliers-ai__stat-label">Searches (30d)</div>
-                </div>
-                <div class="fw-suppliers-ai__stat-card">
-                    <div class="fw-suppliers-ai__stat-value"><?= number_format($stats['total_results'] ?? 0) ?></div>
-                    <div class="fw-suppliers-ai__stat-label">Suppliers Found</div>
-                </div>
-                <div class="fw-suppliers-ai__stat-card">
-                    <div class="fw-suppliers-ai__stat-value"><?= number_format($stats['linked_to_crm'] ?? 0) ?></div>
-                    <div class="fw-suppliers-ai__stat-label">Added to CRM</div>
-                </div>
-                <div class="fw-suppliers-ai__stat-card">
-                    <div class="fw-suppliers-ai__stat-value"><?= $searchesRemaining ?></div>
-                    <div class="fw-suppliers-ai__stat-label">Searches Left (1h)</div>
-                </div>
-            </div>
+<section class="fsa-results" id="results" aria-live="polite" hidden></section>
 
-            <!-- Search Panel -->
-            <div class="fw-suppliers-ai__search-panel">
-                <div class="fw-suppliers-ai__search-box">
-                    <textarea 
-                        id="nlSearchInput" 
-                        class="fw-suppliers-ai__nl-input" 
-                        placeholder="Describe what you need... (e.g., 'Need 2 electricians in Johannesburg with COC, available next week')"
-                        rows="3"
-                    ></textarea>
-                    <button id="searchBtn" class="fw-suppliers-ai__search-btn">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
-                            <path d="m21 21-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        Search
-                    </button>
-                </div>
-
-                <!-- Advanced Filters -->
-                <details class="fw-suppliers-ai__filters">
-                    <summary class="fw-suppliers-ai__filters-toggle">Advanced Filters</summary>
-                    <div class="fw-suppliers-ai__filters-grid">
-                        <div class="fw-suppliers-ai__filter-group">
-                            <label class="fw-suppliers-ai__label">Radius (km)</label>
-                            <input type="number" id="filterRadius" class="fw-suppliers-ai__input" value="<?= $aiSettings['default_radius_km'] ?>" min="1" max="500">
-                        </div>
-                        <div class="fw-suppliers-ai__filter-group">
-                            <label class="fw-suppliers-ai__label">Min Score</label>
-                            <input type="number" id="filterMinScore" class="fw-suppliers-ai__input" value="<?= $aiSettings['min_score_threshold'] ?>" min="0" max="1" step="0.05">
-                        </div>
-                        <div class="fw-suppliers-ai__filter-group">
-                            <label class="fw-suppliers-ai__label">Compliance</label>
-                            <select id="filterCompliance" class="fw-suppliers-ai__input">
-                                <option value="" selected>Any</option>
-                                <option value="valid">Valid Only</option>
-                                <option value="expiring">Expiring Soon</option>
-                                <option value="expired">Expired</option>
-                                <option value="missing">Missing</option>
-                            </select>
-                        </div>
-                        <div class="fw-suppliers-ai__filter-group">
-                            <label class="fw-suppliers-ai__label">Source</label>
-                            <select id="filterSource" class="fw-suppliers-ai__input">
-                                <option value="">All Sources</option>
-                                <option value="crm">CRM Only</option>
-                                <option value="external">External APIs</option>
-                                <option value="history">Past Winners</option>
-                            </select>
-                        </div>
-                    </div>
-                </details>
-            </div>
-
-            <!-- Results Area -->
-            <div class="fw-suppliers-ai__results" id="resultsArea" style="display:none;">
-                <div class="fw-suppliers-ai__results-header">
-                    <h3 class="fw-suppliers-ai__results-title">
-                        <span id="resultsCount">0</span> Suppliers Found
-                    </h3>
-                    <div class="fw-suppliers-ai__results-actions">
-                        <button id="clearResultsBtn" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary">Clear</button>
-                        <button id="shortlistBtn" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--primary" disabled>
-                            Shortlist (<span id="shortlistCount">0</span>)
-                        </button>
-                    </div>
-                </div>
-
-                <div class="fw-suppliers-ai__results-list" id="resultsList">
-                    <!-- Dynamic cards inserted here -->
-                </div>
-            </div>
-
-            </div>
-            </main>
-
-            <!-- Footer -->
-            <footer class="fw-suppliers-ai__footer">
-                <span>Suppliers AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Dark</span>
-            </footer>
-
-            <!-- Shortlist Panel (fixed drawer — lives outside __main like CRM overlays) -->
-            <aside class="fw-suppliers-ai__shortlist" id="shortlistPanel" aria-hidden="true">
-                <div class="fw-suppliers-ai__shortlist-header">
-                    <h3 class="fw-suppliers-ai__shortlist-title">Shortlist</h3>
-                    <button class="fw-suppliers-ai__shortlist-close" id="shortlistCloseBtn">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
-                            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="fw-suppliers-ai__shortlist-body" id="shortlistBody">
-                    <p class="fw-suppliers-ai__empty-state">No suppliers shortlisted yet</p>
-                </div>
-                <div class="fw-suppliers-ai__shortlist-footer">
-                    <button id="clearShortlistBtn" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary">Clear All</button>
-                    <button id="generateRfqBtn" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--primary" disabled>Generate RFQ</button>
-                </div>
-            </aside>
-
-            <!-- Email Modal -->
-            <div class="fw-suppliers-ai__modal-overlay" id="emailModal" aria-hidden="true">
-                <div class="fw-suppliers-ai__modal">
-                    <div class="fw-suppliers-ai__modal-header">
-                        <h3 class="fw-suppliers-ai__modal-title">📧 Send RFQ Email</h3>
-                        <button class="fw-suppliers-ai__modal-close" onclick="SupplierAI.closeEmailModal()">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2"/>
-                                <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2"/>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="fw-suppliers-ai__modal-body">
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__label">To:</label>
-                            <input type="email" id="emailTo" class="fw-suppliers-ai__input" readonly>
-                        </div>
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__label">Subject:</label>
-                            <input type="text" id="emailSubject" class="fw-suppliers-ai__input">
-                        </div>
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__label">Message:</label>
-                            <textarea id="emailBody" class="fw-suppliers-ai__textarea" rows="12"></textarea>
-                        </div>
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__label">Additional Scope (optional):</label>
-                            <textarea id="emailScope" class="fw-suppliers-ai__textarea" rows="3" placeholder="e.g., Must include materials, 2-year warranty required"></textarea>
-                        </div>
-                    </div>
-                    <div class="fw-suppliers-ai__modal-footer">
-                        <button class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary" onclick="SupplierAI.closeEmailModal()">Cancel</button>
-                        <button class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary" id="regenerateEmailBtn">🔄 Regenerate</button>
-                        <button class="fw-suppliers-ai__btn fw-suppliers-ai__btn--primary" id="sendEmailBtn">Send Email</button>
-                    </div>
-                </div>
-            </div>
-
+<div id="home">
+    <div class="fsa-stats">
+        <a class="fsa-stat<?= $counts['late'] ? ' is-alert' : '' ?>" href="/suppliers_ai/requests.php" style="--i:0"><span class="fsa-stat__label">Waiting for quotes</span><span class="fsa-stat__value"><?= (int)$counts['open'] ?></span>
+            <span class="fsa-stat__sub"><?= $counts['late'] ? (int)$counts['late'] . ' past the date' : ($counts['drafts'] ? (int)$counts['drafts'] . ' not sent yet' : 'Requests out with suppliers') ?></span></a>
+        <a class="fsa-stat" href="/suppliers_ai/requests.php" style="--i:1"><span class="fsa-stat__label">Quotes to compare</span><span class="fsa-stat__value"><?= (int)$counts['to_compare'] ?></span>
+            <span class="fsa-stat__sub">Requests with quotes in</span></a>
+        <a class="fsa-stat" href="/crm/#suppliers" style="--i:2"><span class="fsa-stat__label">Your suppliers</span><span class="fsa-stat__value"><?= $supplierCount ?></span>
+            <span class="fsa-stat__sub">In the CRM, searched first</span></a>
+        <a class="fsa-stat" href="/suppliers_ai/history.php" style="--i:3"><span class="fsa-stat__label"><?= $e(date('F')) ?></span><span class="fsa-stat__value"><?= $monthSearches ?></span>
+            <span class="fsa-stat__sub"><?= $monthSearches === 1 ? 'search' : 'searches' ?> by the team</span></a>
     </div>
 
-    <script>
-    // Global state for email modal
-    window.currentEmailSupplier = null;
-    window.currentQueryText = '';
-    </script>
-    <script src="/suppliers_ai/suppliers_ai.js?v=<?= ASSET_VERSION ?>"></script>
-</body>
-</html>
+    <div class="fsa-cols">
+        <section class="fsa-panel fsa-panel--flush">
+            <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#isa-quote"/></svg></span>
+                <div class="fsa-panel__title"><h3>Waiting for quotes</h3><p>Requests out with suppliers.</p></div>
+                <a class="fsa-mini" href="/suppliers_ai/requests.php">All</a></div>
+            <?php if ($waiting): ?>
+            <ul class="fsa-rows">
+                <?php foreach ($waiting as $w): ?>
+                    <li><a href="<?= $e($w['url']) ?>">
+                        <span class="fsa-rows__icon" style="--c:<?= $e($w['trade']['color'] ?? '#7a1f30') ?>"><svg class="i"><use href="#<?= $e($w['trade']['icon'] ?? 'isa-quote') ?>"/></svg></span>
+                        <span class="fsa-rows__text"><b><?= $e($w['title']) ?></b><small><?= $w['status'] === 'draft' ? 'Not sent yet' : (int)$w['quoted'] . ' of ' . (int)$w['suppliers'] . ' quoted' . ($w['replied'] > $w['quoted'] ? ' · ' . ((int)$w['replied'] - (int)$w['quoted']) . ' replied' : '') ?></small></span>
+                        <span class="fsa-rows__side<?= $w['late'] ? ' is-late' : '' ?>"><?= $w['quote_due'] ? $e(($w['late'] ? 'was due ' : 'due ') . $w['quote_due']) : '' ?><?php if ($w['best'] !== null): ?><span class="fsa-num"><?= $e(SaKit::money($w['best'])) ?></span><?php endif; ?></span>
+                    </a></li>
+                <?php endforeach; ?>
+            </ul>
+            <?php else: ?>
+                <p class="fsa-panel__empty">Nothing out with suppliers. Search, shortlist two or three, and ask them all for quotes in one go.</p>
+            <?php endif; ?>
+        </section>
+
+        <section class="fsa-panel fsa-panel--flush">
+            <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-clock"/></svg></span>
+                <div class="fsa-panel__title"><h3>Your recent searches</h3><p>Open one again, or search again.</p></div>
+                <a class="fsa-mini" href="/suppliers_ai/history.php">All</a></div>
+            <?php if ($recent): ?>
+            <ul class="fsa-rows">
+                <?php foreach ($recent as $r): ?>
+                    <li><a href="/suppliers_ai/?search=<?= (int)$r['id'] ?>">
+                        <span class="fsa-rows__icon"><svg class="i"><use href="#<?= $r['ai'] ? 'i-sparkle' : 'i-search' ?>"/></svg></span>
+                        <span class="fsa-rows__text"><b class="fsa-quoteline">“<?= $e($r['text']) ?>”</b><small><?= (int)$r['results'] ?> found<?= $r['location'] !== '' ? ' · ' . $e($r['location']) : '' ?><?= $r['requests'] ? ' · ' . (int)$r['requests'] . ' request' . ($r['requests'] === 1 ? '' : 's') : '' ?></small></span>
+                        <span class="fsa-rows__side"><small data-ago="<?= $e($r['at']) ?>"></small></span>
+                    </a></li>
+                <?php endforeach; ?>
+            </ul>
+            <?php else: ?>
+                <p class="fsa-panel__empty">Your searches show here. Try “electrician with COC in Centurion” or “20 cubes river sand delivered to Sasolburg”.</p>
+            <?php endif; ?>
+        </section>
+
+        <section class="fsa-panel">
+            <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#isa-scale"/></svg></span>
+                <div class="fsa-panel__title"><h3>How suppliers are ranked</h3><p>Every result says why it is there.</p></div></div>
+            <ul class="fsa-how">
+                <li><svg class="i"><use href="#i-building"/></svg><span><b>Your suppliers first</b> — their industry, tags, name and your notes, and whether they are preferred.</span></li>
+                <li><svg class="i"><use href="#i-receipt"/></svg><span><b>What you bought before</b> — bills in Finance and orders in Procurement for the same thing.</span></li>
+                <li><svg class="i"><use href="#ic-trophy"/></svg><span><b>Past quotes</b> — who quoted, who won, who never replied.</span></li>
+                <li><svg class="i"><use href="#i-shield"/></svg><span><b>Documents</b> — from the CRM; your policy can block expired ones.</span></li>
+                <li><svg class="i"><use href="#i-globe"/></svg><span><b>Near the site</b> — Google’s rating and the distance<?= $s['google_ready'] ? '' : ($SA_CAPS['keys'] ? ' (<a href="/suppliers_ai/settings.php#sources">add a Google key</a>)' : ' (once an admin adds a Google key)') ?>.</span></li>
+            </ul>
+            <p class="fsa-how__foot">Nothing is made up: a phone number or email only shows when it is in your CRM or on Google. <a href="/suppliers_ai/help.php">How it works</a></p>
+        </section>
+    </div>
+</div>
+
+<div class="fsa-tray" id="tray" hidden>
+    <div class="fsa-tray__faces" id="trayFaces"></div>
+    <div class="fsa-tray__text"><b id="trayCount">0 on the shortlist</b><small id="trayHint">Ask them all for quotes in one go</small></div>
+    <button class="btn btn--ghost" type="button" id="trayClear">Clear</button>
+    <button class="btn btn--primary" type="button" id="trayAsk"><svg class="i"><use href="#isa-send-all"/></svg><span>Ask for quotes</span></button>
+</div>
+<?php include __DIR__ . '/partials/foot.php'; ?>

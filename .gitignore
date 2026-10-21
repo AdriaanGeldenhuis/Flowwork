@@ -116,3 +116,8 @@ storage/receipts/
 # Shopping runtime data (schema marker, rate-limit buckets)
 # ---------------------------------------------------------------------------
 storage/shopping/
+
+# ---------------------------------------------------------------------------
+# Suppliers AI runtime data (schema marker, rate-limit buckets, place locations)
+# ---------------------------------------------------------------------------
+storage/suppliers_ai/

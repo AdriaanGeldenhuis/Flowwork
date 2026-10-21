@@ -1,563 +1,169 @@
 <?php
-// /suppliers_ai/settings.php
-require_once __DIR__ . '/../init.php';
-require_once __DIR__ . '/../auth_gate.php';
+// /suppliers_ai/settings.php — the company's Suppliers AI settings (admins and
+// bookkeepers; the keys are for admins):
+//   where suppliers come from (the CRM, Google with the company's key, OpenAI
+//   — the same key Receipts and Shopping use), searching (radius, minimum
+//   match, documents, the company's hourly and daily ceilings, suppliers per
+//   request), the company's own words (synonyms, trades, never-suggest and
+//   always-ask lists) and the request-for-quote email. Keys are never sent
+//   back to the browser: only "sk-…AbCd".
+require_once __DIR__ . '/lib/SaBoot.php';
 
-define('ASSET_VERSION', '2026-07-10-suppliers-crm-parity');
-
-$companyId = $_SESSION['company_id'];
-$userId = $_SESSION['user_id'];
-
-// Check admin role
-$stmt = $DB->prepare("SELECT first_name, role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$userId, $companyId]);
-$user = $stmt->fetch();
-$userRole = $user['role'] ?? 'member';
-
-if (!in_array($userRole, ['admin', 'bookkeeper'])) {
-    header('Location: /suppliers_ai/');
+$page = 'settings';
+$pageTitle = 'Settings';
+if (!$SA_CAPS['configure']) {
+    http_response_code(403);
+    include __DIR__ . '/partials/head.php';
+    echo '<div class="fsa-blank"><svg class="i"><use href="#i-lock"/></svg><h3>Settings are for admins and bookkeepers</h3><p>Ask one of them to change how Suppliers AI searches. <a href="/suppliers_ai/">Find suppliers</a></p></div>';
+    include __DIR__ . '/partials/foot.php';
     exit;
 }
-
-$firstName = $user['first_name'] ?? 'User';
-
-// Fetch company name
-$stmt = $DB->prepare("SELECT name FROM companies WHERE id = ?");
-$stmt->execute([$companyId]);
-$company = $stmt->fetch();
-$companyName = $company['name'] ?? 'Company';
-
-// Fetch settings
-$stmt = $DB->prepare("SELECT * FROM ai_settings WHERE company_id = ?");
-$stmt->execute([$companyId]);
-$settings = $stmt->fetch();
-
-if (!$settings) {
-    // Create defaults with API key
-    $defaultApiKeys = json_encode([
-        'openai_api_key' => 'OPENAI_KEY_REMOVED',
-        'openai_model' => 'gpt-4o-mini',
-        'openai_max_tokens' => 500,
-        'openai_enabled' => 1,
-        'google_places_key' => '',
-        'bing_local_key' => ''
-    ]);
-    
-    $stmt = $DB->prepare("
-        INSERT INTO ai_settings (company_id, default_radius_km, min_score_threshold, require_compliance, 
-                                  block_expired_compliance, rfq_max_recipients, daily_search_cap, per_hour_cap, 
-                                  api_keys_json, created_at)
-        VALUES (?, 25.00, 0.55, 1, 1, 8, 100, 20, ?, NOW())
-    ");
-    $stmt->execute([$companyId, $defaultApiKeys]);
-    
-    $settings = [
-        'default_radius_km' => 25.00,
-        'min_score_threshold' => 0.55,
-        'require_compliance' => 1,
-        'block_expired_compliance' => 1,
-        'rfq_max_recipients' => 8,
-        'daily_search_cap' => 100,
-        'per_hour_cap' => 20,
-        'rules_json' => null,
-        'api_keys_json' => $defaultApiKeys
-    ];
-}
-
-// Parse API keys
-$apiKeys = !empty($settings['api_keys_json']) ? json_decode($settings['api_keys_json'], true) : [];
-
-// Handle form submission
-$message = null;
-$messageType = null;
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'save_settings') {
-        try {
-            $stmt = $DB->prepare("
-                UPDATE ai_settings SET
-                    default_radius_km = ?,
-                    min_score_threshold = ?,
-                    require_compliance = ?,
-                    block_expired_compliance = ?,
-                    rfq_max_recipients = ?,
-                    daily_search_cap = ?,
-                    per_hour_cap = ?,
-                    updated_at = NOW()
-                WHERE company_id = ?
-            ");
-            $stmt->execute([
-                $_POST['default_radius_km'] ?? 25,
-                $_POST['min_score_threshold'] ?? 0.55,
-                isset($_POST['require_compliance']) ? 1 : 0,
-                isset($_POST['block_expired_compliance']) ? 1 : 0,
-                $_POST['rfq_max_recipients'] ?? 8,
-                $_POST['daily_search_cap'] ?? 100,
-                $_POST['per_hour_cap'] ?? 20,
-                $companyId
-            ]);
-
-            // Audit log
-            $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-                VALUES (?, ?, 'ai_settings_updated', ?, ?, NOW())
-            ");
-            $stmt->execute([
-                $companyId,
-                $userId,
-                json_encode($_POST),
-                $_SERVER['REMOTE_ADDR'] ?? null
-            ]);
-
-            $message = 'Settings saved successfully';
-            $messageType = 'success';
-
-            // Refresh settings
-            $stmt = $DB->prepare("SELECT * FROM ai_settings WHERE company_id = ?");
-            $stmt->execute([$companyId]);
-            $settings = $stmt->fetch();
-
-        } catch (Exception $e) {
-            $message = 'Error saving settings: ' . $e->getMessage();
-            $messageType = 'error';
-        }
-    }
-
-    if ($_POST['action'] === 'save_rules') {
-        try {
-            $rulesJson = $_POST['rules_json'] ?? '{}';
-            json_decode($rulesJson);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new Exception('Invalid JSON format');
-            }
-
-            $stmt = $DB->prepare("
-                UPDATE ai_settings SET rules_json = ?, updated_at = NOW()
-                WHERE company_id = ?
-            ");
-            $stmt->execute([$rulesJson, $companyId]);
-
-            $message = 'Rules saved successfully';
-            $messageType = 'success';
-
-            $stmt = $DB->prepare("SELECT * FROM ai_settings WHERE company_id = ?");
-            $stmt->execute([$companyId]);
-            $settings = $stmt->fetch();
-
-        } catch (Exception $e) {
-            $message = 'Error saving rules: ' . $e->getMessage();
-            $messageType = 'error';
-        }
-    }
-
-    if ($_POST['action'] === 'save_api_keys') {
-        try {
-            $newApiKeys = [
-                'openai_api_key' => trim($_POST['openai_api_key'] ?? ''),
-                'openai_model' => $_POST['openai_model'] ?? 'gpt-4o-mini',
-                'openai_max_tokens' => (int)($_POST['openai_max_tokens'] ?? 500),
-                'openai_enabled' => isset($_POST['openai_enabled']) ? 1 : 0,
-                'google_places_key' => trim($_POST['google_places_key'] ?? ''),
-                'bing_local_key' => trim($_POST['bing_local_key'] ?? '')
-            ];
-
-            $stmt = $DB->prepare("
-                UPDATE ai_settings SET api_keys_json = ?, updated_at = NOW()
-                WHERE company_id = ?
-            ");
-            $stmt->execute([json_encode($newApiKeys), $companyId]);
-
-            // Audit log
-            $stmt = $DB->prepare("
-                INSERT INTO audit_log (company_id, user_id, action, details, ip, timestamp)
-                VALUES (?, ?, 'ai_api_keys_updated', 'OpenAI configuration updated', ?, NOW())
-            ");
-            $stmt->execute([$companyId, $userId, $_SERVER['REMOTE_ADDR'] ?? null]);
-
-            $message = 'API keys saved successfully';
-            $messageType = 'success';
-
-            $stmt = $DB->prepare("SELECT * FROM ai_settings WHERE company_id = ?");
-            $stmt->execute([$companyId]);
-            $settings = $stmt->fetch();
-            $apiKeys = json_decode($settings['api_keys_json'], true);
-
-        } catch (Exception $e) {
-            $message = 'Error saving API keys: ' . $e->getMessage();
-            $messageType = 'error';
-        }
-    }
-}
-
-// Default rules template
-$defaultRules = [
-    'defaults' => [
-        'radius_km' => 25,
-        'min_score' => 0.55,
-        'language' => 'en',
-        'country' => 'ZA'
-    ],
-    'synonyms' => [
-        'geyser' => ['water heater', 'plumbing'],
-        'roof sheeting' => ['roofing', 'sheet metal'],
-        'contractor' => ['builder', 'subcontractor']
-    ],
-    'categories' => [
-        'plumber' => ['plumbing', 'blocked drains', 'geyser'],
-        'electrician' => ['electrical', 'wiring', 'COC', 'certificate'],
-        'contractor' => ['construction', 'building', 'renovation']
-    ],
-    'allow_list' => [
-        'phones' => [],
-        'domains' => [],
-        'ids' => []
-    ],
-    'deny_list' => [
-        'phones' => [],
-        'domains' => [],
-        'ids' => []
-    ],
-    'policy' => [
-        'require_compliance' => true,
-        'block_expired' => true,
-        'rfq_max_recipients' => 8
-    ]
-];
-
-$rulesDisplay = $settings['rules_json'] ?? json_encode($defaultRules, JSON_PRETTY_PRINT);
+$full = SaKit::settings($DB, $SA_COMPANY_ID);
+$s = SaKit::publicSettings($full);
+$tpl = SaKit::template($DB, $SA_COMPANY_ID);
+$quota = SaKit::quota($DB, $SA_COMPANY_ID, $full);
+require_once __DIR__ . '/../crm/lib/Crm.php';
+$policy = CrmCompliance::policy($DB, $SA_COMPANY_ID);
+$pageScripts = ['settings'];
+$pageBoot = ['rules' => $full['rules'], 'template' => $tpl, 'defaults' => SaKit::RFQ_TEMPLATE, 'placeholders' => SaKit::PLACEHOLDERS,
+             'builtin' => array_map(fn($k, $t) => ['key' => $k, 'label' => $t[0], 'icon' => $t[2], 'color' => $t[3], 'words' => array_map(fn($w) => rtrim($w, '$'), $t[4])], array_keys(SaParse::TRADES), SaParse::TRADES)];
+include __DIR__ . '/partials/head.php';
+$dis = $SA_CAPS['keys'] ? '' : ' disabled';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="<?= htmlspecialchars(Csrf::token()) ?>">
-    <title>Settings – <?= htmlspecialchars($companyName) ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/suppliers_ai/style.css?v=<?= ASSET_VERSION ?>">
-</head>
-<body class="fw-suppliers-ai">
-    <div class="fw-suppliers-ai__container">
-            
-            <!-- Header -->
-            <header class="fw-suppliers-ai__header">
-                <div class="fw-suppliers-ai__brand">
-                    <div class="fw-suppliers-ai__logo-tile">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <line x1="12" y1="22.08" x2="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div class="fw-suppliers-ai__brand-text">
-                        <div class="fw-suppliers-ai__company-name"><?= htmlspecialchars($companyName) ?></div>
-                        <div class="fw-suppliers-ai__app-name">Suppliers AI – Settings</div>
-                    </div>
-                </div>
-
-                <div class="fw-suppliers-ai__greeting">
-                    Hello, <span class="fw-suppliers-ai__greeting-name"><?= htmlspecialchars($firstName) ?></span>
-                </div>
-
-                <div class="fw-suppliers-ai__controls">
-                    <a href="/suppliers_ai/" class="fw-suppliers-ai__home-btn" title="Back to Search">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <line x1="19" y1="12" x2="5" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <polyline points="12 19 5 12 12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <a href="/" class="fw-suppliers-ai__home-btn" title="Home">
-                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </a>
-                    
-                    <button class="fw-suppliers-ai__theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <svg class="fw-suppliers-ai__theme-icon fw-suppliers-ai__theme-icon--light" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/>
-                            <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
-                        <svg class="fw-suppliers-ai__theme-icon fw-suppliers-ai__theme-icon--dark" viewBox="0 0 24 24" fill="none">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-
-                    <div class="fw-suppliers-ai__menu-wrapper">
-                        <button class="fw-suppliers-ai__kebab-toggle" id="kebabToggle" aria-label="Menu">
-                            <svg viewBox="0 0 24 24" fill="none">
-                                <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-                            </svg>
-                        </button>
-                        <nav class="fw-suppliers-ai__kebab-menu" id="kebabMenu" aria-hidden="true">
-                            <a href="/suppliers_ai/" class="fw-suppliers-ai__kebab-item">New Search</a>
-                            <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__kebab-item">History</a>
-                            <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__kebab-item">Help</a>
-                            <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__kebab-item">Settings</a>
-                        </nav>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <main class="fw-suppliers-ai__main">
-            <div class="fw-suppliers-ai__content">
-
-            <div class="fw-suppliers-ai__page-header">
-                <h1 class="fw-suppliers-ai__page-title">Suppliers AI Settings</h1>
-                <p class="fw-suppliers-ai__page-subtitle">
-                    Configure AI search, scoring, and integration options
-                </p>
-            </div>
-
-            <!-- View Tabs -->
-            <div class="fw-suppliers-ai__view-tabs">
-                <a href="/suppliers_ai/" class="fw-suppliers-ai__view-tab">Search</a>
-                <a href="/suppliers_ai/history.php" class="fw-suppliers-ai__view-tab">History</a>
-                <a href="/suppliers_ai/help.php" class="fw-suppliers-ai__view-tab">Help</a>
-                <a href="/suppliers_ai/settings.php" class="fw-suppliers-ai__view-tab fw-suppliers-ai__view-tab--active">Settings</a>
-            </div>
-
-            <?php if ($message): ?>
-            <div class="fw-suppliers-ai__alert fw-suppliers-ai__alert--<?= $messageType ?>">
-                <?= htmlspecialchars($message) ?>
-            </div>
-            <?php endif; ?>
-
-            <!-- Settings Forms -->
-            <div class="fw-suppliers-ai__settings-panel">
-                
-                <!-- OpenAI Configuration -->
-                <?php if ($userRole === 'admin'): ?>
-                <form method="POST" class="fw-suppliers-ai__settings-form">
-                    <input type="hidden" name="action" value="save_api_keys">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-                    
-                    <div class="fw-suppliers-ai__section">
-                        <h2 class="fw-suppliers-ai__section-title">🤖 OpenAI Configuration</h2>
-                        <p class="fw-suppliers-ai__help-text fw-suppliers-ai__help-text--lead">
-                            Enable AI-powered query parsing, intelligent matching, and RFQ generation
-                        </p>
-
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__checkbox-wrapper">
-                                <input type="checkbox" name="openai_enabled" class="fw-suppliers-ai__checkbox" 
-                                       <?= !empty($apiKeys['openai_enabled']) ? 'checked' : '' ?>>
-                                <span>Enable OpenAI Processing</span>
-                            </label>
-                            <small class="fw-suppliers-ai__help-text">Disable to use basic keyword matching (free, faster)</small>
-                        </div>
-
-                        <div class="fw-suppliers-ai__form-grid">
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">OpenAI API Key <span class="fw-suppliers-ai__required">*</span></label>
-                                <input type="password" name="openai_api_key" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($apiKeys['openai_api_key'] ?? '') ?>" 
-                                       placeholder="sk-proj-xxxxx...">
-                                <small class="fw-suppliers-ai__help-text">
-                                    Get your key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>
-                                </small>
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Model</label>
-                                <select name="openai_model" class="fw-suppliers-ai__input">
-                                    <option value="gpt-4o-mini" <?= ($apiKeys['openai_model'] ?? 'gpt-4o-mini') === 'gpt-4o-mini' ? 'selected' : '' ?>>GPT-4o Mini (Fast, Cheap)</option>
-                                    <option value="gpt-4o" <?= ($apiKeys['openai_model'] ?? '') === 'gpt-4o' ? 'selected' : '' ?>>GPT-4o (Smartest)</option>
-                                    <option value="gpt-3.5-turbo" <?= ($apiKeys['openai_model'] ?? '') === 'gpt-3.5-turbo' ? 'selected' : '' ?>>GPT-3.5 Turbo</option>
-                                </select>
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Max Tokens per Request</label>
-                                <input type="number" name="openai_max_tokens" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($apiKeys['openai_max_tokens'] ?? 500) ?>" 
-                                       min="100" max="4000">
-                                <small class="fw-suppliers-ai__help-text">Recommended: 500</small>
-                            </div>
-                        </div>
-
-                        <hr class="fw-suppliers-ai__divider">
-
-                        <h3 class="fw-suppliers-ai__subsection-title">Optional: External Directory APIs</h3>
-
-                        <div class="fw-suppliers-ai__form-grid">
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Google Places API Key</label>
-                                <input type="password" name="google_places_key" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($apiKeys['google_places_key'] ?? '') ?>" 
-                                       placeholder="AIzaSy...">
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Bing Local Search Key</label>
-                                <input type="password" name="bing_local_key" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($apiKeys['bing_local_key'] ?? '') ?>" 
-                                       placeholder="f8a3b2...">
-                            </div>
-                        </div>
-
-                        <div class="fw-suppliers-ai__form-actions">
-                            <button type="submit" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--primary">
-                                💾 Save API Configuration
-                            </button>
-                            <button type="button" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary" 
-                                    onclick="testOpenAI()">
-                                🧪 Test OpenAI Connection
-                            </button>
-                        </div>
-                    </div>
-                </form>
-                <?php endif; ?>
-
-                <!-- General Settings -->
-                <form method="POST" class="fw-suppliers-ai__settings-form">
-                    <input type="hidden" name="action" value="save_settings">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-                    
-                    <div class="fw-suppliers-ai__section">
-                        <h2 class="fw-suppliers-ai__section-title">General Settings</h2>
-                        
-                        <div class="fw-suppliers-ai__form-grid">
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Default Search Radius (km)</label>
-                                <input type="number" name="default_radius_km" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($settings['default_radius_km']) ?>" 
-                                       min="1" max="500" step="0.5" required>
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Minimum Score Threshold</label>
-                                <input type="number" name="min_score_threshold" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($settings['min_score_threshold']) ?>" 
-                                       min="0" max="1" step="0.05" required>
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">RFQ Max Recipients</label>
-                                <input type="number" name="rfq_max_recipients" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($settings['rfq_max_recipients']) ?>" 
-                                       min="1" max="50" required>
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Daily Search Cap</label>
-                                <input type="number" name="daily_search_cap" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($settings['daily_search_cap']) ?>" 
-                                       min="10" max="1000" required>
-                            </div>
-
-                            <div class="fw-suppliers-ai__form-group">
-                                <label class="fw-suppliers-ai__label">Per-Hour Cap</label>
-                                <input type="number" name="per_hour_cap" class="fw-suppliers-ai__input" 
-                                       value="<?= htmlspecialchars($settings['per_hour_cap']) ?>" 
-                                       min="5" max="100" required>
-                            </div>
-                        </div>
-
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__checkbox-wrapper">
-                                <input type="checkbox" name="require_compliance" class="fw-suppliers-ai__checkbox" 
-                                       <?= $settings['require_compliance'] ? 'checked' : '' ?>>
-                                <span>Require Valid Compliance Documents</span>
-                            </label>
-                        </div>
-
-                        <div class="fw-suppliers-ai__form-group">
-                            <label class="fw-suppliers-ai__checkbox-wrapper">
-                                <input type="checkbox" name="block_expired_compliance" class="fw-suppliers-ai__checkbox" 
-                                       <?= $settings['block_expired_compliance'] ? 'checked' : '' ?>>
-                                <span>Block RFQs to Suppliers with Expired Docs</span>
-                            </label>
-                        </div>
-
-                        <div class="fw-suppliers-ai__form-actions">
-                            <button type="submit" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--primary">
-                                Save General Settings
-                            </button>
-                        </div>
-                    </div>
-                </form>
-
-                <!-- Rules Configuration -->
-                <form method="POST" class="fw-suppliers-ai__settings-form">
-                    <input type="hidden" name="action" value="save_rules">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
-                    
-                    <div class="fw-suppliers-ai__section">
-                        <h2 class="fw-suppliers-ai__section-title">AI Rules (JSON)</h2>
-                        <p class="fw-suppliers-ai__help-text fw-suppliers-ai__help-text--lead">
-                            Configure synonyms, category mappings, allow/deny lists
-                        </p>
-
-                        <div class="fw-suppliers-ai__form-group">
-                            <textarea name="rules_json" class="fw-suppliers-ai__textarea fw-suppliers-ai__textarea--code" rows="20"><?= htmlspecialchars($rulesDisplay) ?></textarea>
-                        </div>
-
-                        <div class="fw-suppliers-ai__form-actions">
-                            <button type="submit" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--primary">
-                                Save Rules
-                            </button>
-                            <button type="button" class="fw-suppliers-ai__btn fw-suppliers-ai__btn--secondary" 
-                                    onclick="document.querySelector('[name=rules_json]').value = JSON.stringify(<?= json_encode($defaultRules) ?>, null, 2)">
-                                Reset to Defaults
-                            </button>
-                        </div>
-                    </div>
-                </form>
-
-            </div>
-
-            </div>
-            </main>
-
-            <!-- Footer -->
-            <footer class="fw-suppliers-ai__footer">
-                <span>Suppliers AI v<?= ASSET_VERSION ?></span>
-                <span id="themeIndicator">Theme: Dark</span>
-            </footer>
-
+<header class="fsa-head">
+    <div class="fsa-head__text">
+        <p class="fsa-eyebrow">Suppliers AI <i>◆</i> Settings</p>
+        <h1>Make it <em>yours</em></h1>
+        <p>Where suppliers come from, how they are searched and ranked, the words your team uses and the email suppliers get. The same search limits are in <a href="/admin/suppliers.php">Admin › Suppliers</a>.</p>
     </div>
+</header>
 
-    <script src="/suppliers_ai/suppliers_ai.js?v=<?= ASSET_VERSION ?>"></script>
-    <script>
-    async function testOpenAI() {
-        const btn = event.target;
-        btn.disabled = true;
-        btn.textContent = '⏳ Testing...';
-        
-        try {
-            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-            const response = await fetch('/suppliers_ai/ajax/test_openai.php', {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': csrfMeta ? csrfMeta.content : '' }
-            });
-            const data = await response.json();
-            
-            if (data.ok) {
-                alert('✅ OpenAI Connection Successful!\n\nModel: ' + data.model + '\nLatency: ' + data.latency_ms + 'ms\nResponse: ' + data.response);
-            } else {
-                alert('❌ Test Failed: ' + (data.error || 'Unknown error'));
-            }
-        } catch (err) {
-            alert('❌ Network error: ' + err.message);
-        } finally {
-            btn.disabled = false;
-            btn.textContent = '🧪 Test OpenAI Connection';
-        }
-    }
-    </script>
-</body>
-</html>
+<nav class="fsa-tabs" aria-label="Settings">
+    <a class="fwm-chip is-on" href="#sources">Sources</a>
+    <a class="fwm-chip" href="#search">Searching</a>
+    <a class="fwm-chip" href="#words">Words</a>
+    <a class="fwm-chip" href="#lists">Never &amp; always</a>
+    <a class="fwm-chip" href="#email">The request email</a>
+</nav>
+
+<section class="fsa-section" id="sources">
+    <h2>Where suppliers come from</h2><span class="fsa-section__rule"></span>
+</section>
+<div class="fsa-sourcecards">
+    <article class="fsa-panel fsa-sourcecard is-on">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-building"/></svg></span>
+            <div class="fsa-panel__title"><h3>Your suppliers</h3><p>Always on. Suppliers in the CRM, what you bought in Finance and Procurement, and past quotes.</p></div>
+            <span class="fsa-flag fsa-flag--ok">On</span></div>
+        <div class="fsa-panel__body"><p class="fsa-copy">Give suppliers an industry, tags (“Plumbing”, “Aggregates”) and notes in the CRM — that is what they are found by. Found on Google and added here, they arrive as <b>prospects</b> tagged with their trade.</p></div>
+    </article>
+
+    <article class="fsa-panel fsa-sourcecard<?= $s['google_ready'] ? ' is-on' : '' ?>" id="googleCard">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-globe"/></svg></span>
+            <div class="fsa-panel__title"><h3>Google</h3><p>Real businesses near the site: phone, website, rating and distance — Places API (New), with your own Google key.</p></div>
+            <span class="fsa-flag <?= $s['google_ready'] ? 'fsa-flag--ok' : '' ?>" id="googleState"><?= $s['google_ready'] ? 'Connected' : 'Off' ?></span></div>
+        <div class="fsa-panel__body">
+            <div class="field"><label class="label" for="googleKey">Google API key</label>
+                <div class="fsa-keyrow"><input class="input" id="googleKey" type="password" autocomplete="off" spellcheck="false" placeholder="<?= $s['google_key_hint'] !== '' ? $e('Saved: ' . $s['google_key_hint'] . ' — type to replace') : 'AIza…' ?>"<?= $dis ?>>
+                    <button class="btn" type="button" data-key-save="google"<?= $dis ?>>Save</button>
+                    <button class="btn btn--ghost" type="button" data-key-test="google"<?= $s['google_ready'] && $SA_CAPS['keys'] ? '' : ' disabled' ?>>Test</button>
+                    <?php if ($s['google_key_hint'] !== '' && $SA_CAPS['keys']): ?><button class="btn btn--ghost" type="button" data-key-forget="google">Remove</button><?php endif; ?></div>
+                <small class="hint">In Google Cloud: create a key, switch on <b>Places API (New)</b> and billing, and restrict the key to that API. Google charges per search (about one look-up per search; the town is remembered for 30 days).</small>
+            </div>
+            <div class="fsa-test" id="googleTest" hidden></div>
+        </div>
+    </article>
+
+    <article class="fsa-panel fsa-sourcecard<?= $s['ai_ready'] ? ' is-on' : '' ?>" id="aiCard">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-sparkle"/></svg></span>
+            <div class="fsa-panel__title"><h3>AI (OpenAI)</h3><p>Reads what was typed, finds better search words, suggests kinds of business to look at, and writes the request email. It never makes up phone numbers or businesses.</p></div>
+            <span class="fsa-flag <?= $s['ai_ready'] ? 'fsa-flag--ok' : '' ?>" id="aiState"><?= $s['ai_ready'] ? 'On' : ($s['openai_key_hint'] !== '' ? 'Switched off' : 'Off') ?></span></div>
+        <div class="fsa-panel__body">
+            <label class="switch"><input type="checkbox" id="aiOn"<?= $s['openai_on'] ? ' checked' : '' ?><?= $dis ?>><span class="switch__track"></span>
+                <span class="switch__text"><span class="switch__title">Use AI in Suppliers AI</span><span class="hint">Only the request’s words, today’s date and your town are sent — never supplier details or the budget.</span></span></label>
+            <div class="row" style="margin-top:12px">
+                <div class="field"><label class="label" for="aiKey">OpenAI key</label>
+                    <input class="input" id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="<?= $s['openai_key_hint'] !== '' ? $e('Saved: ' . $s['openai_key_hint'] . ' — type to replace') : 'sk-…' ?>"<?= $dis ?>></div>
+                <div class="field"><label class="label" for="aiModel">Model</label>
+                    <select class="select" id="aiModel"<?= $dis ?>><?php foreach (SaKit::AI_MODELS as $k => $l): ?><option value="<?= $e($k) ?>"<?= $s['openai_model'] === $k ? ' selected' : '' ?>><?= $e($l) ?></option><?php endforeach; ?></select></div>
+            </div>
+            <div class="fsa-keyrow" style="margin-top:10px">
+                <button class="btn" type="button" data-key-save="openai"<?= $dis ?>>Save</button>
+                <button class="btn btn--ghost" type="button" data-key-test="openai"<?= $s['openai_key_hint'] !== '' && $SA_CAPS['keys'] ? '' : ' disabled' ?>>Test</button>
+                <?php if ($s['openai_key_hint'] !== '' && $SA_CAPS['keys']): ?><button class="btn btn--ghost" type="button" data-key-forget="openai">Remove</button><?php endif; ?>
+            </div>
+            <small class="hint">The same key reads slips in Receipts and suggests stores in Shopping. Each search uses about 1 000 tokens.</small>
+            <div class="fsa-test" id="aiTest" hidden></div>
+        </div>
+    </article>
+</div>
+<?php if (!$SA_CAPS['keys']): ?><p class="fsa-hint fsa-hint--center"><svg class="i i--sm"><use href="#i-lock"/></svg> Only admins can change the keys.</p><?php endif; ?>
+
+<section class="fsa-section" id="search"><h2>Searching</h2><span class="fsa-section__rule"></span></section>
+<form class="fsa-panel fsa-sets" id="setForm" novalidate>
+    <div class="fsa-set"><div class="fsa-set__text"><b>Search radius</b><small>How far from the site to look when nobody chooses.</small></div>
+        <div class="fsa-set__control"><span class="fsa-unit"><input class="input" type="number" name="radius_km" min="1" max="500" step="1" value="<?= $e($s['radius_km']) ?>"><span>km</span></span></div></div>
+    <div class="fsa-set"><div class="fsa-set__text"><b>Minimum match</b><small>Results that fit less well are folded away under “Show more” (never lost).</small></div>
+        <div class="fsa-set__control fsa-range"><input type="range" name="min_score" min="0" max="100" step="5" value="<?= (int)round($s['min_score'] * 100) ?>"><output><?= (int)round($s['min_score'] * 100) ?></output></div></div>
+    <label class="fsa-set fsa-set--toggle"><span class="fsa-set__text"><b>Only suppliers whose documents are in order</b><small>The starting point for each search (it can be changed per search). Google listings have no documents yet, so they are left out too.</small></span>
+        <span class="switch"><input type="checkbox" name="compliant_only"<?= $s['compliant_only'] ? ' checked' : '' ?>><span class="switch__track"></span></span></label>
+    <div class="fsa-set"><div class="fsa-set__text"><b>Suppliers per request</b><small>The most suppliers one request for quotes goes to.</small></div>
+        <div class="fsa-set__control"><span class="fsa-unit"><input class="input" type="number" name="max_recipients" min="1" max="50" value="<?= (int)$s['max_recipients'] ?>"><span>suppliers</span></span></div></div>
+    <div class="fsa-set"><div class="fsa-set__text"><b>Google and AI look-ups</b><small>Ceilings for the whole company, so a mistake cannot run up costs. Searching your own suppliers is never limited. Used: <b><?= (int)$quota['hour'] ?></b> this hour, <b><?= (int)$quota['day'] ?></b> today.</small></div>
+        <div class="fsa-set__control fsa-pair"><span class="fsa-unit"><input class="input" type="number" name="per_hour" min="1" max="500" value="<?= (int)$s['per_hour'] ?>"><span>an hour</span></span>
+            <span class="fsa-unit"><input class="input" type="number" name="per_day" min="1" max="5000" value="<?= (int)$s['per_day'] ?>"><span>a day</span></span></div></div>
+    <div class="fsa-set"><div class="fsa-set__text"><b>Suppliers with expired documents</b><small>Your company <?= $policy['block'] ? '<b>blocks</b> them: they are not asked for quotes, cannot be chosen and get no orders until renewed' : 'warns about them but does not block them' ?>. Change it in Admin.</small></div>
+        <div class="fsa-set__control"><a class="btn btn--ghost" href="/admin/suppliers.php"><svg class="i"><use href="#i-shield"/></svg>Admin › Suppliers</a></div></div>
+</form>
+
+<section class="fsa-section" id="words"><h2>Your words</h2><span class="fsa-section__rule"></span></section>
+<div class="fsa-cols fsa-cols--two">
+    <section class="fsa-panel">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-link"/></svg></span>
+            <div class="fsa-panel__title"><h3>When someone types…</h3><p>…also look for these words. “Geyser” → “water heater, plumbing”.</p></div></div>
+        <div class="fsa-panel__body"><div class="fsa-pairs" id="synonyms"></div><button class="fsa-mini" type="button" data-add="synonyms"><svg class="i"><use href="#i-plus"/></svg>Add</button></div>
+    </section>
+    <section class="fsa-panel">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-tag"/></svg></span>
+            <div class="fsa-panel__title"><h3>Your own trades</h3><p>A trade and the words that mean it. Add words to a built-in trade by using its name (“Plumbing”).</p></div></div>
+        <div class="fsa-panel__body"><div class="fsa-pairs" id="categories"></div><button class="fsa-mini" type="button" data-add="categories"><svg class="i"><use href="#i-plus"/></svg>Add</button>
+            <details class="fsa-builtin"><summary>The trades Suppliers AI knows (<?= count(SaParse::TRADES) ?>)</summary><div id="builtin"></div></details></div>
+    </section>
+</div>
+
+<section class="fsa-section" id="lists"><h2>Never suggest, always ask</h2><span class="fsa-section__rule"></span></section>
+<div class="fsa-cols fsa-cols--two">
+    <section class="fsa-panel">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon fsa-panel__icon--danger"><svg class="i"><use href="#i-ban"/></svg></span>
+            <div class="fsa-panel__title"><h3>Never suggest</h3><p>Left out of every search. One a line.</p></div></div>
+        <div class="fsa-panel__body fsa-lists" data-list="deny_list"></div>
+    </section>
+    <section class="fsa-panel">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-bookmark"/></svg></span>
+            <div class="fsa-panel__title"><h3>Always ask</h3><p>Ranked higher when they match. One a line.</p></div></div>
+        <div class="fsa-panel__body fsa-lists" data-list="allow_list"></div>
+    </section>
+</div>
+
+<section class="fsa-section" id="email"><h2>The request email</h2><span class="fsa-section__rule"></span></section>
+<div class="fsa-cols fsa-cols--two fsa-cols--email">
+    <section class="fsa-panel">
+        <div class="fsa-panel__body fsa-form">
+            <div class="field"><label class="label" for="tplSubject">Subject</label><input class="input" id="tplSubject" maxlength="200" value="<?= $e($tpl['subject']) ?>"></div>
+            <div class="field" style="margin-top:12px"><label class="label" for="tplBody">Message</label><textarea class="textarea" id="tplBody" rows="14"><?= $e($tpl['body']) ?></textarea></div>
+            <div class="fsa-placeholders" id="placeholders" aria-label="Insert"></div>
+            <p class="fsa-hint"><svg class="i i--sm"><use href="#i-lock"/></svg> The budget is never put in the email. Each supplier gets their own email — they never see each other.</p>
+        </div>
+    </section>
+    <section class="fsa-panel fsa-preview">
+        <div class="fsa-panel__head"><span class="fsa-panel__icon"><svg class="i"><use href="#i-eye"/></svg></span>
+            <div class="fsa-panel__title"><h3>How it reads</h3><p>With an example request.</p></div></div>
+        <div class="fsa-paper" id="tplPreview"></div>
+    </section>
+</div>
+
+<div class="fsa-savebar" id="savebar" role="region" aria-label="Unsaved changes">
+    <span id="savebarText">Unsaved changes</span>
+    <button class="btn btn--ghost" type="button" id="saveUndo">Undo</button>
+    <button class="btn btn--primary" type="button" id="saveGo">Save</button>
+</div>
+<?php include __DIR__ . '/partials/foot.php'; ?>

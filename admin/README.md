@@ -48,7 +48,7 @@ control, default, limits and **where the module reads it**:
 | security | `company_settings` `security_*` | `fw_login_limits`, `fw_auth_single_device` (includes/auth_sessions.php), `includes/password_policy.php` |
 | data | `company_settings` `signin_retention_days` | `includes/audit_retention.php` (hourly, from notifications/api/tick.php; sign-in records only) |
 | payroll | `payroll_settings` columns | `PayKit::settings` / `PayKit::suggest` (new-run dates), `PayRuns::finalise` (auto-post) |
-| suppliers | `ai_settings` columns + `crm_block_expired_suppliers`, `crm_reminder_days` | `suppliers_ai/ajax/search.php`, RFQ generators, `CrmCompliance::policy` |
+| suppliers | `ai_settings` columns + `crm_block_expired_suppliers`, `crm_reminder_days` | `SaKit::settings` (suppliers_ai/lib: searches, requests for quotes), `CrmCompliance::policy` |
 | finance | via `FinSettings::saveEngine` (its guards apply) | `Fin::engineSettings` |
 | payments | `companies.yoco_sec_key`, `yoco_webhook_secret` (never sent back to the browser) | `qi/lib/QiYoco.php`, `webhooks/yoco.php` |
 

@@ -1402,7 +1402,7 @@
     return `${left}<span class="grow"></span>${nav}`;
   }
 
-  const LINK_ICONS = { customer: 'building', supplier: 'building', project: 'briefcase', board: 'grid', item: 'check-square' };
+  const LINK_ICONS = { customer: 'building', supplier: 'building', project: 'briefcase', board: 'grid', item: 'check-square', rfq: 'sparkle' };
   function renderReader(opts = {}) {
     const th = S.thread;
     if (!th) return readerEmpty();

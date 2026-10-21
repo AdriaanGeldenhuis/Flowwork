@@ -124,7 +124,7 @@ final class AdminSettings
                      'default' => '0.55', 'min' => 0, 'max' => 1, 'step' => 0.05, 'unit' => 'of 1', 'card' => 'sup-search', 'kw' => 'score relevance'],
                     ['key' => 'rfq_max_recipients', 'store' => 'ai', 'label' => 'Suppliers per request for quote', 'hint' => 'The most suppliers one RFQ is sent to.', 'type' => 'number',
                      'default' => '8', 'min' => 1, 'max' => 50, 'unit' => 'suppliers', 'card' => 'sup-search', 'kw' => 'rfq quote request'],
-                    ['key' => 'per_hour_cap', 'store' => 'ai', 'label' => 'AI searches per hour', 'hint' => 'A ceiling for the whole company, so a runaway script cannot run up costs.', 'type' => 'number',
+                    ['key' => 'per_hour_cap', 'store' => 'ai', 'label' => 'AI searches per hour', 'hint' => 'Searches that reach Google or AI, for the whole company, so a runaway script cannot run up costs. Your own suppliers are always searched.', 'type' => 'number',
                      'default' => '20', 'min' => 1, 'max' => 500, 'unit' => 'per hour', 'card' => 'sup-search', 'kw' => 'limit cap'],
                     $toggle('crm_block_expired_suppliers', 'Block suppliers with expired documents', 'They cannot be chosen on new purchase orders, receipts or RFQs until the document is renewed.', '0', 'sup-compliance', ['kw' => 'bee tax clearance block']),
                     ['key' => 'crm_reminder_days', 'label' => 'Remind before expiry', 'hint' => 'Days before a document expires that its owner is reminded, separated by commas.', 'type' => 'text',

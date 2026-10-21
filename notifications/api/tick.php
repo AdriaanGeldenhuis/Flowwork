@@ -164,6 +164,17 @@ if ($now - (int)($state['sla_at'] ?? 0) >= 900) {
     $state['sla_at'] = $now;
     $run('reply_reminders', fn() => MailWorker::slaTick($DB));
 }
+// Suppliers AI: who replied to a request for quotes (after the mail sync), and
+// quotes that are due — each told to the person who asked, once. Every 15 minutes.
+if ($now - (int)($state['sai_at'] ?? 0) >= 900) {
+    $state['sai_at'] = $now;
+    $run('suppliers_ai', function () use ($DB, $deadline) {
+        require_once __DIR__ . '/../../suppliers_ai/lib/Sa.php';
+        $DB->exec("SET time_zone = '" . date('P') . "'");
+        SaSchema::ensure($DB);
+        return SaRequests::tick($DB, min($deadline - 10, microtime(true) + 6));
+    });
+}
 $run('push_after', $pushed);
 if ($now - (int)($state['cleanup_at'] ?? 0) >= 3600) {
     $state['cleanup_at'] = $now;
