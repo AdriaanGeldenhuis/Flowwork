@@ -44,9 +44,10 @@ $retry = FlowDriveSso::startUrl();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Drive · Flowwork</title>
+    <?php include __DIR__ . '/../includes/favicon.php'; ?>
     <link rel="stylesheet" href="/mail/css/mail.css?v=<?= (int)@filemtime(__DIR__ . '/../mail/css/mail.css') ?>">
 </head>
-<body class="fwm" data-theme="<?= $fwTheme ?>">
+<body class="fwm" data-mod="drive" data-theme="<?= $fwTheme ?>">
 <?php include __DIR__ . '/../mail/partials/icons.php'; ?>
 <main class="fwm-empty" style="min-height:100vh">
     <span class="fwm-empty__art" aria-hidden="true"><svg class="i"><use href="#i-alert"/></svg></span>

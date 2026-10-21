@@ -40,8 +40,8 @@ body.fwa { font-size: 13.5px; }
 .fwa-pill[data-tone="warning"] { --c: #b07818; }
 .fwa-pill[data-tone="danger"] { --c: #a8281e; }
 .fwa-pill[data-tone="gold"] { --c: #b08d57; }
-.fwa-pill[data-tone="accent"] { --c: #7a1f30; }
-.fwm[data-theme="dark"] .fwa-pill[data-tone="accent"] { --c: #e3a3ae; }
+.fwa-pill[data-tone="accent"] { --c: var(--accent); }
+.fwm[data-theme="dark"] .fwa-pill[data-tone="accent"] { --c: var(--accent); }
 
 .fwa-ava {
   --h: 20;
@@ -329,7 +329,7 @@ a.fwa-step:hover { background: var(--hover); text-decoration: none; }
   position: relative; transition: transform var(--t), box-shadow var(--t);
 }
 .fwa-plan:hover { transform: translateY(-2px); }
-.fwa-plan.is-current { box-shadow: inset 0 0 0 1px var(--gold), var(--shadow-card), 0 24px 44px -30px rgba(122, 31, 48, 0.55); }
+.fwa-plan.is-current { box-shadow: inset 0 0 0 1px var(--gold), var(--shadow-card), 0 24px 44px -30px color-mix(in srgb, var(--seal) 55%, transparent); }
 .fwa-plan__badge { position: absolute; top: -10px; right: 18px; height: 22px; padding: 0 11px; border-radius: var(--r-pill); display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; background: var(--accent-grad); color: var(--gold-bright); box-shadow: inset 0 0 0 1px rgba(216, 189, 138, 0.4); }
 .fwa-plan h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 26px; letter-spacing: -0.015em; }
 .fwa-plan__price { font-family: var(--font-display); font-size: 34px; letter-spacing: -0.02em; line-height: 1; }

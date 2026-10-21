@@ -404,6 +404,7 @@
     });
     const kebab = $('#kebabBtn');
     if (kebab) kebab.addEventListener('click', () => {
+      if (activePop && activePop.anchor === kebab) return closePop();
       popover(kebab, `
         ${BOOT.is_admin ? `<a class="fwm-pop__item" data-v="i" href="/crm/import.php">${icon('upload')}Import &amp; export</a>
         <a class="fwm-pop__item" data-v="d" href="/crm/dedupe.php">${icon('ic-merge')}Find duplicates</a>` : ''}

@@ -376,6 +376,7 @@
     const kebab = $('#kebabBtn');
     const onApp = !!$('#calApp');
     if (kebab) kebab.addEventListener('click', () => {
+      if (activePop && activePop.anchor === kebab) return closePop();
       popover(kebab, `
         ${onApp ? `<a class="fwm-pop__item" data-v="settings" href="/calendar/settings.php">${icon('settings')}Calendar settings</a>` : `<a class="fwm-pop__item" data-v="cal" href="/calendar/">${icon('calendar')}Calendar</a>`}
         <button class="fwm-pop__item" data-v="import">${icon('upload')}Import .ics</button>

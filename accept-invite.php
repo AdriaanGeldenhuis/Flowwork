@@ -180,6 +180,7 @@ $here = '/accept-invite.php?token=' . rawurlencode($token);
     <meta name="robots" content="noindex">
     <meta name="theme-color" content="<?= $fwTheme === 'dark' ? '#0d0a09' : '#f2ece3' ?>">
     <title><?= $invite ? 'Join ' . $e($invite['company_name']) : 'Invitation' ?> · Flowwork</title>
+    <?php include __DIR__ . '/includes/favicon.php'; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet">

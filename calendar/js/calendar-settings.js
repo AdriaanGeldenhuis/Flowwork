@@ -5,8 +5,11 @@
    ============================================================================= */
 (function () {
   'use strict';
-  const { $, $$, esc, icon, api, toast, toastError, C, calendarDialog, shareDialog, feedDialog, deleteCalendar, pickImport, defaultCalId } = window.FWCal;
+  const { $, $$, esc, icon, api, toast, toastError, C, calendarDialog, shareDialog, feedDialog, deleteCalendar, pickImport, defaultCalId, toggleDrawer } = window.FWCal;
   const isAdmin = $('#settingsApp').dataset.admin === '1';
+
+  // Close the drawer on narrow screens after picking a section.
+  $$('#side a').forEach((a) => a.addEventListener('click', () => toggleDrawer(false)));
 
   // ---------------------------------------------------------- tabs
   const TABS = ['general', 'calendars', 'sources', 'import'];

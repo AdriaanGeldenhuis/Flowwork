@@ -30,13 +30,14 @@ $boot = $view ? ['token' => $token, 'view' => $view, 'categories' => array_merge
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="<?= $fwTheme === 'dark' ? '#0d0a09' : '#f2ece3' ?>">
     <title><?= $view ? $e($view['list']['name']) . ' · Shopping list' : 'Shopping list' ?></title>
+    <?php include __DIR__ . '/../includes/favicon.php'; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/mail/css/mail.css?v=<?= $v('mail/css/mail.css') ?>">
     <link rel="stylesheet" href="/shopping/css/shopping.css?v=<?= $v('shopping/css/shopping.css') ?>">
 </head>
-<body class="fwm fws fws-guest" data-theme="<?= $fwTheme ?>" data-page="share">
+<body class="fwm fws fws-guest" data-mod="shopping" data-theme="<?= $fwTheme ?>" data-page="share">
 <?php include __DIR__ . '/../mail/partials/icons.php'; ?>
 <?php include __DIR__ . '/../calendar/partials/icons.php'; ?>
 <?php include __DIR__ . '/partials/icons.php'; ?>

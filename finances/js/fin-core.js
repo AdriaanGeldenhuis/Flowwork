@@ -598,6 +598,7 @@
     });
     const kebab = $('#kebabBtn');
     if (kebab) kebab.addEventListener('click', () => {
+      if (activePop && activePop.anchor === kebab) return closePop();
       popover(kebab, `
         <a class="fwm-pop__item" data-v="s" href="/finances/settings.php">${icon('if-sliders')}Make it yours</a>
         <a class="fwm-pop__item" data-v="h" href="/finances/#close?view=health">${icon('if-health')}Health checks</a>

@@ -475,8 +475,8 @@ a.fws-stat:hover { text-decoration: none; transform: translateY(-2px); box-shado
 .fws-pototal b { color: var(--ink); font-size: 16px; }
 
 .fws-done { padding: 34px 30px 26px; text-align: center; }
-.fws-done__seal { width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center; color: var(--gold-bright); background: radial-gradient(circle at 34% 28%, #b24660 0%, #7a1f30 46%, #470f1d 100%);
-  box-shadow: inset 0 1px 1px rgba(255, 220, 200, 0.35), 0 0 0 1px rgba(71, 15, 29, 0.35), 0 18px 34px -14px rgba(71, 15, 29, 0.9); position: relative; animation: fws-pop 0.5s var(--ease) both; }
+.fws-done__seal { width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center; color: var(--gold-bright); background: radial-gradient(circle at 34% 28%, var(--seal-hi) 0%, var(--seal) 46%, var(--seal-lo) 100%);
+  box-shadow: inset 0 1px 1px rgba(255, 220, 200, 0.35), 0 0 0 1px color-mix(in srgb, var(--seal-lo) 35%, transparent), 0 18px 34px -14px color-mix(in srgb, var(--seal-lo) 90%, transparent); position: relative; animation: fws-pop 0.5s var(--ease) both; }
 .fws-done__seal::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; border: 1px solid rgba(234, 210, 162, 0.42); }
 .fws-done__seal svg.i { width: 36px; height: 36px; stroke-width: 2; }
 .fws-done h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 32px; }

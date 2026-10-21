@@ -483,6 +483,7 @@
     });
     const kebab = $('#kebabBtn');
     if (kebab) kebab.addEventListener('click', () => {
+      if (activePop && activePop.anchor === kebab) return closePop();
       const extra = (window.FWP && window.FWP.kebabExtra) ? window.FWP.kebabExtra() : '';
       popover(kebab, `${extra}${extra ? '<div class="fwm-pop__sep"></div>' : ''}
         <a class="fwm-pop__item" data-v="home" href="/projects/">${icon('grid')}All projects</a>

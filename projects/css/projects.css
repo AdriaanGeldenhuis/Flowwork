@@ -952,8 +952,8 @@ a.fwp-conn:hover { border-color: var(--gold-line); text-decoration: none; transf
 .fwp-art .a-chip-3 { fill: #c2412f; }
 .fwp-art .a-shadow { fill: rgba(70, 35, 25, 0.12); }
 .fwm[data-theme="dark"] .fwp-art .a-shadow { fill: rgba(0, 0, 0, 0.45); }
-.fwp-art .a-seal { fill: #7a1f30; }
-.fwm[data-theme="dark"] .fwp-art .a-seal { fill: #8e2840; }
+.fwp-art .a-seal { fill: var(--seal); }
+.fwm[data-theme="dark"] .fwp-art .a-seal { fill: var(--accent-solid); }
 .fwp-art .a-seal-ring { fill: none; stroke: rgba(234, 210, 162, 0.55); stroke-width: 0.9; }
 .fwp-art .a-gold { fill: var(--gold); }
 .fwp-art .a-spark { fill: var(--gold); opacity: 0.75; transform-box: fill-box; transform-origin: center; animation: fwm-twinkle 3.2s ease-in-out infinite; }

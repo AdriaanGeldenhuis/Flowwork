@@ -306,6 +306,7 @@
 
     const kebab = $('#kebabBtn');
     if (kebab) kebab.addEventListener('click', () => {
+      if (activePop && activePop.anchor === kebab) return closePop();
       const onInbox = !!$('#mailApp');
       popover(kebab, `
         ${onInbox ? '' : `<a class="fwm-pop__item" data-v="inbox" href="/mail/">${icon('inbox')}Inbox</a>`}

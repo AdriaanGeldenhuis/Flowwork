@@ -28,7 +28,7 @@
         <?php endif; ?>
         <a class="icon-btn hide-narrow" href="/crm/settings.php" aria-label="Make it yours — CRM settings" data-tip="Make it yours"><svg class="i"><use href="#ic-sliders"/></svg></a>
         <button class="icon-btn" id="themeToggle" type="button" aria-label="Switch light or dark theme" data-tip="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
-        <a class="icon-btn hide-narrow" href="/home.php" aria-label="Flowwork home" data-tip="Home"><svg class="i"><use href="#i-home"/></svg></a>
+        <a class="icon-btn" href="/home.php" aria-label="Flowwork home" data-tip="Home"><svg class="i"><use href="#i-home"/></svg></a>
         <button class="icon-btn" id="kebabBtn" type="button" aria-label="More" aria-haspopup="menu"><svg class="i"><use href="#i-more-v"/></svg></button>
     </div>
 </header>

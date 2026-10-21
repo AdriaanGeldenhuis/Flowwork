@@ -85,6 +85,9 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 Hello, <span class="fw-finance__greeting-name"><?php echo htmlspecialchars($firstName); ?></span>
             </div>
             <div class="fw-finance__controls">
+                <a href="/home.php" class="fw-finance__back-btn" title="Flowwork home" aria-label="Flowwork home">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
                 <a href="/procurement/po_list.php" class="fw-finance__back-btn" title="Back to PO List">
                     <svg viewBox="0 0 24 24" fill="none">
                         <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -112,6 +115,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <textarea id="notes" rows="2"></textarea>
                 </label>
                 <!-- Line items table -->
+                <div class="fw-finance__table-wrapper">
                 <table class="po-lines" id="linesTable">
                     <thead>
                         <tr>
@@ -127,6 +131,7 @@ $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <tbody id="linesBody">
                     </tbody>
                 </table>
+                </div>
                 <button type="button" class="fw-finance__btn" id="addLineBtn">+ Add Line</button>
                 <button type="submit" class="fw-finance__btn fw-finance__btn--primary">Save PO</button>
                 <div id="formMessage"></div>

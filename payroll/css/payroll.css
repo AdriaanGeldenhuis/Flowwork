@@ -39,8 +39,8 @@ body.fwp { font-size: 13.5px; }
 .fwp-pill[data-tone="warning"] { --c: #b07818; }
 .fwp-pill[data-tone="danger"] { --c: #a8281e; }
 .fwp-pill[data-tone="gold"] { --c: #b08d57; }
-.fwp-pill[data-tone="accent"] { --c: #7a1f30; }
-.fwm[data-theme="dark"] .fwp-pill[data-tone="accent"] { --c: #e3a3ae; }
+.fwp-pill[data-tone="accent"] { --c: var(--accent); }
+.fwm[data-theme="dark"] .fwp-pill[data-tone="accent"] { --c: var(--accent); }
 
 .fwp-ava {
   --h: 20;

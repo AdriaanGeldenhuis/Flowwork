@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- FlowWork brand, sampled from assets/logo.webp -->
-    <color name="brand">#FF7C2EA6</color>
-    <color name="brand_dark">#FF2F0461</color>
-    <!-- Icon colours of the other two launcher icons, also their notification accents -->
-    <color name="flowmail">#FFD32F2F</color>
-    <color name="flowdrive">#FFEF6C00</color>
+    <!-- FlowWork brand: the bordeaux wax seal of the Flowwork home page -->
+    <color name="brand">#FF7A1F30</color>
+    <color name="brand_dark">#FF470F1D</color>
+    <!-- Seal colours of the other two launcher icons (the Mail and Drive tiles
+         on the home page), also their notification accents -->
+    <color name="flowmail">#FF9B3048</color>
+    <color name="flowdrive">#FF4F5D6B</color>
 
     <!-- Shown behind the page until it paints, and under the system bars
          until the page reports its own colour (web app default is dark). -->

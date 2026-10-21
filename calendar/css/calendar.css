@@ -143,8 +143,8 @@
 .fwc-dayhead.is-today .fwc-dayhead__dow { color: var(--accent-ink); }
 .fwc-dayhead.is-today .fwc-dayhead__num {
   color: #fff3e3; position: relative;
-  background: radial-gradient(circle at 34% 28%, #b24660 0%, #7a1f30 46%, #470f1d 100%);
-  box-shadow: inset 0 1px 1px rgba(255, 220, 200, 0.35), inset 0 -2px 4px rgba(30, 0, 8, 0.45), 0 6px 14px -6px rgba(71, 15, 29, 0.8);
+  background: radial-gradient(circle at 34% 28%, var(--seal-hi) 0%, var(--seal) 46%, var(--seal-lo) 100%);
+  box-shadow: inset 0 1px 1px rgba(255, 220, 200, 0.35), inset 0 -2px 4px rgba(30, 0, 8, 0.45), 0 6px 14px -6px color-mix(in srgb, var(--seal-lo) 80%, transparent);
 }
 .fwc-dayhead.is-today .fwc-dayhead__num::before { content: ''; position: absolute; inset: 3px; border-radius: 50%; border: 1px solid rgba(234, 210, 162, 0.45); }
 .fwc-dayhead.is-weekend .fwc-dayhead__num { color: var(--ink-2); }
@@ -404,8 +404,8 @@
 .fwc-art .a-ring { fill: none; stroke: var(--gold-line); stroke-width: 2; }
 .fwc-art .a-grid { fill: none; stroke: var(--line-strong); stroke-width: 1; }
 .fwc-art .a-mark { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
-.fwc-art .a-top { fill: #7a1f30; }
-.fwm[data-theme="dark"] .fwc-art .a-top { fill: #8e2840; }
+.fwc-art .a-top { fill: var(--seal); }
+.fwm[data-theme="dark"] .fwc-art .a-top { fill: var(--accent-solid); }
 
 /* ---------- Responsive ----------------------------------------------------- */
 @media (max-width: 1280px) {

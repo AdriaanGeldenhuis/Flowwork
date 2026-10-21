@@ -17,6 +17,7 @@ header('Cache-Control: no-store');
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
     <meta name="theme-color" content="<?= $theme === 'dark' ? '#111015' : '#f5f4f1' ?>">
     <title>Signed-in devices · Flowwork</title>
+    <?php include __DIR__ . '/../includes/favicon.php'; ?>
     <link rel="stylesheet" href="/account/css/account.css?v=<?= $assetVersion ?>">
 </head>
 <body class="fwa" data-theme="<?= $theme ?>">

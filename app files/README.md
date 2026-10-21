@@ -5,9 +5,9 @@ share one install and one sign-in:
 
 | Icon | Opens | Activity |
 |---|---|---|
-| **FlowWork** (purple) | the whole app (home page) | `MainActivity` |
-| **FlowMail** (red) | straight into the mailbox, own Recents card; also offered as an email app for `mailto:` links | `mail/MailActivity` |
-| **FlowDrive** (orange) | FlowDrive in the Files app (sign-in screen on first use) | `drive/DriveSetupActivity` |
+| **FlowWork** (bordeaux seal, cube) | the whole app (home page) | `MainActivity` |
+| **FlowMail** (rose seal, envelope) | straight into the mailbox, own Recents card; also offered as an email app for `mailto:` links | `mail/MailActivity` |
+| **FlowDrive** (slate seal, cloud) | FlowDrive in the Files app (sign-in screen on first use) | `drive/DriveSetupActivity` |
 
 Plus "Save to FlowDrive" in every app's Share menu and FlowDrive as a location
 in the Files app / file pickers (`drive/`).
@@ -26,7 +26,7 @@ app/src/main/java/app/flowwork/
   drive/                  FlowDrive documents provider, share target, sign-in
 app/src/main/assets/flowwork_bridge.js   injected into FlowWork pages (downloads, print, bar colours)
 app/src/main/res/        icons, strings, theme, network security config, shortcuts
-tools/icons/make_icons.py                regenerates every icon from assets/logo.webp
+tools/icons/make_icons.mjs               regenerates every icon (and the web favicons) from the home page's seals
 ```
 
 ## What the shell does
@@ -85,11 +85,17 @@ Android Studio or the command line (JDK 17+):
 
 ## Icons
 
-`tools/icons/make_icons.py` builds the adaptive foregrounds (glyph kept inside
-the 66 dp safe zone so no launcher mask clips it) in each icon's colour,
-legacy icons and the white status-bar icons from `assets/logo.webp` at the
-repo root. The gradient backgrounds are `res/drawable/ic_launcher*_background.xml`. It needs Python with `opencv-python-headless`, `numpy` and `pillow`:
+The three icons are the wax seals of the Flowwork home page: the Flowwork logo
+(bordeaux, cube), the Mail tile (#9b3048, envelope) and the Drive tile
+(#4f5d6b, cloud), each with its gold ring and gold line icon.
+`tools/icons/make_icons.mjs` draws them as SVG and renders, with Chromium:
+the adaptive foregrounds (ring + icon, inside the 66 dp safe zone), the seal
+gradient backgrounds `res/drawable/ic_launcher*_background.xml`, the legacy
+icons, the white status-bar icons, and the browser favicons of Flowwork
+(`/favicon.svg`, `/favicon.ico`, `/apple-touch-icon.png`) and FlowDrive
+(`public/`). It needs Node with Playwright (`npm i playwright`,
+`npx playwright install chromium`):
 
 ```
-python tools/icons/make_icons.py ../assets/logo.webp app/src/main/res /tmp/icon-previews
+node tools/icons/make_icons.mjs --res app/src/main/res --flowwork .. --flowdrive ../../Flowdrive --preview /tmp/icon-previews
 ```
