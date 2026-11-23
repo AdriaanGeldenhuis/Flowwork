@@ -64,9 +64,18 @@ assert_true(!$ps->isLocked(date('Y-m-d', strtotime('+1 day'))), 'dates after the
 $DB->exec("UPDATE gl_period_locks SET is_active = 0, deleted_at = NOW() WHERE lock_id = $lockId");
 assert_true(!$ps->isLocked(date('Y-m-d')), 'soft-deleted lock releases the period');
 
-// --- AccountsMap::code() resolves via settings then DEFAULTS ----------------
+// --- AccountsMap::code() honors the VAT accounts configured for this chart ---
 $map = new AccountsMap($DB, TEST_COMPANY_ID);
-assert_eq('2120', $map->code('finance_vat_output_account_id'), 'VAT output resolves from seeded settings (company 1 chart)');
-assert_eq('2101', $map->code('finance_vat_control_account_id'), 'VAT control resolves to the ensured account');
+$vatAccount = $DB->prepare("SELECT a.account_code FROM company_settings s
+                            JOIN gl_accounts a ON a.company_id = s.company_id AND a.account_id = s.setting_value
+                           WHERE s.company_id = ? AND s.setting_key = ? AND a.is_active = 1 AND a.account_subtype = 'vat_control'");
+$vatAccount->execute([TEST_COMPANY_ID, 'finance_vat_output_account_id']);
+$vatOutput = $vatAccount->fetchColumn();
+assert_true($vatOutput !== false, 'VAT output has an active account configured');
+assert_eq($vatOutput, $map->code('finance_vat_output_account_id'), 'VAT output resolves from seeded settings');
+$vatAccount->execute([TEST_COMPANY_ID, 'finance_vat_control_account_id']);
+$vatControl = $vatAccount->fetchColumn();
+assert_true($vatControl !== false && $vatControl !== $vatOutput, 'VAT control has its own active account configured');
+assert_eq($vatControl, $map->code('finance_vat_control_account_id'), 'VAT control resolves from seeded settings');
 
 test_done('foundations');

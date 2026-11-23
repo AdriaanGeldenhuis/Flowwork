@@ -29,15 +29,17 @@ function fin_account_id(PDO $db, string $code): int
     return (int)$st->fetchColumn();
 }
 
-/** First active, non-control account of a type (optionally a subtype). */
-function fin_pick_account(PDO $db, string $type, ?string $subtype = null): array
+/** First active, non-control account of a type, with optional subtype and manual journal requirements. */
+function fin_pick_account(PDO $db, string $type, ?string $subtype = null, bool $manualJournal = false): array
 {
     $sql = "SELECT account_id, account_code FROM gl_accounts WHERE company_id = ? AND account_type = ? AND is_active = 1 AND is_control = 0"
-         . ($subtype ? " AND account_subtype = ?" : " AND COALESCE(account_subtype,'') NOT IN ('fixed_asset','vat_control','bank','cash')") . " ORDER BY account_code LIMIT 1";
+         . ($subtype ? " AND account_subtype = ?" : " AND COALESCE(account_subtype,'') NOT IN ('fixed_asset','vat_control','bank','cash')")
+         . ($manualJournal ? " AND allow_manual_journal = 1" : "")
+         . " ORDER BY account_code LIMIT 1";
     $st = $db->prepare($sql);
     $st->execute($subtype ? [TEST_COMPANY_ID, $type, $subtype] : [TEST_COMPANY_ID, $type]);
     $r = $st->fetch(PDO::FETCH_ASSOC);
-    assert_true((bool)$r, "an active $type account" . ($subtype ? " ($subtype)" : '') . ' exists');
+    assert_true((bool)$r, "an active $type account" . ($subtype ? " ($subtype)" : '') . ($manualJournal ? ' that accepts manual journals' : '') . ' exists');
     return ['id' => (int)$r['account_id'], 'code' => (string)$r['account_code']];
 }
 

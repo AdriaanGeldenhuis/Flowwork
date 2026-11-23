@@ -74,7 +74,8 @@ assert_true($json($b)['ok'] ?? false, 'boot API answers');
 assert_true(($json($b)['boot']['caps']['write'] ?? false) === true, 'an admin may write');
 
 // CSRF on every POST
-$exp = fin_pick_account($DB, 'expense'); $liab = fin_pick_account($DB, 'liability');
+$exp = fin_pick_account($DB, 'expense', manualJournal: true);
+$liab = fin_pick_account($DB, 'liability', manualJournal: true);
 $jl = ['op' => 'save', 'date' => date('Y-m-d'), 'description' => 'HTTP test', 'lines' => [['account_code' => $exp['code'], 'debit' => '10'], ['account_code' => $liab['code'], 'credit' => '10']]];
 $r = $post('journals.php', $jl, false);
 assert_eq(419, $r['code'], 'a POST without the CSRF token is refused');

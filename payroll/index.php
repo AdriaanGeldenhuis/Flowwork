@@ -2,6 +2,12 @@
 // /payroll/index.php — Payroll at a glance: the run that is due or in
 // progress, what the last pay day cost, what is owed to SARS and by when,
 // what needs fixing before the next run, and the cost of pay over a year.
+// PHP's development server serves missing paths through the nearest index.
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+if ($path === '/payroll/ajax' || (is_string($path) && str_starts_with($path, '/payroll/ajax/'))) {
+    http_response_code(404);
+    exit;
+}
 require_once __DIR__ . '/lib/PayBoot.php';
 
 $C = $PAY_COMPANY_ID;

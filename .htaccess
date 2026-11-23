@@ -1,6 +1,9 @@
 Options -Indexes
 RewriteEngine On
 
+# Retired Payroll endpoints should answer 404 before the front-controller rewrite.
+RewriteRule ^payroll/ajax(?:/|$) - [R=404,L]
+
 # Route non-existent files to index
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
