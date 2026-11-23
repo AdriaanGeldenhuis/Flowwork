@@ -15,8 +15,8 @@ require_once FLOWWORK_ROOT . '/finances/lib/FinClose.php';
 
 fin_setup($DB);
 $C = TEST_COMPANY_ID;
-$exp = fin_pick_account($DB, 'expense');
-$liab = fin_pick_account($DB, 'liability');
+$exp = fin_pick_account($DB, 'expense', manualJournal: true);
+$liab = fin_pick_account($DB, 'liability', manualJournal: true);
 $date = date('Y-m-d', strtotime('-3 days'));
 $lines = fn($a) => [['account_code' => $exp['code'], 'description' => 'Rent', 'debit' => $a, 'credit' => ''], ['account_code' => $liab['code'], 'description' => 'Accrual', 'debit' => '', 'credit' => $a]];
 $before = tb_snapshot($DB);
