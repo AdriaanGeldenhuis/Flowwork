@@ -129,7 +129,7 @@ class MailSyncService
         );
         $c->connect();
         $user = trim((string)($acc['username'] ?? '')) ?: (string)$acc['email_address'];
-        $c->login($user, SecureVault::decrypt($acc['password_encrypted'] ?? ''));
+        $c->login($user, MailRepo::password($acc));
         return $c;
     }
 

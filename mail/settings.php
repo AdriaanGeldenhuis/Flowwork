@@ -77,15 +77,15 @@ include __DIR__ . '/partials/head.php';
         <form class="fwm-dialog__body" id="accountForm" autocomplete="off">
             <input type="hidden" name="account_id">
             <div class="fwm-presets" id="presets"></div>
-            <p class="hint" id="presetHint" style="margin:-8px 0 16px"></p>
             <div class="row">
                 <div class="field"><label class="label" for="acDisplay">Your name</label><input class="input" id="acDisplay" name="display_name" placeholder="Shown to recipients"></div>
                 <div class="field"><label class="label" for="acEmail">Email address</label><input class="input" id="acEmail" name="email_address" type="email" required placeholder="you@company.co.za" autocomplete="off"></div>
             </div>
             <div class="row">
-                <div class="field"><label class="label" for="acPass">Password</label><input class="input" id="acPass" name="password" type="password" autocomplete="new-password" placeholder="Mailbox or app password"></div>
+                <div class="field"><label class="label" for="acPass">Password</label><input class="input" id="acPass" name="password" type="password" autocomplete="new-password" placeholder="Mailbox or app password" aria-describedby="presetHint"></div>
                 <div class="field"><label class="label" for="acName">Label in Flowwork</label><input class="input" id="acName" name="account_name" placeholder="e.g. Work"></div>
             </div>
+            <p class="hint" id="presetHint" hidden></p>
             <details class="fwm-details" id="serverDetails" style="margin-top:14px">
                 <summary><svg class="i i--sm"><use href="#i-chev-right"/></svg>Server settings</summary>
                 <div class="row">

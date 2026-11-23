@@ -50,7 +50,7 @@
     // ---------------------------------------------------------- accounts
     const PRESETS = {
       gmail: { label: 'Gmail / Google Workspace', imap: ['imap.gmail.com', 993, 'ssl'], smtp: ['smtp.gmail.com', 587, 'tls'], sent: false,
-        hint: 'Google requires an <b>app password</b> (Google Account → Security → 2-Step Verification → App passwords). Your normal password will be rejected.' },
+        hint: 'Turn on Google 2-Step Verification, then <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">create a Google App Password</a> and paste it into Password. Flowwork uses your email address if Username is blank.' },
       microsoft: { label: 'Microsoft 365 / Outlook', imap: ['outlook.office365.com', 993, 'ssl'], smtp: ['smtp.office365.com', 587, 'tls'], sent: false,
         hint: 'Your Microsoft 365 admin must allow IMAP and "Authenticated SMTP" for this mailbox. Accounts with MFA need an app password.' },
       yahoo: { label: 'Yahoo', imap: ['imap.mail.yahoo.com', 993, 'ssl'], smtp: ['smtp.mail.yahoo.com', 465, 'ssl'], sent: true,
@@ -60,6 +60,22 @@
       other: { label: 'Company domain (cPanel, Xneelo, other)', imap: null, smtp: null, sent: true,
         hint: 'Most hosts use <b>mail.yourdomain</b> for both servers with SSL on 993 (IMAP) and STARTTLS on 587 (SMTP). Check your host\'s mail client settings if the test fails.' },
     };
+
+    const gmailAddress = (email) => /@(gmail|googlemail)\.com$/i.test(email.trim());
+    const gmailServers = (imap, smtp) => Boolean(imap || smtp)
+      && ['', 'imap.gmail.com'].includes(imap.toLowerCase())
+      && ['', 'smtp.gmail.com'].includes(smtp.toLowerCase());
+
+    function updateAccountHint() {
+      const f = $('#accountForm');
+      const imap = f.imap_server.value.trim();
+      const smtp = f.smtp_server.value.trim();
+      const selected = $('#presets .is-on')?.dataset.preset;
+      const isGmail = gmailServers(imap, smtp) || (!imap && !smtp && !selected && gmailAddress(f.email_address.value));
+      const hint = $('#presetHint');
+      hint.innerHTML = isGmail ? PRESETS.gmail.hint : (selected !== 'gmail' && PRESETS[selected]?.hint) || '';
+      hint.hidden = !hint.textContent;
+    }
 
     function renderAccounts() {
       const host = $('#accountsList');
@@ -125,7 +141,6 @@
       $('#accountTitle').textContent = acc ? 'Edit account' : 'Connect an account';
       $('#acSig').innerHTML = '<option value="">Use my default signature</option>' + S.signatures.map((s) => `<option value="${s.signature_id}">${esc(s.name)}</option>`).join('');
       $('#presets').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<button type="button" class="fwm-preset" data-preset="${k}">${esc(p.label)}</button>`).join('');
-      $('#presetHint').innerHTML = '';
       $('#presets').hidden = !!acc;
       $('#serverDetails').open = !!acc;
       if (acc) {
@@ -140,6 +155,7 @@
         f.imap_port.value = 993; f.smtp_port.value = 587;
         f.display_name.value = '';
       }
+      updateAccountHint();
       openModal('accountModal');
     }
     $('#presets').addEventListener('click', (e) => {
@@ -148,7 +164,6 @@
       const f = $('#accountForm');
       const p = PRESETS[b.dataset.preset];
       $$('.fwm-preset').forEach((x) => x.classList.toggle('is-on', x === b));
-      $('#presetHint').innerHTML = p.hint;
       if (p.imap) {
         [f.imap_server.value, f.imap_port.value, f.imap_encryption.value] = p.imap;
         [f.smtp_server.value, f.smtp_port.value, f.smtp_encryption.value] = p.smtp;
@@ -159,16 +174,27 @@
         $('#serverDetails').open = true;
       }
       f.save_sent_copy.checked = p.sent;
+      updateAccountHint();
       f.email_address.focus();
     });
-    // Fill "mail.<domain>" when the user types the address after choosing "Other".
+    $('#acEmail').addEventListener('input', updateAccountHint);
+    $('#acImap').addEventListener('input', updateAccountHint);
+    $('#acSmtp').addEventListener('input', updateAccountHint);
+    // Suggest servers for new accounts without replacing manual entries.
     $('#acEmail').addEventListener('change', () => {
       const f = $('#accountForm');
       const dom = (f.email_address.value.split('@')[1] || '').trim();
-      if (!dom) return;
-      if (!f.imap_server.value) f.imap_server.value = 'mail.' + dom;
-      if (!f.smtp_server.value) f.smtp_server.value = 'mail.' + dom;
+      if (!dom || f.account_id.value) return;
+      if (gmailAddress(f.email_address.value) && !$('#presets .is-on') && !f.imap_server.value && !f.smtp_server.value) {
+        [f.imap_server.value, f.imap_port.value, f.imap_encryption.value] = PRESETS.gmail.imap;
+        [f.smtp_server.value, f.smtp_port.value, f.smtp_encryption.value] = PRESETS.gmail.smtp;
+        f.save_sent_copy.checked = PRESETS.gmail.sent;
+      } else {
+        if (!f.imap_server.value) f.imap_server.value = 'mail.' + dom;
+        if (!f.smtp_server.value) f.smtp_server.value = 'mail.' + dom;
+      }
       if (!f.account_name.value) f.account_name.value = dom;
+      updateAccountHint();
     });
     // Ports follow the security choice.
     $('#acImapEnc').addEventListener('change', (e) => { const f = $('#accountForm'); f.imap_port.value = e.target.value === 'ssl' ? 993 : 143; });
@@ -182,9 +208,12 @@
       d.tls_verify = f.tls_verify.checked; d.save_sent_copy = f.save_sent_copy.checked; d.is_active = f.is_active.checked;
       return d;
     }
-    function showTest(r) {
+    function showTest(r, settings) {
       const line = (label, x) => !x ? '' : `<div class="fwm-test-line ${x.ok ? 'is-ok' : 'is-err'}">${icon(x.ok ? 'check' : 'alert')}<div><b>${label}</b> — ${x.ok ? 'connected' + (x.folders != null ? ` (${x.folders} folders)` : '') : esc(x.error)}</div></div>`;
-      $('#testResult').innerHTML = line('Incoming (IMAP)', r.imap) + line('Outgoing (SMTP)', r.smtp);
+      const gmailSmtpTip = r.smtp?.stage === 'connection' && settings.smtp_server.toLowerCase() === 'smtp.gmail.com'
+        && Number(settings.smtp_port) === 587 && settings.smtp_encryption === 'tls'
+        ? '<p class="hint">You can also test Gmail outgoing mail on port 465 with SSL/TLS in Server settings.</p>' : '';
+      $('#testResult').innerHTML = line('Incoming (IMAP)', r.imap) + line('Outgoing (SMTP)', r.smtp) + gmailSmtpTip;
     }
     $('#testAccount').addEventListener('click', async (e) => {
       const b = e.currentTarget;
@@ -192,7 +221,7 @@
       if (!d.email_address) { toast('Enter the email address first', { type: 'error' }); return; }
       b.classList.add('is-busy');
       $('#testResult').innerHTML = `<div class="fwm-test-line">${icon('refresh')}<div>Connecting…</div></div>`;
-      try { showTest(await api.post('account.php', Object.assign({ op: 'test' }, d))); }
+      try { showTest(await api.post('account.php', Object.assign({ op: 'test' }, d)), d); }
       catch (err) { $('#testResult').innerHTML = ''; toastError(err); }
       finally { b.classList.remove('is-busy'); }
     });
