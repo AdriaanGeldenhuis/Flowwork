@@ -15,8 +15,11 @@
 
 final class Formula
 {
+    private const REFERENCES = '/"[^"]*"|\'[^\']*\'|\{([^{}]+)\}|\[([^\[\]]+)\]/';
+
     private array $tok = [];
     private int $pos = 0;
+    private bool $evaluating = true;
     /** @var callable(string): (float|string|null) */
     private $resolve;
 
@@ -41,7 +44,7 @@ final class Formula
             $v = $f->parseOr();
             if ($f->pos < count($f->tok)) return null;
             if (is_float($v) && (is_nan($v) || is_infinite($v))) return null;
-            return $v;
+            return $v ?? 0.0;
         } catch (Throwable $e) {
             return null;
         }
@@ -58,10 +61,21 @@ final class Formula
     /** Column names a formula refers to (for dependency ordering and the editor). @return string[] */
     public static function references(string $formula): array
     {
-        preg_match_all('/\{([^{}]+)\}|\[([^\[\]]+)\]/', $formula, $m, PREG_SET_ORDER);
+        preg_match_all(self::REFERENCES, $formula, $m, PREG_SET_ORDER);
         $out = [];
-        foreach ($m as $x) $out[] = trim($x[1] !== '' ? $x[1] : ($x[2] ?? ''));
+        foreach ($m as $x) {
+            if (isset($x[1])) $out[] = trim($x[1] !== '' ? $x[1] : $x[2]);
+        }
         return array_values(array_unique(array_filter($out, 'strlen')));
+    }
+
+    /** Rewrite column references while keeping quoted text and surrounding formatting intact. */
+    public static function rewriteReferences(string $formula, callable $rewrite): string
+    {
+        return preg_replace_callback(self::REFERENCES, function (array $m) use ($rewrite) {
+            if (!isset($m[1])) return $m[0];
+            return $rewrite(trim($m[1] !== '' ? $m[1] : $m[2]), $m[0]);
+        }, $formula);
     }
 
     /** Lower-cased name with single spaces — the loose match key for column names. */
@@ -195,7 +209,9 @@ final class Formula
         $v = $this->parsePow();
         while ($this->isOp('*') || $this->isOp('/') || $this->isOp('%')) {
             $op = $this->tok[$this->pos++][1];
-            $r = self::num($this->parsePow());
+            $right = $this->parsePow();
+            if (!$this->evaluating) continue;
+            $r = self::num($right);
             if ($op === '*') $v = self::num($v) * $r;
             else {
                 if ($r == 0.0) throw new RuntimeException('division by zero');
@@ -211,6 +227,7 @@ final class Formula
         if ($this->isOp('^')) {
             $this->pos++;
             $r = $this->parsePow();
+            if (!$this->evaluating) return 0.0;
             $v = pow(self::num($v), self::num($r));
         }
         return $v;
@@ -232,9 +249,7 @@ final class Formula
         switch ($t[0]) {
             case 'num': return $t[1];
             case 'str': return $t[1];
-            case 'ref':
-                $v = ($this->resolve)($t[1]);
-                return $v === null ? 0.0 : $v;
+            case 'ref': return $this->evaluating ? ($this->resolve)($t[1]) : null;
             case 'op':
                 if ($t[1] === '(') { $v = $this->parseOr(); $this->expect(')'); return $v; }
                 // AND(a, b) / OR(a, b) written as functions
@@ -244,9 +259,33 @@ final class Formula
                 if ($t[1] === 'TRUE') return 1.0;
                 if ($t[1] === 'FALSE') return 0.0;
                 if ($t[1] === 'PI' && !$this->isOp('(')) return M_PI;
-                return self::call($t[1], $this->parseArgs());
+                if ($t[1] === 'IF') return $this->parseIf();
+                $args = $this->parseArgs();
+                return $this->evaluating ? self::call($t[1], $args) : 0.0;
         }
         throw new RuntimeException('unexpected token');
+    }
+
+    private function parseIf()
+    {
+        $this->expect('(');
+        $takeTrue = self::truthy($this->parseOr());
+        $evaluating = $this->evaluating;
+        $yes = 1.0;
+        $no = 0.0;
+        if ($this->isOp(',')) {
+            $this->pos++;
+            $this->evaluating = $evaluating && $takeTrue;
+            $yes = $this->parseOr();
+            if ($this->isOp(',')) {
+                $this->pos++;
+                $this->evaluating = $evaluating && !$takeTrue;
+                $no = $this->parseOr();
+            }
+        }
+        $this->expect(')');
+        $this->evaluating = $evaluating;
+        return $takeTrue ? $yes : $no;
     }
 
     private function parseArgs(): array
@@ -272,7 +311,7 @@ final class Formula
             case 'AVG': case 'AVERAGE': return $a ? array_sum($nums()) / count($a) : 0.0;
             case 'MIN': return $a ? min($nums()) : 0.0;
             case 'MAX': return $a ? max($nums()) : 0.0;
-            case 'COUNT': return (float)count(array_filter($a, fn($v) => $v !== '' && $v !== null && !(is_float($v) && $v == 0.0)));
+            case 'COUNT': return (float)count(array_filter($a, fn($v) => $v !== '' && $v !== null));
             case 'ABS': return abs($arg(0));
             case 'SQRT': return $arg(0) >= 0 ? sqrt($arg(0)) : 0.0;
             case 'POWER': return pow($arg(0), $arg(1));
@@ -280,15 +319,15 @@ final class Formula
             case 'ROUND': return round($arg(0), (int)$arg(1));
             case 'ROUNDUP': $p = pow(10, (int)$arg(1)); return ceil($arg(0) * $p) / $p;
             case 'ROUNDDOWN': $p = pow(10, (int)$arg(1)); return floor($arg(0) * $p) / $p;
-            case 'IF': return self::truthy($a[0] ?? 0.0) ? ($a[1] ?? 1.0) : ($a[2] ?? 0.0);
             case 'AND': foreach ($a as $v) if (!self::truthy($v)) return 0.0; return 1.0;
             case 'OR': foreach ($a as $v) if (self::truthy($v)) return 1.0; return 0.0;
             case 'NOT': return self::truthy($a[0] ?? 0.0) ? 0.0 : 1.0;
             case 'TODAY': return (float)self::dayNumber(date('Y-m-d'));
             case 'DAYS': return $arg(0) - $arg(1);
             case 'WORKDAYS': case 'NETWORKDAYS':
+                if (!isset($a[0], $a[1]) || $a[0] === '' || $a[1] === '') return 0.0;
                 return (float)self::workdays((int)$arg(0), (int)$arg(1));
-            case 'CONCAT': return implode('', array_map(fn($v) => is_float($v) ? rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.') : (string)$v, $a));
+            case 'CONCAT': return implode('', array_map(fn($v) => is_float($v) ? rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.') : (string)($v ?? 0), $a));
         }
         throw new RuntimeException('unknown function ' . $fn);
     }
@@ -296,13 +335,12 @@ final class Formula
     /** Weekdays (Mon–Fri) from start to end inclusive; negative when end is before start. */
     private static function workdays(int $start, int $end): int
     {
-        if ($start === 0 || $end === 0) return 0;
         $sign = 1;
         if ($end < $start) { [$start, $end] = [$end, $start]; $sign = -1; }
         $days = $end - $start + 1;
         $weeks = intdiv($days, 7);
         $count = $weeks * 5;
-        $dow = ($start + 3) % 7; // 1970-01-01 was a Thursday; 0 = Monday
+        $dow = (($start + 3) % 7 + 7) % 7; // 1970-01-01 was a Thursday; 0 = Monday
         for ($i = 0; $i < $days % 7; $i++) if ((($dow + $i) % 7) < 5) $count++;
         return $sign * $count;
     }
@@ -324,6 +362,8 @@ final class Formula
 
     private static function compare($a, $b, string $op): bool
     {
+        $a ??= 0.0;
+        $b ??= 0.0;
         if (is_string($a) || is_string($b)) {
             $sa = mb_strtolower(trim(is_float($a) ? self::numText($a) : (string)$a));
             $sb = mb_strtolower(trim(is_float($b) ? self::numText($b) : (string)$b));

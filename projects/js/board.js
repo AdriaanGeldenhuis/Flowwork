@@ -270,10 +270,24 @@
     catch (x) { it.title = old; refreshItem(it.id); toastError(x); }
   }
   async function createItem(groupId, title, values = {}, where = 'bottom') {
-    const d = await api.post('items.php', { action: 'create', board_id: S.board.id, group_id: groupId, title, values, where });
+    const d = await api.post('items.php', { action: 'create', board_id: S.board.id, group_id: groupId, title, values, where }, { keepalive: true });
     if (where === 'top') S.items.forEach((x) => { if (x.group_id === d.item.group_id) x.position += 1; });
     applyItems([d.item]);
     return item(d.item.id);
+  }
+  async function submitItemInput(input, create, findInput) {
+    if (!input.isConnected || !canEdit()) return;
+    const draft = input.value;
+    const title = draft.trim();
+    if (!title) return;
+    // Consume the draft before sending so Enter followed by blur only saves once.
+    input.value = '';
+    try { return await create(title); }
+    catch (x) {
+      const current = findInput();
+      if (current && !current.value) current.value = draft;
+      toastError(x);
+    }
   }
   async function archiveItems(ids, label) {
     if (!ids.length) return;
@@ -408,6 +422,12 @@
     const ids = itemsIn(g.id).map((i) => i.id);
     const n = ids.filter((id) => S.selected.has(id)).length;
     return !n ? '' : n === ids.length ? 'is-on' : 'is-mixed';
+  }
+  function updateGroupCheck(button) {
+    const state = groupSelState(group(button.dataset.selgroup));
+    button.classList.toggle('is-on', state === 'is-on');
+    button.classList.toggle('is-mixed', state === 'is-mixed');
+    button.setAttribute('aria-checked', state === 'is-mixed' ? 'mixed' : String(state === 'is-on'));
   }
   function cellHTML(c, it, g) {
     const ed = canEdit() && C.editable(c);
@@ -888,6 +908,9 @@
       if (nameCell && !e.target.closest('button, input')) { const r = nameCell.closest('[data-iid]'); const it = item(r.dataset.iid); const span = nameCell.querySelector('[data-rename]'); if (it && span) startRename(it, span); }
     });
     el.view.addEventListener('submit', onViewSubmit);
+    el.view.addEventListener('focusout', (e) => {
+      if (e.target.matches('[data-addto] input')) addTableItem(e.target);
+    });
     el.view.addEventListener('keydown', onViewKey);
     bindDrag();
     bindResize();
@@ -928,7 +951,7 @@
       } else if (S.selected.has(id)) S.selected.delete(id); else S.selected.add(id);
       S.lastSel = id;
       $$('.fwp-row', el.view).forEach((r) => { const on = S.selected.has(Number(r.dataset.iid)); r.classList.toggle('is-selected', on); const c = r.querySelector('[data-sel]'); if (c) { c.classList.toggle('is-on', on); c.setAttribute('aria-checked', on); } });
-      $$('[data-selgroup]', el.view).forEach((b) => { const g = group(b.dataset.selgroup); b.classList.remove('is-on', 'is-mixed'); const s = groupSelState(g); if (s) b.classList.add(s); b.setAttribute('aria-checked', s === 'is-on' ? 'true' : s === 'is-mixed' ? 'mixed' : 'false'); });
+      $$('[data-selgroup]', el.view).forEach(updateGroupCheck);
       renderBulk();
       return;
     }
@@ -1003,16 +1026,7 @@
     const f = e.target;
     if (f.matches('[data-addto]')) {
       e.preventDefault();
-      const input = f.querySelector('input');
-      const title = input.value.trim();
-      if (!title) return;
-      input.value = '';
-      const gid = Number(f.dataset.addto);
-      const values = {};
-      // A person filter that is on: new items get that person, like in the filtered view.
-      const pc = primaryPeople();
-      if (S.person && pc) values[pc.id] = [Number(S.person)];
-      createItem(gid, title, values).then(() => { renderView(); const nf = el.view.querySelector(`[data-addto="${gid}"] input`); if (nf) nf.focus(); }).catch(toastError);
+      addTableItem(f.querySelector('input'));
       return;
     }
     if (f.matches('[data-subadd]')) {
@@ -1025,7 +1039,37 @@
     }
   }
 
+  async function addTableItem(input) {
+    const gid = Number(input.form.dataset.addto);
+    const selector = `[data-addto="${gid}"]`;
+    const values = {};
+    // New items inherit the active person filter.
+    const pc = primaryPeople();
+    if (S.person && pc) values[pc.id] = [Number(S.person)];
+    const it = await submitItemInput(input, (title) => createItem(gid, title, values), () => $(selector + ' input', el.view));
+    if (!it) return;
+    if (S.view !== 'table') { renderView(); return; }
+    if (!matches(it)) return;
+    const form = $(selector, el.view);
+    if (!form) { renderView(); return; }
+    // Insert just the new row so whatever the user clicked can stay focused.
+    const rows = itemsIn(gid);
+    const next = rows[rows.findIndex((x) => x.id === it.id) + 1];
+    const before = next ? rowEl(next.id) || form : form;
+    if (!rowEl(it.id)) before.insertAdjacentHTML('beforebegin', rowHTML(it, visibleColumns(), group(gid)));
+    refreshSummary(gid);
+    const check = $(`[data-selgroup="${gid}"]`, el.view);
+    if (check) updateGroupCheck(check);
+    if (S.groups.length > 1 && !$('.fwp-boardsum', el.view)) renderView();
+  }
+
   function onViewKey(e) {
+    if (e.key === 'Escape' && !e.isComposing && e.target.matches('[data-addto] input')) {
+      e.preventDefault();
+      e.target.value = '';
+      e.target.blur();
+      return;
+    }
     if (window.FWP.activePop || !isGridKey(e)) return;
     const it = item(S.focus.itemId);
     if (!it) return;
@@ -1442,7 +1486,7 @@
 
   const FWB = window.FWB = {
     S, el, BOOT, prefs, store, col, group, item, colsOf, primaryStatus, primaryPeople, primaryDate, visibleColumns, filtered, matches, isFiltered, itemsIn, itemsSorted,
-    canEdit, canManage, level, noun, Noun, busy, applyItems, removeItems, indexItems, decorate, setValue, bulkSet, renameItem, createItem, archiveItems, deleteItems,
+    canEdit, canManage, level, noun, Noun, busy, applyItems, removeItems, indexItems, decorate, setValue, bulkSet, renameItem, createItem, submitItemInput, archiveItems, deleteItems,
     moveItems, reorderGroup, savePrefs, savePrefsSoon, reloadBoard, registerView, renderView, setView, render, renderTools, renderHead, renderSide, refreshItem,
     openItem, panelClosed, editCell, replaceColumn, insertColumn, addGroup, newItemTop, clearFilters, columnMenu, groupMenu, loadSubs, addSubitem, updateSub,
     VIEW_DEFS, start, ruleReady, syncViewId, isGridKey, cellFor, panel: null, dialogs: null, guestFileUrl: null, ganttDragging: null,

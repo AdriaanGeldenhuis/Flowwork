@@ -52,7 +52,7 @@ foreach ($cols as $c) {
 }
 $head[] = 'Created';
 $head[] = 'Last updated';
-fputcsv($out, array_map($safe, $head));
+fputcsv($out, array_map($safe, $head), escape: '');
 foreach (array_chunk($items, 500) as $chunk) {
     $vals = [];
     $vs = $DB->query("SELECT item_id, column_id, value FROM board_item_values WHERE item_id IN (" . implode(',', array_map(fn($i) => (int)$i['id'], $chunk)) . ")");
@@ -84,7 +84,7 @@ foreach (array_chunk($items, 500) as $chunk) {
         }
         $row[] = substr((string)$it['created_at'], 0, 16);
         $row[] = substr((string)$it['updated_at'], 0, 16);
-        fputcsv($out, array_map($safe, $row));
+        fputcsv($out, array_map($safe, $row), escape: '');
     }
 }
 fclose($out);

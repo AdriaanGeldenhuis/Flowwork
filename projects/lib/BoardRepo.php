@@ -224,7 +224,10 @@ final class BoardRepo
             return Columns::encodeConfig('progress', $cfg);
         }
         if ($c['type'] === 'formula') {
-            $f = preg_replace_callback('/([\[{])\s*#(\d+)\s*([\]}])/', fn($m) => isset($colMap[(int)$m[2]]) ? $m[1] . '#' . $colMap[(int)$m[2]] . $m[3] : $m[0], $cfg['formula']);
+            $f = Formula::rewriteReferences($cfg['formula'], function (string $ref, string $original) use ($colMap) {
+                if (!preg_match('/^#(\d+)$/', $ref, $m) || !isset($colMap[(int)$m[1]])) return $original;
+                return $original[0] . '#' . $colMap[(int)$m[1]] . substr($original, -1);
+            });
             if ($f === $cfg['formula']) return null;
             $cfg['formula'] = $f;
             return Columns::encodeConfig('formula', $cfg);
@@ -719,13 +722,13 @@ final class BoardRepo
             if ($c['type'] !== 'formula') continue;
             $cfg = Columns::config($c);
             $f = $cfg['formula'];
-            $nf = preg_replace_callback('/\{([^{}]+)\}|\[([^\[\]#][^\[\]]*)\]/', function ($m) use ($from, $to) {
-                $name = $m[1] !== '' ? $m[1] : ($m[2] ?? '');
+            $nf = Formula::rewriteReferences($f, function (string $name, string $original) use ($from, $to) {
+                if (str_starts_with($name, '#')) return $original;
                 $suffix = '';
                 if (preg_match('/^(.*)\.(start|end)$/i', trim($name), $mm)) { $name = $mm[1]; $suffix = '.' . strtolower($mm[2]); }
-                if (Formula::nameKey($name) !== Formula::nameKey($from)) return $m[0];
+                if (Formula::nameKey($name) !== Formula::nameKey($from)) return $original;
                 return '{' . $to . $suffix . '}';
-            }, $f);
+            });
             if ($nf !== $f) {
                 // Never cut a formula short (encodeConfig keeps 1000 characters): refuse the rename.
                 if (mb_strlen(trim($nf)) > 1000) throw new ProjectUserError('“' . $c['name'] . '” uses this column and would become longer than 1000 characters. Shorten the name or the formula first.');

@@ -14,7 +14,7 @@
   if (!FWB) return;
   const {
     $, $$, esc, icon, api, toast, toastError, popover, P, personById, personName, personAvatar, faces, avatar,
-    ymd, parseYmd, today, addDays, daysBetween, MONTHS, DOW, mon3, fmtDate, fmtRange, safeColor, fmtNum, emptyState, narrow, finePointer,
+    ymd, parseYmd, today, addDays, daysBetween, MONTHS, DOW, mon3, fmtDate, fmtRange, safeColor, emptyState, narrow, finePointer,
   } = window.FWP;
   const C = window.FWBCells;
   const S = FWB.S;
@@ -105,7 +105,7 @@
         const sum = num && items.length ? C.aggregate(num, items) : null;
         return `<section class="fwp-kb__col" data-lane="${esc(l.key)}" style="--c:${l.color || '#85766b'}">
           <div class="fwp-kb__head">${l.person ? `${avatar(l.person.name, l.person.email)}<b style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.label)}</b>` : `<span class="fwp-pill" style="--c:${l.color}">${esc(l.label)}</span>`}<span class="grow"></span><span class="fwp-kb__count">${items.length}</span></div>
-          ${sum != null && typeof sum === 'number' ? `<div class="fwp-kb__sum">${esc(num.name)}: ${C.unitWrap(num, esc(C.numText(num, sum)))}</div>` : ''}
+          ${sum != null ? `<div class="fwp-kb__sum">${esc(num.name)}: ${num.config.agg === 'count' ? sum : C.unitWrap(num, esc(C.numText(num, sum)))}</div>` : ''}
           <div class="fwp-kb__list" data-lane="${esc(l.key)}">${items.map((it) => this.card(it, c, ps)).join('')}</div>
           ${FWB.canEdit() ? `<button class="fwp-kb__add" type="button" data-kbadd="${esc(l.key)}">${icon('plus', 'i--sm')}Add ${esc(FWB.noun())}</button>` : ''}
         </section>`;
@@ -155,7 +155,7 @@
       await FWB.setValue(it, c, value);
       FWB.renderView();
     },
-    async add(key, title) {
+    add(key, title) {
       const c = this.col();
       const lane = this.lanes().find((l) => l.key === key);
       let gid = (S.groups[0] || {}).id;
@@ -163,8 +163,7 @@
       if (this.by() === 'group') gid = lane.value;
       else if (lane && lane.value != null) values[c.id] = c.type === 'people' ? [lane.value] : c.type === 'dropdown' ? [lane.value] : lane.value;
       if (!gid) return;
-      try { await FWB.createItem(gid, title, values); FWB.renderView(); const f = $(`[data-lane="${CSS.escape(key)}"] .fwp-kb__add-input input`, el.view); if (f) f.focus(); else { const b = $(`[data-kbadd="${CSS.escape(key)}"]`, el.view); if (b) b.click(); } }
-      catch (x) { toastError(x); }
+      return FWB.createItem(gid, title, values);
     },
   };
   /** A lane's add box in place of its '+ Add' button; keep: {value, focus, from, to} from before a re-render. */
@@ -173,15 +172,30 @@
     const f = document.createElement('form');
     f.className = 'fwp-kb__add-input';
     f.dataset.kbform = key;
-    f.innerHTML = `<input maxlength="500" placeholder="${esc(FWB.Noun())} name — Enter to add" aria-label="New ${esc(FWB.noun())}">`;
+    f.innerHTML = `<input maxlength="500" placeholder="${esc(FWB.Noun())} name" aria-label="New ${esc(FWB.noun())}">`;
     add.replaceWith(f);
     const inp = $('input', f);
-    inp.value = keep ? keep.value : '';
+    inp.value = keep?.value ?? '';
     if (!keep) inp.focus();
     else if (keep.focus) { inp.focus({ preventScroll: true }); inp.setSelectionRange(keep.from, keep.to); }
-    f.addEventListener('submit', (ev) => { ev.preventDefault(); const t = inp.value.trim(); if (t) { inp.value = ''; kanban.add(key, t); } });
+    const findInput = () => {
+      const lane = CSS.escape(key);
+      const live = $(`[data-kbform="${lane}"] input`, el.view);
+      if (live) return live;
+      const button = $(`[data-kbadd="${lane}"]`, el.view);
+      return button ? kbAddBox(button, {}) : null;
+    };
+    const submit = async () => {
+      const item = await FWB.submitItemInput(inp, (title) => kanban.add(key, title), findInput);
+      if (item) FWB.renderView();
+    };
+    f.addEventListener('submit', (ev) => { ev.preventDefault(); submit(); });
     inp.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Escape') { inp.value = ''; inp.blur(); FWB.renderView(); } });
-    inp.addEventListener('blur', () => setTimeout(() => { if (f.isConnected && !inp.value.trim()) FWB.renderView(); }, 120));
+    inp.addEventListener('blur', () => {
+      if (inp.value.trim()) submit();
+      else setTimeout(() => { if (f.isConnected && document.activeElement !== inp && !inp.value.trim()) f.replaceWith(add); }, 120);
+    });
+    return inp;
   }
   // kanban events
   let kbDrag = null;
@@ -672,7 +686,10 @@
       const w0 = addDays(this.weekStart(parseYmd(today())), this.offset * 7);
       const weeks = Array.from({ length: WEEKS }, (_, i) => addDays(w0, i * 7));
       const ec = this.effortCol();
-      const cap = ec ? 40 : 5;
+      const defaultUnit = ec && /\bdays?\b/i.test(ec.name) ? 'days' : 'h';
+      const unit = ec?.config.unit || defaultUnit;
+      const cap = !ec || /^(d|days?)$/i.test(unit) ? 5 : 40;
+      const effortFormat = ec && { config: { ...ec.config, unit, unit_pos: ec.config.unit ? ec.config.unit_pos : 'suffix' } };
       const list = FWB.filtered().filter((it) => !it._done);
       const people = new Map();
       const ensure = (id) => { if (!people.has(id)) people.set(id, weeks.map(() => ({ items: [], load: 0 }))); return people.get(id); };
@@ -692,9 +709,9 @@
       });
       const ids = Array.from(people.keys()).sort((x, y) => (x === 0) - (y === 0) || personName(x).localeCompare(personName(y)));
       const thisWeek = ymd(this.weekStart(parseYmd(today())));
-      const fmtLoad = (n) => (ec ? fmtNum(n, n % 1 ? 1 : 0) + ' h' : plural(Math.round(n), FWB.noun()));
+      const fmtLoad = (n) => ec ? C.numberLabel(effortFormat, n) : plural(Math.round(n), FWB.noun());
       v.innerHTML = `<div class="fwp-wl"><div class="fwp-wl__grid" style="grid-template-columns:minmax(180px,220px) repeat(${WEEKS}, minmax(140px, 1fr))">
-        <div class="fwp-wl__h">Person<small>${ec ? `Load from ${esc(ec.name)} · capacity ${cap} h a week` : `Open ${esc(FWB.noun())}s · ${cap} a week is full`}</small></div>
+        <div class="fwp-wl__h">Person<small>${ec ? `Load from ${esc(ec.name)} · capacity ${esc(fmtLoad(cap))} a week` : `Open ${esc(FWB.noun())}s · ${cap} a week is full`}</small></div>
         ${weeks.map((w) => `<div class="fwp-wl__h ${ymd(w) === thisWeek ? 'is-now' : ''}">${ymd(w) === thisWeek ? 'This week' : 'Week of'}<small>${esc(fmtDate(ymd(w)))}</small></div>`).join('')}
         ${ids.map((id) => {
           const row = people.get(id);
@@ -848,10 +865,10 @@
       // 5. a number per group
       if (nc) {
         const nums = S.columns.filter((c) => c.type === 'number' || c.type === 'formula');
-        const rows = S.groups.map((g) => { const items = list.filter((it) => it.group_id === g.id); const s = items.reduce((n, it) => n + (typeof it.values[nc.id] === 'number' ? it.values[nc.id] : 0), 0); return { label: g.name, parts: [{ n: s, color: safeColor(g.color), label: nc.name }], value: C.numText(nc, s) + (nc.config.unit && nc.config.unit_pos === 'suffix' ? ' ' + nc.config.unit : '') }; }).filter((r) => r.parts[0].n);
+        const rows = S.groups.map((g) => { const items = list.filter((it) => it.group_id === g.id); const s = items.reduce((n, it) => n + (typeof it.values[nc.id] === 'number' ? it.values[nc.id] : 0), 0); return { label: g.name, parts: [{ n: s, color: safeColor(g.color), label: nc.name }], value: C.numberLabel(nc, s) }; }).filter((r) => r.parts[0].n);
         const total = list.reduce((n, it) => n + (typeof it.values[nc.id] === 'number' ? it.values[nc.id] : 0), 0);
         cards.push(`<div class="fwp-chart fwp-chart--wide"><h4>${icon('hash')}<span>${esc(nc.name)} by group</span>${nums.length > 1 ? `<select class="select" id="chartNum" aria-label="Number column">${nums.map((c) => `<option value="${c.id}" ${c.id === nc.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}</h4>
-          <p>Total ${C.unitWrap(nc, esc(C.numText(nc, total)))}</p>${hbars(rows, (n) => C.numText(nc, n))}</div>`);
+          <p>Total ${C.unitWrap(nc, esc(C.numText(nc, total)))}</p>${hbars(rows, (n) => C.numberLabel(nc, n))}</div>`);
       }
       // 6. priority
       if (pr) {
