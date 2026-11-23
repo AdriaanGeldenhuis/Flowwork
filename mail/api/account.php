@@ -67,9 +67,20 @@ if ($op === 'test') {
     mail_rate_limit('account_test', 12, 300);
     $f = $fields($in);
     $existing = !empty($in['account_id']) ? MailRepo::account($DB, $MAIL_COMPANY_ID, $MAIL_USER_ID, (int)$in['account_id']) : null;
-    $pass = (string)($in['password'] ?? '');
-    if ($pass === '' && $existing) $pass = SecureVault::decrypt($existing['password_encrypted'] ?? '');
+    $pass = MailRepo::password(
+        $f + ['password_encrypted' => $existing['password_encrypted'] ?? ''],
+        (string)($in['password'] ?? '')
+    );
     $user = $f['username'] !== '' ? $f['username'] : $f['email_address'];
+
+    if ($f['imap_server'] === '' && $f['smtp_server'] === '') mail_error('Enter an incoming (IMAP) or outgoing (SMTP) server first');
+    if ($pass === '') {
+        $missing = ['ok' => false, 'stage' => 'authentication', 'error' => 'Enter the mailbox password in the Password field.'];
+        mail_json([
+            'imap' => $f['imap_server'] !== '' ? $missing : null,
+            'smtp' => $f['smtp_server'] !== '' ? $missing : null,
+        ]);
+    }
 
     $result = ['imap' => null, 'smtp' => null];
     if ($f['imap_server'] !== '') {
@@ -97,7 +108,6 @@ if ($op === 'test') {
                                                 'public_only' => true]);
         }
     }
-    if ($result['imap'] === null && $result['smtp'] === null) mail_error('Enter an incoming (IMAP) or outgoing (SMTP) server first');
     mail_json($result);
 }
 
@@ -114,7 +124,7 @@ if ($op === 'save') {
         $st->execute([$f['default_signature_id'], $MAIL_COMPANY_ID, $MAIL_USER_ID]);
         if (!$st->fetchColumn()) $f['default_signature_id'] = null;
     }
-    $pass = (string)($in['password'] ?? '');
+    $pass = MailRepo::password($f, (string)($in['password'] ?? ''));
     $id = (int)($in['account_id'] ?? 0);
 
     if ($id) {

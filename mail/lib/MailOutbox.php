@@ -171,7 +171,7 @@ class MailOutbox
                 'host' => $account['smtp_server'], 'port' => (int)$account['smtp_port'],
                 'encryption' => $account['smtp_encryption'], 'tls_verify' => (int)($account['tls_verify'] ?? 1) === 1,
                 'username' => trim((string)$account['username']) ?: $account['email_address'],
-                'password' => SecureVault::decrypt($account['password_encrypted'] ?? ''),
+                'password' => MailRepo::password($account),
                 'from' => $account['email_address'], 'from_name' => self::fromName($db, $account),
                 'to' => [(string)$row['to_recipients']], 'cc' => [(string)$row['cc_recipients']], 'bcc' => [(string)$row['bcc_recipients']],
                 'subject' => (string)$row['subject'], 'html' => $bodyHtml, 'text' => (string)$row['body_text'],

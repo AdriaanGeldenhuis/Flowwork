@@ -19,6 +19,17 @@ function same($exp, $act, string $msg): void
     check($exp === $act, $msg . ' (expected ' . var_export($exp, true) . ', got ' . var_export($act, true) . ')');
 }
 
+// ------------------------------------------------------------ Account credentials
+$gmail = ['imap_server' => 'imap.gmail.com', 'smtp_server' => 'smtp.gmail.com'];
+$grouped = "abcd efgh\u{00a0}ijkl mn12";
+same('abcdefghijklmn12', MailRepo::password($gmail, $grouped), 'Gmail app password accepts display grouping');
+same('abcdefghijklmn12', MailRepo::password($gmail + ['password_encrypted' => SecureVault::encrypt($grouped)]), 'previously saved grouped Gmail password also works');
+same($grouped, MailRepo::password(['imap_server' => 'imap.gmail.com', 'smtp_server' => 'smtp.example.com'], $grouped), 'mixed servers keep the literal password');
+same($grouped, MailRepo::password(['smtp_server' => 'smtp.example.com'], $grouped), 'other providers keep spaces');
+same('a password with spaces', MailRepo::password($gmail, 'a password with spaces'), 'only grouped Google app passwords are normalized');
+$smtpTest = SmtpSender::test(['username' => 'you@example.com', 'password' => '']);
+check(!$smtpTest['ok'] && $smtpTest['stage'] === 'authentication', 'SMTP test requires a password when authenticating');
+
 // ------------------------------------------------------------ MimeParser
 $raw = "From: =?ISO-8859-1?Q?Andr=E9_M=FCller?= <Andre@Example.COM>\r\n"
      . "To: \"Doe, Jane\" <jane@x.com>, bob@y.com\r\n"

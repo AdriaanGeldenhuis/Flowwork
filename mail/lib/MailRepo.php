@@ -44,6 +44,21 @@ class MailRepo
         return $st->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
+    /** Resolve an entered or stored mailbox password for the configured servers. */
+    public static function password(array $account, string $entered = ''): string
+    {
+        $password = $entered !== '' ? $entered : SecureVault::decrypt($account['password_encrypted'] ?? '');
+        $imap = strtolower(trim((string)($account['imap_server'] ?? '')));
+        $smtp = strtolower(trim((string)($account['smtp_server'] ?? '')));
+        // Strip Google's display grouping only when every configured server is Google Mail.
+        if (($imap !== '' || $smtp !== '') && in_array($imap, ['', 'imap.gmail.com'], true)
+            && in_array($smtp, ['', 'smtp.gmail.com'], true)
+            && preg_match('/\A\h*[a-z0-9]{4}(?:\h+[a-z0-9]{4}){3}\h*\z/iu', $password)) {
+            return preg_replace('/\h+/u', '', $password);
+        }
+        return $password;
+    }
+
     /** Public (non-secret) shape of an account for the UI. */
     public static function publicAccount(array $a): array
     {

@@ -104,15 +104,22 @@ class SmtpSender
     /** Connect + authenticate only (settings "Test connection"). */
     public static function test(array $opts): array
     {
+        $user = (string)($opts['username'] ?? '');
+        $pass = (string)($opts['password'] ?? '');
+        if ($user !== '' && $pass === '') {
+            return ['ok' => false, 'stage' => 'authentication', 'error' => 'Enter the mailbox password in the Password field.'];
+        }
         $c = new self();
+        $stage = 'connection';
         try {
             $c->open($opts);
-            $c->auth((string)($opts['username'] ?? ''), (string)($opts['password'] ?? ''));
+            $stage = 'authentication';
+            $c->auth($user, $pass);
             $c->quit();
             return ['ok' => true];
         } catch (Throwable $e) {
             $c->close();
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'stage' => $stage, 'error' => $e->getMessage()];
         }
     }
 
@@ -141,14 +148,14 @@ class SmtpSender
         $this->fp = $fp;
         stream_set_timeout($fp, 45);
 
-        $this->expect($this->read(), [220], 'SMTP server did not greet');
+        $this->expect($this->read('waiting for the server greeting'), [220], 'SMTP server did not greet');
         $this->ehlo();
 
         if ($enc === 'tls') {
             if (!isset($this->ext['STARTTLS'])) {
                 throw new RuntimeException('The SMTP server does not offer STARTTLS on port ' . $port . '. Try SSL on port 465.');
             }
-            $this->expect($this->cmd('STARTTLS'), [220], 'STARTTLS refused');
+            $this->expect($this->cmd('STARTTLS', 'requesting STARTTLS'), [220], 'STARTTLS refused');
             $method = STREAM_CRYPTO_METHOD_TLS_CLIENT;
             if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) $method |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
             if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) $method |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
@@ -162,9 +169,9 @@ class SmtpSender
     private function ehlo(): void
     {
         $name = self::heloName();
-        [$code, $text] = $this->cmd('EHLO ' . $name);
+        [$code, $text] = $this->cmd('EHLO ' . $name, 'introducing the mail client (EHLO)');
         if ($code !== 250) {
-            $this->expect($this->cmd('HELO ' . $name), [250], 'HELO rejected');
+            $this->expect($this->cmd('HELO ' . $name, 'introducing the mail client (HELO)'), [250], 'HELO rejected');
             $this->ext = [];
             return;
         }
@@ -183,15 +190,18 @@ class SmtpSender
         if ($user === '' || $pass === '') return;
         $mechs = strtoupper($this->ext['AUTH'] ?? '');
         if (str_contains($mechs, 'PLAIN')) {
-            [$code, $text] = $this->cmd('AUTH PLAIN ' . base64_encode("\0" . $user . "\0" . $pass));
+            [$code, $text] = $this->cmd('AUTH PLAIN ' . base64_encode("\0" . $user . "\0" . $pass), 'signing in');
             if ($code === 235) return;
-            if (!str_contains($mechs, 'LOGIN')) throw new RuntimeException('SMTP authentication failed: ' . self::short($text));
+            // A rejected credential or temporary server failure should not trigger a second login.
+            if (!str_contains($mechs, 'LOGIN') || !in_array($code, [500, 501, 502, 504], true)) {
+                throw new RuntimeException("SMTP authentication failed: $code " . self::short($text));
+            }
         }
-        [$code, $text] = $this->cmd('AUTH LOGIN');
+        [$code, $text] = $this->cmd('AUTH LOGIN', 'signing in');
         if ($code !== 334) throw new RuntimeException('SMTP authentication not supported: ' . self::short($text));
-        [$code, $text] = $this->cmd(base64_encode($user));
+        [$code, $text] = $this->cmd(base64_encode($user), 'signing in');
         if ($code !== 334) throw new RuntimeException('SMTP authentication failed: ' . self::short($text));
-        [$code, $text] = $this->cmd(base64_encode($pass));
+        [$code, $text] = $this->cmd(base64_encode($pass), 'signing in');
         if ($code !== 235) throw new RuntimeException('SMTP authentication failed: ' . self::short($text));
     }
 
@@ -204,10 +214,10 @@ class SmtpSender
         $this->write($data);
     }
 
-    private function cmd(string $line): array
+    private function cmd(string $line, string $phase = ''): array
     {
         $this->write($line . "\r\n");
-        return $this->read();
+        return $this->read($phase);
     }
 
     private function write(string $data): void
@@ -224,14 +234,15 @@ class SmtpSender
     }
 
     /** @return array{0:int,1:string} */
-    private function read(): array
+    private function read(string $phase = ''): array
     {
         $lines = [];
         while (true) {
             $line = @fgets($this->fp, 4096);
             if ($line === false) {
                 $meta = stream_get_meta_data($this->fp);
-                throw new RuntimeException(!empty($meta['timed_out']) ? 'SMTP server timed out' : 'SMTP connection closed unexpectedly');
+                $error = !empty($meta['timed_out']) ? 'SMTP server timed out' : 'SMTP connection closed unexpectedly';
+                throw new RuntimeException($error . ($phase !== '' ? " while $phase" : ''));
             }
             $lines[] = rtrim($line, "\r\n");
             if (strlen($line) < 4 || $line[3] !== '-') break;
