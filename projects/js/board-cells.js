@@ -44,11 +44,20 @@
   function optionOf(col, label) {
     return ((col.config && col.config.options) || []).find((o) => o.label === label) || { label, color: '#85766b' };
   }
-  function unitWrap(col, s) {
+  function numberAffixes(col) {
     const cfg = col.config || {};
-    if (cfg.format === 'percent') return `${s}<small class="is-suffix">%</small>`;
-    if (!cfg.unit) return s;
-    return cfg.unit_pos === 'suffix' ? `${s}<small class="is-suffix">${esc(cfg.unit)}</small>` : `<small>${esc(cfg.unit)}</small>${s}`;
+    if (cfg.format === 'percent') return ['', '%'];
+    return cfg.unit_pos === 'suffix' ? ['', cfg.unit || ''] : [cfg.unit || '', ''];
+  }
+  function unitWrap(col, s) {
+    const [prefix, suffix] = numberAffixes(col);
+    return `${prefix ? `<small>${esc(prefix)}</small>` : ''}${s}${suffix ? `<small class="is-suffix">${esc(suffix)}</small>` : ''}`;
+  }
+  function numberLabel(col, v) {
+    const [prefix, suffix] = numberAffixes(col);
+    const text = numText(col, v);
+    if (suffix === '%') return text + suffix;
+    return [prefix, text, suffix].filter(Boolean).join(' ');
   }
   function numText(col, v) {
     if (v == null || v === '') return '';
@@ -514,6 +523,6 @@
 
   window.FWBCells = {
     PRIORITIES, TYPE_ICON, COMPUTED, NUMERIC, val, statusOf, priorityOf, optionOf, render, text, sortKey, summary, aggregate, editable, inlineTypes, edit,
-    numText, unitWrap, fileUrl, supplierName, tlState,
+    numText, unitWrap, numberLabel, fileUrl, supplierName, tlState,
   };
 })();

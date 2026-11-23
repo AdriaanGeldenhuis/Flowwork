@@ -19,7 +19,7 @@
 
 final class ProjectSchema
 {
-    public const SCHEMA_VERSION = '2026-10-18-3';
+    public const SCHEMA_VERSION = '2026-11-23-1';
 
     public const COLUMN_TYPES = ['status', 'people', 'date', 'timeline', 'text', 'longtext', 'number', 'dropdown', 'checkbox',
                                  'tags', 'link', 'email', 'phone', 'formula', 'progress', 'priority', 'supplier', 'files',

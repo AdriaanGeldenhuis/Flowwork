@@ -26,8 +26,8 @@
   class ApiError extends Error {
     constructor(message, status, data) { super(message); this.status = status; this.data = data; }
   }
-  async function request(method, url, body, isForm) {
-    const opts = { method, credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } };
+  async function request(method, url, body, isForm = false, { keepalive = false } = {}) {
+    const opts = { method, keepalive, credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } };
     if (method !== 'GET') opts.headers['X-CSRF-TOKEN'] = csrf();
     if (body !== undefined) {
       if (isForm) { opts.body = body; } else { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
@@ -55,7 +55,7 @@
       const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString();
       return request('GET', '/projects/api/' + path + (qs ? '?' + qs : ''));
     },
-    post: (path, body) => request('POST', '/projects/api/' + path, body || {}),
+    post: (path, body, options) => request('POST', '/projects/api/' + path, body || {}, false, options),
     upload: (path, formData, onProgress) => {
       if (!onProgress) return request('POST', '/projects/api/' + path, formData, true);
       // XHR so the page can show upload progress.

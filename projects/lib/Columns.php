@@ -94,7 +94,7 @@ final class Columns
                 // Older boards: format 'percentage', {affix, affixPosition: prefix|suffix}.
                 $fmt = ($cfg['format'] ?? '') === 'percentage' ? 'percent' : ($cfg['format'] ?? '');
                 $cfg['format'] = in_array($fmt, $type === 'number' ? ['decimal', 'currency', 'percent', 'integer'] : ['decimal', 'currency', 'percent'], true) ? $fmt : 'decimal';
-                $cfg['precision'] = max(0, min(6, (int)($cfg['precision'] ?? ($cfg['format'] === 'integer' ? 0 : 2))));
+                $cfg['precision'] = $cfg['format'] === 'integer' ? 0 : max(0, min(6, (int)($cfg['precision'] ?? 2)));
                 $cfg['agg'] = self::agg($cfg['agg'] ?? 'sum');
                 $unit = $cfg['unit'] ?? ($cfg['affix'] ?? ($cfg['format'] === 'currency' ? 'R' : ''));
                 $cfg['unit'] = mb_substr(trim((string)$unit), 0, 8);
@@ -194,15 +194,15 @@ final class Columns
                 return json_encode(['options' => $opts, 'multi' => !empty($in['multi'])], JSON_UNESCAPED_UNICODE);
             case 'number':
                 $format = in_array($in['format'] ?? '', ['decimal', 'currency', 'percent', 'integer'], true) ? $in['format'] : 'decimal';
-                return json_encode(['format' => $format, 'precision' => max(0, min(6, (int)($in['precision'] ?? 2))),
-                                    'agg' => self::agg($in['agg'] ?? 'sum'), 'unit' => mb_substr(trim((string)($in['unit'] ?? '')), 0, 8),
+                return json_encode(['format' => $format, 'precision' => $format === 'integer' ? 0 : max(0, min(6, (int)($in['precision'] ?? 2))),
+                                    'agg' => self::agg($in['agg'] ?? 'sum'), 'unit' => mb_substr(trim((string)($in['unit'] ?? ($format === 'currency' ? 'R' : ''))), 0, 8),
                                     'unit_pos' => ($in['unit_pos'] ?? '') === 'suffix' ? 'suffix' : 'prefix'], JSON_UNESCAPED_UNICODE);
             case 'formula':
                 $f = mb_substr(trim((string)($in['formula'] ?? '')), 0, 1000);
                 $format = in_array($in['format'] ?? '', ['decimal', 'currency', 'percent'], true) ? $in['format'] : 'decimal';
                 return json_encode(['formula' => $f, 'precision' => max(0, min(6, (int)($in['precision'] ?? 2))),
                                     'agg' => self::agg($in['agg'] ?? 'sum'), 'format' => $format,
-                                    'unit' => mb_substr(trim((string)($in['unit'] ?? '')), 0, 8),
+                                    'unit' => mb_substr(trim((string)($in['unit'] ?? ($format === 'currency' ? 'R' : ''))), 0, 8),
                                     'unit_pos' => ($in['unit_pos'] ?? '') === 'suffix' ? 'suffix' : 'prefix'], JSON_UNESCAPED_UNICODE);
             case 'progress':
                 $mode = in_array($in['mode'] ?? '', ['manual', 'status', 'subitems'], true) ? $in['mode'] : 'manual';
@@ -289,7 +289,15 @@ final class Columns
                 $text = self::str($a['text'] ?? '', 200);
                 return $text ? json_encode(['url' => mb_substr($url, 0, 1000), 'text' => $text], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : mb_substr($url, 0, 1000);
             case 'number':
-                $s = str_replace([' ', ',', 'R', '%'], ['', '', '', ''], trim((string)$v));
+                $value = trim((string)$v);
+                $strip = [' ', ',', 'R', '%'];
+                $s = str_replace($strip, '', $value);
+                $unit = $cfg['unit'];
+                if (!is_numeric($s) && $unit !== '') {
+                    if ($cfg['unit_pos'] === 'suffix' && str_ends_with($value, $unit)) $value = substr($value, 0, -strlen($unit));
+                    elseif ($cfg['unit_pos'] === 'prefix' && str_starts_with($value, $unit)) $value = substr($value, strlen($unit));
+                    $s = str_replace($strip, '', $value);
+                }
                 if (!is_numeric($s)) throw new ProjectUserError('Numbers only, please.');
                 $n = (float)$s;
                 if (abs($n) > 1e13) throw new ProjectUserError('That number is too large.');

@@ -86,6 +86,37 @@ assert_eq(null, Formula::evaluate('1/0', $r), 'division by zero is empty');
 assert_eq(null, Formula::evaluate('system("ls")', $r), 'unknown function');
 assert_eq(5.0, Formula::evaluate('WORKDAYS(' . Formula::dayNumber('2026-10-19') . ',' . Formula::dayNumber('2026-10-25') . ')', $r), 'workdays Mon–Sun');
 assert_eq('3.33', Formula::format(Formula::evaluate('ROUND(10/3, 2)', $r), 2), 'round + format');
+$formulaCases = [
+    '2 + 3 * 4 - 6 / 3' => 12.0,
+    '2^3^2 + 2**3 + 7%4' => 523.0,
+    '+.5 + 2e2 - 3E-1' => 200.2,
+    '1 == 1 AND 2 <> 3 AND 2 != 3 AND 2 <= 2 AND 2 >= 1 AND 1 < 2 AND 3 > 2' => 1.0,
+    'FALSE OR !FALSE && TRUE' => 1.0,
+    'FALSE || TRUE' => 1.0,
+    'SUM(1, AVG(2, 4), AVERAGE(4, 6), MIN(9, 2), MAX(-4, -2))' => 9.0,
+    'ABS(-4) + SQRT(9) + POWER(2, 3) + MOD(9, 4)' => 16.0,
+    'ROUNDUP(1.21, 1) + ROUNDDOWN(1.29, 1)' => 2.5,
+    'AND(1, OR(0, NOT(FALSE)))' => 1.0,
+    'IF(FALSE, 1/0, IF(TRUE, 7, MOD(1, 0)))' => 7.0,
+    'IF(TRUE, 2 + {Qty}, 1/0) + {Rate}' => 17.5,
+    'IF(TRUE, 1/0, 5)' => null,
+    'IF(TRUE, 5, (1+))' => null,
+    'COUNT(0, {Empty}, "", "Done", 2)' => 3.0,
+    'CONCAT("R ", {Rate}, " / m²")' => 'R 12.5 / m²',
+    'DAYS(TODAY() + 4, TODAY())' => 4.0,
+    'NETWORKDAYS(-7, -3)' => 3.0,
+    'WORKDAYS(0, 1)' => 2.0,
+    'WORKDAYS(1, 0)' => -2.0,
+    'WORKDAYS({Empty}, 1)' => 0.0,
+    'POWER(10, 1000)' => null,
+    'PI' => M_PI,
+];
+foreach ($formulaCases as $expression => $expected) {
+    $actual = Formula::evaluate($expression, $r);
+    assert_true(is_float($expected) ? is_float($actual) && abs($actual - $expected) < 1e-9 : $actual === $expected, $expression);
+}
+assert_eq(['Qty', '#2'], Formula::references('CONCAT("{Missing}", {Qty}, [#2], \'[#1]\')'), 'quoted text is not a column reference');
+assert_eq('CONCAT("{Qty}", {Quantity})', Formula::rewriteReferences('CONCAT("{Qty}", {Qty})', fn($ref) => '{Quantity}'), 'rename leaves quoted text alone');
 
 // ------------------------------------------------------------------ column values
 $status = ['column_id' => 1, 'type' => 'status', 'config' => null];
@@ -107,6 +138,24 @@ assert_eq('1250.5', Columns::encodeValue(['type' => 'number', 'config' => null],
 throws(fn() => Columns::encodeValue(['type' => 'formula', 'config' => null], 1), 'formula not settable');
 $num = Columns::config(['type' => 'number', 'config' => '{"format":"percentage","affix":"m","affixPosition":"suffix"}']);
 assert_eq(['percent', 'm', 'suffix'], [$num['format'], $num['unit'], $num['unit_pos']], 'legacy number config');
+$formats = [
+    ['number', ['format' => 'currency'], '-1234.5', 'R -1 234.50'],
+    ['number', ['format' => 'decimal', 'unit' => 'm²', 'unit_pos' => 'suffix'], '-12.25', '-12.25 m²'],
+    ['number', ['format' => 'integer', 'precision' => 4, 'unit' => 'kg', 'unit_pos' => 'suffix'], '3.51', '4 kg'],
+    ['formula', ['format' => 'currency', 'unit' => '€'], '12.5', '€ 12.50'],
+    ['formula', ['format' => 'percent', 'unit' => 'kg', 'precision' => 1], '12.5', '12.5%'],
+    ['formula', ['format' => 'decimal', 'precision' => 6, 'unit' => 'mm', 'unit_pos' => 'suffix'], '0.142857', '0.142857 mm'],
+    ['formula', ['format' => 'currency', 'unit' => ''], '12.5', '12.50'],
+    ['formula', ['format' => 'currency'], 'Priced by supplier', 'Priced by supplier'],
+];
+foreach ($formats as [$type, $options, $raw, $expected]) {
+    $config = Columns::encodeConfig($type, $options);
+    assert_eq($expected, Columns::text(['type' => $type, 'config' => $config], $raw), $type . ' formatting: ' . $expected);
+}
+$area = ['type' => 'number', 'config' => ['unit' => 'm²', 'unit_pos' => 'suffix']];
+assert_eq('-1234.5', Columns::encodeValue($area, '-1,234.50 m²'), 'paste value with configured suffix');
+assert_eq('12.5', Columns::encodeValue(['type' => 'number', 'config' => ['unit' => '€']], '€ 12.5'), 'paste value with configured prefix');
+throws(fn() => Columns::encodeValue($area, '12 kg'), 'unconfigured unit is refused');
 $dd = Columns::config(['type' => 'dropdown', 'config' => '{"options":["Paid","Not Paid"],"optionColors":{"Paid":"#00aa00"}}']);
 assert_eq('#00aa00', $dd['options'][0]['color'], 'legacy option colours');
 
@@ -263,6 +312,8 @@ $rA = $br->createColumn($rb, ['type' => 'number', 'name' => 'A']);
 $r1 = $ir->create($rb, $rg, 'Formula row', [$rA['id'] => 5])['id'];
 $rF = $br->createColumn($rb, ['type' => 'formula', 'name' => 'F', 'config' => ['formula' => '{A} * 2', 'precision' => 0]]);
 assert_eq('10', $cell($r1, $rF['id']), 'a new formula column fills in on existing items');
+$rText = $br->createColumn($rb, ['type' => 'formula', 'name' => 'Text result', 'config' => ['formula' => 'CONCAT("{Text result} {A} ", {A})']]);
+assert_eq('{Text result} {A} 5', $cell($r1, $rText['id']), 'quoted column names are displayed as text');
 throws(fn() => $br->createColumn($rb, ['type' => 'formula', 'name' => 'Me', 'config' => ['formula' => '{Me} + 1']]), 'a formula cannot read itself');
 throws(fn() => $br->updateColumn($rF['id'], ['config' => ['formula' => '[#' . $rF['id'] . '] + 1']]), 'nor itself by #id');
 $rG = $br->createColumn($rb, ['type' => 'formula', 'name' => 'G', 'config' => ['formula' => '{H} + 1', 'precision' => 0]]);

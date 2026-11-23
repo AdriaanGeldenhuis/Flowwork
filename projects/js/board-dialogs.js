@@ -82,7 +82,7 @@
       }
       body += `<div class="fwp-form-grid" style="margin-top:18px">
         <div class="field"><label class="label" for="csFormat">Format</label><select class="select" id="csFormat">${opt('decimal', 'Number', cfg.format)}${opt('currency', 'Money', cfg.format)}${opt('percent', 'Percent', cfg.format)}${type === 'number' ? opt('integer', 'Whole number', cfg.format) : ''}</select></div>
-        <div class="field"><label class="label" for="csPrec">Decimals</label><select class="select" id="csPrec">${[0, 1, 2, 3, 4].map((n) => opt(n, String(n), cfg.precision != null ? cfg.precision : 2)).join('')}</select></div>
+        <div class="field"><label class="label" for="csPrec">Decimals</label><select class="select" id="csPrec">${[0, 1, 2, 3, 4, 5, 6].map((n) => opt(n, String(n), cfg.precision != null ? cfg.precision : 2)).join('')}</select></div>
         <div class="field"><label class="label" for="csUnit">Unit</label><input class="input" id="csUnit" maxlength="8" value="${esc(cfg.unit || '')}" placeholder="R, m², kg, h…"></div>
         <div class="field"><label class="label" for="csUnitPos">Unit goes</label><select class="select" id="csUnitPos">${opt('prefix', 'Before the number', cfg.unit_pos)}${opt('suffix', 'After the number', cfg.unit_pos)}</select></div>
         <div class="field is-wide"><label class="label" for="csAgg">Group summary</label><select class="select" id="csAgg">${[['sum', 'Sum'], ['avg', 'Average'], ['min', 'Lowest'], ['max', 'Highest'], ['count', 'Count'], ['none', 'None']].map(([v, l]) => opt(v, l, cfg.agg || 'sum')).join('')}</select></div></div>`;
@@ -150,6 +150,17 @@
     });
     // ---- formula chips
     const fx = $('#csFormula', m);
+    const numFormat = $('#csFormat', m);
+    if (numFormat) {
+      const precision = $('#csPrec', m);
+      const unit = $('#csUnit', m);
+      precision.disabled = numFormat.value === 'integer';
+      numFormat.addEventListener('change', () => {
+        precision.disabled = numFormat.value === 'integer';
+        if (precision.disabled) precision.value = '0';
+        if (numFormat.value === 'currency' && !unit.value.trim()) unit.value = 'R';
+      });
+    }
     if (fx) $('#csChips', m).addEventListener('click', (e) => {
       const b = e.target.closest('[data-ins]');
       if (!b) return;
